@@ -110,9 +110,9 @@ export function getSwaggerSpec() {
     openapi: "3.0.3",
     info: {
       title: "AlphaMarket Broker API",
-      version: "1.0.0",
-      description: "API for broker integrations with AlphaMarket.co.in. Provides access to advisors, strategies, portfolio recommendations, and live calls. Authentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
-      contact: { email: "hello@thealphamarket.com", name: "AlphaMarket Team" },
+      version: "2.1.0",
+      description: "AlphaMarket Broker API Integration Guide v2.1\n\nSEBI-registered research analyst marketplace API for broker integrations. Provides access to advisors, strategies, portfolio recommendations, and live calls.\n\n**What\'s New in v2.1:**\n- PRICE (₹) trailing SL type added across all Equity and F&O forms\n- Trailing Stop Loss now fully supported on F&O Position creation\n- Revised trailing SL types: PERCENTAGE | POINTS | PRICE (replaces FIXED)\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
+      contact: { email: "hello@alphamarket.co.in", name: "AlphaMarket Team", url: "https://alphamarket.co.in" },
     },
     servers: [{ url: "https://alphamarket.co.in/api/v1", description: "Production" }],
     security: [{ ApiKeyAuth: [] }],
@@ -189,6 +189,31 @@ export function getSwaggerSpec() {
             expiry: { type: "string", format: "date-time" },
             strikePrice: { type: "number" },
             active: { type: "boolean" },
+            trailingSlEnabled: { type: "boolean", description: "Enable trailing stop loss" },
+            trailingSlType: { type: "string", enum: ["PERCENTAGE", "POINTS", "PRICE"], description: "Trailing SL type: PERCENTAGE (trail by %), POINTS (trail by fixed points), PRICE (trail by fixed ₹ amount) - PRICE is NEW in v2.1" },
+            trailingSlValue: { type: "string", description: "Trail value (e.g., '3' for 3%, '50' for 50 pts, '250' for ₹250)" },
+          },
+        },
+        TrailingStopLoss: {
+          type: "object",
+          description: "Trailing Stop Loss configuration. Auto-adjusts SL as price moves favorably. NEW in v2.1: PRICE type added, F&O support added.",
+          properties: {
+            enabled: { type: "boolean", description: "Whether trailing SL is active" },
+            type: { type: "string", enum: ["PERCENTAGE", "POINTS", "PRICE"], description: "PERCENTAGE = trail by % of highest price, POINTS = trail by fixed points, PRICE = trail by fixed ₹ amount (NEW in v2.1)" },
+            value: { type: "number", description: "Trail value: percentage (e.g., 3.0), points (e.g., 20), or rupees (e.g., 250)" },
+            currentSL: { type: "string", description: "Current computed stop loss price (read-only)" },
+            highestPrice: { type: "string", description: "Highest price since entry (read-only)" },
+            triggeredAt: { type: "number", nullable: true, description: "Price at which SL was triggered (null if active)" },
+          },
+        },
+        WebhookPayload: {
+          type: "object",
+          description: "Webhook POST payload. Verify signature with HMAC-SHA256. Return HTTP 200 within 5s. Retries: 3x (5s, 30s, 120s backoff).",
+          properties: {
+            event: { type: "string", enum: ["CALL_CREATED", "CALL_MODIFIED", "CALL_CLOSED", "TARGET_ACHIEVED", "STOPLOSS_TRIGGERED", "TRAILING_SL_TRIGGERED", "TRAILING_SL_UPDATED", "POSITION_CREATED", "POSITION_MODIFIED", "POSITION_CLOSED"] },
+            timestamp: { type: "string", format: "date-time" },
+            data: { type: "object", description: "Call or Position object with trailingStopLoss if enabled" },
+            signature: { type: "string", description: "HMAC-SHA256 signature for verification" },
           },
         },
       },
@@ -258,7 +283,7 @@ export function getSwaggerSpec() {
         post: {
           tags: ["Portfolio"],
           summary: "Create a portfolio recommendation",
-          description: "Primary endpoint for brokers to push stock recommendations/calls. Supports both Equity calls and F&O positions.",
+          description: "Primary endpoint for brokers to push stock recommendations/calls. Supports Equity calls and F&O positions. NEW in v2.1: F&O positions now support trailingSlEnabled, trailingSlType (PERCENTAGE/POINTS/PRICE), and trailingSlValue fields.",
           requestBody: { required: true, content: { "application/json": { schema: { "$ref": "#/components/schemas/PortfolioRecommendation" } } } },
           responses: { "201": { description: "Recommendation created" } },
         },
@@ -277,7 +302,7 @@ export function getSwaggerSpec() {
       "/alpha/strategy/{strategyId}/portfolio/{callId}": {
         put: {
           tags: ["Portfolio"],
-          summary: "Update a recommendation (close call, update target/SL)",
+          summary: "Update a recommendation (close call, update target/SL, modify trailing SL)",
           parameters: [
             { name: "strategyId", in: "path", required: true, schema: { type: "string" } },
             { name: "callId", in: "path", required: true, schema: { type: "string" } },
@@ -289,9 +314,10 @@ export function getSwaggerSpec() {
       "/alpha/live-calls": {
         get: {
           tags: ["Live Calls"],
-          summary: "Get all active live calls across strategies",
-          parameters: [{ name: "type", in: "query", schema: { type: "string", enum: ["EQUITY", "FnO"] } }],
-          responses: { "200": { description: "Active calls" } },
+          summary: "Get all active live calls across strategies (includes trailing SL data)",
+          description: "Primary polling endpoint. Returns active calls with trailingStopLoss object when enabled. Filter by type (EQUITY/FnO). Recommended: use webhooks for real-time, poll this every 30-60s as fallback.",
+          parameters: [{ name: "type", in: "query", schema: { type: "string", enum: ["EQUITY", "FnO"] }, description: "Filter by EQUITY or FnO" }],
+          responses: { "200": { description: "Active calls with trailingStopLoss data. TrailingStopLoss types: PERCENTAGE, POINTS, PRICE (NEW in v2.1)" } },
         },
       },
       "/alpha/api-keys": {
