@@ -1404,9 +1404,10 @@ function EditPositionDialog({
                   <SelectContent>
                     <SelectItem value="PERCENTAGE">%</SelectItem>
                     <SelectItem value="POINTS">Pts</SelectItem>
+                    <SelectItem value="PRICE">₹</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input type="number" step="0.1" min="0" value={trailingSlValue} onChange={(e) => setTrailingSlValue(e.target.value)} placeholder={trailingSlType === "PERCENTAGE" ? "e.g. 5" : "e.g. 50"} />
+                <Input type="number" step="0.1" min="0" value={trailingSlValue} onChange={(e) => setTrailingSlValue(e.target.value)} placeholder={trailingSlType === "PERCENTAGE" ? "e.g. 5" : trailingSlType === "POINTS" ? "e.g. 50" : "e.g. 250"} />
               </div>
             )}
           </div>
@@ -2146,25 +2147,26 @@ function AddStockSheet({
                       <SelectContent>
                         <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
                         <SelectItem value="POINTS">Points (Abs)</SelectItem>
+                        <SelectItem value="PRICE">Price (₹)</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Value {form.trailingSlType === "PERCENTAGE" ? "(%)" : "(Pts)"}</Label>
+                    <Label className="text-xs">Value {form.trailingSlType === "PERCENTAGE" ? "(%)" : form.trailingSlType === "POINTS" ? "(Pts)" : "(₹)"}</Label>
                     <Input
                       type="number"
                       step="0.1"
                       min="0"
                       value={form.trailingSlValue}
                       onChange={(e) => setForm({ ...form, trailingSlValue: e.target.value })}
-                      placeholder={form.trailingSlType === "PERCENTAGE" ? "e.g. 5" : "e.g. 50"}
+                      placeholder={form.trailingSlType === "PERCENTAGE" ? "e.g. 5" : form.trailingSlType === "POINTS" ? "e.g. 50" : "e.g. 250"}
                       data-testid="input-trailing-sl-value"
                     />
                   </div>
                 </div>
                 {form.trailingSlValue && (
                   <p className="text-xs text-green-600 dark:text-green-400">
-                    SL will trail {form.trailingSlValue}{form.trailingSlType === "PERCENTAGE" ? "%" : " pts"} below the highest price
+                    SL will trail {form.trailingSlValue}{form.trailingSlType === "PERCENTAGE" ? "%" : form.trailingSlType === "POINTS" ? " pts" : " ₹"} below the highest price
                   </p>
                 )}
               </div>
@@ -2279,6 +2281,9 @@ function AddPositionSheet({
     publishMode: "draft" as "draft" | "watchlist" | "live",
     enableLeg: false,
     usePercentage: false,
+    trailingSlEnabled: false,
+    trailingSlType: "PERCENTAGE",
+    trailingSlValue: "",
   });
   const [manualEntry, setManualEntry] = useState(false);
 
@@ -2315,6 +2320,9 @@ function AddPositionSheet({
       lots: form.lots ? parseInt(form.lots) : undefined,
       target: form.target || undefined,
       stopLoss: form.stopLoss || undefined,
+      trailingSlEnabled: form.trailingSlEnabled,
+      trailingSlType: form.trailingSlEnabled ? form.trailingSlType : undefined,
+      trailingSlValue: form.trailingSlEnabled ? form.trailingSlValue : undefined,
       duration: form.duration ? parseInt(form.duration) : undefined,
       durationUnit: form.duration ? form.durationUnit : undefined,
       theme: form.theme || undefined,
@@ -2565,6 +2573,54 @@ function AddPositionSheet({
               onChange={(e) => setForm({ ...form, stopLoss: e.target.value })}
               data-testid="input-position-stop-loss"
             />
+          </div>
+          <div className="rounded-lg border p-3 space-y-3 bg-muted/30">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-medium cursor-pointer" onClick={() => setForm({ ...form, trailingSlEnabled: !form.trailingSlEnabled })}>Trailing Stop Loss</Label>
+              <button
+                type="button"
+                onClick={() => setForm({ ...form, trailingSlEnabled: !form.trailingSlEnabled })}
+                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.trailingSlEnabled ? "bg-primary" : "bg-gray-300 dark:bg-gray-600"}`}
+                data-testid="toggle-position-trailing-sl"
+              >
+                <span className={`inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform ${form.trailingSlEnabled ? "translate-x-[18px]" : "translate-x-[2px]"}`} />
+              </button>
+            </div>
+            {form.trailingSlEnabled && (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">Auto-adjusts your SL as price moves in your favor.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Type</Label>
+                    <Select value={form.trailingSlType} onValueChange={(v) => setForm({ ...form, trailingSlType: v })}>
+                      <SelectTrigger data-testid="select-position-trailing-sl-type"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="PERCENTAGE">Percentage (%)</SelectItem>
+                        <SelectItem value="POINTS">Points (Abs)</SelectItem>
+                        <SelectItem value="PRICE">Price (₹)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Value {form.trailingSlType === "PERCENTAGE" ? "(%)" : form.trailingSlType === "POINTS" ? "(Pts)" : "(₹)"}</Label>
+                    <Input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      value={form.trailingSlValue}
+                      onChange={(e) => setForm({ ...form, trailingSlValue: e.target.value })}
+                      placeholder={form.trailingSlType === "PERCENTAGE" ? "e.g. 5" : form.trailingSlType === "POINTS" ? "e.g. 50" : "e.g. 250"}
+                      data-testid="input-position-trailing-sl-value"
+                    />
+                  </div>
+                </div>
+                {form.trailingSlValue && (
+                  <p className="text-xs text-green-600 dark:text-green-400">
+                    SL will trail {form.trailingSlValue}{form.trailingSlType === "PERCENTAGE" ? "%" : form.trailingSlType === "POINTS" ? " pts" : " ₹"} below the highest price
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label>Duration</Label>
