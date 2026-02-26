@@ -1292,9 +1292,10 @@ function EditCallDialog({
                   <SelectContent>
                     <SelectItem value="PERCENTAGE">%</SelectItem>
                     <SelectItem value="POINTS">Pts</SelectItem>
+                    <SelectItem value="PRICE">₹</SelectItem>
                   </SelectContent>
                 </Select>
-                <Input type="number" step="0.1" min="0" value={trailingSlValue} onChange={(e) => setTrailingSlValue(e.target.value)} placeholder={trailingSlType === "PERCENTAGE" ? "e.g. 5" : "e.g. 50"} />
+                <Input type="number" step="0.1" min="0" value={trailingSlValue} onChange={(e) => setTrailingSlValue(e.target.value)} placeholder={trailingSlType === "PERCENTAGE" ? "e.g. 5" : trailingSlType === "POINTS" ? "e.g. 50" : "e.g. 250"} />
               </div>
             )}
           </div>
