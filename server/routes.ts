@@ -2,13 +2,10 @@ import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { registerBrokerApiRoutes, getSwaggerSpec } from "./broker-api";
 import { createServer, type Server } from "http";
-import session from "express-session";
-import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
 import { promisify } from "util";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage";
-import { sendRegistrationNotification, sendUserWelcomeEmail, sendPasswordResetEmail, sendAdvisorAgreementEmail, sendEsignAgreementEmail } from "./email";
+import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail } from "./auth";
 import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, getOptionChainExpiries, getOptionChain } from "./groww";
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements } from "@shared/schema";
@@ -48,51 +45,14 @@ function validateVerifyToken(token: string, orderId: string, userId: string): bo
   return false;
 }
 
-async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16).toString("hex");
-  const buf = (await scryptAsync(password, salt, 64)) as Buffer;
-  return `${buf.toString("hex")}.${salt}`;
-}
-
-async function comparePasswords(supplied: string, stored: string): Promise<boolean> {
-  const [hashed, salt] = stored.split(".");
-  const buf = (await scryptAsync(supplied, salt, 64)) as Buffer;
-  return timingSafeEqual(Buffer.from(hashed, "hex"), buf);
-}
-
-declare module "express-session" {
-  interface SessionData {
-    userId?: string;
-  }
-}
-
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  app.set("trust proxy", 1);
-  const PgStore = connectPg(session);
-  app.use(
-    session({
-      store: new PgStore({
-        conString: process.env.DATABASE_URL,
-        createTableIfMissing: false,
-        tableName: "sessions",
-      }),
-      secret: process.env.SESSION_SECRET || "alphamarket-secret-key",
-      resave: false,
-      saveUninitialized: false,
-      cookie: {
-        maxAge: 30 * 24 * 60 * 60 * 1000,
-        secure: true,
-        sameSite: "lax",
-        httpOnly: true,
-        domain: ".alphamarket.co.in",
-      },
-    })
-  );
-
-  registerObjectStorageRoutes(app);
+  setupSession(app);
+  registerAuthRoutes(app, storage);
+  setupGoogleAuth(app, storage);
+  setupGithubAuth(app, storage);
 
   // Broker API v1 + Swagger
   registerBrokerApiRoutes(app);
@@ -185,159 +145,6 @@ export async function registerRoutes(
       res.send(xml);
     } catch (err: any) {
       res.status(500).send("Error generating sitemap");
-    }
-  });
-
-  // Auth routes
-  app.post("/api/auth/register", async (req, res) => {
-    try {
-      const { username, email, password, phone, role, companyName, sebiRegNumber, sebiCertUrl, agreementConsent } = req.body;
-      const existing = await storage.getUserByUsername(username);
-      if (existing) return res.status(400).send("Username already taken");
-      const existingEmail = await storage.getUserByEmail(email);
-      if (existingEmail) return res.status(400).send("Email already registered");
-
-      if (role === "advisor" && !agreementConsent) {
-        return res.status(400).send("Advisor registration requires agreement to both platform agreements");
-      }
-      if (role === "advisor" && !sebiRegNumber) {
-        return res.status(400).send("SEBI Registration Number is required for advisors");
-      }
-
-      const hashedPassword = await hashPassword(password);
-      const user = await storage.createUser({
-        username,
-        email,
-        password: hashedPassword,
-        phone: phone || null,
-        role: role || "investor",
-        companyName: companyName || null,
-        overview: null,
-        themes: null,
-        logoUrl: null,
-        sebiCertUrl: role === "advisor" ? (sebiCertUrl || null) : null,
-        sebiRegNumber: role === "advisor" ? (sebiRegNumber || null) : null,
-        isRegistered: role === "advisor",
-        isApproved: false,
-        agreementConsent: role === "advisor" ? (agreementConsent || false) : false,
-        agreementConsentDate: role === "advisor" && agreementConsent ? new Date() : null,
-        activeSince: new Date(),
-      });
-
-      req.session.userId = user.id;
-      const { password: _, ...safeUser } = user;
-      res.json(safeUser);
-
-      sendRegistrationNotification({
-        username,
-        email,
-        phone: phone || undefined,
-        role: role || "investor",
-        companyName: companyName || undefined,
-        sebiRegNumber: sebiRegNumber || undefined,
-        sebiCertUrl: sebiCertUrl || undefined,
-      }).catch((err) => console.error("Email notification error:", err));
-
-      sendUserWelcomeEmail({
-        email,
-        username,
-        role: role || "investor",
-        companyName: companyName || undefined,
-      }).catch((err) => console.error("Welcome email error:", err));
-
-      if (role === "advisor" && agreementConsent) {
-        sendAdvisorAgreementEmail({
-          email,
-          username,
-          companyName: companyName || undefined,
-        }).catch((err) => console.error("Agreement email error:", err));
-      }
-    } catch (err: any) {
-      res.status(500).send(err.message);
-    }
-  });
-
-  app.post("/api/auth/login", async (req, res) => {
-    try {
-      const { username, password } = req.body;
-      let user = await storage.getUserByUsername(username);
-      if (!user) {
-        user = await storage.getUserByEmail(username);
-      }
-      if (!user) return res.status(401).send("Invalid credentials");
-      const valid = await comparePasswords(password, user.password);
-      if (!valid) return res.status(401).send("Invalid credentials");
-      req.session.userId = user.id;
-      req.session.save((err) => {
-        if (err) {
-          console.error("Session save error:", err);
-          return res.status(500).send("Session error");
-        }
-        const { password: _, ...safeUser } = user;
-        res.json(safeUser);
-      });
-    } catch (err: any) {
-      res.status(500).send(err.message);
-    }
-  });
-
-  app.get("/api/auth/me", async (req, res) => {
-    if (!req.session.userId) return res.status(401).send("Not authenticated");
-    const user = await storage.getUser(req.session.userId);
-    if (!user) return res.status(401).send("Not authenticated");
-    const { password: _, ...safeUser } = user;
-    res.json(safeUser);
-  });
-
-  app.post("/api/auth/logout", (req, res) => {
-    req.session.destroy(() => {});
-    res.json({ ok: true });
-  });
-
-  app.post("/api/auth/forgot-password", async (req, res) => {
-    try {
-      const { email } = req.body;
-      if (!email) return res.status(400).send("Email is required");
-
-      const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.json({ ok: true, message: "If an account with that email exists, a password reset link has been sent." });
-      }
-
-      const token = randomBytes(32).toString("hex");
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
-      await storage.createPasswordResetToken(user.id, token, expiresAt);
-
-      const protocol = req.headers["x-forwarded-proto"] || "https";
-      const host = req.headers["host"] || "localhost:5000";
-      const appUrl = `${protocol}://${host}`;
-
-      await sendPasswordResetEmail(email, token, appUrl);
-
-      res.json({ ok: true, message: "If an account with that email exists, a password reset link has been sent." });
-    } catch (err: any) {
-      res.status(500).send(err.message);
-    }
-  });
-
-  app.post("/api/auth/reset-password", async (req, res) => {
-    try {
-      const { token, password } = req.body;
-      if (!token || !password) return res.status(400).send("Token and password are required");
-      if (password.length < 6) return res.status(400).send("Password must be at least 6 characters");
-
-      const resetToken = await storage.getPasswordResetToken(token);
-      if (!resetToken) return res.status(400).send("Invalid or expired reset link");
-      if (resetToken.used) return res.status(400).send("This reset link has already been used");
-      if (new Date() > new Date(resetToken.expiresAt)) return res.status(400).send("This reset link has expired");
-
-      const hashedPassword = await hashPassword(password);
-      await storage.updateUserPassword(resetToken.userId, hashedPassword);
-      await storage.markTokenUsed(resetToken.id);
-
-      res.json({ ok: true, message: "Password has been reset successfully. You can now sign in with your new password." });
-    } catch (err: any) {
-      res.status(500).send(err.message);
     }
   });
 
