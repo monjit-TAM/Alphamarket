@@ -159,7 +159,7 @@ class AlphaMarketAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Skip auth for public routes
-        if path in PUBLIC_PATHS or path.startswith("/api/docs") or path.startswith("/api/trading/"):
+        if path in PUBLIC_PATHS or path.startswith("/api/docs") or path.startswith("/api/trading/") or path.startswith("/api/arbitrage/"):
             return await call_next(request)
 
         # Skip OPTIONS (CORS preflight)
