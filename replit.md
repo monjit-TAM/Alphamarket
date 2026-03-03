@@ -1,0 +1,57 @@
+# AlphaMarket - SaaS Advisory Marketplace
+
+## Overview
+AlphaMarket is a SaaS marketplace platform designed to connect SEBI-registered Indian advisors (RA/RIA) with investors and brokers. It enables advisors to create and manage investment strategies across various segments and types, publish actionable investment calls, track revenue, manage subscribers, and generate compliance reports. The platform includes a robust admin approval workflow for advisors, ensuring regulatory adherence. The project aims to provide a fully functional marketplace with comprehensive features for both advisors and investors.
+
+## User Preferences
+I prefer clear and direct communication. When making changes, prioritize iterative development and explain the rationale behind significant architectural or feature alterations. I expect the agent to maintain the existing code style and adhere to the established project structure. Before making any major changes or introducing new dependencies, please ask for confirmation. Do not make changes to the `server/data/nse-symbols.json` file.
+
+## System Architecture
+AlphaMarket utilizes a modern web application architecture with a clear separation of concerns.
+
+**UI/UX Decisions:**
+- **Design System:** React + Vite + TypeScript frontend with Tailwind CSS and shadcn/ui for a consistent and responsive user interface.
+- **Branding:** Primary color `hsl 10 72% 48%` (warm red), accent color `hsl 145 45% 42%` (green). Logo: AlphaMarket with a TrendingUp icon.
+- **Navigation:** Role-aware navigation bar, investor dashboard with active/past subscriptions, advisor dashboard for management, and admin dashboard for oversight.
+- **Content Display:** Dedicated pages for Market Outlook and Learn content with full article views and rich media support (images, videos, audio, PDFs).
+
+**Technical Implementations:**
+- **Frontend:** React with Vite for fast development, TypeScript for type safety, `wouter` for routing, and `TanStack Query` for data fetching and caching.
+- **Backend:** Express.js with TypeScript for a robust API, utilizing `express-session` for session management.
+- **Database:** PostgreSQL (Neon) managed with Drizzle ORM for a type-safe and efficient data layer.
+- **Authentication:** Session-based authentication with `scrypt` for secure password hashing.
+- **Role-Based Access Control:** Implemented for `admin`, `advisor`, and `investor` roles.
+- **Strategy & Call Management:** Advisors can create, manage, and publish investment strategies, calls, and positions. Features include draft modes, watchlist functionality, and real-time P&L calculations.
+- **Financial Calculations:** Live option premium (CE/PE LTP) for F&O P&L, inverse calculation for sell positions.
+- **Automated Processes:** Intraday auto-square-off scheduler for intraday strategies.
+- **Content Management:** Advisors can publish multi-format content with attachment support.
+
+**Feature Specifications:**
+- **Advisor Workflow:** Advisor approval workflow, strategy management (CRUD), call/position management with draft/watchlist/live modes, rationale requirement for publishing.
+- **Investor Features:** Public marketplace, strategy detail pages, watchlist for favorited items, subscription management, and investor dashboard for recommendations.
+- **Admin Features:** Comprehensive user and strategy management, advisor approval, Groww API token management, and platform settings.
+- **Payments:** Integrated Cashfree Payment Gateway for subscription payments with secure order creation, verification, and webhook processing for idempotent subscription activation.
+- **Reporting:** CSV download for calls report including entry/exit details and gain/loss.
+- **Communication:** "Ask a Question" form for investors to contact advisors, email notifications for user registrations and password resets.
+- **Market Data:** Live market prices (LTP) with change indicators, auto-refresh functionality, and integration with option chain data.
+- **Symbol Autocomplete:** NSE/BSE/MCX symbol autocomplete for stock and position entry.
+- **Risk Profiling:** Optional per-advisor feature (toggle in Profile > Settings tab). When enabled, investors must complete an 8-section questionnaire after subscribing. **Mandatory gating:** If risk profiling is required, investors cannot access live recommendations until completed. Enforced flow: Registration → E-Sign → Payment → eKYC → Risk Profiling → Access Strategy. Backend gates `/api/investor/recommendations` to exclude strategies with incomplete risk profiling. Frontend gates strategy detail page (shows compliance pending lock) and investor dashboard (shows prominent amber warning banners). Dual-scoring system: capacity score (60% weight from financial metrics) + tolerance score (40% weight from experience/attitude) = overall 0-100 score mapped to 5 risk categories (Conservative, Moderately Conservative, Moderate, Aggressive, Very Aggressive). Risk profiles visible to advisors via clickable "View" in Customers Acquired section. Routes: `/risk-profiling?subscriptionId=X`. API: `POST /api/risk-profiles`, `GET /api/risk-profiles/:subscriptionId`, `GET /api/risk-profiling/check`, `PATCH /api/advisor/settings/risk-profiling`. Subscription-status API returns `requiresRiskProfiling`, `riskProfilingDone`, `allComplianceDone` flags.
+
+- **Web Push Notifications:** Browser push notifications using Web Push API with VAPID keys. Service worker at `client/public/sw.js`. Notification bell component in navbar. **Dual-audience notifications:** Subscribers receive full details (stock name, buy price/zone, target, stop loss, F&O strike/expiry details, rationale snippet). Watchlist (non-subscribed) users receive masked notifications (% upside/profit goal only, no stock name or prices) with "Subscribe to reveal" CTA. Notification triggers: new call/position published, SL/target update, call/position closed (with exit price, gain/loss %, exit rationale for subscribers). All notifications include IST date/time and SEBI investment disclaimer. Recent notifications API filters by subscription scope AND watchlist scope. Admin broadcast notifications via Settings page. API: `GET /api/notifications/vapid-key`, `POST /api/notifications/subscribe`, `DELETE /api/notifications/subscribe`, `GET /api/notifications/recent`, `POST /api/admin/notifications`. Tables: `push_subscriptions`, `notifications`. Helper: `server/push.ts`. Storage: `getWatchlistUserIdsForStrategy` excludes already-subscribed users.
+
+- **eKYC Verification:** Mandatory Aadhaar + PAN verification for investors after subscription payment using Sandbox.co.in API. Two-step flow: Aadhaar OTP verification followed by PAN verification. JWT token caching (22hr) for Sandbox API auth. Stores masked PII (last 4 digits Aadhaar, masked PAN) in `ekyc_verifications` table. `subscription.ekycDone` flag set true only when both verifications complete. Investor dashboard shows "eKYC Pending" banner on unverified subscriptions. Payment callback prompts eKYC before risk profiling. Advisor dashboard "Customers Acquired" section shows clickable "View" for eKYC details dialog. Helper: `server/sandbox-kyc.ts`. Routes: `/ekyc?subscriptionId=X`. API: `POST /api/ekyc/aadhaar/otp`, `POST /api/ekyc/aadhaar/verify`, `POST /api/ekyc/pan/verify`, `GET /api/ekyc/status?subscriptionId=X`, `GET /api/advisor/ekyc/:subscriptionId`. Table: `ekyc_verifications`.
+
+- **e-Sign Agreement:** Mandatory electronic agreement signing before subscription payment per SEBI mandate. Flow: Select plan → Review & sign agreement (Aadhaar OTP) → Payment → eKYC → Risk profiling. Agreement uses Sandbox.co.in Aadhaar OTP as digital consent mechanism. Stores aadhaarLast4, aadhaarName, signedAt in `esign_agreements` table. Agreement linked to subscription after successful payment via subscriptionId. Email notifications sent to both investor and advisor with signed agreement copy. Advisor dashboard "Customers Acquired" section shows clickable "View" for agreement details dialog. Routes: `/strategies/:id/esign-agreement?plan=planId`. API: `POST /api/esign/otp`, `POST /api/esign/verify`, `GET /api/esign/status?strategyId=X&planId=Y`, `GET /api/advisor/agreements/:subscriptionId`. Table: `esign_agreements`. Helper uses `server/sandbox-kyc.ts`.
+
+- **Performance Reveal:** Per-strategy performance disclosure with SEBI-mandated disclaimer. Replaces CAGR card on strategy detail page with locked performance metric (Hit Rate for F&O/Intraday, Absolute Performance for Positional/Swing/Basket). Flow: Click lock icon -> Read SEBI disclaimer -> Login required -> Reveal per-strategy (localStorage). Detailed performance page at `/strategies/:id/performance` shows period-wise breakdown (1W-Max), max profitable call, max drawdown, win/loss stats, and NIFTY benchmark comparison. API: `GET /api/strategies/:id/performance`. Page: `client/src/pages/strategy-performance.tsx`.
+
+- **Basket Trading (Smallcase-like):** Strategy type "Basket" enables advisors to create multi-stock portfolios with weighted allocations. Extends existing Strategy model with `rebalanceFrequency` field (Monthly/Quarterly/Semi-Annual/Annual). Features: constituent management with symbol/exchange/weight%/quantity/action, rebalance versioning (auto-incrementing versions with effectiveDate and notes), recommendation rationale with categories (general/research/quarterly/rebalance/market_outlook), NAV snapshot tracking, CSV/Excel bulk upload (PapaParse + SheetJS), and dedicated AddBasketStockSheet UI. Weight validation enforces 100% total allocation. Distinct UI: indigo/purple gradient banner on marketplace cards, basket metadata cards (rebalance schedule, last rebalance, stock count) on strategy detail page. **Access Control:** Current basket composition (constituents) is subscription-gated — only subscribers, advisors, and admins can view it (API returns 403 for non-subscribers). Past recommendations (stocks removed from basket via rebalancing) are visible to any logged-in user. Tables: `basket_rebalances`, `basket_constituents`, `basket_rationales`, `basket_nav_snapshots`. API: `GET /api/strategies/:id/basket/rebalances`, `GET /api/strategies/:id/basket/constituents` (auth+subscription required), `GET /api/strategies/:id/basket/past-recommendations` (auth required), `GET /api/strategies/:id/basket/rationales`, `POST /api/strategies/:id/basket/rebalance` (creates rebalance + constituents atomically), `POST /api/strategies/:id/basket/rationale`, `DELETE /api/strategies/:id/basket/rationale/:rationaleId`. Advisor UI: Basket tab in strategy management with rebalance sheet, rationale dialog, and CSV/Excel upload. Broker API integration (Zerodha, Groww, Angel One) deferred to phase 2.
+
+## External Dependencies
+- **Database:** PostgreSQL (via Neon)
+- **Payment Gateway:** Cashfree Payment Gateway (using `cashfree-pg SDK v5`)
+- **Email Service:** SendGrid (for email notifications)
+- **Object Storage:** Replit Object Storage (for SEBI certificate file uploads)
+- **Market Data API:** Groww API (for live market prices, option chain data)
+- **Web Push:** `web-push` npm library for server-side push notification delivery with VAPID authentication
+- **eKYC:** Sandbox.co.in API for Aadhaar OTP verification and PAN verification (credentials in SANDBOX_API_KEY and SANDBOX_API_SECRET)

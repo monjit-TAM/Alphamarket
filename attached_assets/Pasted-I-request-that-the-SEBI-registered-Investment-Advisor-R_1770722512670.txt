@@ -1,0 +1,15 @@
+I request that the SEBI-registered Investment Advisor/Research Analyst display the performance metrics of the strategies published on the AlphaMarket platform. I understand that, as per SEBI’s updated guidelines permitting disclosure of past performance, only verified, unaltered, and accurately computed performance records may be shared, and such disclosures must strictly adhere to SEBI’s prescribed methodology and presentation standards.
+
+I acknowledge that the performance data shown is computed from the date the Advisor/Analyst began publishing advisory calls through the AlphaMarket platform and is based on live tracking of each call until it is closed or until its target or stop-loss is triggered. I further understand that the data reflects the Advisor’s actual call history as maintained by the platform and has not been modified, optimized, or back-tested.
+
+I am aware that past performance is not a reliable indicator of future returns, and that SEBI permits its disclosure only for transparency—not as a promise, forecast, or assurance of future performance. I also understand that any metrics displayed comply with SEBI’s definitions, including the segregation of performance by strategy type and by nature of calls.
+
+I confirm that I will exercise independent judgment, caution, and discretion when reviewing this information. Every investment strategy carries risk, and may not be suitable for all investors. I agree to review the strategy methodology, risk factors, and other relevant documents before subscribing.
+
+Performance Metrics Used on AlphaMarket
+AlphaMarket follows SEBI-aligned performance methodologies:
+
+Hit Rate indicates the percentage of advisory calls closed in profit and is applicable to F&O and Intraday strategies.
+CAGR reflects overall strategy performance since inception and is applicable to Positional, Basket, and Swing Trading strategies.
+All metrics are derived from actual platform-recorded advisory calls and comply with SEBI’s requirements for transparency, accuracy, and non-promotional presentation.
+By proceeding, I acknowledge that I have requested this performance information for my personal evaluation and that I understand and agree to these terms.

@@ -1,9 +1,9 @@
 __pycache__/
 *.pyc
 .env
+.env.save
+.enves
 venv/
 *.log
 .DS_Store
 node_modules/
-.env.save
-.enves

@@ -1,0 +1,1886 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="" xml:lang="">
+<head>
+  <meta charset="utf-8" />
+  <meta name="generator" content="pandoc" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes" />
+  <title>AlphaMarket Connect - Product &amp; Technical Documentation</title>
+  <style>
+    code{white-space: pre-wrap;}
+    span.smallcaps{font-variant: small-caps;}
+    div.columns{display: flex; gap: min(4vw, 1.5em);}
+    div.column{flex: auto; overflow-x: auto;}
+    div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+    /* The extra [class] is a hack that increases specificity enough to
+       override a similar rule in reveal.js */
+    ul.task-list[class]{list-style: none;}
+    ul.task-list li input[type="checkbox"] {
+      font-size: inherit;
+      width: 0.8em;
+      margin: 0 0.8em 0.2em -1.6em;
+      vertical-align: middle;
+    }
+    .display.math{display: block; text-align: center; margin: 0.5rem auto;}
+    /* CSS for syntax highlighting */
+    pre > code.sourceCode { white-space: pre; position: relative; }
+    pre > code.sourceCode > span { line-height: 1.25; }
+    pre > code.sourceCode > span:empty { height: 1.2em; }
+    .sourceCode { overflow: visible; }
+    code.sourceCode > span { color: inherit; text-decoration: inherit; }
+    div.sourceCode { margin: 1em 0; }
+    pre.sourceCode { margin: 0; }
+    @media screen {
+    div.sourceCode { overflow: auto; }
+    }
+    @media print {
+    pre > code.sourceCode { white-space: pre-wrap; }
+    pre > code.sourceCode > span { display: inline-block; text-indent: -5em; padding-left: 5em; }
+    }
+    pre.numberSource code
+      { counter-reset: source-line 0; }
+    pre.numberSource code > span
+      { position: relative; left: -4em; counter-increment: source-line; }
+    pre.numberSource code > span > a:first-child::before
+      { content: counter(source-line);
+        position: relative; left: -1em; text-align: right; vertical-align: baseline;
+        border: none; display: inline-block;
+        -webkit-touch-callout: none; -webkit-user-select: none;
+        -khtml-user-select: none; -moz-user-select: none;
+        -ms-user-select: none; user-select: none;
+        padding: 0 4px; width: 4em;
+        color: #aaaaaa;
+      }
+    pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+    div.sourceCode
+      {   }
+    @media screen {
+    pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+    }
+    code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+    code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+    code span.at { color: #7d9029; } /* Attribute */
+    code span.bn { color: #40a070; } /* BaseN */
+    code span.bu { color: #008000; } /* BuiltIn */
+    code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+    code span.ch { color: #4070a0; } /* Char */
+    code span.cn { color: #880000; } /* Constant */
+    code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+    code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+    code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+    code span.dt { color: #902000; } /* DataType */
+    code span.dv { color: #40a070; } /* DecVal */
+    code span.er { color: #ff0000; font-weight: bold; } /* Error */
+    code span.ex { } /* Extension */
+    code span.fl { color: #40a070; } /* Float */
+    code span.fu { color: #06287e; } /* Function */
+    code span.im { color: #008000; font-weight: bold; } /* Import */
+    code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+    code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+    code span.op { color: #666666; } /* Operator */
+    code span.ot { color: #007020; } /* Other */
+    code span.pp { color: #bc7a00; } /* Preprocessor */
+    code span.sc { color: #4070a0; } /* SpecialChar */
+    code span.ss { color: #bb6688; } /* SpecialString */
+    code span.st { color: #4070a0; } /* String */
+    code span.va { color: #19177c; } /* Variable */
+    code span.vs { color: #4070a0; } /* VerbatimString */
+    code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/github-markdown-css@5/github-markdown.min.css" />
+</head>
+<body>
+<header id="title-block-header">
+<h1 class="title">AlphaMarket Connect - Product &amp; Technical
+Documentation</h1>
+</header>
+<h1
+id="alphamarket-connect---product-technical-documentation">AlphaMarket
+Connect - Product &amp; Technical Documentation</h1>
+<p><strong>Version:</strong> 1.0 <strong>Last Updated:</strong> February
+2026 <strong>Status:</strong> Live in Production</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol type="1">
+<li><a href="#1-product-overview">Product Overview</a></li>
+<li><a href="#2-user-roles--access-control">User Roles &amp; Access
+Control</a></li>
+<li><a href="#3-technology-stack">Technology Stack</a></li>
+<li><a href="#4-project-structure">Project Structure</a></li>
+<li><a href="#5-database-schema">Database Schema</a></li>
+<li><a href="#6-modules--features">Modules &amp; Features</a></li>
+<li><a href="#7-api-reference">API Reference</a></li>
+<li><a href="#8-third-party-integrations">Third-Party
+Integrations</a></li>
+<li><a href="#9-authentication--security">Authentication &amp;
+Security</a></li>
+<li><a href="#10-frontend-architecture">Frontend Architecture</a></li>
+<li><a href="#11-deployment--environment">Deployment &amp;
+Environment</a></li>
+<li><a href="#12-scope-of-work-summary">Scope of Work Summary</a></li>
+</ol>
+<hr />
+<h2 id="product-overview">1. Product Overview</h2>
+<p><strong>AlphaMarket Connect</strong> is a SaaS marketplace platform
+designed to connect SEBI-registered Indian financial advisors (RA/RIA)
+with investors and brokers. The platform enables:</p>
+<ul>
+<li>Advisors to create and manage investment strategies across various
+segments (Equity, F&amp;O, Commodity, Baskets)</li>
+<li>Publishing of actionable investment calls and positions with
+real-time P&amp;L tracking</li>
+<li>Investors to browse, subscribe, and receive recommendations</li>
+<li>Full regulatory compliance including eKYC verification, e-Sign
+agreements, risk profiling, and performance disclosure with
+SEBI-mandated disclaimers</li>
+<li>Admin oversight with advisor approval workflows</li>
+</ul>
+<p><strong>Live URL:</strong> Deployed via Replit’s publishing system
+under a <code>.replit.app</code> domain.</p>
+<hr />
+<h2 id="user-roles-access-control">2. User Roles &amp; Access
+Control</h2>
+<p>The platform has three distinct user roles with role-based access
+control (RBAC):</p>
+<h3 id="admin">2.1 Admin</h3>
+<ul>
+<li>Approve/reject advisor registrations</li>
+<li>Manage all users (CRUD operations)</li>
+<li>Manage all strategies</li>
+<li>Configure Groww API tokens for market data</li>
+<li>Send broadcast push notifications</li>
+<li>View platform-wide settings</li>
+</ul>
+<h3 id="advisor-sebi-registered-raria">2.2 Advisor (SEBI-Registered
+RA/RIA)</h3>
+<ul>
+<li>Register with SEBI registration number and certificate</li>
+<li>Create and manage investment strategies</li>
+<li>Publish calls (stock recommendations) and positions
+(F&amp;O/multi-leg trades)</li>
+<li>Create subscription plans with pricing</li>
+<li>View subscribers and revenue analytics</li>
+<li>Manage content (Market Outlook, Learn articles)</li>
+<li>View customer eKYC details, e-Sign agreements, and risk
+profiles</li>
+<li>Download compliance reports (CSV)</li>
+<li>Answer investor questions</li>
+<li>Toggle risk profiling requirement per advisor</li>
+</ul>
+<h3 id="investor">2.3 Investor</h3>
+<ul>
+<li>Browse the public marketplace of strategies</li>
+<li>View strategy details, calls, and positions</li>
+<li>Subscribe to strategies (with e-Sign agreement, payment, eKYC, and
+optional risk profiling)</li>
+<li>Receive push notifications for subscribed strategies</li>
+<li>Maintain a personal watchlist</li>
+<li>View recommendations from subscribed strategies</li>
+<li>Ask advisors questions</li>
+</ul>
+<hr />
+<h2 id="technology-stack">3. Technology Stack</h2>
+<h3 id="languages-runtime">3.1 Languages &amp; Runtime</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Component</th>
+<th>Technology</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Language</td>
+<td>TypeScript</td>
+<td>5.6.3</td>
+</tr>
+<tr class="even">
+<td>Runtime</td>
+<td>Node.js</td>
+<td>20.x</td>
+</tr>
+<tr class="odd">
+<td>Package Manager</td>
+<td>npm</td>
+<td>Latest</td>
+</tr>
+</tbody>
+</table>
+<h3 id="frontend">3.2 Frontend</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Library</th>
+<th>Purpose</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>React</td>
+<td>UI Framework</td>
+<td>18.3.x</td>
+</tr>
+<tr class="even">
+<td>Vite</td>
+<td>Build Tool &amp; Dev Server</td>
+<td>7.3.x</td>
+</tr>
+<tr class="odd">
+<td>Tailwind CSS</td>
+<td>Utility-first CSS</td>
+<td>3.4.x</td>
+</tr>
+<tr class="even">
+<td>shadcn/ui (Radix)</td>
+<td>Component Library</td>
+<td>Latest</td>
+</tr>
+<tr class="odd">
+<td>wouter</td>
+<td>Client-side Routing</td>
+<td>3.3.x</td>
+</tr>
+<tr class="even">
+<td>TanStack React Query</td>
+<td>Data Fetching &amp; Caching</td>
+<td>5.60.x</td>
+</tr>
+<tr class="odd">
+<td>react-hook-form</td>
+<td>Form Management</td>
+<td>7.55.x</td>
+</tr>
+<tr class="even">
+<td>Recharts</td>
+<td>Charts &amp; Data Visualization</td>
+<td>2.15.x</td>
+</tr>
+<tr class="odd">
+<td>Framer Motion</td>
+<td>Animations</td>
+<td>11.13.x</td>
+</tr>
+<tr class="even">
+<td>lucide-react</td>
+<td>Icon Library</td>
+<td>0.453.x</td>
+</tr>
+<tr class="odd">
+<td>react-icons</td>
+<td>Brand/Company Logos</td>
+<td>5.4.x</td>
+</tr>
+<tr class="even">
+<td>date-fns</td>
+<td>Date Utilities</td>
+<td>3.6.x</td>
+</tr>
+<tr class="odd">
+<td>Embla Carousel</td>
+<td>Carousel Component</td>
+<td>8.6.x</td>
+</tr>
+<tr class="even">
+<td>react-helmet-async</td>
+<td>SEO Meta Tags</td>
+<td>2.0.x</td>
+</tr>
+<tr class="odd">
+<td>zod</td>
+<td>Schema Validation (shared with backend)</td>
+<td>3.24.x</td>
+</tr>
+</tbody>
+</table>
+<h3 id="backend">3.3 Backend</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Library</th>
+<th>Purpose</th>
+<th>Version</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Express.js</td>
+<td>HTTP Server &amp; API Framework</td>
+<td>5.0.x</td>
+</tr>
+<tr class="even">
+<td>express-session</td>
+<td>Session Management</td>
+<td>1.18.x</td>
+</tr>
+<tr class="odd">
+<td>connect-pg-simple</td>
+<td>PostgreSQL Session Store</td>
+<td>10.0.x</td>
+</tr>
+<tr class="even">
+<td>Drizzle ORM</td>
+<td>Database ORM (type-safe)</td>
+<td>0.39.x</td>
+</tr>
+<tr class="odd">
+<td>drizzle-zod</td>
+<td>Schema-to-Zod Validation Bridge</td>
+<td>0.7.x</td>
+</tr>
+<tr class="even">
+<td>pg</td>
+<td>PostgreSQL Client</td>
+<td>8.16.x</td>
+</tr>
+<tr class="odd">
+<td>web-push</td>
+<td>Web Push Notifications (VAPID)</td>
+<td>3.6.x</td>
+</tr>
+<tr class="even">
+<td>cashfree-pg</td>
+<td>Cashfree Payment SDK</td>
+<td>5.1.x</td>
+</tr>
+<tr class="odd">
+<td><span class="citation"
+data-cites="sendgrid/mail">@sendgrid/mail</span></td>
+<td>Email Service</td>
+<td>8.1.x</td>
+</tr>
+<tr class="even">
+<td><span class="citation"
+data-cites="google-cloud/storage">@google-cloud/storage</span></td>
+<td>Object Storage</td>
+<td>7.19.x</td>
+</tr>
+</tbody>
+</table>
+<h3 id="infrastructure">3.4 Infrastructure</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Service</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PostgreSQL (Neon)</td>
+<td>Primary Database</td>
+</tr>
+<tr class="even">
+<td>Replit Object Storage</td>
+<td>File Storage (SEBI certificates, uploads)</td>
+</tr>
+<tr class="odd">
+<td>Replit Deployments</td>
+<td>Hosting &amp; Publishing</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="project-structure">4. Project Structure</h2>
+<pre><code>alphamarket-connect/
+|
+|-- client/                          # Frontend (React + Vite)
+|   |-- public/
+|   |   |-- sw.js                    # Service Worker for push notifications
+|   |-- src/
+|   |   |-- assets/                  # Static assets (images)
+|   |   |-- components/
+|   |   |   |-- ui/                  # shadcn/ui base components
+|   |   |   |-- navbar.tsx           # Navigation bar (role-aware)
+|   |   |   |-- footer.tsx           # Site footer
+|   |   |   |-- strategy-card.tsx    # Reusable strategy card
+|   |   |   |-- notification-bell.tsx # Push notification bell
+|   |   |   |-- ObjectUploader.tsx   # File upload component
+|   |   |-- hooks/
+|   |   |   |-- use-auth.tsx         # Authentication hook
+|   |   |   |-- use-toast.ts         # Toast notification hook
+|   |   |   |-- use-mobile.tsx       # Mobile detection hook
+|   |   |-- lib/
+|   |   |   |-- queryClient.ts      # TanStack Query client setup
+|   |   |   |-- utils.ts            # Utility functions
+|   |   |-- pages/
+|   |   |   |-- home.tsx             # Landing page
+|   |   |   |-- auth.tsx             # Login page
+|   |   |   |-- strategies-marketplace.tsx  # Public marketplace
+|   |   |   |-- strategy-detail.tsx  # Strategy detail with performance reveal
+|   |   |   |-- strategy-performance.tsx   # Detailed performance page
+|   |   |   |-- subscribe.tsx        # Subscription flow
+|   |   |   |-- esign-agreement.tsx  # e-Sign agreement page
+|   |   |   |-- payment.tsx          # Payment page
+|   |   |   |-- payment-callback.tsx # Payment result handler
+|   |   |   |-- ekyc.tsx             # eKYC verification page
+|   |   |   |-- risk-profiling.tsx   # Risk profiling questionnaire
+|   |   |   |-- investor-dashboard.tsx # Investor dashboard
+|   |   |   |-- advisors-listing.tsx # Browse advisors
+|   |   |   |-- advisor-detail.tsx   # Advisor profile page
+|   |   |   |-- market-outlook.tsx   # Market outlook content
+|   |   |   |-- learn.tsx            # Educational content
+|   |   |   |-- content-detail.tsx   # Full article view
+|   |   |   |-- legal.tsx            # Legal pages
+|   |   |   |-- agreements.tsx       # Agreement pages
+|   |   |   |-- forgot-password.tsx  # Password reset request
+|   |   |   |-- reset-password.tsx   # Password reset form
+|   |   |   |-- not-found.tsx        # 404 page
+|   |   |   |-- dashboard/           # Advisor Dashboard
+|   |   |   |   |-- index.tsx        # Dashboard layout &amp; routing
+|   |   |   |   |-- dashboard-home.tsx    # Overview &amp; stats
+|   |   |   |   |-- strategy-management.tsx # Strategy CRUD
+|   |   |   |   |-- plans.tsx        # Plan management
+|   |   |   |   |-- content-page.tsx # Content management
+|   |   |   |   |-- questions-page.tsx # Investor questions
+|   |   |   |   |-- reports.tsx      # Compliance reports
+|   |   |   |   |-- payments-page.tsx # Payment history
+|   |   |   |   |-- advisor-profile.tsx # Profile &amp; settings
+|   |   |   |-- admin/               # Admin Dashboard
+|   |   |   |   |-- index.tsx        # Admin layout &amp; routing
+|   |   |   |   |-- admin-advisors.tsx # Advisor approval
+|   |   |   |   |-- admin-strategies.tsx # Strategy management
+|   |   |   |   |-- admin-settings.tsx # Platform settings
+|   |   |-- App.tsx                  # Root component with routing
+|   |   |-- main.tsx                 # Entry point
+|   |   |-- index.css                # Global styles &amp; theme variables
+|
+|-- server/                          # Backend (Express.js)
+|   |-- index.ts                     # Server entry point
+|   |-- routes.ts                    # All API route handlers (~2560 lines)
+|   |-- storage.ts                   # Database access layer (IStorage interface)
+|   |-- db.ts                        # Database connection setup
+|   |-- vite.ts                      # Vite dev server integration
+|   |-- cashfree.ts                  # Cashfree payment gateway helper
+|   |-- email.ts                     # SendGrid email helper
+|   |-- push.ts                      # Web push notification helper
+|   |-- groww.ts                     # Groww API market data helper
+|   |-- sandbox-kyc.ts              # Sandbox.co.in eKYC/e-Sign helper
+|   |-- scheduler.ts                # Intraday auto-square-off scheduler
+|   |-- seed.ts                      # Database seed data
+|   |-- static.ts                    # Static file serving
+|   |-- data/
+|   |   |-- nse-symbols.json        # NSE/BSE/MCX symbol list for autocomplete
+|
+|-- shared/                          # Shared between frontend &amp; backend
+|   |-- schema.ts                    # Drizzle ORM schema + Zod types
+|
+|-- drizzle.config.ts               # Drizzle ORM configuration
+|-- tailwind.config.ts              # Tailwind CSS configuration
+|-- vite.config.ts                  # Vite build configuration
+|-- tsconfig.json                   # TypeScript configuration
+|-- package.json                    # Dependencies &amp; scripts
+|-- replit.md                       # Project documentation for AI agents</code></pre>
+<hr />
+<h2 id="database-schema">5. Database Schema</h2>
+<p>The application uses PostgreSQL with Drizzle ORM. All primary keys
+use UUID (<code>gen_random_uuid()</code>).</p>
+<h3 id="tables-overview">5.1 Tables Overview</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 32%" />
+<col style="width: 42%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Table</th>
+<th>Purpose</th>
+<th>Key Fields</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>users</code></td>
+<td>All users (admin, advisor, investor)</td>
+<td>id, username, email, password, role, companyName, sebiRegNumber,
+isApproved, requireRiskProfiling</td>
+</tr>
+<tr class="even">
+<td><code>strategies</code></td>
+<td>Investment strategies created by advisors</td>
+<td>id, advisorId, name, type, status, theme[], horizon, riskLevel,
+benchmark, planIds[]</td>
+</tr>
+<tr class="odd">
+<td><code>calls</code></td>
+<td>Stock recommendations within a strategy</td>
+<td>id, strategyId, stockName, action, buyRange, targetPrice, stopLoss,
+status, entryPrice, sellPrice, gainPercent</td>
+</tr>
+<tr class="even">
+<td><code>positions</code></td>
+<td>F&amp;O/multi-leg positions within a strategy</td>
+<td>id, strategyId, segment, callPut, buySell, symbol, expiry,
+strikePrice, entryPrice, lots, target, stopLoss, exitPrice,
+gainPercent</td>
+</tr>
+<tr class="odd">
+<td><code>plans</code></td>
+<td>Subscription plans created by advisors</td>
+<td>id, advisorId, name, code, amount, durationDays</td>
+</tr>
+<tr class="even">
+<td><code>subscriptions</code></td>
+<td>Investor subscriptions to strategies</td>
+<td>id, planId, strategyId, userId, advisorId, status, ekycDone,
+riskProfiling</td>
+</tr>
+<tr class="odd">
+<td><code>payments</code></td>
+<td>Payment transactions</td>
+<td>id, orderId, userId, strategyId, planId, amount, status, cfOrderId,
+paymentSessionId, subscriptionId</td>
+</tr>
+<tr class="even">
+<td><code>content</code></td>
+<td>Articles/content published by advisors</td>
+<td>id, advisorId, title, type, body, attachments[]</td>
+</tr>
+<tr class="odd">
+<td><code>scores</code></td>
+<td>Advisor compliance scorecards</td>
+<td>id, advisorId, month, beginningOfMonth, receivedDuring,
+resolvedDuring</td>
+</tr>
+<tr class="even">
+<td><code>watchlist</code></td>
+<td>Investor favorited items</td>
+<td>id, userId, itemType, itemId</td>
+</tr>
+<tr class="odd">
+<td><code>advisor_questions</code></td>
+<td>Investor questions to advisors</td>
+<td>id, advisorId, userId, name, email, question, answer, isRead</td>
+</tr>
+<tr class="even">
+<td><code>risk_profiles</code></td>
+<td>Investor risk assessment results</td>
+<td>id, subscriptionId, userId, advisorId, (40+ profile fields),
+capacityScore, toleranceScore, overallScore, riskCategory</td>
+</tr>
+<tr class="odd">
+<td><code>ekyc_verifications</code></td>
+<td>eKYC verification records</td>
+<td>id, subscriptionId, userId, advisorId, verificationType,
+aadhaarLast4, panNumber, panStatus</td>
+</tr>
+<tr class="even">
+<td><code>esign_agreements</code></td>
+<td>Electronic agreement records</td>
+<td>id, userId, advisorId, strategyId, planId, subscriptionId,
+aadhaarLast4, aadhaarName, signedAt</td>
+</tr>
+<tr class="odd">
+<td><code>push_subscriptions</code></td>
+<td>Browser push notification subscriptions</td>
+<td>id, userId, endpoint, p256dh, auth</td>
+</tr>
+<tr class="even">
+<td><code>notifications</code></td>
+<td>Notification history</td>
+<td>id, type, title, body, data, targetScope, strategyId</td>
+</tr>
+<tr class="odd">
+<td><code>password_reset_tokens</code></td>
+<td>Password reset tokens</td>
+<td>id, userId, token, expiresAt, used</td>
+</tr>
+<tr class="even">
+<td><code>app_settings</code></td>
+<td>Platform-wide key-value settings</td>
+<td>key, value, updatedAt</td>
+</tr>
+</tbody>
+</table>
+<h3 id="enums">5.2 Enums</h3>
+<ul>
+<li><strong>role:</strong> <code>advisor</code>, <code>investor</code>,
+<code>admin</code></li>
+<li><strong>strategy_status:</strong> <code>Draft</code>,
+<code>Published</code></li>
+<li><strong>call_status:</strong> <code>Active</code>,
+<code>Closed</code></li>
+<li><strong>strategy_type:</strong> <code>Equity</code>,
+<code>Basket</code>, <code>Future</code>, <code>Commodity</code>,
+<code>CommodityFuture</code>, <code>Option</code></li>
+</ul>
+<h3 id="key-relationships">5.3 Key Relationships</h3>
+<pre><code>users (1) ──&gt; (N) strategies
+strategies (1) ──&gt; (N) calls
+strategies (1) ──&gt; (N) positions
+users (advisor, 1) ──&gt; (N) plans
+plans (1) ──&gt; (N) subscriptions
+users (investor, 1) ──&gt; (N) subscriptions
+subscriptions (1) ──&gt; (1) ekyc_verifications
+subscriptions (1) ──&gt; (1) risk_profiles
+subscriptions (1) ──&gt; (1) esign_agreements
+subscriptions (1) ──&gt; (N) payments
+users (1) ──&gt; (N) watchlist
+users (1) ──&gt; (N) push_subscriptions</code></pre>
+<hr />
+<h2 id="modules-features">6. Modules &amp; Features</h2>
+<h3 id="authentication-registration">6.1 Authentication &amp;
+Registration</h3>
+<ul>
+<li>Session-based authentication using <code>express-session</code> with
+PostgreSQL session store</li>
+<li>Password hashing with <code>scrypt</code> (Node.js built-in
+crypto)</li>
+<li>Registration with role selection (investor by default, advisor
+requires approval)</li>
+<li>Password reset flow via email (SendGrid) with tokenized links</li>
+<li>Role-aware navigation and route protection</li>
+</ul>
+<h3 id="marketplace-strategy-discovery">6.2 Marketplace &amp; Strategy
+Discovery</h3>
+<ul>
+<li>Public marketplace listing all published strategies</li>
+<li>Filter by strategy type (Equity, F&amp;O, Basket, Commodity)</li>
+<li>Live call counts by category</li>
+<li>Strategy detail page with advisor info, calls, positions, plans</li>
+<li>Symbol autocomplete from NSE/BSE/MCX symbol database (~5000+
+symbols)</li>
+</ul>
+<h3 id="strategy-management-advisor">6.3 Strategy Management
+(Advisor)</h3>
+<ul>
+<li>Full CRUD for strategies with Draft/Published lifecycle</li>
+<li>Strategy types: Equity, Basket, Future, Commodity, CommodityFuture,
+Option</li>
+<li>Strategy metadata: theme tags, horizon, volatility, risk level,
+benchmark, minimum investment</li>
+</ul>
+<h3 id="calls-management-advisor">6.4 Calls Management (Advisor)</h3>
+<ul>
+<li>Create stock recommendations with: stock name, action (Buy/Sell),
+buy range, target price, stop loss, rationale</li>
+<li>Publish modes: Draft, Watchlist, Live</li>
+<li>Close calls with exit price and gain/loss calculation</li>
+<li>Rationale required before publishing (SEBI compliance)</li>
+<li>Push notifications sent to subscribers on publish/update/close</li>
+</ul>
+<h3 id="positions-management-advisor">6.5 Positions Management
+(Advisor)</h3>
+<ul>
+<li>Create F&amp;O positions with: segment, call/put, buy/sell, symbol,
+expiry, strike price, entry price, lots, target, stop loss</li>
+<li>Support for multi-leg positions (enableLeg flag)</li>
+<li>Percentage-based or absolute target/stop-loss</li>
+<li>Close positions with exit price and P&amp;L calculation</li>
+<li>Intraday auto-square-off scheduler</li>
+</ul>
+<h3 id="live-market-data">6.6 Live Market Data</h3>
+<ul>
+<li>Real-time Last Traded Price (LTP) via Groww API integration</li>
+<li>Bulk price fetching for multiple symbols</li>
+<li>Option chain data with expiry dates</li>
+<li>Change indicators (price movement arrows)</li>
+<li>Auto-refresh functionality on strategy detail pages</li>
+<li>Live option premium (CE/PE LTP) for F&amp;O P&amp;L
+calculations</li>
+</ul>
+<h3 id="subscription-flow">6.7 Subscription Flow</h3>
+<p>The complete investor subscription flow follows a strict sequence
+mandated by SEBI:</p>
+<pre><code>1. Select Plan ──&gt; 2. e-Sign Agreement (Aadhaar OTP) ──&gt; 3. Payment (Cashfree)
+       |                                                         |
+       v                                                         v
+4. eKYC Verification (Aadhaar + PAN) ──&gt; 5. Risk Profiling (Optional per advisor)</code></pre>
+<h3 id="e-sign-agreement-module">6.8 e-Sign Agreement Module</h3>
+<ul>
+<li>Mandatory electronic agreement signing before payment (SEBI
+mandate)</li>
+<li>Uses Sandbox.co.in Aadhaar OTP as digital consent mechanism</li>
+<li>Stores aadhaarLast4, aadhaarName, signedAt</li>
+<li>Agreement linked to subscription after successful payment</li>
+<li>Email notifications sent to both investor and advisor</li>
+<li>Advisor can view signed agreements in “Customers Acquired”
+section</li>
+<li><strong>Routes:</strong>
+<code>/strategies/:id/esign-agreement?plan=planId</code></li>
+<li><strong>APIs:</strong> <code>POST /api/esign/otp</code>,
+<code>POST /api/esign/verify</code>, <code>GET /api/esign/status</code>,
+<code>GET /api/advisor/agreements/:subscriptionId</code></li>
+</ul>
+<h3 id="payment-module-cashfree">6.9 Payment Module (Cashfree)</h3>
+<ul>
+<li>Cashfree Payment Gateway integration using <code>cashfree-pg</code>
+SDK v5</li>
+<li>Secure order creation with server-side amount validation</li>
+<li>Payment session creation and redirect to Cashfree checkout</li>
+<li>Payment verification via API callback</li>
+<li>Webhook processing for asynchronous payment confirmation</li>
+<li>Idempotent subscription activation (prevents duplicate
+processing)</li>
+<li>Payment history for investors and advisors</li>
+<li><strong>APIs:</strong> <code>POST /api/payments/create-order</code>,
+<code>POST /api/payments/verify</code>,
+<code>POST /api/webhooks/cashfree</code>,
+<code>GET /api/payments/history</code></li>
+</ul>
+<h3 id="ekyc-verification-module">6.10 eKYC Verification Module</h3>
+<ul>
+<li>Mandatory Aadhaar + PAN verification after subscription payment</li>
+<li>Two-step flow: Aadhaar OTP verification, then PAN verification</li>
+<li>Uses Sandbox.co.in API with JWT token caching (22-hour expiry)</li>
+<li>Stores masked PII only (last 4 digits of Aadhaar, masked PAN)</li>
+<li><code>subscription.ekycDone</code> flag set true only when both
+verifications complete</li>
+<li>Investor dashboard shows “eKYC Pending” banner</li>
+<li>Advisor can view eKYC details per subscriber</li>
+<li><strong>Helper:</strong> <code>server/sandbox-kyc.ts</code></li>
+<li><strong>Routes:</strong> <code>/ekyc?subscriptionId=X</code></li>
+<li><strong>APIs:</strong> <code>POST /api/ekyc/aadhaar/otp</code>,
+<code>POST /api/ekyc/aadhaar/verify</code>,
+<code>POST /api/ekyc/pan/verify</code>,
+<code>GET /api/ekyc/status</code>,
+<code>GET /api/advisor/ekyc/:subscriptionId</code></li>
+</ul>
+<h3 id="risk-profiling-module">6.11 Risk Profiling Module</h3>
+<ul>
+<li>Optional per-advisor feature (toggle in Profile &gt; Settings)</li>
+<li>8-section questionnaire covering personal info, financial capacity,
+risk tolerance, experience, and constraints</li>
+<li>Dual-scoring system:
+<ul>
+<li>Capacity Score (60% weight): Based on financial metrics (income,
+assets, liabilities, investible surplus)</li>
+<li>Tolerance Score (40% weight): Based on experience, market knowledge,
+behavioral responses</li>
+<li>Overall Score: 0-100 mapped to 5 risk categories</li>
+</ul></li>
+<li>Risk Categories: Conservative, Moderately Conservative, Moderate,
+Aggressive, Very Aggressive</li>
+<li>Advisor can view risk profiles per subscriber</li>
+<li><strong>Routes:</strong>
+<code>/risk-profiling?subscriptionId=X</code></li>
+<li><strong>APIs:</strong> <code>POST /api/risk-profiles</code>,
+<code>GET /api/risk-profiles/:subscriptionId</code>,
+<code>GET /api/risk-profiling/check</code>,
+<code>PATCH /api/advisor/settings/risk-profiling</code></li>
+</ul>
+<h3 id="performance-reveal-module">6.12 Performance Reveal Module</h3>
+<ul>
+<li>Per-strategy performance disclosure with SEBI-mandated
+disclaimer</li>
+<li>Replaces CAGR card on strategy detail page with a locked performance
+metric:
+<ul>
+<li><strong>Hit Rate</strong> for F&amp;O/Intraday strategies</li>
+<li><strong>Absolute Performance</strong> for Positional/Swing/Basket
+strategies</li>
+</ul></li>
+<li>Gated reveal flow: Click lock icon -&gt; Read SEBI disclaimer -&gt;
+Login required -&gt; Reveal per-strategy (stored in localStorage)</li>
+<li>Detailed performance page at
+<code>/strategies/:id/performance</code> shows:
+<ul>
+<li>Period-wise breakdown table (1W, 1M, 3M, 6M, 1Y, 3Y, Max)</li>
+<li>Max profitable call with gain percentage</li>
+<li>Max drawdown (only from loss-making entries)</li>
+<li>Win/Loss statistics</li>
+<li>NIFTY benchmark comparison</li>
+</ul></li>
+<li><strong>API:</strong>
+<code>GET /api/strategies/:id/performance</code> (requires
+authentication)</li>
+</ul>
+<h3 id="web-push-notifications">6.13 Web Push Notifications</h3>
+<ul>
+<li>Browser push notifications using Web Push API with VAPID keys</li>
+<li>Service worker at <code>client/public/sw.js</code></li>
+<li>Notification bell component in navbar with unread count</li>
+<li>Strategy-specific notifications sent to subscribers on:
+<ul>
+<li>New call published</li>
+<li>New position added</li>
+<li>Stop loss/target update</li>
+<li>Call/position closed</li>
+</ul></li>
+<li>Admin broadcast notifications via Settings page</li>
+<li><strong>Helper:</strong> <code>server/push.ts</code></li>
+<li><strong>APIs:</strong>
+<code>GET /api/notifications/vapid-key</code>,
+<code>POST /api/notifications/subscribe</code>,
+<code>DELETE /api/notifications/subscribe</code>,
+<code>GET /api/notifications/recent</code>,
+<code>POST /api/admin/notifications</code></li>
+</ul>
+<h3 id="content-management">6.14 Content Management</h3>
+<ul>
+<li>Advisors publish content under two categories: Market Outlook,
+Learn</li>
+<li>Rich content with multi-format attachment support (images, videos,
+audio, PDFs)</li>
+<li>Public content listing and detail pages</li>
+<li>Advisor dashboard for managing own content</li>
+</ul>
+<h3 id="investor-dashboard">6.15 Investor Dashboard</h3>
+<ul>
+<li>Active and past subscriptions overview</li>
+<li>eKYC pending banner for unverified subscriptions</li>
+<li>Recommendations feed from subscribed strategies</li>
+<li>Watchlist of favorited strategies/advisors</li>
+</ul>
+<h3 id="advisor-dashboard">6.16 Advisor Dashboard</h3>
+<ul>
+<li>Dashboard home with stats (subscribers, revenue, strategies)</li>
+<li>Strategy management with call/position CRUD</li>
+<li>Plan management (create/delete pricing plans)</li>
+<li>Customers acquired section with eKYC, e-Sign, risk profile
+views</li>
+<li>Content management</li>
+<li>Investor questions inbox with unread count</li>
+<li>Compliance reports with CSV download</li>
+<li>Payment history</li>
+<li>Profile &amp; settings (including risk profiling toggle)</li>
+<li>Revenue analytics</li>
+</ul>
+<h3 id="admin-dashboard">6.17 Admin Dashboard</h3>
+<ul>
+<li>User management (view all, approve/reject advisors, delete
+users)</li>
+<li>Strategy oversight (view all, edit status, delete)</li>
+<li>Groww API token management</li>
+<li>Broadcast push notification sender</li>
+</ul>
+<h3 id="communication">6.18 Communication</h3>
+<ul>
+<li>“Ask a Question” form on advisor profiles for investors</li>
+<li>Advisor inbox with read/unread tracking and reply capability</li>
+<li>Email notifications via SendGrid for:
+<ul>
+<li>New user registration</li>
+<li>Password reset links</li>
+<li>e-Sign agreement copies (to both investor and advisor)</li>
+</ul></li>
+</ul>
+<h3 id="reporting-compliance">6.19 Reporting &amp; Compliance</h3>
+<ul>
+<li>CSV download for calls report with entry/exit details and
+gain/loss</li>
+<li>Advisor compliance scorecard management (monthly stats)</li>
+</ul>
+<h3 id="seo">6.20 SEO</h3>
+<ul>
+<li>Dynamic meta tags using react-helmet-async</li>
+<li>Sitemap.xml generation at <code>/sitemap.xml</code></li>
+<li>Open Graph tags for social sharing</li>
+</ul>
+<hr />
+<h2 id="api-reference">7. API Reference</h2>
+<h3 id="authentication-apis">7.1 Authentication APIs</h3>
+<table>
+<colgroup>
+<col style="width: 21%" />
+<col style="width: 27%" />
+<col style="width: 16%" />
+<col style="width: 35%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Endpoint</th>
+<th>Auth</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/auth/register</code></td>
+<td>Public</td>
+<td>Register new user</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/auth/login</code></td>
+<td>Public</td>
+<td>Login with username/email + password</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/auth/me</code></td>
+<td>Session</td>
+<td>Get current user</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/auth/logout</code></td>
+<td>Session</td>
+<td>Logout</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/auth/forgot-password</code></td>
+<td>Public</td>
+<td>Request password reset email</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/auth/reset-password</code></td>
+<td>Public</td>
+<td>Reset password with token</td>
+</tr>
+</tbody>
+</table>
+<h3 id="public-apis">7.2 Public APIs</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 32%" />
+<col style="width: 41%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisors</code></td>
+<td>List all approved advisors</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisors/:id</code></td>
+<td>Get advisor profile</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/content/public/:type</code></td>
+<td>Get public content by type</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/content/:id</code></td>
+<td>Get content detail</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/strategies/public</code></td>
+<td>List all published strategies</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/strategies/:id</code></td>
+<td>Get strategy detail</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/strategies/:id/calls</code></td>
+<td>Get strategy calls</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/strategies/:id/positions</code></td>
+<td>Get strategy positions</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/strategies/:id/plans</code></td>
+<td>Get strategy subscription plans</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/live-call-counts</code></td>
+<td>Get live call counts by category</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/live-price/:symbol</code></td>
+<td>Get live price for a symbol</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/live-prices/bulk</code></td>
+<td>Get live prices for multiple symbols</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/symbols/search</code></td>
+<td>Search NSE/BSE/MCX symbols</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/option-chain/expiries</code></td>
+<td>Get option chain expiry dates</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/option-chain</code></td>
+<td>Get option chain data</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/notifications/vapid-key</code></td>
+<td>Get VAPID public key</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/ekyc/configured</code></td>
+<td>Check if eKYC is configured</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/advisors/:id/questions</code></td>
+<td>Submit question to advisor</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/notifications/subscribe</code></td>
+<td>Subscribe to push notifications</td>
+</tr>
+<tr class="even">
+<td>DELETE</td>
+<td><code>/api/notifications/subscribe</code></td>
+<td>Unsubscribe from push notifications</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/sitemap.xml</code></td>
+<td>Dynamic sitemap</td>
+</tr>
+</tbody>
+</table>
+<h3 id="investor-apis-requires-login">7.3 Investor APIs (Requires
+Login)</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 32%" />
+<col style="width: 41%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/strategies/:id/performance</code></td>
+<td>Get strategy performance data</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/strategies/:id/subscribe</code></td>
+<td>Subscribe to a strategy</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/payments/create-order</code></td>
+<td>Create Cashfree payment order</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/payments/verify</code></td>
+<td>Verify payment</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/payments/history</code></td>
+<td>Get payment history</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/strategies/:id/subscription-status</code></td>
+<td>Check subscription status</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/investor/subscriptions</code></td>
+<td>Get investor’s subscriptions</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/investor/recommendations</code></td>
+<td>Get recommendations feed</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/investor/watchlist</code></td>
+<td>Get watchlist items</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/investor/watchlist</code></td>
+<td>Add to watchlist</td>
+</tr>
+<tr class="odd">
+<td>DELETE</td>
+<td><code>/api/investor/watchlist</code></td>
+<td>Remove from watchlist</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/investor/watchlist/check</code></td>
+<td>Check if item is in watchlist</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/investor/watchlist/ids</code></td>
+<td>Get watchlist item IDs</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/risk-profiles</code></td>
+<td>Submit risk profile</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/risk-profiles/:subscriptionId</code></td>
+<td>Get risk profile</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/risk-profiling/check</code></td>
+<td>Check risk profiling status</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/esign/otp</code></td>
+<td>Request e-Sign Aadhaar OTP</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/esign/verify</code></td>
+<td>Verify e-Sign Aadhaar OTP</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/esign/status</code></td>
+<td>Check e-Sign status</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/ekyc/aadhaar/otp</code></td>
+<td>Request eKYC Aadhaar OTP</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/ekyc/aadhaar/verify</code></td>
+<td>Verify eKYC Aadhaar OTP</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/ekyc/pan/verify</code></td>
+<td>Verify PAN</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/ekyc/status</code></td>
+<td>Check eKYC status</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/notifications/recent</code></td>
+<td>Get recent notifications</td>
+</tr>
+</tbody>
+</table>
+<h3 id="advisor-apis-requires-advisor-role">7.4 Advisor APIs (Requires
+Advisor Role)</h3>
+<table>
+<colgroup>
+<col style="width: 25%" />
+<col style="width: 32%" />
+<col style="width: 41%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/strategies</code></td>
+<td>Get advisor’s strategies</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/strategies</code></td>
+<td>Create strategy</td>
+</tr>
+<tr class="odd">
+<td>PATCH</td>
+<td><code>/api/strategies/:id</code></td>
+<td>Update strategy</td>
+</tr>
+<tr class="even">
+<td>DELETE</td>
+<td><code>/api/strategies/:id</code></td>
+<td>Delete strategy</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/strategies/:id/calls</code></td>
+<td>Create call</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/strategies/:id/positions</code></td>
+<td>Create position</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/strategies/:id/calls</code></td>
+<td>Get all calls (including drafts)</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/strategies/:id/positions</code></td>
+<td>Get all positions (including drafts)</td>
+</tr>
+<tr class="odd">
+<td>PATCH</td>
+<td><code>/api/calls/:id</code></td>
+<td>Update call</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/calls/:id/close</code></td>
+<td>Close call</td>
+</tr>
+<tr class="odd">
+<td>PATCH</td>
+<td><code>/api/calls/:id/exit</code></td>
+<td>Update call exit</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/calls/:id/publish</code></td>
+<td>Publish call</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/positions/:id/publish</code></td>
+<td>Publish position</td>
+</tr>
+<tr class="even">
+<td>PATCH</td>
+<td><code>/api/positions/:id</code></td>
+<td>Update position</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/positions/:id/close</code></td>
+<td>Close position</td>
+</tr>
+<tr class="even">
+<td>PATCH</td>
+<td><code>/api/positions/:id/exit</code></td>
+<td>Update position exit</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/plans</code></td>
+<td>Get advisor’s plans</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/plans</code></td>
+<td>Create plan</td>
+</tr>
+<tr class="odd">
+<td>DELETE</td>
+<td><code>/api/plans/:id</code></td>
+<td>Delete plan</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/subscribers</code></td>
+<td>Get subscribers list</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/subscriptions</code></td>
+<td>Get all subscriptions</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/content</code></td>
+<td>Get advisor’s content</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/content</code></td>
+<td>Create content</td>
+</tr>
+<tr class="even">
+<td>DELETE</td>
+<td><code>/api/content/:id</code></td>
+<td>Delete content</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/scores</code></td>
+<td>Get compliance scores</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/advisor/scores</code></td>
+<td>Create compliance score</td>
+</tr>
+<tr class="odd">
+<td>PATCH</td>
+<td><code>/api/advisor/profile</code></td>
+<td>Update advisor profile</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/reports/download</code></td>
+<td>Download calls report (CSV)</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/payments</code></td>
+<td>Get advisor payment history</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/revenue</code></td>
+<td>Get revenue analytics</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/questions</code></td>
+<td>Get investor questions</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/questions/unread-count</code></td>
+<td>Get unread question count</td>
+</tr>
+<tr class="odd">
+<td>PATCH</td>
+<td><code>/api/advisor/questions/:id</code></td>
+<td>Answer question</td>
+</tr>
+<tr class="even">
+<td>PATCH</td>
+<td><code>/api/advisor/settings/risk-profiling</code></td>
+<td>Toggle risk profiling</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/settings/risk-profiling</code></td>
+<td>Get risk profiling setting</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/advisor/agreements/:subscriptionId</code></td>
+<td>Get e-Sign agreement</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/advisor/ekyc/:subscriptionId</code></td>
+<td>Get eKYC details</td>
+</tr>
+</tbody>
+</table>
+<h3 id="admin-apis-requires-admin-role">7.5 Admin APIs (Requires Admin
+Role)</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/admin/users</code></td>
+<td>Get all users</td>
+</tr>
+<tr class="even">
+<td>PATCH</td>
+<td><code>/api/admin/users/:id</code></td>
+<td>Update user (approve/reject)</td>
+</tr>
+<tr class="odd">
+<td>DELETE</td>
+<td><code>/api/admin/users/:id</code></td>
+<td>Delete user</td>
+</tr>
+<tr class="even">
+<td>GET</td>
+<td><code>/api/admin/strategies</code></td>
+<td>Get all strategies</td>
+</tr>
+<tr class="odd">
+<td>PATCH</td>
+<td><code>/api/admin/strategies/:id</code></td>
+<td>Update strategy</td>
+</tr>
+<tr class="even">
+<td>DELETE</td>
+<td><code>/api/admin/strategies/:id</code></td>
+<td>Delete strategy</td>
+</tr>
+<tr class="odd">
+<td>GET</td>
+<td><code>/api/admin/groww-token-status</code></td>
+<td>Get Groww API token status</td>
+</tr>
+<tr class="even">
+<td>POST</td>
+<td><code>/api/admin/groww-token</code></td>
+<td>Update Groww API token</td>
+</tr>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/admin/notifications</code></td>
+<td>Send broadcast notification</td>
+</tr>
+</tbody>
+</table>
+<h3 id="webhooks">7.6 Webhooks</h3>
+<table>
+<thead>
+<tr class="header">
+<th>Method</th>
+<th>Endpoint</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>POST</td>
+<td><code>/api/webhooks/cashfree</code></td>
+<td>Cashfree payment webhook</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="third-party-integrations">8. Third-Party Integrations</h2>
+<h3 id="cashfree-payment-gateway">8.1 Cashfree Payment Gateway</h3>
+<ul>
+<li><strong>SDK:</strong> <code>cashfree-pg</code> v5</li>
+<li><strong>Purpose:</strong> Subscription payment processing</li>
+<li><strong>Flow:</strong> Server creates order -&gt; Client redirects
+to Cashfree checkout -&gt; Cashfree sends webhook/callback -&gt; Server
+verifies and activates subscription</li>
+<li><strong>Environment Variables:</strong>
+<code>CASHFREE_APP_ID</code>, <code>CASHFREE_SECRET_KEY</code></li>
+<li><strong>Helper File:</strong> <code>server/cashfree.ts</code></li>
+</ul>
+<h3 id="sendgrid-email-service">8.2 SendGrid Email Service</h3>
+<ul>
+<li><strong>SDK:</strong> <code>@sendgrid/mail</code></li>
+<li><strong>Purpose:</strong> Transactional emails</li>
+<li><strong>Use Cases:</strong> Registration confirmation, password
+reset links, e-Sign agreement copies</li>
+<li><strong>Helper File:</strong> <code>server/email.ts</code></li>
+<li><strong>Integration:</strong> Installed via Replit’s SendGrid
+integration</li>
+</ul>
+<h3 id="groww-api-market-data">8.3 Groww API (Market Data)</h3>
+<ul>
+<li><strong>Purpose:</strong> Real-time market prices (LTP), option
+chain data</li>
+<li><strong>Features:</strong> Single and bulk price queries, option
+chain with expiry dates</li>
+<li><strong>Token Management:</strong> Admin can update API tokens via
+admin dashboard</li>
+<li><strong>Environment Variables:</strong> <code>GROWW_API_KEY</code>,
+<code>GROWW_API_SECRET</code></li>
+<li><strong>Helper File:</strong> <code>server/groww.ts</code></li>
+</ul>
+<h3 id="sandbox.co.in-ekyc-e-sign">8.4 Sandbox.co.in (eKYC &amp;
+e-Sign)</h3>
+<ul>
+<li><strong>Purpose:</strong> Aadhaar OTP verification and PAN
+verification for KYC, Aadhaar OTP for e-Sign agreements</li>
+<li><strong>Authentication:</strong> JWT token with 22-hour caching</li>
+<li><strong>Data Storage:</strong> Only masked PII stored (last 4 digits
+Aadhaar, masked PAN)</li>
+<li><strong>Environment Variables:</strong>
+<code>SANDBOX_API_KEY</code>, <code>SANDBOX_API_SECRET</code></li>
+<li><strong>Helper File:</strong>
+<code>server/sandbox-kyc.ts</code></li>
+</ul>
+<h3 id="replit-object-storage">8.5 Replit Object Storage</h3>
+<ul>
+<li><strong>Purpose:</strong> File storage for SEBI certificates and
+advisor document uploads</li>
+<li><strong>SDK:</strong> <code>@google-cloud/storage</code></li>
+<li><strong>Integration:</strong> Installed via Replit’s object storage
+integration</li>
+<li><strong>Environment Variables:</strong>
+<code>DEFAULT_OBJECT_STORAGE_BUCKET_ID</code>,
+<code>PUBLIC_OBJECT_SEARCH_PATHS</code>,
+<code>PRIVATE_OBJECT_DIR</code></li>
+</ul>
+<h3 id="web-push-vapid">8.6 Web Push (VAPID)</h3>
+<ul>
+<li><strong>Library:</strong> <code>web-push</code></li>
+<li><strong>Purpose:</strong> Browser push notifications for real-time
+strategy updates</li>
+<li><strong>Architecture:</strong> Service worker (<code>sw.js</code>) +
+server-side push delivery</li>
+<li><strong>Helper File:</strong> <code>server/push.ts</code></li>
+</ul>
+<hr />
+<h2 id="authentication-security">9. Authentication &amp; Security</h2>
+<h3 id="authentication-mechanism">9.1 Authentication Mechanism</h3>
+<ul>
+<li><strong>Type:</strong> Session-based authentication</li>
+<li><strong>Session Store:</strong> PostgreSQL via
+<code>connect-pg-simple</code></li>
+<li><strong>Password Hashing:</strong> <code>scrypt</code> with random
+salt (Node.js crypto)</li>
+<li><strong>Session Secret:</strong> Stored in
+<code>SESSION_SECRET</code> environment variable</li>
+</ul>
+<h3 id="authorization-middleware">9.2 Authorization Middleware</h3>
+<p>Three middleware functions control access:</p>
+<div class="sourceCode" id="cb4"><pre
+class="sourceCode typescript"><code class="sourceCode typescript"><span id="cb4-1"><a href="#cb4-1" aria-hidden="true" tabindex="-1"></a><span class="fu">requireAuth</span>(req<span class="op">,</span> res<span class="op">,</span> next)     <span class="co">// Any logged-in user</span></span>
+<span id="cb4-2"><a href="#cb4-2" aria-hidden="true" tabindex="-1"></a><span class="fu">requireAdvisor</span>(req<span class="op">,</span> res<span class="op">,</span> next)  <span class="co">// Only users with role=&quot;advisor&quot;</span></span>
+<span id="cb4-3"><a href="#cb4-3" aria-hidden="true" tabindex="-1"></a><span class="fu">requireAdmin</span>(req<span class="op">,</span> res<span class="op">,</span> next)    <span class="co">// Only users with role=&quot;admin&quot;</span></span></code></pre></div>
+<h3 id="security-practices">9.3 Security Practices</h3>
+<ul>
+<li>Passwords never returned in API responses (filtered with
+destructuring)</li>
+<li>Masked PII storage for eKYC (only last 4 digits of Aadhaar, masked
+PAN)</li>
+<li>Server-side payment amount validation</li>
+<li>Idempotent webhook processing (prevents duplicate subscription
+activation)</li>
+<li>SEBI performance disclaimer required before viewing performance
+data</li>
+<li>All sensitive credentials stored as environment secrets (never in
+code)</li>
+</ul>
+<hr />
+<h2 id="frontend-architecture">10. Frontend Architecture</h2>
+<h3 id="routing">10.1 Routing</h3>
+<p>Client-side routing with <code>wouter</code>. All routes defined in
+<code>client/src/App.tsx</code>:</p>
+<table>
+<thead>
+<tr class="header">
+<th>Route</th>
+<th>Page</th>
+<th>Access</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>/</code></td>
+<td>Home / Landing Page</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/login</code></td>
+<td>Login</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/register</code></td>
+<td>Registration</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/forgot-password</code></td>
+<td>Password Reset Request</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/reset-password</code></td>
+<td>Password Reset Form</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/strategies</code></td>
+<td>Strategy Marketplace</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/strategies/:id</code></td>
+<td>Strategy Detail</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/strategies/:id/performance</code></td>
+<td>Performance Detail</td>
+<td>Authenticated</td>
+</tr>
+<tr class="odd">
+<td><code>/strategies/:id/subscribe</code></td>
+<td>Subscription Flow</td>
+<td>Authenticated</td>
+</tr>
+<tr class="even">
+<td><code>/strategies/:id/esign-agreement</code></td>
+<td>e-Sign Agreement</td>
+<td>Authenticated</td>
+</tr>
+<tr class="odd">
+<td><code>/strategies/:id/payment</code></td>
+<td>Payment</td>
+<td>Authenticated</td>
+</tr>
+<tr class="even">
+<td><code>/payment-callback</code></td>
+<td>Payment Result</td>
+<td>Authenticated</td>
+</tr>
+<tr class="odd">
+<td><code>/ekyc</code></td>
+<td>eKYC Verification</td>
+<td>Authenticated</td>
+</tr>
+<tr class="even">
+<td><code>/risk-profiling</code></td>
+<td>Risk Profiling</td>
+<td>Authenticated</td>
+</tr>
+<tr class="odd">
+<td><code>/advisors</code></td>
+<td>Browse Advisors</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/advisors/:id</code></td>
+<td>Advisor Detail</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/market-outlook</code></td>
+<td>Market Outlook Content</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/learn</code></td>
+<td>Educational Content</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/content/:id</code></td>
+<td>Content Detail</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/investor-dashboard</code></td>
+<td>Investor Dashboard</td>
+<td>Investor</td>
+</tr>
+<tr class="odd">
+<td><code>/dashboard/*</code></td>
+<td>Advisor Dashboard</td>
+<td>Advisor</td>
+</tr>
+<tr class="even">
+<td><code>/admin/*</code></td>
+<td>Admin Dashboard</td>
+<td>Admin</td>
+</tr>
+<tr class="odd">
+<td><code>/terms-and-conditions</code></td>
+<td>Terms</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/privacy-policy</code></td>
+<td>Privacy Policy</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/cancellation-policy</code></td>
+<td>Cancellation Policy</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/legal-agreement</code></td>
+<td>Legal Agreement</td>
+<td>Public</td>
+</tr>
+<tr class="odd">
+<td><code>/shipping-and-delivery</code></td>
+<td>Shipping &amp; Returns</td>
+<td>Public</td>
+</tr>
+<tr class="even">
+<td><code>/contact-us</code></td>
+<td>Contact Us</td>
+<td>Public</td>
+</tr>
+</tbody>
+</table>
+<h3 id="state-management">10.2 State Management</h3>
+<ul>
+<li><strong>Server State:</strong> TanStack React Query (caching,
+refetching, mutations)</li>
+<li><strong>Auth State:</strong> Custom <code>useAuth</code> hook with
+React Context</li>
+<li><strong>Local UI State:</strong> React <code>useState</code> /
+<code>useCallback</code></li>
+<li><strong>Persistent UI State:</strong> localStorage (e.g.,
+performance reveal state)</li>
+</ul>
+<h3 id="design-system">10.3 Design System</h3>
+<ul>
+<li><strong>Component Library:</strong> shadcn/ui (built on Radix UI
+primitives)</li>
+<li><strong>Styling:</strong> Tailwind CSS with custom theme
+variables</li>
+<li><strong>Colors:</strong>
+<ul>
+<li>Primary: <code>hsl(10, 72%, 48%)</code> (warm red)</li>
+<li>Accent: <code>hsl(145, 45%, 42%)</code> (green)</li>
+</ul></li>
+<li><strong>Dark Mode:</strong> Supported via class-based toggle</li>
+<li><strong>Icons:</strong> lucide-react for UI icons, react-icons for
+brand logos</li>
+<li><strong>Charts:</strong> Recharts for data visualization</li>
+</ul>
+<hr />
+<h2 id="deployment-environment">11. Deployment &amp; Environment</h2>
+<h3 id="environment-variables">11.1 Environment Variables</h3>
+<table>
+<colgroup>
+<col style="width: 34%" />
+<col style="width: 31%" />
+<col style="width: 34%" />
+</colgroup>
+<thead>
+<tr class="header">
+<th>Variable</th>
+<th>Purpose</th>
+<th>Required</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td><code>DATABASE_URL</code></td>
+<td>PostgreSQL connection string</td>
+<td>Auto-managed</td>
+</tr>
+<tr class="even">
+<td><code>SESSION_SECRET</code></td>
+<td>Express session encryption key</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td><code>CASHFREE_APP_ID</code></td>
+<td>Cashfree API app ID</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td><code>CASHFREE_SECRET_KEY</code></td>
+<td>Cashfree API secret</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td><code>GROWW_API_KEY</code></td>
+<td>Groww market data API key</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td><code>GROWW_API_SECRET</code></td>
+<td>Groww market data API secret</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td><code>SANDBOX_API_KEY</code></td>
+<td>Sandbox.co.in API key (eKYC/e-Sign)</td>
+<td>Yes</td>
+</tr>
+<tr class="even">
+<td><code>SANDBOX_API_SECRET</code></td>
+<td>Sandbox.co.in API secret</td>
+<td>Yes</td>
+</tr>
+<tr class="odd">
+<td><code>DEFAULT_OBJECT_STORAGE_BUCKET_ID</code></td>
+<td>Replit object storage bucket</td>
+<td>Auto-managed</td>
+</tr>
+<tr class="even">
+<td><code>PUBLIC_OBJECT_SEARCH_PATHS</code></td>
+<td>Public object paths</td>
+<td>Auto-managed</td>
+</tr>
+<tr class="odd">
+<td><code>PRIVATE_OBJECT_DIR</code></td>
+<td>Private object directory</td>
+<td>Auto-managed</td>
+</tr>
+</tbody>
+</table>
+<h3 id="build-run-scripts">11.2 Build &amp; Run Scripts</h3>
+<div class="sourceCode" id="cb5"><pre
+class="sourceCode json"><code class="sourceCode json"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb5-2"><a href="#cb5-2" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;dev&quot;</span><span class="fu">:</span> <span class="st">&quot;tsx server/index.ts&quot;</span><span class="fu">,</span>           <span class="er">//</span> <span class="er">Development</span> <span class="er">server</span></span>
+<span id="cb5-3"><a href="#cb5-3" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;build&quot;</span><span class="fu">:</span> <span class="st">&quot;vite build&quot;</span><span class="fu">,</span>                  <span class="er">//</span> <span class="er">Production</span> <span class="er">build</span></span>
+<span id="cb5-4"><a href="#cb5-4" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;start&quot;</span><span class="fu">:</span> <span class="st">&quot;NODE_ENV=production tsx server/index.ts&quot;</span><span class="fu">,</span>  <span class="er">//</span> <span class="er">Production</span> <span class="er">start</span></span>
+<span id="cb5-5"><a href="#cb5-5" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;db:push&quot;</span><span class="fu">:</span> <span class="st">&quot;drizzle-kit push&quot;</span><span class="fu">,</span>          <span class="er">//</span> <span class="er">Push</span> <span class="er">schema</span> <span class="er">to</span> <span class="er">database</span></span>
+<span id="cb5-6"><a href="#cb5-6" aria-hidden="true" tabindex="-1"></a>  <span class="dt">&quot;db:push --force&quot;</span><span class="fu">:</span> <span class="st">&quot;drizzle-kit push --force&quot;</span>  <span class="er">//</span> <span class="er">Force</span> <span class="er">push</span> <span class="er">schema</span></span>
+<span id="cb5-7"><a href="#cb5-7" aria-hidden="true" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<h3 id="hosting">11.3 Hosting</h3>
+<ul>
+<li><strong>Platform:</strong> Replit Deployments</li>
+<li><strong>Domain:</strong> <code>.replit.app</code> (custom domain
+configurable)</li>
+<li><strong>Port:</strong> Frontend and backend served on port 5000</li>
+<li><strong>Vite Integration:</strong> Backend serves Vite dev server in
+development, static build in production</li>
+</ul>
+<hr />
+<h2 id="scope-of-work-summary">12. Scope of Work Summary</h2>
+<h3 id="completed-modules">Completed Modules</h3>
+<ol type="1">
+<li>User Authentication &amp; Registration (session-based, 3 roles)</li>
+<li>Advisor Approval Workflow (admin reviews, approves/rejects)</li>
+<li>Strategy Management (CRUD, Draft/Published lifecycle)</li>
+<li>Calls Management (create, publish, close, P&amp;L tracking)</li>
+<li>Positions Management (F&amp;O, multi-leg, intraday
+auto-square-off)</li>
+<li>Subscription Plans &amp; Pricing (advisor creates plans)</li>
+<li>e-Sign Agreement (Aadhaar OTP-based, SEBI mandate)</li>
+<li>Payment Processing (Cashfree gateway, webhooks)</li>
+<li>eKYC Verification (Aadhaar + PAN via Sandbox.co.in)</li>
+<li>Risk Profiling (8-section questionnaire, dual scoring)</li>
+<li>Performance Reveal (SEBI disclaimer gated, per-strategy)</li>
+<li>Live Market Data (Groww API, LTP, option chain)</li>
+<li>Web Push Notifications (VAPID, strategy-specific)</li>
+<li>Content Management (Market Outlook, Learn articles)</li>
+<li>Investor Dashboard (subscriptions, recommendations, watchlist)</li>
+<li>Advisor Dashboard (strategies, subscribers, revenue, reports)</li>
+<li>Admin Dashboard (users, strategies, settings)</li>
+<li>Communication (advisor questions, email notifications)</li>
+<li>Compliance Reports (CSV export)</li>
+<li>SEO (sitemap, meta tags, Open Graph)</li>
+<li>Legal Pages (terms, privacy, cancellation, shipping)</li>
+</ol>
+<h3 id="key-technical-metrics">Key Technical Metrics</h3>
+<ul>
+<li><strong>Backend Code:</strong> ~2,560 lines (routes.ts) + ~700 lines
+(storage.ts)</li>
+<li><strong>Database Schema:</strong> ~375 lines, 15 tables, 4
+enums</li>
+<li><strong>Frontend Pages:</strong> 25+ pages across 3 role
+dashboards</li>
+<li><strong>API Endpoints:</strong> 90+ REST endpoints</li>
+<li><strong>Third-Party Integrations:</strong> 6 (Cashfree, SendGrid,
+Groww, Sandbox.co.in, Object Storage, Web Push)</li>
+</ul>
+<hr />
+<p><em>This document provides a comprehensive overview of the
+AlphaMarket Connect platform. For implementation-level details, refer to
+the source code files listed in the Project Structure section.</em></p>
+</body>
+</html>

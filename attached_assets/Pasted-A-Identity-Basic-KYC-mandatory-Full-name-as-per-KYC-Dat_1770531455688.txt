@@ -1,0 +1,227 @@
+A. Identity & Basic KYC (mandatory)
+
+Full name (as per KYC).
+
+Date of birth.
+
+PAN / KYC identifier.
+
+Residential status (Resident / NRI / PIO / Others).
+
+Occupation (Salaried / Self-employed / Business owner / Retired / Student / Homemaker / Others — specify).
+
+Dependents (number).
+
+Contact details and nominee details.
+
+Regulatory rationale: Basic KYC and identity data are mandatory and support suitability and recordkeeping.
+
+B. Financial Position & Liquidity (risk capacity inputs)
+
+Annual gross household income (select band). (score)
+
+< ₹3,00,000 (1)
+
+₹3L–₹10L (2)
+
+₹10L–₹25L (3)
+
+₹25L (4)
+
+Approx. net investible surplus available for investment (liquid assets excluding primary residence & business working capital): (score)
+
+< ₹1 lakh (1)
+
+₹1–5 lakh (2)
+
+₹5–25 lakh (3)
+
+₹25 lakh (4)
+
+Total financial assets (all investments) — band. (score)
+
+Total liabilities / outstanding loans — band. (negative influence on capacity). (score)
+
+Emergency fund availability (months of expenses). (score)
+
+<3 months (0) | 3–6 months (1) | 6–12 months (2) | >12 months (3)
+
+Approx. percentage of investible assets you can afford to lose without affecting lifestyle (choose): (score)
+
+<5% (0) | 5%–15% (1) | 15%–30% (2) | >30% (3)
+
+Notes: These questions estimate ability to bear loss; SEBI expects advisors to capture this objectively.
+
+C. Investment Objectives & Time Horizon
+
+Primary investment objective (choose one):
+
+Capital preservation / liquidity
+
+Regular income (dividends/interest)
+
+Capital appreciation (medium term)
+
+Long-term wealth creation / retirement planning
+
+Speculative / short-term trading
+
+Investment time horizon (score):
+
+< 1 year (0)
+
+1–3 years (1)
+
+3–7 years (2)
+
+7–15 years (3)
+
+15 years (4)
+
+Specific cash-flow needs or upcoming commitments (yes/no + details) — e.g., home purchase, education, medical.
+
+Rationale: Time horizon is a core determinant of suitable product types and risk grade.
+
+D. Knowledge & Experience (risk tolerance & suitability)
+
+How would you rate your knowledge of securities/markets? (score)
+
+None (0) | Basic (1) | Moderate (2) | Advanced (3)
+
+Have you invested in the following instruments before? (tick all that apply; score per instrument)
+
+Bank FDs / Debt mutual funds (1)
+
+Equity mutual funds (2)
+
+Direct equities (2)
+
+Derivatives / F&O (3)
+
+Structured products / complex products (3)
+
+Years of active investing/trading experience: (score)
+
+0 (0) | <2 yrs (1) | 2–5 yrs (2) | >5 yrs (3)
+
+Past behaviour: In past market downturns, you typically (choose): (score)
+
+Sold to avoid losses (0)
+
+Held most positions (1)
+
+Bought more to average down (2)
+
+Notes: SEBI requires a structured tool to assess investor knowledge & experience for suitability. Do not rely only on subjective labels — combine with factual answers (instruments used, years).
+
+E. Risk Attitude / Psychological (risk tolerance)
+
+If your portfolio falls 20% in 6 months, what would you do? (score)
+
+Sell most holdings to avoid further loss (0)
+
+Sell some underperformers (1)
+
+Do nothing and wait for recovery (2)
+
+Buy more at lower prices (3)
+
+Expected annual return (net) from investments (choose): (score)
+
+<6% (0) | 6%–10% (1) | 10%–15% (2) | 15%–25% (3) | >25% (4)
+
+How comfortable are you with investment instruments that can have high short-term volatility but higher long-term returns? (1–5 Likert; score 0–4)
+
+Which statement best describes you?
+
+I prefer no capital loss even if returns are lower.
+
+I accept small capital fluctuations for better returns.
+
+I accept significant fluctuations for higher long-term growth.
+
+I actively seek high-risk opportunities aiming for high returns.
+
+Behavioral tests: Optionally include short behavioural vignettes or validated psychometric items to reduce misreporting.
+
+F. Constraints, Restrictions & Preferences (suitability)
+
+Any regulatory/investment constraints? (Yes/No — if yes, details). Examples: no-derivatives, no overseas investments, Shariah compliant, ESG preference.
+
+Liquidity preference: need monthly/quarterly access to funds? (score)
+
+Minimum/maximum allocation preferences per asset class (if the client sets constraints).
+
+Income tax bracket / tax considerations.
+
+Will the client use margin/borrowings for investing? (Yes/No — if yes, details & prior approvals).
+
+Rationale: Advisors must consider constraints/preferences when giving advice; SEBI expects suitability assessment to include client constraints.
+
+G. Source & Origin of Funds / Anti-Money Laundering
+
+Source of investment funds (salary, business profit, inheritance, sale of asset, loan, gift, etc.).
+
+Are funds free of encumbrances? (Yes/No)
+
+Will funds originate from multiple jurisdictions? (Yes/No — if Yes, details)
+
+Rationale: AML / KYC compliance; SEBI and other regulators require documentation of source of funds.
+
+H. Declaration, Consent & Acknowledgements (mandatory)
+
+I confirm the information provided is true and complete. (checkbox + digital signature).
+
+I understand that the risk profile is based on my responses and will be used to assess suitability; I consent to the advisor using this for advice and recordkeeping. (checkbox).
+
+I understand that actual market returns are not guaranteed and all investments are subject to market risk; I have read the risk disclosure. (checkbox).
+
+Consent to periodic review & to be contacted for profiling updates. (checkbox).
+
+Rationale: Written consent and client acknowledgment of the questionnaire and its consequences are required by SEBI.
+
+Scoring & Profile Mapping (suggested, transparent)
+
+Compute two sums: Risk Capacity Score (from financial & liquidity items) and Risk Tolerance Score (from attitude/behaviour & experience). Normalize both to 0–100.
+
+Combine using weighted average (example: 60% capacity + 40% tolerance) → Overall Risk Score (0–100).
+
+Suggested overall mapping:
+
+0–24 → Conservative (capital preservation; low equity; primarily debt instruments)
+
+25–49 → Moderately Conservative (balanced but tilted to debt)
+
+50–69 → Moderate / Balanced (mix of equity & debt; medium volatility acceptable)
+
+70–84 → Aggressive (high equity exposure; some complex products possible)
+
+85–100 → Very Aggressive / Speculative (high leverage/derivatives may be suitable with explicit consent)
+
+Advisor action rules: For each profile, list permitted product buckets and prohibited ones (e.g., Conservative: no derivatives, no high-risk structured products). Record an automated rationale whenever an advisor recommends outside the prescribed bucket (client-specific override must be written & signed).
+
+Suitability checklist for Advisors (to decide if a Strategy / RA style fits the client)
+
+Does the strategy’s risk/volatility profile (max drawdown, VaR, historical monthly volatility) fit within the client’s profile bucket? (Yes/No — justify).
+
+Is the investor’s time horizon compatible with the strategy’s intended horizon (short-term trading vs long-term investing)?
+
+Does the investor have documented experience with the instruments used by the strategy (e.g., F&O, illiquid small caps)?
+
+Any regulatory/ethical constraints that conflict? (Yes/No — justify).
+
+Has the client received and acknowledged a plain-language risk disclosure for this strategy? (Yes/No).
+
+If the strategy is complex/leveraged, has the client signed a special consent and demonstrated understanding (knowledge check)? (Yes/No)
+
+Document the outcome and keep an audit trail. SEBI requires the adviser to ensure advice is appropriate to the risk profile.
+
+Suggested Validation & Controls (implementation)
+
+Knowledge verification: For clients selecting high-risk products, force short knowledge check questions; require passing threshold before allowing subscription.
+
+Automated red flags: If capacity and tolerance diverge materially (e.g., low capacity but high stated tolerance), flag for human review and require documented suitability justification.
+
+Versioning: Save dated copies of RPQ and any subsequent changes. Require re-consent if advisor proposes advice outside the client’s profile band.
+
+Periodic review triggers: major life event, portfolio drawdown >X%, 12 months elapsed, client request, or change in regulation.

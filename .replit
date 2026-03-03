@@ -1,0 +1,53 @@
+modules = ["nodejs-20", "web", "postgresql-16"]
+run = "npm run dev"
+hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
+
+[nix]
+channel = "stable-24_05"
+
+[[ports]]
+localPort = 5000
+externalPort = 80
+
+[env]
+PORT = "5000"
+
+[deployment]
+deploymentTarget = "autoscale"
+run = ["node", "./dist/index.cjs"]
+build = ["npm", "run", "build"]
+
+[workflows]
+runButton = "Project"
+
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Start application"
+
+[[workflows.workflow]]
+name = "Start application"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npm run dev"
+waitForPort = 5000
+
+[agent]
+integrations = ["javascript_object_storage:2.0.0", "sendgrid:1.0.0"]
+
+[userenv]
+
+[userenv.production]
+SITE_DOMAIN = "alphamarket.co.in"
+
+[userenv.shared]
+VAPID_PUBLIC_KEY = "BAZ8RmKaEXw72g2eQxIV4D1kC6dGzFNZcP3fBkVFPiPCV-9i-xUDV7vlOqlLk9u5e0KpG57CB44WK4HZMUJvggg"
+VAPID_PRIVATE_KEY = "xjb00PHZ-iIpDr-3Fk9Zaqh4HwsDJHAG0OAmQ_8z9YQ"
+VAPID_SUBJECT = "mailto:admin@alphamarket.com"
+SENDGRID_FROM_EMAIL = "hello@alphamarket.co.in"
