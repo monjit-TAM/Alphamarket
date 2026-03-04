@@ -28,6 +28,7 @@ import RiskProfilingPage from "@/pages/risk-profiling";
 import EkycPage from "@/pages/ekyc";
 import EsignAgreementPage from "@/pages/esign-agreement";
 import StrategyPerformance from "@/pages/strategy-performance";
+import DyorPage from "@/pages/dyor/index";
 import { TermsAndConditions, CancellationPolicy, PrivacyPolicy, LegalAgreement, ShippingAndReturns, ContactUs } from "@/pages/legal";
 
 function Router() {
@@ -64,6 +65,8 @@ function Router() {
       <Route path="/dashboard/:rest*" component={Dashboard} />
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/:rest*" component={AdminDashboard} />
+      <Route path="/dyor" component={DyorPage} />
+      <Route path="/dyor/:rest*" component={DyorPage} />
       <Route component={NotFound} />
     </Switch>
   );

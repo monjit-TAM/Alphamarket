@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { registerBrokerApiRoutes, getSwaggerSpec } from "./broker-api";
+import { registerObjectStorageRoutes } from "./replit_integrations/object_storage/routes";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
@@ -49,6 +50,24 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  registerObjectStorageRoutes(app);
+
+  // Strip empty strings from numeric/integer DB fields to prevent Postgres type errors
+  const NUMERIC_FIELDS = new Set([
+    "minimumInvestment","cagr","buyRangeStart","buyRangeEnd","targetPrice",
+    "profitGoal","stopLoss","entryPrice","sellPrice","gainPercent","duration",
+    "strikePrice","lots","target","exitPrice","weightPercent","quantity",
+    "priceAtRebalance","amount","durationDays","riskLevel",
+  ]);
+  function sanitizeBody(body: Record<string, any>): Record<string, any> {
+    const out = { ...body };
+    for (const key of Object.keys(out)) {
+      if (NUMERIC_FIELDS.has(key) && (out[key] === "" || out[key] === null)) {
+        delete out[key];
+      }
+    }
+    return out;
+  }
   setupSession(app);
   registerAuthRoutes(app, storage);
   setupGoogleAuth(app, storage);
@@ -812,8 +831,13 @@ export async function registerRoutes(
 
   app.post("/api/strategies", requireAdvisor, async (req, res) => {
     try {
+      const numericFields = ["minimumInvestment", "cagr", "riskLevel"];
+      const body = { ...req.body };
+      for (const f of numericFields) {
+        if (body[f] === "" || body[f] === null) delete body[f];
+      }
       const s = await storage.createStrategy({
-        ...req.body,
+        ...body,
         advisorId: req.session.userId,
       });
       res.json(s);
@@ -827,7 +851,11 @@ export async function registerRoutes(
       const existing = await storage.getStrategy(req.params.id);
       if (!existing) return res.status(404).send("Strategy not found");
       if (existing.advisorId !== req.session.userId) return res.status(403).send("Not authorized");
-      const s = await storage.updateStrategy(req.params.id, req.body);
+      const body = { ...req.body };
+      for (const f of ["minimumInvestment", "cagr", "riskLevel"]) {
+        if (body[f] === "" || body[f] === null) delete body[f];
+      }
+      const s = await storage.updateStrategy(req.params.id, body);
       res.json(s);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -1082,7 +1110,7 @@ export async function registerRoutes(
         return res.status(400).send("Rationale is required to publish a call");
       }
       const c = await storage.createCall({
-        ...req.body,
+        ...sanitizeBody(req.body),
         strategyId: req.params.id,
         publishMode,
         isPublished,
@@ -1116,7 +1144,7 @@ export async function registerRoutes(
         return res.status(400).send("Rationale is required to publish a position");
       }
       const p = await storage.createPosition({
-        ...req.body,
+        ...sanitizeBody(req.body),
         strategyId: req.params.id,
         publishMode,
         isPublished,
@@ -1455,7 +1483,7 @@ export async function registerRoutes(
   app.post("/api/plans", requireAdvisor, async (req, res) => {
     try {
       const p = await storage.createPlan({
-        ...req.body,
+        ...sanitizeBody(req.body),
         advisorId: req.session.userId,
       });
       res.json(p);
@@ -1561,7 +1589,7 @@ export async function registerRoutes(
   // Profile update
   app.patch("/api/advisor/profile", requireAdvisor, async (req, res) => {
     try {
-      const u = await storage.updateUser(req.session.userId!, req.body);
+      const u = await storage.updateUser(req.session.userId!, sanitizeBody(req.body));
       const { password: _, ...safe } = u;
       res.json(safe);
     } catch (err: any) {
@@ -1668,7 +1696,7 @@ export async function registerRoutes(
   // Update user (admin - approve/disapprove/edit)
   app.patch("/api/admin/users/:id", requireAdmin, async (req, res) => {
     try {
-      const u = await storage.updateUser(req.params.id, req.body);
+      const u = await storage.updateUser(req.params.id, sanitizeBody(req.body));
       const { password: _, ...safe } = u;
       res.json(safe);
     } catch (err: any) {
@@ -1699,7 +1727,7 @@ export async function registerRoutes(
   // Update any strategy (admin)
   app.patch("/api/admin/strategies/:id", requireAdmin, async (req, res) => {
     try {
-      const s = await storage.updateStrategy(req.params.id, req.body);
+      const s = await storage.updateStrategy(req.params.id, sanitizeBody(req.body));
       res.json(s);
     } catch (err: any) {
       res.status(500).send(err.message);

@@ -4,32 +4,31 @@ import { promisify } from "util";
 
 const scryptAsync = promisify(scrypt);
 
-/**
- * Hash a password using bcrypt (standard going forward).
- */
 export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
-/**
- * Compare a plaintext password against a stored hash.
- * Supports both bcrypt ($2b$...) and legacy scrypt formats for backward compatibility.
- */
 export async function comparePasswords(
   supplied: string,
   stored: string
 ): Promise<boolean> {
-  // bcrypt hashes start with $2a$ or $2b$
+  if (!stored) return false;
+
   if (stored.startsWith("$2a$") || stored.startsWith("$2b$")) {
     return bcrypt.compare(supplied, stored);
   }
 
-  // Legacy scrypt format: hex(salt).hex(hash)
   if (stored.includes(".")) {
-    const [salt, hash] = stored.split(".");
-    const derivedKey = (await scryptAsync(supplied, salt, 64)) as Buffer;
-    const storedHash = Buffer.from(hash, "hex");
-    return timingSafeEqual(derivedKey, storedHash);
+    try {
+      const [salt, hash] = stored.split(".");
+      if (!salt || !hash) return false;
+      const storedHash = Buffer.from(hash, "hex");
+      const derivedKey = (await scryptAsync(supplied, salt, storedHash.length)) as Buffer;
+      if (derivedKey.length !== storedHash.length) return false;
+      return timingSafeEqual(derivedKey, storedHash);
+    } catch {
+      return false;
+    }
   }
 
   return false;
