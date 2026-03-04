@@ -1,0 +1,40 @@
+# AlphaForge Backend — Python Dependencies
+# Install: pip install -r requirements.txt
+
+# ── Web Framework ────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+
+# ── Database ─────────────────────────────────────────────────────
+sqlalchemy[asyncio]>=2.0.30
+asyncpg>=0.29.0             # Async PostgreSQL driver
+alembic>=1.13.1             # DB migrations
+
+# ── Settings / Config ─────────────────────────────────────────────
+pydantic>=2.7.1
+pydantic-settings>=2.2.1
+
+# ── Auth ──────────────────────────────────────────────────────────
+python-jose[cryptography]>=3.3.0
+passlib[bcrypt]>=1.7.4
+
+# ── Cache / Pub-Sub ───────────────────────────────────────────────
+redis[hiredis]>=5.0.4
+
+# ── Groww API & Auth ──────────────────────────────────────────────
+growwapi                     # pip install growwapi
+pyotp>=2.9.0                # TOTP generation for Groww TOTP flow
+
+# ── Data Science (Backtesting Engine) ────────────────────────────
+pandas>=2.2.3
+numpy>=1.26.4
+scipy>=1.13.0
+
+# ── HTTP Client ───────────────────────────────────────────────────
+httpx>=0.27.0
+aiohttp>=3.11.9
+
+# ── Utilities ─────────────────────────────────────────────────────
+python-dateutil>=2.9.0
+pytz>=2024.1
