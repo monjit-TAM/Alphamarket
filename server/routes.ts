@@ -1,7 +1,6 @@
 import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { registerBrokerApiRoutes, getSwaggerSpec } from "./broker-api";
-import { registerObjectStorageRoutes } from "./replit_integrations/object_storage/routes";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
@@ -50,7 +49,6 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  registerObjectStorageRoutes(app);
 
   // Strip empty strings from numeric/integer DB fields to prevent Postgres type errors
   const NUMERIC_FIELDS = new Set([
@@ -823,7 +821,20 @@ export async function registerRoutes(
   app.get("/api/advisor/strategies", requireAdvisor, async (req, res) => {
     try {
       const strats = await storage.getStrategies(req.session.userId!);
-      res.json(strats);
+      const enriched = await Promise.all(strats.map(async (s) => {
+        const calls = await storage.getCallsByStrategy(s.id);
+        const positions = await storage.getPositionsByStrategy(s.id);
+        const activeCalls = calls.filter(c => c.status === "Active");
+        const activePositions = positions.filter(p => p.status === "Active");
+        return {
+          ...s,
+          activeCalls: activeCalls.length,
+          activePositions: activePositions.length,
+          activeCallDetails: activeCalls.filter(c => c.isPublished),
+          activePositionDetails: activePositions.filter(p => p.isPublished),
+        };
+      }));
+      res.json(enriched);
     } catch (err: any) {
       res.status(500).send(err.message);
     }
@@ -2542,7 +2553,10 @@ export async function registerRoutes(
       if (!subscription || !subscription.endpoint || !subscription.keys) {
         return res.status(400).send("Invalid push subscription");
       }
-      const userId = req.session?.userId || null;
+      if (!req.session?.userId) {
+        return res.status(401).send("Login required to enable notifications");
+      }
+      const userId = req.session.userId;
       await storage.createPushSubscription({
         userId,
         endpoint: subscription.endpoint,

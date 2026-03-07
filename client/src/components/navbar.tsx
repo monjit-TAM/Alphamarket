@@ -15,7 +15,7 @@ import {
   Search, Menu, X, Activity, TrendingUp, BarChart3, BookOpen,
   Users, LineChart, Briefcase, FlaskConical, Target, Compass
 } from "lucide-react";
-import logoImg from "@assets/Alphamarket_Logo_without_Background_1770374165590.png";
+import logoImg from "@assets/AlphaMarket_Logo_Dark.png";
 import { NotificationBell } from "./notification-bell";
 
 export function Navbar() {
@@ -34,7 +34,7 @@ export function Navbar() {
           <div className="flex h-14 items-center gap-4">
             {/* Logo */}
             <Link href="/" className="flex-shrink-0">
-              <img src={logoImg} alt="AlphaMarket" className="h-8 object-contain brightness-0 invert" />
+              <img src={logoImg} alt="AlphaMarket" className="h-8 object-contain" />
             </Link>
 
             {/* Search Bar (desktop) */}

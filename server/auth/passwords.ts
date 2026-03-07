@@ -21,10 +21,11 @@ export async function comparePasswords(
   if (stored.includes(".")) {
     try {
       const [salt, hash] = stored.split(".");
-      if (!salt || !hash) return false;
+      if (!salt || !hash || hash.length === 0) return false;
       const storedHash = Buffer.from(hash, "hex");
+      if (storedHash.length === 0) return false;
       const derivedKey = (await scryptAsync(supplied, salt, storedHash.length)) as Buffer;
-      if (derivedKey.length !== storedHash.length) return false;
+      if (!derivedKey || !storedHash || derivedKey.length === 0 || storedHash.length === 0 || derivedKey.length !== storedHash.length) return false;
       return timingSafeEqual(derivedKey, storedHash);
     } catch {
       return false;

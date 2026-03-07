@@ -125,10 +125,13 @@ export function NotificationBell() {
           {isSubscribed ? (
             <Bell className="w-4 h-4" />
           ) : (
-            <BellOff className="w-4 h-4 text-muted-foreground" />
+            <Bell className="w-4 h-4 text-muted-foreground" />
           )}
           {isSubscribed && recentNotifications.length > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-destructive" />
+          )}
+          {!isSubscribed && user && (
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
           )}
         </Button>
       </PopoverTrigger>
@@ -169,7 +172,7 @@ export function NotificationBell() {
         <div className="max-h-64 overflow-y-auto">
           {recentNotifications.length === 0 ? (
             <div className="p-4 text-center text-sm text-muted-foreground">
-              {isSubscribed ? "No recent notifications" : "Enable notifications to receive alerts"}
+              {isSubscribed ? "No recent notifications" : "Enable push notifications to get real-time alerts for your subscribed strategies"}
             </div>
           ) : (
             recentNotifications.map((n: any) => (

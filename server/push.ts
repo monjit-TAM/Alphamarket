@@ -1,6 +1,7 @@
 import webpush from "web-push";
 import { storage } from "./storage";
 import type { PushSubscription as DBPushSubscription } from "@shared/schema";
+import { sendStrategyAlertEmail } from "./auth/email";
 
 const vapidPublicKey = process.env.VAPID_PUBLIC_KEY || "";
 const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY || "";
@@ -91,6 +92,27 @@ export async function notifyStrategySubscribers(
     const pushSubs = await storage.getPushSubscriptionsForUserIds(userIds);
     if (pushSubs.length > 0) {
       await sendToSubscriptions(pushSubs, payload);
+    }
+
+    // Send email to all subscribers
+    try {
+      const subscriberEmails: string[] = [];
+      for (const uid of userIds) {
+        const user = await storage.getUser(uid);
+        if (user?.email) subscriberEmails.push(user.email);
+      }
+      if (subscriberEmails.length > 0) {
+        const emailSubject = payload.title.replace(/[^\x20-\x7E]/g, "").trim();
+        const emailBody = `
+          <h2 style="color: #333;">${payload.title}</h2>
+          <div style="margin: 16px 0; padding: 16px; background: #f0fdf4; border-left: 4px solid #16a34a; border-radius: 4px;">
+            <p style="margin: 0; font-size: 14px; white-space: pre-line;">${payload.body.replace(/\n/g, "<br>")}</p>
+          </div>
+        `;
+        await sendStrategyAlertEmail(subscriberEmails, emailSubject, emailBody, strategyId);
+      }
+    } catch (emailErr) {
+      console.error("Error sending strategy email notifications:", emailErr);
     }
   } catch (err) {
     console.error("Error sending strategy notifications:", err);

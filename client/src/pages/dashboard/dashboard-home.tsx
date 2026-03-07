@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -375,6 +376,23 @@ export default function DashboardHome() {
     queryKey: ["/api/advisor/revenue"],
   });
 
+  // Collect all active call symbols across strategies for live prices
+  const allActiveSymbols = (strategies || []).flatMap((s: any) =>
+    [...(s.activeCallDetails || []).map((c: any) => c.stockName), ...(s.activePositionDetails || []).map((p: any) => p.symbol)].filter(Boolean)
+  );
+  const uniqueSymbols = Array.from(new Set(allActiveSymbols));
+
+  const { data: livePrices } = useQuery<Record<string, { ltp: number; change: number; changePercent: number }>>({
+    queryKey: ["/api/live-prices", "dashboard", uniqueSymbols.join(",")],
+    queryFn: async () => {
+      if (uniqueSymbols.length === 0) return {};
+      const res = await apiRequest("POST", "/api/live-prices/bulk", { symbols: uniqueSymbols });
+      return res.json();
+    },
+    enabled: uniqueSymbols.length > 0,
+    refetchInterval: 30000,
+  });
+
   const { data: contents } = useQuery<ContentType[]>({
     queryKey: ["/api/advisor/content"],
   });
@@ -502,15 +520,107 @@ export default function DashboardHome() {
           <div className="flex flex-wrap gap-2">
             <Link href="/dashboard/strategies">
               <Button size="sm" variant="outline" data-testid="button-add-stock">
-                <Plus className="w-3 h-3 mr-1" /> Add Stock
+                <Plus className="w-3 h-3 mr-1" /> Live Calls
               </Button>
             </Link>
             <Link href="/dashboard/strategies">
               <Button size="sm" variant="outline" data-testid="button-new-strategy">
-                <Plus className="w-3 h-3 mr-1" /> New Strategy
+                <Plus className="w-3 h-3 mr-1" /> Strategies
               </Button>
             </Link>
           </div>
+        </div>
+
+        {/* Live Calls & Positions — Full Detail */}
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Live Calls & Positions</h2>
+          {strategies && strategies.length > 0 ? (
+            <div className="space-y-4">
+              {strategies.map((strategy) => {
+                const calls = (strategy as any).activeCalls || 0;
+                const positions = (strategy as any).activePositions || 0;
+                const callDetails: any[] = (strategy as any).activeCallDetails || [];
+                const posDetails: any[] = (strategy as any).activePositionDetails || [];
+                if (calls === 0 && positions === 0) return null;
+                return (
+                  <Card key={strategy.id}>
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-semibold text-sm">{strategy.name}</p>
+                          <p className="text-xs text-muted-foreground">{strategy.type} | {strategy.horizon || "N/A"}</p>
+                        </div>
+                        <Link href="/dashboard/strategies">
+                          <Button size="sm" variant="outline">Manage</Button>
+                        </Link>
+                      </div>
+                      {callDetails.length > 0 && callDetails.map((call: any) => {
+                        const entryPx = Number(call.entryPrice || call.buyRangeStart || 0);
+                        const ltp = livePrices?.[call.stockName]?.ltp || 0;
+                        const ltpChange = livePrices?.[call.stockName]?.change || 0;
+                        const ltpChangePct = livePrices?.[call.stockName]?.changePercent || 0;
+                        const pnl = entryPx > 0 && ltp > 0 ? (call.action === "Sell" ? ((entryPx - ltp) / entryPx * 100) : ((ltp - entryPx) / entryPx * 100)) : (call.gainPercent ? Number(call.gainPercent) : null);
+                        const chg = ltp > 0 && entryPx > 0 ? (ltp - entryPx) : 0;
+                        const chgPct = entryPx > 0 && ltp > 0 ? ((ltp - entryPx) / entryPx * 100) : 0;
+                        return (
+                        <div key={call.id} className="border rounded-md p-3 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{call.stockName}</span>
+                            <Badge className={call.action === "Buy" ? "bg-green-600 text-white text-xs" : "bg-red-600 text-white text-xs"}>{call.action}</Badge>
+                            {ltp > 0 && (
+                              <>
+                                <span className="text-sm font-medium">{"₹"}{ltp.toFixed(2)}</span>
+                                <span className={`text-xs font-medium ${ltpChange >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                  {ltpChange >= 0 ? "↑" : "↓"} ({ltpChangePct.toFixed(2)}%)
+                                </span>
+                              </>
+                            )}
+                            {pnl !== null && (
+                              <span className={`text-xs font-semibold ${pnl >= 0 ? "text-green-600" : "text-red-600"}`}>
+                                P&L: {pnl.toFixed(2)}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                            {call.buyRangeStart && call.buyRangeEnd && <span>Entry: {call.buyRangeStart} - {call.buyRangeEnd}</span>}
+                            {call.entryPrice && !call.buyRangeStart && <span>Entry: {"₹"}{call.entryPrice}</span>}
+                            {call.targetPrice && <span>Target: {"₹"}{call.targetPrice}</span>}
+                            {call.stopLoss && <span>SL: {"₹"}{call.stopLoss}</span>}
+                            {call.callDate && <span>{new Date(call.callDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>}
+                          </div>
+                          {call.rationale && <p className="text-xs text-muted-foreground italic">{call.rationale}</p>}
+                        </div>
+                        );
+                      })}
+                      {posDetails.length > 0 && posDetails.map((pos: any) => (
+                        <div key={pos.id} className="border rounded-md p-3 space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{pos.symbol || "Position"}</span>
+                            <Badge className={pos.buySell === "Sell" ? "bg-red-600 text-white text-xs" : "bg-green-600 text-white text-xs"}>{pos.buySell || "Buy"}</Badge>
+                            <Badge variant="outline" className="text-xs">{pos.segment}</Badge>
+                            {pos.callPut && <Badge variant="outline" className="text-xs">{pos.callPut}</Badge>}
+                          </div>
+                          <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted-foreground">
+                            {pos.entryPrice && <span>Entry: {"\u20B9"}{pos.entryPrice}</span>}
+                            {pos.target && <span>Target: {"\u20B9"}{pos.target}</span>}
+                            {pos.stopLoss && <span>SL: {"\u20B9"}{pos.stopLoss}</span>}
+                            {pos.strikePrice && <span>Strike: {"\u20B9"}{pos.strikePrice}</span>}
+                            {pos.expiry && <span>Exp: {pos.expiry}</span>}
+                          </div>
+                          {pos.rationale && <p className="text-xs text-muted-foreground italic line-clamp-1">{pos.rationale}</p>}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+              {strategies.every((s) => !(s as any).activeCalls && !(s as any).activePositions) && (
+                <p className="text-sm text-muted-foreground">No active calls or positions across your strategies.</p>
+              )}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">Create a strategy to start adding calls.</p>
+          )}
         </div>
 
         <div className="space-y-4">

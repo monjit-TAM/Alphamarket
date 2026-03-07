@@ -237,3 +237,47 @@ export async function sendEsignAgreementEmail(data: {
     console.error("Failed to send eSign agreement email:", err);
   }
 }
+
+// ─── Strategy Alert Email (for call/position lifecycle events) ───────────────
+export async function sendStrategyAlertEmail(
+  subscriberEmails: string[],
+  subject: string,
+  htmlBody: string,
+  strategyId: string
+): Promise<void> {
+  if (subscriberEmails.length === 0) return;
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) {
+    console.warn("[Email] Skipped strategy alert (no API key)");
+    return;
+  }
+  const sgMailLib = require("@sendgrid/mail");
+  sgMailLib.setApiKey(apiKey);
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || "hello@alphamarket.co.in";
+  const appUrl = process.env.APP_URL || "https://alphamarket.co.in";
+
+  const fullHtml = `
+    <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+      ${htmlBody}
+      <p style="text-align: center; margin: 20px 0;">
+        <a href="${appUrl}/strategies/${strategyId}" style="background-color: #c53030; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">View Strategy</a>
+      </p>
+      <p style="color: #999; font-size: 11px; margin-top: 20px;">Disclaimer: Investment in securities market are subject to market risks. Read all the related documents carefully before investing.</p>
+      <p style="color: #999; font-size: 11px;">AlphaMarket by Edhaz Financial Services Private Limited</p>
+    </div>
+  `;
+
+  let sent = 0, failed = 0;
+  for (const email of subscriberEmails) {
+    try {
+      await sgMailLib.send({ to: email, from: fromEmail, subject, html: fullHtml });
+      sent++;
+    } catch (err: any) {
+      failed++;
+      console.error(`[Email] Failed to send to ${email}: ${err?.response?.body?.errors?.[0]?.message || err.message}`);
+    }
+  }
+  if (sent > 0 || failed > 0) {
+    console.log(`[Email] Strategy alert: ${sent} sent, ${failed} failed — "${subject}"`);
+  }
+}

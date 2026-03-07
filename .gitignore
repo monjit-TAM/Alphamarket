@@ -7,3 +7,5 @@ venv/
 *.log
 .DS_Store
 node_modules/
+dist/
+uploads/

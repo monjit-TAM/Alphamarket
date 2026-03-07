@@ -110,8 +110,8 @@ export function getSwaggerSpec() {
     openapi: "3.0.3",
     info: {
       title: "AlphaMarket Broker API",
-      version: "2.1.0",
-      description: "AlphaMarket Broker API Integration Guide v2.1\n\nSEBI-registered research analyst marketplace API for broker integrations. Provides access to advisors, strategies, portfolio recommendations, and live calls.\n\n**What\'s New in v2.1:**\n- PRICE (₹) trailing SL type added across all Equity and F&O forms\n- Trailing Stop Loss now fully supported on F&O Position creation\n- Revised trailing SL types: PERCENTAGE | POINTS | PRICE (replaces FIXED)\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
+      version: "2.2.0",
+      description: "AlphaMarket Broker API Integration Guide v2.1\n\nSEBI-registered research analyst marketplace API for broker integrations. Provides access to advisors, strategies, portfolio recommendations, and live calls.\n\n**What\'s New in v2.2:**\n- Email notifications to subscribers on call/position events (new, update, close)\n- Auto Stop Loss & Target detection (every 60s during market hours)\n- Trailing Stop Loss monitoring with auto-trigger\n- Push + In-app + Email notification pipeline\n- Webhook events for all call/position lifecycle changes\n\n**v2.1:**\n- PRICE (₹) trailing SL type across all Equity and F&O forms\n- Trailing Stop Loss fully supported on F&O Position creation\n- Revised trailing SL types: PERCENTAGE | POINTS | PRICE (replaces FIXED)\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
       contact: { email: "hello@alphamarket.co.in", name: "AlphaMarket Team", url: "https://alphamarket.co.in" },
     },
     servers: [{ url: "https://alphamarket.co.in/api/v1", description: "Production" }],
