@@ -2545,7 +2545,7 @@ export async function registerRoutes(
 
   app.get("/api/telegram/status", requireAuth, async (req: any, res: any) => {
     try {
-      const status = await getUserTelegramStatus(req.user.id);
+      const status = await getUserTelegramStatus(req.session.userId);
       res.json(status);
     } catch (err) {
       console.error("[Telegram] Status check error:", err);
@@ -2555,7 +2555,7 @@ export async function registerRoutes(
 
   app.post("/api/telegram/link", requireAuth, async (req: any, res: any) => {
     try {
-      const code = await generateLinkingCode(req.user.id);
+      const code = await generateLinkingCode(req.session.userId);
       const botUsername = process.env.TELEGRAM_BOT_USERNAME || "AlphaMarketAlertsBot";
       const deepLink = "https://t.me/" + botUsername + "?start=" + code;
       res.json({ deepLink, code, expiresInSeconds: 600 });
@@ -2570,7 +2570,7 @@ export async function registerRoutes(
       await db.execute(sql`
         UPDATE telegram_subscriptions 
         SET is_active = false, updated_at = NOW()
-        WHERE user_id = ${req.user.id} AND is_active = true
+        WHERE user_id = ${req.session.userId} AND is_active = true
       `);
       res.json({ success: true, message: "Telegram alerts disabled" });
     } catch (err) {
