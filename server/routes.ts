@@ -1,3 +1,4 @@
+import { generateLinkingCode, getUserTelegramStatus, initTelegramBot } from "./telegram";
 import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { registerBrokerApiRoutes, getSwaggerSpec } from "./broker-api";
@@ -10,7 +11,7 @@ import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, 
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements } from "@shared/schema";
 import { db } from "./db";
-import { and, eq, desc } from "drizzle-orm";
+import { and, eq, desc, sql } from "drizzle-orm";
 import nseSymbols from "./data/nse-symbols.json";
 import { createCashfreeOrder, fetchCashfreeOrder, fetchCashfreePayments, verifyCashfreeWebhook } from "./cashfree";
 import {
@@ -2539,6 +2540,45 @@ export async function registerRoutes(
       res.status(500).send(err.message);
     }
   });
+
+  // ─── Telegram Routes ───────────────────────────────────────────────
+
+  app.get("/api/telegram/status", requireAuth, async (req: any, res: any) => {
+    try {
+      const status = await getUserTelegramStatus(req.user.id);
+      res.json(status);
+    } catch (err) {
+      console.error("[Telegram] Status check error:", err);
+      res.status(500).json({ error: "Failed to check Telegram status" });
+    }
+  });
+
+  app.post("/api/telegram/link", requireAuth, async (req: any, res: any) => {
+    try {
+      const code = await generateLinkingCode(req.user.id);
+      const botUsername = process.env.TELEGRAM_BOT_USERNAME || "AlphaMarketAlertsBot";
+      const deepLink = "https://t.me/" + botUsername + "?start=" + code;
+      res.json({ deepLink, code, expiresInSeconds: 600 });
+    } catch (err) {
+      console.error("[Telegram] Link generation error:", err);
+      res.status(500).json({ error: "Failed to generate linking code" });
+    }
+  });
+
+  app.post("/api/telegram/unlink", requireAuth, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`
+        UPDATE telegram_subscriptions 
+        SET is_active = false, updated_at = NOW()
+        WHERE user_id = ${req.user.id} AND is_active = true
+      `);
+      res.json({ success: true, message: "Telegram alerts disabled" });
+    } catch (err) {
+      console.error("[Telegram] Unlink error:", err);
+      res.status(500).json({ error: "Failed to unlink Telegram" });
+    }
+  });
+
 
   app.get("/api/notifications/vapid-key", (req, res) => {
     if (!pushEnabled || !vapidPublicKey) {

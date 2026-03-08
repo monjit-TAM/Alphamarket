@@ -114,6 +114,20 @@ export default function InvestorDashboard() {
     queryKey: ["/api/investor/watchlist"],
   });
 
+  const [telegramDismissed, setTelegramDismissed] = useState(false);
+  const { data: telegramStatus } = useQuery<{ linked: boolean; username?: string }>({
+    queryKey: ["/api/telegram/status"],
+  });
+  const telegramLinkMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/telegram/link");
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      window.open(data.deepLink, "_blank");
+    },
+  });
+
   const activeCalls = (recommendations?.calls || []).filter(c => c.status === "Active");
   const closedCalls = (recommendations?.calls || []).filter(c => c.status === "Closed");
   const activePositions = (recommendations?.positions || []).filter(p => p.status === "Active");
@@ -271,6 +285,41 @@ export default function InvestorDashboard() {
           </Card>
         ))}
 
+
+        {!telegramDismissed && telegramStatus && !telegramStatus.linked && subscriptions && subscriptions.length > 0 && (
+          <Card className="border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/20">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center shrink-0">
+                  <Bell className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0 space-y-1">
+                  <h3 className="font-semibold text-blue-900 dark:text-blue-200 text-sm">Get Instant Alerts on Telegram</h3>
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    Receive real-time call alerts, stop loss triggers, and target achievements directly on Telegram. Free and instant.
+                  </p>
+                  <div className="pt-2 flex items-center gap-2 flex-wrap">
+                    <Button size="sm" onClick={() => telegramLinkMutation.mutate()} disabled={telegramLinkMutation.isPending}>
+                      <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 mr-1" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+                      {telegramLinkMutation.isPending ? "Connecting..." : "Connect Telegram"}
+                    </Button>
+                    <span className="text-xs text-blue-600 dark:text-blue-400">No Telegram? <a href="https://telegram.org/dl" target="_blank" rel="noopener noreferrer" className="underline font-medium">Download here</a></span>
+                  </div>
+                </div>
+                <button onClick={() => setTelegramDismissed(true)} className="text-blue-400 hover:text-blue-600 shrink-0">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {telegramStatus?.linked && subscriptions && subscriptions.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 text-xs text-green-700 dark:text-green-400">
+            <svg viewBox="0 0 24 24" className="w-4 h-4 shrink-0" fill="currentColor"><path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/></svg>
+            Telegram alerts active{telegramStatus.username ? ` (@${telegramStatus.username})` : ""} — you will receive instant call notifications.
+          </div>
+        )}
         {(!subscriptions || subscriptions.length === 0) ? (
           <Card>
             <CardContent className="py-12 text-center space-y-4">

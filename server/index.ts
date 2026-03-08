@@ -1,3 +1,4 @@
+import { initTelegramBot } from "./telegram";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
@@ -106,6 +107,7 @@ app.use((req, res, next) => {
     () => {
       log(`serving on port ${port}`);
       startScheduler();
+      initTelegramBot();
     },
   );
 })();

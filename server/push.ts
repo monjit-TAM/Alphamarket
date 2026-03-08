@@ -1,3 +1,4 @@
+import { sendTelegramAlertToStrategy } from "./telegram";
 import webpush from "web-push";
 import { storage } from "./storage";
 import type { PushSubscription as DBPushSubscription } from "@shared/schema";
@@ -113,6 +114,13 @@ export async function notifyStrategySubscribers(
       }
     } catch (emailErr) {
       console.error("Error sending strategy email notifications:", emailErr);
+    }
+
+    // Send Telegram alert
+    try {
+      await sendTelegramAlertToStrategy(strategyId, payload.title, payload.body);
+    } catch (telegramErr) {
+      console.error("Error sending Telegram notifications:", telegramErr);
     }
   } catch (err) {
     console.error("Error sending strategy notifications:", err);
