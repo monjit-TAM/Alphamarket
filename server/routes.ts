@@ -779,6 +779,7 @@ export async function registerRoutes(
           customerEmail: user?.email || "",
           strategyName: strategy?.name || "",
           planName: plan?.name || "",
+          pmlaDone: sub.pmlaDone || false,
         };
       }));
       res.json(enriched);
@@ -2677,7 +2678,45 @@ export async function registerRoutes(
     }
   });
 
-  // ─── Telegram Routes ───────────────────────────────────────────────
+  app.get("/api/advisor/pmla/:subscriptionId", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { subscriptionId } = req.params;
+      const sub = await storage.getSubscription(subscriptionId);
+      if (!sub) return res.status(404).json({ error: "Subscription not found" });
+      if (sub.advisorId !== req.session.userId) return res.status(403).json({ error: "Not authorized" });
+
+      const result = await db.execute(sql`
+        SELECT * FROM pmla_verifications WHERE subscription_id = ${subscriptionId} ORDER BY created_at DESC LIMIT 1
+      `);
+      const record = (result as any).rows?.[0];
+      const user = await storage.getUser(sub.userId);
+
+      res.json({
+        subscriptionId,
+        investorName: user?.username || "Unknown",
+        investorEmail: user?.email || "",
+        pmlaDone: sub.pmlaDone || false,
+        verification: record ? {
+          aadhaarName: record.aadhaar_name,
+          panName: record.pan_name,
+          nameMatchScore: record.name_match_score,
+          nameMatchResult: record.name_match_result,
+          panAadhaarLinked: record.pan_aadhaar_linked,
+          bankAccountNumber: record.bank_account_number,
+          bankIfsc: record.bank_ifsc,
+          bankAccountHolder: record.bank_account_holder,
+          bankVerified: record.bank_verified,
+          overallStatus: record.overall_status,
+          verifiedAt: record.verified_at,
+        } : null,
+      });
+    } catch (err: any) {
+      console.error("[PMLA] Advisor view error:", err.message);
+      res.status(500).json({ error: "Failed to get PMLA data" });
+    }
+  });
+
+    // ─── Telegram Routes ───────────────────────────────────────────────
 
   app.get("/api/telegram/status", requireAuth, async (req: any, res: any) => {
     try {

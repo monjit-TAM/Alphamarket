@@ -16,6 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGri
 interface EnrichedSubscriber extends Subscription {
   customerName: string;
   customerEmail: string;
+  pmlaDone?: boolean;
   customerPhone: string;
   strategyName: string;
   planName: string;
@@ -152,6 +153,111 @@ interface EkycDetail {
     aadhaarLinked: boolean;
     verifiedAt: string;
   } | null;
+}
+
+function PmlaDetailDialog({ subscriptionId, open, onClose }: { subscriptionId: string | null; open: boolean; onClose: () => void }) {
+  const { data: pmla, isLoading } = useQuery<any>({
+    queryKey: ["/api/advisor/pmla", subscriptionId],
+    queryFn: async () => {
+      const res = await fetch("/api/advisor/pmla/" + subscriptionId, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!subscriptionId && open,
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4" />
+            PMLA Verification Details
+          </DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="space-y-2 py-4">
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-3/4" />
+          </div>
+        ) : pmla?.verification ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between p-3 rounded-md border">
+              <div>
+                <p className="text-xs text-muted-foreground">Overall Status</p>
+                <p className="font-semibold">{pmla.verification.overallStatus === "passed" ? "Verified" : pmla.verification.overallStatus === "review" ? "Needs Review" : "Pending"}</p>
+              </div>
+              {pmla.verification.overallStatus === "passed" ? (
+                <CheckCircle2 className="w-6 h-6 text-green-600" />
+              ) : (
+                <AlertTriangle className="w-6 h-6 text-amber-500" />
+              )}
+            </div>
+
+            <div className="p-3 rounded-md border space-y-1.5 text-sm">
+              <p className="text-sm font-medium mb-2">Name Verification</p>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Aadhaar Name</span>
+                <span className="font-medium text-right">{pmla.verification.aadhaarName || "N/A"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">PAN Name</span>
+                <span className="font-medium text-right">{pmla.verification.panName || "N/A"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Name Match</span>
+                <Badge variant="secondary" className={pmla.verification.nameMatchResult === "MISMATCH" ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}>
+                  {pmla.verification.nameMatchResult} ({pmla.verification.nameMatchScore}%)
+                </Badge>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-md border space-y-1.5 text-sm">
+              <p className="text-sm font-medium mb-2">PAN-Aadhaar Linkage</p>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Status</span>
+                <Badge variant="secondary" className={pmla.verification.panAadhaarLinked ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+                  {pmla.verification.panAadhaarLinked ? "Linked" : "Not Linked"}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-md border space-y-1.5 text-sm">
+              <p className="text-sm font-medium mb-2">Bank Account Verification</p>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Account</span>
+                <span className="font-medium">{pmla.verification.bankAccountNumber || "N/A"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">IFSC</span>
+                <span className="font-medium">{pmla.verification.bankIfsc || "N/A"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Account Holder</span>
+                <span className="font-medium text-right">{pmla.verification.bankAccountHolder || "N/A"}</span>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className="text-muted-foreground">Verified</span>
+                <Badge variant="secondary" className={pmla.verification.bankVerified ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}>
+                  {pmla.verification.bankVerified ? "Yes" : "No"}
+                </Badge>
+              </div>
+            </div>
+
+            {pmla.verification.verifiedAt && (
+              <div className="text-xs text-muted-foreground text-center">
+                Verified on {new Date(pmla.verification.verifiedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="py-6 text-center text-sm text-muted-foreground">
+            PMLA verification not yet completed by this subscriber.
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function EkycDetailDialog({ subscriptionId, open, onClose }: { subscriptionId: string | null; open: boolean; onClose: () => void }) {
@@ -363,6 +469,7 @@ export default function DashboardHome() {
   const [riskProfileSubId, setRiskProfileSubId] = useState<string | null>(null);
   const [ekycSubId, setEkycSubId] = useState<string | null>(null);
   const [agreementSubId, setAgreementSubId] = useState<string | null>(null);
+  const [pmlaSubId, setPmlaSubId] = useState<string | null>(null);
 
   const { data: strategies, isLoading: loadingStrategies } = useQuery<Strategy[]>({
     queryKey: ["/api/advisor/strategies"],
@@ -640,6 +747,7 @@ export default function DashboardHome() {
                         <span className="w-16 text-center">Agreement</span>
                         <span className="w-16 text-center">EKYC</span>
                         <span className="w-16 text-center">Risk Prof.</span>
+                        <span className="w-16 text-center">PMLA</span>
                       </div>
                     </div>
                     {currentMonthSubs.length === 0 ? (
@@ -685,6 +793,16 @@ export default function DashboardHome() {
                             ) : (
                               <span className="w-16 text-center text-xs font-medium text-primary">No</span>
                             )}
+                            {sub.pmlaDone ? (
+                              <button
+                                onClick={() => setPmlaSubId(sub.id)}
+                                className="w-16 text-center text-xs font-medium text-accent underline cursor-pointer"
+                              >
+                                View
+                              </button>
+                            ) : (
+                              <span className="w-16 text-center text-xs font-medium text-primary">No</span>
+                            )}
                           </div>
                         </div>
                       ))
@@ -703,6 +821,7 @@ export default function DashboardHome() {
                         <span className="w-16 text-center">Agreement</span>
                         <span className="w-16 text-center">EKYC</span>
                         <span className="w-16 text-center">Risk Prof.</span>
+                        <span className="w-16 text-center">PMLA</span>
                       </div>
                     </div>
                     {previousSubs.length === 0 ? (
@@ -816,6 +935,11 @@ export default function DashboardHome() {
         subscriptionId={agreementSubId}
         open={!!agreementSubId}
         onClose={() => setAgreementSubId(null)}
+      />
+      <PmlaDetailDialog
+        subscriptionId={pmlaSubId}
+        open={!!pmlaSubId}
+        onClose={() => setPmlaSubId(null)}
       />
     </div>
   );
