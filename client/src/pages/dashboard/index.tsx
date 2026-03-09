@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
+  Globe,
   BarChart3,
   BookOpen,
   ListChecks,
@@ -32,6 +33,7 @@ import StrategyManagement from "./strategy-management";
 import PlansPage from "./plans";
 import ContentPage from "./content-page";
 import AdvisorProfile from "./advisor-profile";
+import MicrositeEditor from "./microsite-editor";
 import ReportsPage from "./reports";
 import PaymentsPage from "./payments-page";
 import QuestionsPage from "./questions-page";
@@ -44,6 +46,7 @@ const sidebarItems = [
   { title: "Questions", icon: MessageCircle, path: "/dashboard/questions" },
   { title: "Content", icon: BookOpen, path: "/dashboard/content" },
   { title: "Reports", icon: BarChart3, path: "/dashboard/reports" },
+  { title: "Microsite", icon: Globe, path: "/dashboard/microsite" },
   { title: "Profile", icon: User, path: "/dashboard/profile" },
 ];
 
@@ -86,6 +89,7 @@ export default function Dashboard() {
     if (location === "/dashboard/questions") return <QuestionsPage />;
     if (location === "/dashboard/content") return <ContentPage />;
     if (location === "/dashboard/reports") return <ReportsPage />;
+    if (location === "/dashboard/microsite") return <MicrositeEditor />;
     if (location === "/dashboard/profile") return <AdvisorProfile />;
     return <DashboardHome />;
   };

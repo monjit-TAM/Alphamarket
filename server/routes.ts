@@ -2509,7 +2509,206 @@ export async function registerRoutes(
   });
 
 
-  // ─── PMLA Routes ───────────────────────────────────────────────
+  // ─── Advisor Microsite Routes ─────────────────────────────────────
+
+  // Public: Get microsite by slug (no auth needed)
+  app.get("/api/microsite/:slug", async (req: any, res: any) => {
+    try {
+      const { slug } = req.params;
+      const result = await db.execute(sql`
+        SELECT m.*, u.username, u.company_name, u.overview, u.themes, u.logo_url as user_logo,
+               u.sebi_reg_number, u.active_since, u.require_risk_profiling, u.require_pmla
+        FROM advisor_microsites m
+        JOIN users u ON u.id = m.advisor_id
+        WHERE m.slug = ${slug} AND m.is_active = true AND u.is_approved = true
+        LIMIT 1
+      `);
+      const row = (result as any).rows?.[0];
+      if (!row) return res.status(404).json({ error: "Microsite not found" });
+
+      const strategies = await storage.getStrategiesByAdvisor(row.advisor_id);
+      const publishedStrategies = strategies.filter((s: any) => s.status === "Published");
+
+      res.json({
+        microsite: {
+          slug: row.slug,
+          tagline: row.tagline,
+          about: row.about || row.overview,
+          themeColor: row.theme_color,
+          logoUrl: row.logo_url || row.user_logo,
+          bannerImageUrl: row.banner_image_url,
+          address: row.address,
+          city: row.city,
+          state: row.state,
+          pincode: row.pincode,
+          contactPhone: row.contact_phone,
+          contactEmail: row.contact_email,
+          websiteUrl: row.website_url,
+          socialLinkedin: row.social_linkedin,
+          socialTwitter: row.social_twitter,
+          socialYoutube: row.social_youtube,
+          socialTelegram: row.social_telegram,
+          showPerformance: row.show_performance,
+          showTestimonials: row.show_testimonials,
+          showContact: row.show_contact,
+          showFaq: row.show_faq,
+          showAbout: row.show_about,
+          testimonials: row.testimonials || [],
+          faq: row.faq || [],
+        },
+        advisor: {
+          id: row.advisor_id,
+          companyName: row.company_name || row.username,
+          username: row.username,
+          sebiRegNumber: row.sebi_reg_number,
+          themes: row.themes || [],
+          activeSince: row.active_since,
+          requireRiskProfiling: row.require_risk_profiling,
+          requirePmla: row.require_pmla,
+        },
+        strategies: publishedStrategies.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          type: s.type,
+          description: s.description,
+          horizon: s.horizon,
+          riskLevel: s.riskLevel,
+          cagr: s.cagr,
+          totalRecommendations: s.totalRecommendations,
+        })),
+      });
+    } catch (err: any) {
+      console.error("[Microsite] Public fetch error:", err.message);
+      res.status(500).json({ error: "Failed to load microsite" });
+    }
+  });
+
+  // Advisor: Get own microsite config
+  app.get("/api/advisor/microsite", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT * FROM advisor_microsites WHERE advisor_id = ${req.session.userId} LIMIT 1
+      `);
+      const row = (result as any).rows?.[0];
+      if (!row) {
+        const user = await storage.getUser(req.session.userId!);
+        const defaultSlug = (user?.companyName || user?.username || "advisor").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").substring(0, 50);
+        return res.json({ exists: false, suggestedSlug: defaultSlug });
+      }
+      res.json({ exists: true, ...row });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to get microsite" });
+    }
+  });
+
+  // Advisor: Create or update microsite
+  app.post("/api/advisor/microsite", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const userId = req.session.userId!;
+      const { slug, tagline, about, themeColor, logoUrl, bannerImageUrl,
+              address, city, state, pincode, contactPhone, contactEmail,
+              websiteUrl, socialLinkedin, socialTwitter, socialYoutube, socialTelegram,
+              showPerformance, showTestimonials, showContact, showFaq, showAbout,
+              testimonials, faq } = req.body;
+
+      if (!slug || slug.length < 3) return res.status(400).json({ error: "Slug must be at least 3 characters" });
+      if (!/^[a-z0-9-]+$/.test(slug)) return res.status(400).json({ error: "Slug can only contain lowercase letters, numbers, and hyphens" });
+
+      const existing = await db.execute(sql`SELECT id FROM advisor_microsites WHERE advisor_id = ${userId} LIMIT 1`);
+
+      if ((existing as any).rows?.length > 0) {
+        await db.execute(sql`
+          UPDATE advisor_microsites SET
+            slug = ${slug}, tagline = ${tagline || null}, about = ${about || null},
+            theme_color = ${themeColor || "#E53E3E"}, logo_url = ${logoUrl || null},
+            banner_image_url = ${bannerImageUrl || null}, address = ${address || null},
+            city = ${city || null}, state = ${state || null}, pincode = ${pincode || null},
+            contact_phone = ${contactPhone || null}, contact_email = ${contactEmail || null},
+            website_url = ${websiteUrl || null}, social_linkedin = ${socialLinkedin || null},
+            social_twitter = ${socialTwitter || null}, social_youtube = ${socialYoutube || null},
+            social_telegram = ${socialTelegram || null},
+            show_performance = ${showPerformance !== false}, show_testimonials = ${!!showTestimonials},
+            show_contact = ${showContact !== false}, show_faq = ${!!showFaq},
+            show_about = ${showAbout !== false},
+            testimonials = ${JSON.stringify(testimonials || [])},
+            faq = ${JSON.stringify(faq || [])},
+            updated_at = NOW()
+          WHERE advisor_id = ${userId}
+        `);
+      } else {
+        const slugCheck = await db.execute(sql`SELECT id FROM advisor_microsites WHERE slug = ${slug} LIMIT 1`);
+        if ((slugCheck as any).rows?.length > 0) return res.status(409).json({ error: "This URL slug is already taken" });
+
+        await db.execute(sql`
+          INSERT INTO advisor_microsites (advisor_id, slug, tagline, about, theme_color, logo_url,
+            banner_image_url, address, city, state, pincode, contact_phone, contact_email,
+            website_url, social_linkedin, social_twitter, social_youtube, social_telegram,
+            show_performance, show_testimonials, show_contact, show_faq, show_about, testimonials, faq)
+          VALUES (${userId}, ${slug}, ${tagline || null}, ${about || null}, ${themeColor || "#E53E3E"},
+            ${logoUrl || null}, ${bannerImageUrl || null}, ${address || null}, ${city || null},
+            ${state || null}, ${pincode || null}, ${contactPhone || null}, ${contactEmail || null},
+            ${websiteUrl || null}, ${socialLinkedin || null}, ${socialTwitter || null},
+            ${socialYoutube || null}, ${socialTelegram || null},
+            ${showPerformance !== false}, ${!!showTestimonials}, ${showContact !== false},
+            ${!!showFaq}, ${showAbout !== false}, ${JSON.stringify(testimonials || [])},
+            ${JSON.stringify(faq || [])})
+        `);
+      }
+
+      res.json({ success: true, slug });
+    } catch (err: any) {
+      if (err.message?.includes("unique") || err.message?.includes("duplicate")) {
+        return res.status(409).json({ error: "This URL slug is already taken" });
+      }
+      console.error("[Microsite] Save error:", err.message);
+      res.status(500).json({ error: "Failed to save microsite" });
+    }
+  });
+
+  // Advisor: Check slug availability
+  app.get("/api/advisor/microsite/check-slug/:slug", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { slug } = req.params;
+      const result = await db.execute(sql`
+        SELECT advisor_id FROM advisor_microsites WHERE slug = ${slug} LIMIT 1
+      `);
+      const row = (result as any).rows?.[0];
+      const available = !row || row.advisor_id === req.session.userId;
+      res.json({ available, slug });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to check slug" });
+    }
+  });
+
+  // File upload for microsite logos/banners
+  app.post("/api/advisor/microsite/upload", requireAdvisor, async (req: any, res: any) => {
+    try {
+      if (!req.files || !req.files.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const file = req.files.file;
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (!["jpg", "jpeg", "png", "webp", "svg"].includes(ext || "")) {
+        return res.status(400).json({ error: "Only image files allowed (jpg, png, webp, svg)" });
+      }
+      const fileName = req.session.userId + "-" + Date.now() + "." + ext;
+      const uploadPath = "/var/www/alphamarket/uploads/microsites/" + fileName;
+
+      const fs = require("fs");
+      if (!fs.existsSync("/var/www/alphamarket/uploads/microsites")) {
+        fs.mkdirSync("/var/www/alphamarket/uploads/microsites", { recursive: true });
+      }
+
+      await file.mv(uploadPath);
+      const url = "/uploads/microsites/" + fileName;
+      res.json({ url, fileName });
+    } catch (err: any) {
+      console.error("[Microsite] Upload error:", err.message);
+      res.status(500).json({ error: "Failed to upload file" });
+    }
+  });
+
+    // ─── PMLA Routes ───────────────────────────────────────────────
 
   app.get("/api/pmla/status", requireAuth, async (req: any, res: any) => {
     try {

@@ -27,6 +27,8 @@ import InvestorDashboard from "@/pages/investor-dashboard";
 import RiskProfilingPage from "@/pages/risk-profiling";
 import EkycPage from "@/pages/ekyc";
 import PmlaVerifyPage from "@/pages/pmla-verify";
+import MicrositeEditor from "@/pages/dashboard/microsite-editor";
+import AdvisorMicrosite from "@/pages/advisor-microsite";
 import EsignAgreementPage from "@/pages/esign-agreement";
 import StrategyPerformance from "@/pages/strategy-performance";
 import DyorPage from "@/pages/dyor/index";
@@ -57,6 +59,7 @@ function Router() {
       <Route path="/risk-profiling" component={RiskProfilingPage} />
       <Route path="/ekyc" component={EkycPage} />
       <Route path="/pmla-verify" component={PmlaVerifyPage} />
+      <Route path="/advisor/:slug" component={AdvisorMicrosite} />
       <Route path="/terms-and-conditions" component={TermsAndConditions} />
       <Route path="/cancellation-policy" component={CancellationPolicy} />
       <Route path="/privacy-policy" component={PrivacyPolicy} />

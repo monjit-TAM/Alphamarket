@@ -1,3 +1,4 @@
+import fileUpload from "express-fileupload";
 import { initTelegramBot } from "./telegram";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
@@ -26,6 +27,8 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+app.use(fileUpload({ limits: { fileSize: 5 * 1024 * 1024 }, abortOnLimit: true }));
+app.use("/uploads", require("express").static("/var/www/alphamarket/uploads"));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
