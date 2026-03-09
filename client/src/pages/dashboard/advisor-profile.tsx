@@ -70,6 +70,25 @@ export default function AdvisorProfile() {
     },
   });
 
+  const { data: pmlaSettings } = useQuery<{ requirePmla: boolean }>({
+    queryKey: ["/api/advisor/pmla-setting"],
+  });
+
+  const pmlaToggleMutation = useMutation({
+    mutationFn: async (value: boolean) => {
+      const res = await apiRequest("PATCH", "/api/advisor/pmla-setting", { requirePmla: value });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/advisor/pmla-setting"] });
+      toast({ title: "PMLA verification setting updated" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed to update PMLA setting", variant: "destructive" });
+    },
+  });
+
+
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
       const res = await apiRequest("PATCH", "/api/advisor/profile", data);
@@ -278,6 +297,21 @@ export default function AdvisorProfile() {
                       data-testid="input-score-beginning"
                     />
                   </div>
+
+              <div className="flex items-center justify-between gap-4 p-4 rounded-md border">
+                <div className="space-y-1">
+                  <Label className="text-sm font-medium">PMLA Verification for Subscribers</Label>
+                  <p className="text-xs text-muted-foreground">
+                    When enabled, investors must complete PMLA checks (bank account verification, name matching, PAN-Aadhaar linkage) after eKYC before accessing your recommendations.
+                  </p>
+                </div>
+                <Switch
+                  checked={pmlaSettings?.requirePmla || false}
+                  onCheckedChange={(checked) => pmlaToggleMutation.mutate(checked)}
+                  disabled={pmlaToggleMutation.isPending}
+                  data-testid="switch-pmla"
+                />
+              </div>
                   <div className="space-y-1.5">
                     <Label>Received during of the month</Label>
                     <Input
