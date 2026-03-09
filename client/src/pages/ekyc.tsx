@@ -32,6 +32,17 @@ function EkycCompleteStep({ subscriptionId, aadhaarVerified, panVerified }: { su
     enabled: !!subscriptionId,
   });
 
+  const { data: pmlaCheck } = useQuery<{ required: boolean; done: boolean }>({
+    queryKey: ["/api/pmla/status", subscriptionId],
+    queryFn: async () => {
+      const res = await fetch(`/api/pmla/status?subscriptionId=${subscriptionId}`, { credentials: "include" });
+      if (!res.ok) return { required: false, done: false };
+      return res.json();
+    },
+    enabled: !!subscriptionId,
+  });
+
+  const needsPmla = pmlaCheck?.required && !pmlaCheck?.done;
   const needsRiskProfiling = rpCheck?.requiresRiskProfiling && !rpCheck?.completed;
 
   return (
@@ -42,7 +53,9 @@ function EkycCompleteStep({ subscriptionId, aadhaarVerified, panVerified }: { su
           <h2 className="text-xl font-bold" data-testid="text-ekyc-complete">eKYC Verification Complete</h2>
           <p className="text-sm text-muted-foreground">
             Your identity has been verified successfully.
-            {needsRiskProfiling
+            {needsPmla
+              ? " Please complete PMLA verification to proceed."
+              : needsRiskProfiling
               ? " Please complete your Risk Profiling to access strategy recommendations."
               : " You can now access your subscribed strategy recommendations."}
           </p>
@@ -60,7 +73,23 @@ function EkycCompleteStep({ subscriptionId, aadhaarVerified, panVerified }: { su
           )}
         </div>
 
-        {needsRiskProfiling && (
+        {needsPmla && (
+          <div className="p-4 rounded-md border border-blue-300 dark:border-blue-700 bg-blue-50 dark:bg-blue-950/30 space-y-2">
+            <div className="flex items-center justify-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">PMLA Verification Required</p>
+            </div>
+            <p className="text-xs text-blue-700 dark:text-blue-400">
+              Your advisor requires PMLA compliance verification. Please verify your bank account details to proceed.
+            </p>
+            <Button onClick={() => navigate(`/pmla-verify?subscriptionId=${subscriptionId}`)} className="mt-2">
+              <ShieldCheck className="w-4 h-4 mr-1" />
+              Complete PMLA Verification
+            </Button>
+          </div>
+        )}
+
+        {needsRiskProfiling && !needsPmla && (
           <div className="p-4 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 space-y-2">
             <div className="flex items-center justify-center gap-2">
               <ShieldCheck className="w-5 h-5 text-amber-600 dark:text-amber-400" />
@@ -78,7 +107,7 @@ function EkycCompleteStep({ subscriptionId, aadhaarVerified, panVerified }: { su
 
         {rpLoading ? (
           <Loader2 className="w-5 h-5 mx-auto animate-spin text-muted-foreground" />
-        ) : !needsRiskProfiling ? (
+        ) : !needsRiskProfiling && !needsPmla ? (
           <Button onClick={() => navigate("/investor-dashboard")} data-testid="button-ekyc-dashboard">
             Go to Dashboard
           </Button>
