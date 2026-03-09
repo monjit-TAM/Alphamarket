@@ -156,3 +156,53 @@ export async function verifyPan(pan: string, nameAsPan: string, dob: string): Pr
 export function isSandboxConfigured(): boolean {
   return !!(API_KEY && API_SECRET);
 }
+export async function verifyBankAccount(accountNumber: string, ifsc: string): Promise<{
+  accountHolder: string;
+  bankName: string;
+  branch: string;
+  verified: boolean;
+  transactionId: string;
+}> {
+  const token = await authenticate();
+  const res = await fetch(SANDBOX_BASE_URL + "/bank/" + accountNumber + "/verify?ifsc=" + ifsc, {
+    method: "GET",
+    headers: getHeaders(token),
+  });
+
+  const data = await res.json();
+  if (data.code !== 200) {
+    console.error("[Sandbox KYC] Bank verify failed:", data);
+    throw new Error(data.data?.message || data.message || "Failed to verify bank account");
+  }
+
+  return {
+    accountHolder: data.data.account_holder_name || "",
+    bankName: data.data.bank_name || "",
+    branch: data.data.branch || "",
+    verified: data.data.account_exists === true,
+    transactionId: data.transaction_id,
+  };
+}
+
+export function fuzzyNameMatch(name1: string, name2: string): { score: number; result: string } {
+  const n1 = name1.toUpperCase().replace(/[^A-Z ]/g, "").replace(/\s+/g, " ").trim();
+  const n2 = name2.toUpperCase().replace(/[^A-Z ]/g, "").replace(/\s+/g, " ").trim();
+
+  if (n1 === n2) return { score: 100, result: "EXACT" };
+
+  const words1 = n1.split(" ");
+  const words2 = n2.split(" ");
+  let matchCount = 0;
+  for (const w1 of words1) {
+    if (words2.some(w2 => w2 === w1 || (w1.length > 2 && w2.startsWith(w1.substring(0, 3))))) {
+      matchCount++;
+    }
+  }
+
+  const maxWords = Math.max(words1.length, words2.length);
+  const score = Math.round((matchCount / maxWords) * 100);
+
+  if (score >= 80) return { score, result: "MATCH" };
+  if (score >= 50) return { score, result: "PARTIAL" };
+  return { score, result: "MISMATCH" };
+}

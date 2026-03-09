@@ -24,7 +24,7 @@ import {
   buildPositionClosedSubscriberNotification, buildPositionClosedWatchlistNotification,
   buildPositionUpdateSubscriberNotification,
 } from "./push";
-import { sendAadhaarOtp, verifyAadhaarOtp, verifyPan, isSandboxConfigured } from "./sandbox-kyc";
+import { sendAadhaarOtp, verifyAadhaarOtp, verifyPan, isSandboxConfigured, verifyBankAccount, fuzzyNameMatch } from "./sandbox-kyc";
 
 const scryptAsync = promisify(scrypt);
 
@@ -1469,13 +1469,16 @@ export async function registerRoutes(
       if (!sub) return res.json({ subscribed: false });
       const advisor = await storage.getUser(sub.advisorId);
       const requiresRiskProfiling = advisor?.requireRiskProfiling || false;
+      const requiresPmla = advisor?.requirePmla || false;
       res.json({
         subscribed: true,
         subscriptionId: sub.id,
         ekycDone: sub.ekycDone || false,
+        pmlaDone: sub.pmlaDone || false,
+        requiresPmla,
         riskProfilingDone: sub.riskProfiling || false,
         requiresRiskProfiling,
-        allComplianceDone: (sub.ekycDone || false) && (!requiresRiskProfiling || (sub.riskProfiling || false)),
+        allComplianceDone: (sub.ekycDone || false) && (!requiresRiskProfiling || (sub.riskProfiling || false)) && (!requiresPmla || (sub.pmlaDone || false)),
       });
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -1807,6 +1810,7 @@ export async function registerRoutes(
         const plan = sub.planId ? await storage.getPlan(sub.planId) : null;
         const advisor = strategy?.advisorId ? await storage.getUser(strategy.advisorId) : null;
         const requiresRiskProfiling = advisor?.requireRiskProfiling || false;
+      const requiresPmla = advisor?.requirePmla || false;
         return {
           ...sub,
           strategyName: strategy?.name || "",
@@ -1823,6 +1827,7 @@ export async function registerRoutes(
           planDuration: plan?.durationDays ? `${plan.durationDays} days` : "",
           planPrice: plan?.amount || "0",
           requiresRiskProfiling,
+          requiresPmla,
         };
       }));
       res.json(enriched);
@@ -1842,6 +1847,7 @@ export async function registerRoutes(
         const strategy = await storage.getStrategy(sub.strategyId);
         const advisor = strategy?.advisorId ? await storage.getUser(strategy.advisorId) : null;
         if (advisor?.requireRiskProfiling && !sub.riskProfiling) continue;
+        if (advisor?.requirePmla && !sub.pmlaDone) continue;
         const subDate = sub.createdAt ? new Date(sub.createdAt) : new Date(0);
         const strategyCalls = await storage.getCallsByStrategy(sub.strategyId);
         const strategyPositions = await storage.getPositionsByStrategy(sub.strategyId);
@@ -2501,7 +2507,137 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/advisor/ekyc/:subscriptionId", requireAdvisor, async (req, res) => {
+
+  // ─── PMLA Routes ───────────────────────────────────────────────
+
+  app.get("/api/pmla/status", requireAuth, async (req: any, res: any) => {
+    try {
+      const { subscriptionId } = req.query;
+      if (!subscriptionId) return res.status(400).json({ error: "subscriptionId required" });
+      const sub = await storage.getSubscription(subscriptionId as string);
+      if (!sub) return res.status(404).json({ error: "Subscription not found" });
+      if (sub.userId !== req.session.userId) return res.status(403).json({ error: "Not authorized" });
+
+      const result = await db.execute(sql`
+        SELECT * FROM pmla_verifications 
+        WHERE subscription_id = ${subscriptionId} 
+        ORDER BY created_at DESC LIMIT 1
+      `);
+      const record = (result as any).rows?.[0];
+
+      res.json({
+        required: true,
+        done: sub.pmlaDone || false,
+        verification: record || null,
+      });
+    } catch (err: any) {
+      console.error("[PMLA] Status error:", err.message);
+      res.status(500).json({ error: "Failed to check PMLA status" });
+    }
+  });
+
+  app.post("/api/pmla/bank/verify", requireAuth, async (req: any, res: any) => {
+    try {
+      const { subscriptionId, accountNumber, ifsc } = req.body;
+      if (!subscriptionId || !accountNumber || !ifsc) {
+        return res.status(400).json({ error: "subscriptionId, accountNumber, and ifsc required" });
+      }
+
+      const sub = await storage.getSubscription(subscriptionId);
+      if (!sub) return res.status(404).json({ error: "Subscription not found" });
+      if (sub.userId !== req.session.userId) return res.status(403).json({ error: "Not authorized" });
+
+      const bankResult = await verifyBankAccount(accountNumber, ifsc);
+
+      const maskedAccount = "****" + accountNumber.slice(-4);
+
+      const aadhaarRecord = await storage.getEkycBySubscriptionAndType(subscriptionId, "aadhaar");
+      const panRecord = await storage.getEkycBySubscriptionAndType(subscriptionId, "pan");
+
+      const aadhaarName = aadhaarRecord?.aadhaarName || "";
+      const panName = panRecord?.panName || "";
+      const nameMatch = fuzzyNameMatch(aadhaarName, panName);
+      const bankNameMatch = fuzzyNameMatch(bankResult.accountHolder, aadhaarName);
+
+      const panAadhaarLinked = panRecord?.panAadhaarLinked || false;
+
+      const allPassed = bankResult.verified && 
+        nameMatch.result !== "MISMATCH" && 
+        bankNameMatch.result !== "MISMATCH" &&
+        panAadhaarLinked;
+
+      const overallStatus = allPassed ? "passed" : "review";
+
+      const existing = await db.execute(sql`
+        SELECT id FROM pmla_verifications WHERE subscription_id = ${subscriptionId} LIMIT 1
+      `);
+
+      if ((existing as any).rows?.length > 0) {
+        await db.execute(sql`
+          UPDATE pmla_verifications SET
+            aadhaar_name = ${aadhaarName},
+            pan_name = ${panName},
+            name_match_score = ${nameMatch.score},
+            name_match_result = ${nameMatch.result},
+            pan_aadhaar_linked = ${panAadhaarLinked},
+            bank_account_number = ${maskedAccount},
+            bank_ifsc = ${ifsc},
+            bank_account_holder = ${bankResult.accountHolder},
+            bank_verified = ${bankResult.verified},
+            bank_verification_method = ${"PENNY_LESS"},
+            overall_status = ${overallStatus},
+            verified_at = ${allPassed ? new Date().toISOString() : null}
+          WHERE subscription_id = ${subscriptionId}
+        `);
+      } else {
+        await db.execute(sql`
+          INSERT INTO pmla_verifications (user_id, subscription_id, aadhaar_name, pan_name, name_match_score, name_match_result, pan_aadhaar_linked, bank_account_number, bank_ifsc, bank_account_holder, bank_verified, bank_verification_method, overall_status, verified_at)
+          VALUES (${sub.userId}, ${subscriptionId}, ${aadhaarName}, ${panName}, ${nameMatch.score}, ${nameMatch.result}, ${panAadhaarLinked}, ${maskedAccount}, ${ifsc}, ${bankResult.accountHolder}, ${bankResult.verified}, ${"PENNY_LESS"}, ${overallStatus}, ${allPassed ? new Date().toISOString() : null})
+        `);
+      }
+
+      if (allPassed) {
+        await storage.updateSubscription(sub.id, { pmlaDone: true });
+      }
+
+      res.json({
+        success: true,
+        bankVerified: bankResult.verified,
+        bankAccountHolder: bankResult.accountHolder,
+        bankName: bankResult.bankName,
+        nameMatch: nameMatch,
+        bankNameMatch: bankNameMatch,
+        panAadhaarLinked: panAadhaarLinked,
+        overallStatus: overallStatus,
+        pmlaDone: allPassed,
+      });
+    } catch (err: any) {
+      console.error("[PMLA] Bank verify error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/advisor/pmla-setting", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      res.json({ requirePmla: user?.requirePmla || false });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to get PMLA setting" });
+    }
+  });
+
+  app.patch("/api/advisor/pmla-setting", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { requirePmla } = req.body;
+      const updated = await storage.updateUser(req.session.userId!, { requirePmla: !!requirePmla });
+      res.json({ requirePmla: updated.requirePmla });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to update PMLA setting" });
+    }
+  });
+
+
+    app.get("/api/advisor/ekyc/:subscriptionId", requireAdvisor, async (req, res) => {
     try {
       const { subscriptionId } = req.params;
       const sub = await storage.getSubscription(subscriptionId);
@@ -2671,6 +2807,7 @@ export async function registerRoutes(
 
       const advisor = await storage.getUser(sub.advisorId);
       const requiresRiskProfiling = advisor?.requireRiskProfiling || false;
+      const requiresPmla = advisor?.requirePmla || false;
 
       const existing = await storage.getRiskProfileBySubscription(subscriptionId as string);
 

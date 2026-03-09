@@ -27,6 +27,7 @@ export const users = pgTable("users", {
   agreementConsentDate: timestamp("agreement_consent_date"),
   activeSince: timestamp("active_since"),
   requireRiskProfiling: boolean("require_risk_profiling").default(false),
+  requirePmla: boolean("require_pmla").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -138,6 +139,7 @@ export const subscriptions = pgTable("subscriptions", {
   status: text("status").notNull().default("active"),
   ekycDone: boolean("ekyc_done").default(false),
   riskProfiling: boolean("risk_profiling").default(false),
+  pmlaDone: boolean("pmla_done").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
