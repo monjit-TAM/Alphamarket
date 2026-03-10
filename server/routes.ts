@@ -2509,7 +2509,281 @@ export async function registerRoutes(
   });
 
 
-  // ─── Advisor Microsite Routes ─────────────────────────────────────
+  // ─── Portfolio Analyzer Routes ──────────────────────────────────────
+
+  // Get user's portfolios
+  app.get("/api/portfolio", requireAuth, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT p.*, 
+          (SELECT COUNT(*) FROM portfolio_holdings WHERE portfolio_id = p.id) as holding_count,
+          (SELECT COALESCE(SUM(invested_value), 0) FROM portfolio_holdings WHERE portfolio_id = p.id) as total_invested,
+          (SELECT COALESCE(SUM(current_value), 0) FROM portfolio_holdings WHERE portfolio_id = p.id) as total_current
+        FROM customer_portfolios p
+        WHERE p.user_id = ${req.session.userId}
+        ORDER BY p.created_at DESC
+      `);
+      res.json((result as any).rows || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create portfolio
+  app.post("/api/portfolio", requireAuth, async (req: any, res: any) => {
+    try {
+      const { name, shareWithAdvisors } = req.body;
+      const result = await db.execute(sql`
+        INSERT INTO customer_portfolios (user_id, name, share_with_advisors, import_method)
+        VALUES (${req.session.userId}, ${name || "My Portfolio"}, ${!!shareWithAdvisors}, ${"manual"})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update portfolio sharing
+  app.patch("/api/portfolio/:id", requireAuth, async (req: any, res: any) => {
+    try {
+      const { name, shareWithAdvisors } = req.body;
+      await db.execute(sql`
+        UPDATE customer_portfolios 
+        SET name = COALESCE(${name || null}, name),
+            share_with_advisors = COALESCE(${shareWithAdvisors !== undefined ? shareWithAdvisors : null}, share_with_advisors)
+        WHERE id = ${req.params.id} AND user_id = ${req.session.userId}
+      `);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete portfolio
+  app.delete("/api/portfolio/:id", requireAuth, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`DELETE FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get holdings for a portfolio
+  app.get("/api/portfolio/:id/holdings", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+
+      const holdings = await db.execute(sql`
+        SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.id} ORDER BY current_value DESC
+      `);
+      res.json((holdings as any).rows || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Add single holding
+  app.post("/api/portfolio/:id/holding", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+
+      const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass, buyDate } = req.body;
+      if (!name || !assetType) return res.status(400).json({ error: "name and assetType required" });
+
+      const qty = Number(quantity) || 0;
+      const price = Number(avgBuyPrice) || 0;
+      const invested = qty * price;
+
+      const result = await db.execute(sql`
+        INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector, asset_class, buy_date)
+        VALUES (${req.params.id}, ${assetType}, ${symbol || null}, ${isin || null}, ${name}, ${qty}, ${price}, ${invested}, ${sector || null}, ${assetClass || null}, ${buyDate || null})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update holding
+  app.patch("/api/portfolio/holding/:holdingId", requireAuth, async (req: any, res: any) => {
+    try {
+      const { quantity, avgBuyPrice, currentPrice } = req.body;
+      const qty = Number(quantity); const buy = Number(avgBuyPrice); const curr = Number(currentPrice) || 0;
+      const invested = qty * buy; const current = qty * curr;
+      const gl = current - invested; const glp = invested > 0 ? (gl / invested) * 100 : 0;
+
+      await db.execute(sql`
+        UPDATE portfolio_holdings SET
+          quantity = ${qty}, avg_buy_price = ${buy}, current_price = ${curr},
+          invested_value = ${invested}, current_value = ${current},
+          gain_loss = ${gl}, gain_loss_percent = ${glp}, updated_at = NOW()
+        WHERE id = ${req.params.holdingId}
+      `);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete holding
+  app.delete("/api/portfolio/holding/:holdingId", requireAuth, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`DELETE FROM portfolio_holdings WHERE id = ${req.params.holdingId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // CSV Import
+  app.post("/api/portfolio/:id/import-csv", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+
+      if (!req.files || !req.files.file) return res.status(400).json({ error: "No file uploaded" });
+      const fileContent = req.files.file.data.toString("utf-8");
+      const lines = fileContent.split("\n").map((l: string) => l.trim()).filter((l: string) => l);
+      if (lines.length < 2) return res.status(400).json({ error: "File must have header + at least one row" });
+
+      const header = lines[0].toLowerCase();
+      const isStockFormat = header.includes("symbol") || header.includes("stock") || header.includes("scrip");
+      const isMfFormat = header.includes("scheme") || header.includes("fund") || header.includes("nav");
+      const assetType = isMfFormat ? "mutual_fund" : "equity";
+
+      const headers = lines[0].split(",").map((h: string) => h.trim().toLowerCase().replace(/['"]/g, ""));
+      let imported = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map((c: string) => c.trim().replace(/['"]/g, ""));
+        if (cols.length < 2) continue;
+
+        const row: any = {};
+        headers.forEach((h: string, idx: number) => { row[h] = cols[idx] || ""; });
+
+        const name = row.name || row.stock || row.symbol || row.scrip || row.scheme || row["fund name"] || row["scheme name"] || "";
+        const symbol = row.symbol || row.scrip || row.ticker || "";
+        const isin = row.isin || "";
+        const qty = parseFloat(row.quantity || row.qty || row.units || row["no. of units"] || "0") || 0;
+        const buyPrice = parseFloat(row["buy price"] || row["avg price"] || row["average price"] || row["purchase price"] || row["avg nav"] || row.price || "0") || 0;
+        const sector = row.sector || row.industry || "";
+
+        if (!name && !symbol) continue;
+
+        const invested = qty * buyPrice;
+        await db.execute(sql`
+          INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector)
+          VALUES (${req.params.id}, ${assetType}, ${symbol || null}, ${isin || null}, ${name || symbol}, ${qty}, ${buyPrice}, ${invested}, ${sector || null})
+        `);
+        imported++;
+      }
+
+      await db.execute(sql`UPDATE customer_portfolios SET import_method = ${"csv"}, last_synced = NOW() WHERE id = ${req.params.id}`);
+      res.json({ success: true, imported, assetType });
+    } catch (err: any) {
+      console.error("[Portfolio] CSV import error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Portfolio analytics summary
+  app.get("/api/portfolio/:id/analytics", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+
+      const holdingsResult = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.id}`);
+      const holdings = (holdingsResult as any).rows || [];
+
+      const totalInvested = holdings.reduce((s: number, h: any) => s + Number(h.invested_value || 0), 0);
+      const totalCurrent = holdings.reduce((s: number, h: any) => s + Number(h.current_value || 0), 0);
+      const totalGainLoss = totalCurrent - totalInvested;
+      const totalGainLossPercent = totalInvested > 0 ? (totalGainLoss / totalInvested) * 100 : 0;
+
+      const assetAllocation: any = {};
+      const sectorAllocation: any = {};
+      holdings.forEach((h: any) => {
+        const type = h.asset_type || "other";
+        assetAllocation[type] = (assetAllocation[type] || 0) + Number(h.current_value || h.invested_value || 0);
+        if (h.sector) {
+          sectorAllocation[h.sector] = (sectorAllocation[h.sector] || 0) + Number(h.current_value || h.invested_value || 0);
+        }
+      });
+
+      const topHoldings = [...holdings].sort((a: any, b: any) => Number(b.current_value || b.invested_value || 0) - Number(a.current_value || a.invested_value || 0)).slice(0, 5);
+      const winners = holdings.filter((h: any) => Number(h.gain_loss || 0) > 0).length;
+      const losers = holdings.filter((h: any) => Number(h.gain_loss || 0) < 0).length;
+
+      const top5Value = topHoldings.reduce((s: number, h: any) => s + Number(h.current_value || h.invested_value || 0), 0);
+      const concentrationRisk = totalCurrent > 0 ? (top5Value / totalCurrent) * 100 : 0;
+
+      res.json({
+        summary: {
+          totalHoldings: holdings.length,
+          equityCount: holdings.filter((h: any) => h.asset_type === "equity").length,
+          mfCount: holdings.filter((h: any) => h.asset_type === "mutual_fund").length,
+          totalInvested, totalCurrent, totalGainLoss, totalGainLossPercent,
+          winners, losers,
+        },
+        assetAllocation,
+        sectorAllocation,
+        topHoldings: topHoldings.map((h: any) => ({
+          name: h.name, symbol: h.symbol, assetType: h.asset_type,
+          investedValue: h.invested_value, currentValue: h.current_value,
+          gainLoss: h.gain_loss, gainLossPercent: h.gain_loss_percent,
+        })),
+        concentrationRisk,
+        deepAnalysisLinks: {
+          stocks: "https://stocks.alphamarket.co.in",
+          mf: "https://mf.alphamarket.co.in",
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: View subscriber portfolio (only if shared)
+  app.get("/api/advisor/subscriber/:userId/portfolio", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const sub = await db.execute(sql`
+        SELECT id FROM subscriptions WHERE user_id = ${req.params.userId} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1
+      `);
+      if (!(sub as any).rows?.length) return res.status(403).json({ error: "Not your subscriber" });
+
+      const portfolios = await db.execute(sql`
+        SELECT p.*, 
+          (SELECT COUNT(*) FROM portfolio_holdings WHERE portfolio_id = p.id) as holding_count,
+          (SELECT COALESCE(SUM(invested_value), 0) FROM portfolio_holdings WHERE portfolio_id = p.id) as total_invested,
+          (SELECT COALESCE(SUM(current_value), 0) FROM portfolio_holdings WHERE portfolio_id = p.id) as total_current
+        FROM customer_portfolios p
+        WHERE p.user_id = ${req.params.userId} AND p.share_with_advisors = true
+        ORDER BY p.created_at DESC
+      `);
+
+      const user = await storage.getUser(req.params.userId);
+      const allPortfolios = (portfolios as any).rows || [];
+
+      const portfoliosWithHoldings = await Promise.all(allPortfolios.map(async (p: any) => {
+        const holdings = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${p.id} ORDER BY current_value DESC`);
+        return { ...p, holdings: (holdings as any).rows || [] };
+      }));
+
+      res.json({
+        investor: { name: user?.companyName || user?.username || "Unknown", email: user?.email || "" },
+        portfolios: portfoliosWithHoldings,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+    // ─── Advisor Microsite Routes ─────────────────────────────────────
 
   // Public: Get microsite by slug (no auth needed)
   app.get("/api/microsite/:slug", async (req: any, res: any) => {

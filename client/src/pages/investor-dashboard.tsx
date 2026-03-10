@@ -240,6 +240,11 @@ export default function InvestorDashboard() {
               <Eye className="w-3 h-3 mr-1" /> Explore Strategies
             </Button>
           </Link>
+          <Link href="/portfolio">
+            <Button variant="outline" size="sm">
+              <BarChart3 className="w-3 h-3 mr-1" /> My Portfolio
+            </Button>
+          </Link>
         </div>
 
         {subscriptions && subscriptions.filter(s => s.status === "active" && s.requiresRiskProfiling && !s.riskProfiling).map(sub => (
