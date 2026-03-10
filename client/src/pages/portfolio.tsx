@@ -38,6 +38,33 @@ export default function PortfolioPage() {
     enabled: !!selectedPortfolio,
   });
 
+  const { data: suggestions, refetch: refetchSuggestions } = useQuery<any[]>({
+    queryKey: ["/api/portfolio", selectedPortfolio, "suggestions"],
+    queryFn: async () => {
+      const r = await fetch("/api/portfolio/" + selectedPortfolio + "/suggestions", { credentials: "include" });
+      return r.json();
+    },
+    enabled: !!selectedPortfolio,
+  });
+
+  const generateSuggestions = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/portfolio/" + selectedPortfolio + "/generate-suggestions");
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      refetchSuggestions();
+      toast({ title: data.count + " suggestions generated" });
+    },
+  });
+
+  const respondToSuggestion = useMutation({
+    mutationFn: async ({ id, response }: { id: string; response: string }) => {
+      await apiRequest("PATCH", "/api/suggestion/" + id + "/respond", { response });
+    },
+    onSuccess: () => { refetchSuggestions(); },
+  });
+
   const { data: analytics } = useQuery<any>({
     queryKey: ["/api/portfolio", selectedPortfolio, "analytics"],
     queryFn: async () => {
@@ -216,6 +243,50 @@ export default function PortfolioPage() {
                     </Card>
                   </div>
                 )}
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-sm">Suggestions ({suggestions?.length || 0})</CardTitle>
+                      <Button variant="outline" size="sm" onClick={() => generateSuggestions.mutate()} disabled={generateSuggestions.isPending}>
+                        {generateSuggestions.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <TrendingUp className="w-3 h-3 mr-1" />}
+                        Analyze
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {!suggestions?.length ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">Click Analyze to generate portfolio suggestions based on your holdings.</p>
+                    ) : (
+                      <div className="space-y-3">
+                        {suggestions.map((s: any) => (
+                          <div key={s.id} className={"p-3 rounded-md border " + (s.priority === "high" ? "border-red-200 bg-red-50 dark:bg-red-950/10" : s.priority === "medium" ? "border-amber-200 bg-amber-50 dark:bg-amber-950/10" : "border-gray-200")}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2">
+                                  <p className="text-sm font-medium">{s.title}</p>
+                                  <Badge variant="secondary" className={"text-[10px] " + (s.priority === "high" ? "bg-red-100 text-red-700" : s.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-600")}>{s.priority}</Badge>
+                                  {s.advisor_approved && <Badge className="text-[10px] bg-green-100 text-green-700">Advisor Approved</Badge>}
+                                </div>
+                                <p className="text-xs text-muted-foreground mt-1">{s.description}</p>
+                                {s.advisor_notes && <p className="text-xs mt-1 italic text-blue-600">Advisor: {s.advisor_notes}</p>}
+                              </div>
+                              {s.status === "pending" && (
+                                <div className="flex gap-1 shrink-0">
+                                  <Button variant="outline" size="sm" className="h-7 text-xs text-green-600" onClick={() => respondToSuggestion.mutate({ id: s.id, response: "accepted" })}>Accept</Button>
+                                  <Button variant="ghost" size="sm" className="h-7 text-xs text-red-500" onClick={() => respondToSuggestion.mutate({ id: s.id, response: "rejected" })}>Reject</Button>
+                                </div>
+                              )}
+                              {s.status !== "pending" && (
+                                <Badge variant="secondary" className={"text-[10px] " + (s.status === "accepted" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500")}>{s.status}</Badge>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
                 {analytics?.deepAnalysisLinks && (
                   <Card>

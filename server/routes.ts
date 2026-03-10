@@ -2879,6 +2879,178 @@ export async function registerRoutes(
     }
   });
 
+    // ─── Suggestion Engine Routes ──────────────────────────────────────
+
+  // Generate suggestions for a portfolio (rules-based)
+  app.post("/api/portfolio/:id/generate-suggestions", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+      const p = (portfolio as any).rows[0];
+      if (p.user_id !== req.session.userId) {
+        const advCheck = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${p.user_id} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1`);
+        if (!(advCheck as any).rows?.length) return res.status(403).json({ error: "Not authorized" });
+      }
+
+      const holdingsResult = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.id}`);
+      const holdings = (holdingsResult as any).rows || [];
+      if (holdings.length === 0) return res.status(400).json({ error: "Portfolio has no holdings" });
+
+      const totalValue = holdings.reduce((s: number, h: any) => s + Number(h.invested_value || 0), 0);
+      const suggestions: any[] = [];
+
+      // Asset allocation
+      const equityValue = holdings.filter((h: any) => h.asset_type === "equity").reduce((s: number, h: any) => s + Number(h.invested_value || 0), 0);
+      const mfValue = holdings.filter((h: any) => h.asset_type === "mutual_fund").reduce((s: number, h: any) => s + Number(h.invested_value || 0), 0);
+      const debtValue = holdings.filter((h: any) => ["debt", "fd"].includes(h.asset_type)).reduce((s: number, h: any) => s + Number(h.invested_value || 0), 0);
+      const equityPct = totalValue > 0 ? (equityValue + mfValue) / totalValue * 100 : 0;
+      const debtPct = totalValue > 0 ? debtValue / totalValue * 100 : 0;
+
+      // Rule 1: High equity concentration
+      if (equityPct > 85) {
+        suggestions.push({ type: "asset_allocation", asset_class: "cross_asset", title: "High Equity Concentration", description: "Your portfolio is " + equityPct.toFixed(0) + "% in equities. Consider adding 15-20% debt/fixed income for stability and downside protection.", action: "rebalance", priority: "high" });
+      }
+
+      // Rule 2: No debt allocation
+      if (debtPct < 5 && totalValue > 100000) {
+        suggestions.push({ type: "asset_allocation", asset_class: "debt", title: "Add Debt Component", description: "You have almost no debt allocation. Consider adding short-duration debt funds or FDs for emergency corpus and portfolio stability.", action: "buy", priority: "high" });
+      }
+
+      // Rule 3: Single stock concentration
+      holdings.forEach((h: any) => {
+        const pct = totalValue > 0 ? Number(h.invested_value || 0) / totalValue * 100 : 0;
+        if (pct > 20 && h.asset_type === "equity") {
+          suggestions.push({ type: "concentration", asset_class: "equity", title: "High Concentration in " + h.name, description: h.name + " is " + pct.toFixed(0) + "% of your portfolio. Single stock risk is elevated. Consider trimming to below 15%.", action: "reduce", symbol: h.symbol, priority: "high", current_allocation: pct, suggested_allocation: 15 });
+        }
+      });
+
+      // Rule 4: Too many small positions
+      const tinyPositions = holdings.filter((h: any) => totalValue > 0 && (Number(h.invested_value || 0) / totalValue * 100) < 1);
+      if (tinyPositions.length > 3) {
+        suggestions.push({ type: "portfolio_cleanup", asset_class: "equity", title: "Too Many Small Positions", description: "You have " + tinyPositions.length + " holdings each less than 1% of portfolio. These barely impact returns. Consider consolidating into your high-conviction picks.", action: "review", priority: "medium" });
+      }
+
+      // Rule 5: Sector concentration
+      const sectorMap: any = {};
+      holdings.forEach((h: any) => { if (h.sector) { sectorMap[h.sector] = (sectorMap[h.sector] || 0) + Number(h.invested_value || 0); } });
+      Object.entries(sectorMap).forEach(([sector, value]: any) => {
+        const pct = totalValue > 0 ? value / totalValue * 100 : 0;
+        if (pct > 35) {
+          suggestions.push({ type: "sector_concentration", asset_class: "equity", title: "High " + sector + " Exposure", description: sector + " sector is " + pct.toFixed(0) + "% of your portfolio. Sector downturns could significantly impact your returns. Diversify across sectors.", action: "rebalance", priority: "medium", current_allocation: pct, suggested_allocation: 25 });
+        }
+      });
+
+      // Rule 6: No MF allocation for diversification
+      if (mfValue === 0 && equityValue > 200000 && holdings.filter((h: any) => h.asset_type === "equity").length > 5) {
+        suggestions.push({ type: "diversification", asset_class: "mutual_fund", title: "Consider Mutual Funds for Diversification", description: "Your portfolio is 100% direct equity. Adding index funds or flexi-cap funds can provide broader market exposure with lower effort.", action: "buy", priority: "medium" });
+      }
+
+      // Rule 7: MF expense ratio check (if MF names suggest regular plans)
+      holdings.filter((h: any) => h.asset_type === "mutual_fund").forEach((h: any) => {
+        const name = (h.name || "").toLowerCase();
+        if (name.includes("regular") && !name.includes("direct")) {
+          suggestions.push({ type: "cost_optimization", asset_class: "mutual_fund", title: "Switch " + h.name + " to Direct Plan", description: "This appears to be a regular plan MF. Switching to direct plan can save 0.5-1.5% annually in expense ratio, significantly boosting long-term returns.", action: "switch", symbol: h.symbol, priority: "medium" });
+        }
+      });
+
+      // Rule 8: Portfolio too concentrated (less than 5 holdings with significant value)
+      if (holdings.length < 5 && totalValue > 200000) {
+        suggestions.push({ type: "diversification", asset_class: "cross_asset", title: "Portfolio Under-Diversified", description: "Only " + holdings.length + " holdings. A well-diversified portfolio typically has 12-15 stocks across sectors, plus debt and MF allocation.", action: "buy", priority: "medium" });
+      }
+
+      // Rule 9: Over-diversified
+      if (holdings.filter((h: any) => h.asset_type === "equity").length > 25) {
+        suggestions.push({ type: "portfolio_cleanup", asset_class: "equity", title: "Over-Diversified Stock Portfolio", description: "You hold " + holdings.filter((h: any) => h.asset_type === "equity").length + " stocks. Beyond 15-20, additional diversification adds complexity without meaningful risk reduction. Focus on best ideas.", action: "review", priority: "low" });
+      }
+
+      // Rule 10: Large cash/FD allocation
+      const fdValue = holdings.filter((h: any) => h.asset_type === "fd" || h.asset_type === "other").reduce((s: number, h: any) => s + Number(h.invested_value || 0), 0);
+      const fdPct = totalValue > 0 ? fdValue / totalValue * 100 : 0;
+      if (fdPct > 40) {
+        suggestions.push({ type: "asset_allocation", asset_class: "cross_asset", title: "High Cash/FD Allocation", description: "FDs and cash are " + fdPct.toFixed(0) + "% of your portfolio. After keeping 6 months expenses as emergency fund, consider deploying excess into equity SIPs for better long-term returns.", action: "rebalance", priority: "low" });
+      }
+
+      // Clear old suggestions and insert new ones
+      await db.execute(sql`DELETE FROM portfolio_suggestions WHERE portfolio_id = ${req.params.id} AND advisor_approved = false`);
+
+      for (const s of suggestions) {
+        await db.execute(sql`
+          INSERT INTO portfolio_suggestions (portfolio_id, advisor_id, type, asset_class, title, description, action, symbol, current_allocation, suggested_allocation, priority)
+          VALUES (${req.params.id}, ${req.session.userId !== p.user_id ? req.session.userId : null}, ${s.type}, ${s.asset_class || null}, ${s.title}, ${s.description}, ${s.action || null}, ${s.symbol || null}, ${s.current_allocation || null}, ${s.suggested_allocation || null}, ${s.priority || "medium"})
+        `);
+      }
+
+      res.json({ success: true, count: suggestions.length, suggestions });
+    } catch (err: any) {
+      console.error("[Suggestions] Generate error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Get suggestions for a portfolio
+  app.get("/api/portfolio/:id/suggestions", requireAuth, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT s.*, u.username as advisor_name, u.company_name as advisor_company
+        FROM portfolio_suggestions s
+        LEFT JOIN users u ON u.id = s.advisor_id
+        WHERE s.portfolio_id = ${req.params.id}
+        ORDER BY CASE s.priority WHEN ${"high"} THEN 1 WHEN ${"medium"} THEN 2 ELSE 3 END, s.created_at DESC
+      `);
+      res.json((result as any).rows || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Approve/reject/add notes to suggestion
+  app.patch("/api/suggestion/:id", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { advisorApproved, advisorNotes, status } = req.body;
+      await db.execute(sql`
+        UPDATE portfolio_suggestions SET
+          advisor_approved = COALESCE(${advisorApproved !== undefined ? advisorApproved : null}, advisor_approved),
+          advisor_notes = COALESCE(${advisorNotes || null}, advisor_notes),
+          status = COALESCE(${status || null}, status)
+        WHERE id = ${req.params.id}
+      `);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Add custom suggestion
+  app.post("/api/portfolio/:id/suggestion", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { type, assetClass, title, description, action, symbol, priority } = req.body;
+      if (!title || !description) return res.status(400).json({ error: "title and description required" });
+
+      const result = await db.execute(sql`
+        INSERT INTO portfolio_suggestions (portfolio_id, advisor_id, type, asset_class, title, description, action, symbol, priority, advisor_approved)
+        VALUES (${req.params.id}, ${req.session.userId}, ${type || "custom"}, ${assetClass || null}, ${title}, ${description}, ${action || null}, ${symbol || null}, ${priority || "medium"}, true)
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Investor: Respond to suggestion
+  app.patch("/api/suggestion/:id/respond", requireAuth, async (req: any, res: any) => {
+    try {
+      const { response } = req.body;
+      await db.execute(sql`
+        UPDATE portfolio_suggestions SET investor_response = ${response}, status = ${response === "accepted" ? "accepted" : "rejected"}
+        WHERE id = ${req.params.id}
+      `);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
     // ─── Advisor Microsite Routes ─────────────────────────────────────
 
   // Public: Get microsite by slug (no auth needed)
