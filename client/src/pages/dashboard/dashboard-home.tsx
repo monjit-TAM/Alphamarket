@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { IndianRupee, Users, TrendingUp, FileText, Plus, Download, ShieldCheck, Fingerprint, CheckCircle2, XCircle, FileSignature } from "lucide-react";
+import { IndianRupee, Users, TrendingUp, FileText, Plus, Download, ShieldCheck, Fingerprint, CheckCircle2, XCircle, FileSignature, Upload, BarChart3 } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import type { Strategy, Call, Subscription, Content as ContentType, RiskProfile } from "@shared/schema";
@@ -153,6 +153,105 @@ interface EkycDetail {
     aadhaarLinked: boolean;
     verifiedAt: string;
   } | null;
+}
+
+function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null; open: boolean; onClose: () => void }) {
+  const { toast } = useToast();
+  const [showCreate, setShowCreate] = useState(false);
+
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/advisor/subscriber", userId, "portfolio"],
+    queryFn: async () => {
+      const res = await fetch("/api/advisor/subscriber/" + userId + "/portfolio", { credentials: "include" });
+      if (!res.ok) return { investor: {}, portfolios: [] };
+      return res.json();
+    },
+    enabled: !!userId && open,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/advisor/subscriber/" + userId + "/portfolio", { name: "Client Portfolio" });
+      return r.json();
+    },
+    onSuccess: () => { refetch(); setShowCreate(false); toast({ title: "Portfolio created for client" }); },
+  });
+
+  const uploadCsv = async (portfolioId: string) => {
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = ".csv";
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const fd = new FormData(); fd.append("file", file);
+      try {
+        const res = await fetch("/api/advisor/portfolio/" + portfolioId + "/import-csv", { method: "POST", body: fd, credentials: "include" });
+        const d = await res.json();
+        if (d.success) { refetch(); toast({ title: d.imported + " holdings imported" }); }
+        else toast({ title: "Import failed", description: d.error, variant: "destructive" });
+      } catch { toast({ title: "Import failed", variant: "destructive" }); }
+    };
+    input.click();
+  };
+
+  const fmtINR = (n: number) => String.fromCharCode(8377) + Math.round(n).toLocaleString("en-IN");
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BarChart3 className="w-4 h-4" />
+            {data?.investor?.name ? data.investor.name + "'s Portfolio" : "Subscriber Portfolio"}
+          </DialogTitle>
+        </DialogHeader>
+        {isLoading ? (
+          <div className="py-4 text-center"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-3/4 mt-2" /></div>
+        ) : data?.portfolios?.length > 0 ? (
+          <div className="space-y-4">
+            {data.portfolios.map((p: any) => (
+              <div key={p.id} className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-medium">{p.name} ({p.holdings?.length || 0} holdings)</p>
+                  <Button variant="outline" size="sm" onClick={() => uploadCsv(p.id)}>
+                    <Upload className="w-3 h-3 mr-1" /> Import CSV
+                  </Button>
+                </div>
+                <div className="text-xs text-muted-foreground flex gap-4">
+                  <span>Invested: {fmtINR(Number(p.total_invested || 0))}</span>
+                  <span>Current: {fmtINR(Number(p.total_current || 0))}</span>
+                </div>
+                {p.holdings?.length > 0 ? (
+                  <div className="divide-y border rounded-md">
+                    {p.holdings.map((h: any) => (
+                      <div key={h.id} className="flex items-center justify-between px-3 py-1.5 text-xs">
+                        <div>
+                          <span className="font-medium">{h.name}</span>
+                          <Badge variant="secondary" className="ml-1 text-[9px] capitalize">{h.asset_type?.replace("_", " ")}</Badge>
+                        </div>
+                        <span>{fmtINR(Number(h.invested_value || 0))}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">No holdings yet. Upload a CSV to populate.</p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="py-6 text-center space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {data?.portfolios?.length === 0 ? "No shared portfolios from this subscriber." : "No portfolio data available."}
+            </p>
+            <Button size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
+              <Plus className="w-3 h-3 mr-1" /> Create Portfolio for Client
+            </Button>
+            <p className="text-xs text-muted-foreground">This will create a portfolio and let you upload their holdings via CSV.</p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function PmlaDetailDialog({ subscriptionId, open, onClose }: { subscriptionId: string | null; open: boolean; onClose: () => void }) {
@@ -470,6 +569,7 @@ export default function DashboardHome() {
   const [ekycSubId, setEkycSubId] = useState<string | null>(null);
   const [agreementSubId, setAgreementSubId] = useState<string | null>(null);
   const [pmlaSubId, setPmlaSubId] = useState<string | null>(null);
+  const [portfolioUserId, setPortfolioUserId] = useState<string | null>(null);
 
   const { data: strategies, isLoading: loadingStrategies } = useQuery<Strategy[]>({
     queryKey: ["/api/advisor/strategies"],
@@ -748,6 +848,7 @@ export default function DashboardHome() {
                         <span className="w-16 text-center">EKYC</span>
                         <span className="w-16 text-center">Risk Prof.</span>
                         <span className="w-16 text-center">PMLA</span>
+                        <span className="w-16 text-center">Portfolio</span>
                       </div>
                     </div>
                     {currentMonthSubs.length === 0 ? (
@@ -803,6 +904,12 @@ export default function DashboardHome() {
                             ) : (
                               <span className="w-16 text-center text-xs font-medium text-primary">No</span>
                             )}
+                            <button
+                              onClick={() => setPortfolioUserId(sub.userId)}
+                              className="w-16 text-center text-xs font-medium text-accent underline cursor-pointer"
+                            >
+                              View
+                            </button>
                           </div>
                         </div>
                       ))
@@ -822,6 +929,7 @@ export default function DashboardHome() {
                         <span className="w-16 text-center">EKYC</span>
                         <span className="w-16 text-center">Risk Prof.</span>
                         <span className="w-16 text-center">PMLA</span>
+                        <span className="w-16 text-center">Portfolio</span>
                       </div>
                     </div>
                     {previousSubs.length === 0 ? (
@@ -940,6 +1048,11 @@ export default function DashboardHome() {
         subscriptionId={pmlaSubId}
         open={!!pmlaSubId}
         onClose={() => setPmlaSubId(null)}
+      />
+      <PortfolioViewDialog
+        userId={portfolioUserId}
+        open={!!portfolioUserId}
+        onClose={() => setPortfolioUserId(null)}
       />
     </div>
   );

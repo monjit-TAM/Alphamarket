@@ -2783,6 +2783,102 @@ export async function registerRoutes(
     }
   });
 
+    // Advisor: Create portfolio for subscriber
+  app.post("/api/advisor/subscriber/:userId/portfolio", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const sub = await db.execute(sql`
+        SELECT id FROM subscriptions WHERE user_id = ${req.params.userId} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1
+      `);
+      if (!(sub as any).rows?.length) return res.status(403).json({ error: "Not your subscriber" });
+
+      const { name } = req.body;
+      const result = await db.execute(sql`
+        INSERT INTO customer_portfolios (user_id, name, share_with_advisors, import_method)
+        VALUES (${req.params.userId}, ${name || "Portfolio (by Advisor)"}, true, ${"advisor_created"})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Add holding to subscriber portfolio
+  app.post("/api/advisor/portfolio/:portfolioId/holding", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`
+        SELECT p.* FROM customer_portfolios p
+        JOIN subscriptions s ON s.user_id = p.user_id AND s.advisor_id = ${req.session.userId} AND s.status = ${"active"}
+        WHERE p.id = ${req.params.portfolioId} LIMIT 1
+      `);
+      if (!(portfolio as any).rows?.length) return res.status(403).json({ error: "Not authorized" });
+
+      const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass } = req.body;
+      if (!name || !assetType) return res.status(400).json({ error: "name and assetType required" });
+      const qty = Number(quantity) || 0;
+      const price = Number(avgBuyPrice) || 0;
+      const invested = qty * price;
+
+      const result = await db.execute(sql`
+        INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector, asset_class)
+        VALUES (${req.params.portfolioId}, ${assetType}, ${symbol || null}, ${isin || null}, ${name}, ${qty}, ${price}, ${invested}, ${sector || null}, ${assetClass || null})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: CSV import for subscriber portfolio
+  app.post("/api/advisor/portfolio/:portfolioId/import-csv", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`
+        SELECT p.* FROM customer_portfolios p
+        JOIN subscriptions s ON s.user_id = p.user_id AND s.advisor_id = ${req.session.userId} AND s.status = ${"active"}
+        WHERE p.id = ${req.params.portfolioId} LIMIT 1
+      `);
+      if (!(portfolio as any).rows?.length) return res.status(403).json({ error: "Not authorized" });
+
+      if (!req.files || !req.files.file) return res.status(400).json({ error: "No file uploaded" });
+      const fileContent = req.files.file.data.toString("utf-8");
+      const lines = fileContent.split("\n").map((l: string) => l.trim()).filter((l: string) => l);
+      if (lines.length < 2) return res.status(400).json({ error: "File needs header + data rows" });
+
+      const header = lines[0].toLowerCase();
+      const assetType = (header.includes("scheme") || header.includes("fund") || header.includes("nav")) ? "mutual_fund" : "equity";
+      const headers = lines[0].split(",").map((h: string) => h.trim().toLowerCase().replace(/['"]/g, ""));
+      let imported = 0;
+
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",").map((c: string) => c.trim().replace(/['"]/g, ""));
+        if (cols.length < 2) continue;
+        const row: any = {};
+        headers.forEach((h: string, idx: number) => { row[h] = cols[idx] || ""; });
+
+        const name = row.name || row.stock || row.symbol || row.scrip || row.scheme || row["fund name"] || row["scheme name"] || "";
+        const symbol = row.symbol || row.scrip || row.ticker || "";
+        const isin = row.isin || "";
+        const qty = parseFloat(row.quantity || row.qty || row.units || row["no. of units"] || "0") || 0;
+        const buyPrice = parseFloat(row["buy price"] || row["avg price"] || row["average price"] || row["purchase price"] || row["avg nav"] || row.price || "0") || 0;
+        const sector = row.sector || row.industry || "";
+
+        if (!name && !symbol) continue;
+        const invested = qty * buyPrice;
+        await db.execute(sql`
+          INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector)
+          VALUES (${req.params.portfolioId}, ${assetType}, ${symbol || null}, ${isin || null}, ${name || symbol}, ${qty}, ${buyPrice}, ${invested}, ${sector || null})
+        `);
+        imported++;
+      }
+
+      await db.execute(sql`UPDATE customer_portfolios SET import_method = ${"advisor_csv"}, last_synced = NOW() WHERE id = ${req.params.portfolioId}`);
+      res.json({ success: true, imported, assetType });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
     // ─── Advisor Microsite Routes ─────────────────────────────────────
 
   // Public: Get microsite by slug (no auth needed)
