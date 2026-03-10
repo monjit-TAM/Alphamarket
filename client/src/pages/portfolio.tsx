@@ -14,7 +14,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
-import { Plus, Upload, Trash2, BarChart3, PieChart, TrendingUp, TrendingDown, Loader2, ExternalLink, Eye, FolderPlus } from "lucide-react";
+import { Plus, Upload, Trash2, BarChart3, PieChart, TrendingUp, TrendingDown, Loader2, ExternalLink, Eye, FolderPlus, Download } from "lucide-react";
 
 export default function PortfolioPage() {
   const { user } = useAuth();
@@ -303,6 +303,21 @@ export default function PortfolioPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm">Import Templates</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-xs text-muted-foreground mb-3">Download a sample CSV template, fill in your holdings, and upload to import your portfolio.</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <a href="/api/portfolio/templates/stocks" download><Button variant="outline" size="sm" className="text-xs"><Download className="w-3 h-3 mr-1" /> Stocks Template</Button></a>
+                      <a href="/api/portfolio/templates/mutual_funds" download><Button variant="outline" size="sm" className="text-xs"><Download className="w-3 h-3 mr-1" /> Mutual Funds Template</Button></a>
+                      <a href="/api/portfolio/templates/combined" download><Button variant="outline" size="sm" className="text-xs"><Download className="w-3 h-3 mr-1" /> Combined Template</Button></a>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-2">Supported: CSV files. For CAMS/CAS statements and broker reports, support coming soon.</p>
+                  </CardContent>
+                </Card>
 
                 <Card>
                   <CardHeader className="pb-2">

@@ -2509,7 +2509,19 @@ export async function registerRoutes(
   });
 
 
-  // ─── Portfolio Analyzer Routes ──────────────────────────────────────
+  // Portfolio CSV templates
+  app.get("/api/portfolio/templates/:type", (req: any, res: any) => {
+    const templates: any = {
+      stocks: "/var/www/alphamarket/uploads/templates/stocks_portfolio_template.csv",
+      mutual_funds: "/var/www/alphamarket/uploads/templates/mutual_funds_template.csv",
+      combined: "/var/www/alphamarket/uploads/templates/combined_portfolio_template.csv",
+    };
+    const filePath = templates[req.params.type];
+    if (!filePath) return res.status(404).json({ error: "Template not found" });
+    res.download(filePath);
+  });
+
+    // ─── Portfolio Analyzer Routes ──────────────────────────────────────
 
   // Get user's portfolios
   app.get("/api/portfolio", requireAuth, async (req: any, res: any) => {
