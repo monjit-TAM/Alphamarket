@@ -2529,11 +2529,14 @@ export async function registerRoutes(
       const strategies = await storage.getStrategiesByAdvisor(row.advisor_id);
       const publishedStrategies = strategies.filter((s: any) => s.status === "Published");
 
+      const plans = await storage.getPlans(row.advisor_id);
+
       res.json({
         microsite: {
           slug: row.slug,
           tagline: row.tagline,
           about: row.about || row.overview,
+          servicesOffered: row.services_offered || [],
           themeColor: row.theme_color,
           logoUrl: row.logo_url || row.user_logo,
           bannerImageUrl: row.banner_image_url,
@@ -2566,6 +2569,9 @@ export async function registerRoutes(
           requireRiskProfiling: row.require_risk_profiling,
           requirePmla: row.require_pmla,
         },
+        plans: plans.map((p: any) => ({
+          id: p.id, name: p.name, amount: p.amount, durationDays: p.durationDays, code: p.code,
+        })),
         strategies: publishedStrategies.map((s: any) => ({
           id: s.id,
           name: s.name,
@@ -2590,6 +2596,9 @@ export async function registerRoutes(
         SELECT * FROM advisor_microsites WHERE advisor_id = ${req.session.userId} LIMIT 1
       `);
       const row = (result as any).rows?.[0];
+      if (row) {
+        row.services_offered = row.services_offered || [];
+      }
       if (!row) {
         const user = await storage.getUser(req.session.userId!);
         const defaultSlug = (user?.companyName || user?.username || "advisor").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").substring(0, 50);
@@ -2609,7 +2618,7 @@ export async function registerRoutes(
               address, city, state, pincode, contactPhone, contactEmail,
               websiteUrl, socialLinkedin, socialTwitter, socialYoutube, socialTelegram,
               showPerformance, showTestimonials, showContact, showFaq, showAbout,
-              testimonials, faq } = req.body;
+              testimonials, faq, servicesOffered } = req.body;
 
       if (!slug || slug.length < 3) return res.status(400).json({ error: "Slug must be at least 3 characters" });
       if (!/^[a-z0-9-]+$/.test(slug)) return res.status(400).json({ error: "Slug can only contain lowercase letters, numbers, and hyphens" });
@@ -2632,6 +2641,7 @@ export async function registerRoutes(
             show_about = ${showAbout !== false},
             testimonials = ${JSON.stringify(testimonials || [])},
             faq = ${JSON.stringify(faq || [])},
+            services_offered = ${JSON.stringify(servicesOffered || [])},
             updated_at = NOW()
           WHERE advisor_id = ${userId}
         `);
@@ -2643,7 +2653,7 @@ export async function registerRoutes(
           INSERT INTO advisor_microsites (advisor_id, slug, tagline, about, theme_color, logo_url,
             banner_image_url, address, city, state, pincode, contact_phone, contact_email,
             website_url, social_linkedin, social_twitter, social_youtube, social_telegram,
-            show_performance, show_testimonials, show_contact, show_faq, show_about, testimonials, faq)
+            show_performance, show_testimonials, show_contact, show_faq, show_about, testimonials, faq, services_offered)
           VALUES (${userId}, ${slug}, ${tagline || null}, ${about || null}, ${themeColor || "#E53E3E"},
             ${logoUrl || null}, ${bannerImageUrl || null}, ${address || null}, ${city || null},
             ${state || null}, ${pincode || null}, ${contactPhone || null}, ${contactEmail || null},
@@ -2651,7 +2661,7 @@ export async function registerRoutes(
             ${socialYoutube || null}, ${socialTelegram || null},
             ${showPerformance !== false}, ${!!showTestimonials}, ${showContact !== false},
             ${!!showFaq}, ${showAbout !== false}, ${JSON.stringify(testimonials || [])},
-            ${JSON.stringify(faq || [])})
+            ${JSON.stringify(faq || [])}, ${JSON.stringify(servicesOffered || [])})
         `);
       }
 

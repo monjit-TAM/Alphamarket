@@ -98,6 +98,22 @@ export default function AdvisorMicrosite() {
             </section>
           )}
 
+          {ms.servicesOffered?.filter((s: any) => s.enabled).length > 0 && (
+            <section>
+              <h2 className="text-xl font-bold mb-3">Services</h2>
+              <div className="grid gap-3 md:grid-cols-2">
+                {ms.servicesOffered.filter((s: any) => s.enabled).map((svc: any, i: number) => (
+                  <Card key={i}>
+                    <CardContent className="p-4">
+                      <h3 className="font-semibold text-sm">{svc.name}</h3>
+                      {svc.description && <p className="text-xs text-muted-foreground mt-1">{svc.description}</p>}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="text-xl font-bold mb-4">Strategies ({strategies.length})</h2>
             {strategies.length === 0 ? (
@@ -125,6 +141,26 @@ export default function AdvisorMicrosite() {
               </div>
             )}
           </section>
+
+          {data.plans?.length > 0 && (
+            <section>
+              <h2 className="text-xl font-bold mb-3">Plans & Pricing</h2>
+              <div className="grid gap-3 md:grid-cols-3">
+                {data.plans.map((p: any) => (
+                  <Card key={p.id} className="text-center">
+                    <CardContent className="p-5 space-y-2">
+                      <p className="font-semibold">{p.name}</p>
+                      <p className="text-3xl font-bold">{"₹"}{p.amount}</p>
+                      {p.durationDays && <p className="text-xs text-muted-foreground">{p.durationDays} days</p>}
+                      <Link href={"/strategies"}>
+                        <Button size="sm" className="w-full mt-2">Subscribe</Button>
+                      </Link>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
 
           {ms.showPerformance && strategies.length > 0 && (
             <section>
