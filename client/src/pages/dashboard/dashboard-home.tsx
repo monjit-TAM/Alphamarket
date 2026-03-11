@@ -178,6 +178,22 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
     onSuccess: () => { refetch(); setShowCreate(false); toast({ title: "Portfolio created for client" }); },
   });
 
+  const uploadPdf = async (portfolioId: string) => {
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = ".pdf";
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const fd = new FormData(); fd.append("file", file);
+      try {
+        const res = await fetch("/api/advisor/portfolio/" + portfolioId + "/import-pdf", { method: "POST", body: fd, credentials: "include" });
+        const d = await res.json();
+        if (d.success) { refetch(); toast({ title: d.imported + " MF holdings imported from " + d.source }); }
+        else toast({ title: "Import failed", description: d.error, variant: "destructive" });
+      } catch { toast({ title: "Import failed", variant: "destructive" }); }
+    };
+    input.click();
+  };
+
   const uploadCsv = async (portfolioId: string) => {
     const input = document.createElement("input");
     input.type = "file"; input.accept = ".csv";
@@ -213,9 +229,14 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
               <div key={p.id} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">{p.name} ({p.holdings?.length || 0} holdings)</p>
-                  <Button variant="outline" size="sm" onClick={() => uploadCsv(p.id)}>
-                    <Upload className="w-3 h-3 mr-1" /> Import CSV
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button variant="outline" size="sm" onClick={() => uploadCsv(p.id)}>
+                      <Upload className="w-3 h-3 mr-1" /> CSV
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => uploadPdf(p.id)}>
+                      <Upload className="w-3 h-3 mr-1" /> PDF
+                    </Button>
+                  </div>
                 </div>
                 <div className="text-xs text-muted-foreground flex gap-4">
                   <span>Invested: {fmtINR(Number(p.total_invested || 0))}</span>
@@ -234,7 +255,7 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">No holdings yet. Upload a CSV to populate.</p>
+                  <p className="text-xs text-muted-foreground">No holdings yet. Upload CSV/PDF or use the form below to add manually.</p>
                 )}
               </div>
             ))}
@@ -247,7 +268,7 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
             <Button size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
               <Plus className="w-3 h-3 mr-1" /> Create Portfolio for Client
             </Button>
-            <p className="text-xs text-muted-foreground">This will create a portfolio and let you upload their holdings via CSV.</p>
+            <p className="text-xs text-muted-foreground">Creates a portfolio. You can then upload CSV/PDF or add holdings manually.</p>
           </div>
         )}
       </DialogContent>

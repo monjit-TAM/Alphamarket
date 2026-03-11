@@ -2725,11 +2725,12 @@ export async function registerRoutes(
         const row: any = {};
         headers.forEach((h: string, idx: number) => { row[h] = cols[idx] || ""; });
 
-        const name = row.name || row.stock || row.symbol || row.scrip || row.scheme || row["fund name"] || row["scheme name"] || "";
-        const symbol = row.symbol || row.scrip || row.ticker || "";
-        const isin = row.isin || "";
-        const qty = parseFloat(row.quantity || row.qty || row.units || row["no. of units"] || "0") || 0;
-        const buyPrice = parseFloat(row["buy price"] || row["avg price"] || row["average price"] || row["purchase price"] || row["avg nav"] || row.price || "0") || 0;
+        const name = row.name || row["stock name"] || row.stock || row.symbol || row.scrip || row.scheme || row["fund name"] || row["scheme name"] || row["scrip name"] || row["company name"] || row["company"] || "";
+        const symbol = row.symbol || row["stock name"] || row.scrip || row.ticker || row["stock symbol"] || row["trading symbol"] || "";
+        const isin = row.isin || row["isin code"] || row["isin number"] || "";
+        const qty = parseFloat(row.quantity || row.qty || row.units || row["no. of units"] || row["total units"] || row["holding qty"] || "0") || 0;
+        const buyPrice = parseFloat(row["buy price"] || row["avg price"] || row["average price"] || row["purchase price"] || row["avg nav"] || row.price || row["buy rate"] || row["avg cost"] || row["cost price"] || "0") || 0;
+        const buyDate = row["buy date"] || row["purchase date"] || row.date || row["trade date"] || "";
         const sector = row.sector || row.industry || "";
 
         if (!name && !symbol) continue;
@@ -2915,11 +2916,12 @@ export async function registerRoutes(
         const row: any = {};
         headers.forEach((h: string, idx: number) => { row[h] = cols[idx] || ""; });
 
-        const name = row.name || row.stock || row.symbol || row.scrip || row.scheme || row["fund name"] || row["scheme name"] || "";
-        const symbol = row.symbol || row.scrip || row.ticker || "";
-        const isin = row.isin || "";
-        const qty = parseFloat(row.quantity || row.qty || row.units || row["no. of units"] || "0") || 0;
-        const buyPrice = parseFloat(row["buy price"] || row["avg price"] || row["average price"] || row["purchase price"] || row["avg nav"] || row.price || "0") || 0;
+        const name = row.name || row["stock name"] || row.stock || row.symbol || row.scrip || row.scheme || row["fund name"] || row["scheme name"] || row["scrip name"] || row["company name"] || row["company"] || "";
+        const symbol = row.symbol || row["stock name"] || row.scrip || row.ticker || row["stock symbol"] || row["trading symbol"] || "";
+        const isin = row.isin || row["isin code"] || row["isin number"] || "";
+        const qty = parseFloat(row.quantity || row.qty || row.units || row["no. of units"] || row["total units"] || row["holding qty"] || "0") || 0;
+        const buyPrice = parseFloat(row["buy price"] || row["avg price"] || row["average price"] || row["purchase price"] || row["avg nav"] || row.price || row["buy rate"] || row["avg cost"] || row["cost price"] || "0") || 0;
+        const buyDate = row["buy date"] || row["purchase date"] || row.date || row["trade date"] || "";
         const sector = row.sector || row.industry || "";
 
         if (!name && !symbol) continue;
