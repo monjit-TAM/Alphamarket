@@ -130,6 +130,27 @@ export default function PortfolioPage() {
     input.click();
   };
 
+  const uploadPdf = async () => {
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = ".pdf";
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0]; if (!file) return;
+      const fd = new FormData(); fd.append("file", file);
+      try {
+        const res = await fetch("/api/portfolio/" + selectedPortfolio + "/import-pdf", { method: "POST", body: fd, credentials: "include" });
+        const data = await res.json();
+        if (data.success) {
+          queryClient.invalidateQueries({ queryKey: ["/api/portfolio", selectedPortfolio, "holdings"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/portfolio", selectedPortfolio, "analytics"] });
+          toast({ title: "CAS Statement Imported", description: data.imported + " funds imported from " + data.source + " statement" });
+        } else {
+          toast({ title: "Import failed", description: data.error, variant: "destructive" });
+        }
+      } catch(e) { toast({ title: "Import failed", variant: "destructive" }); }
+    };
+    input.click();
+  };
+
   if (!user) { navigate("/login"); return null; }
 
   const fmtINR = (n: number) => "\u20B9" + Math.round(n).toLocaleString("en-IN");
@@ -180,6 +201,7 @@ export default function PortfolioPage() {
                   <Button variant="ghost" size="sm" onClick={() => setSelectedPortfolio(null)}>&larr; All Portfolios</Button>
                   <h2 className="text-lg font-semibold flex-1">{portfolios.find((p: any) => p.id === selectedPortfolio)?.name || "Portfolio"}</h2>
                   <Button variant="outline" size="sm" onClick={uploadCsv}><Upload className="w-3 h-3 mr-1" /> Import CSV</Button>
+                  <Button variant="outline" size="sm" onClick={uploadPdf}><Upload className="w-3 h-3 mr-1" /> Import CAS PDF</Button>
                   <Button size="sm" onClick={() => setShowAddHolding(true)}><Plus className="w-3 h-3 mr-1" /> Add Holding</Button>
                 </div>
 
@@ -315,7 +337,7 @@ export default function PortfolioPage() {
                       <a href="/api/portfolio/templates/mutual_funds" download><Button variant="outline" size="sm" className="text-xs"><Download className="w-3 h-3 mr-1" /> Mutual Funds Template</Button></a>
                       <a href="/api/portfolio/templates/combined" download><Button variant="outline" size="sm" className="text-xs"><Download className="w-3 h-3 mr-1" /> Combined Template</Button></a>
                     </div>
-                    <p className="text-[10px] text-muted-foreground mt-2">Supported: CSV files. For CAMS/CAS statements and broker reports, support coming soon.</p>
+                    <p className="text-[10px] text-muted-foreground mt-2">Supported: CSV files and CAMS/KFintech/NSDL CAS PDF statements.</p>
                   </CardContent>
                 </Card>
 

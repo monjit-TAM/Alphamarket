@@ -24,6 +24,7 @@ import {
   buildPositionClosedSubscriberNotification, buildPositionClosedWatchlistNotification,
   buildPositionUpdateSubscriberNotification,
 } from "./push";
+import { parseCASPdf } from "./cas-parser";
 import { sendAadhaarOtp, verifyAadhaarOtp, verifyPan, isSandboxConfigured, verifyBankAccount, fuzzyNameMatch } from "./sandbox-kyc";
 
 const scryptAsync = promisify(scrypt);
@@ -2509,7 +2510,53 @@ export async function registerRoutes(
   });
 
 
-  // Portfolio CSV templates
+  // Import CAS/CAMS PDF statement
+  app.post("/api/portfolio/:id/import-pdf", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+      if (!req.files || !req.files.file) return res.status(400).json({ error: "No PDF uploaded" });
+      const file = req.files.file;
+      if (!file.name.toLowerCase().endsWith(".pdf")) return res.status(400).json({ error: "Only PDF files accepted" });
+      const parsed = await parseCASPdf(file.data);
+      let imported = 0;
+      for (const h of parsed.holdings) {
+        if (!h.name) continue;
+        const invested = h.costValue || (h.units * h.nav) || 0;
+        const current = h.currentValue || invested;
+        await db.execute(sql`INSERT INTO portfolio_holdings (portfolio_id, asset_type, name, isin, quantity, avg_buy_price, invested_value, current_price, current_value, gain_loss, gain_loss_percent) VALUES (${req.params.id}, ${h.assetType}, ${h.name}, ${h.isin || null}, ${h.units}, ${h.nav}, ${invested}, ${h.nav}, ${current}, ${current - invested}, ${invested > 0 ? ((current - invested) / invested) * 100 : 0})`);
+        imported++;
+      }
+      await db.execute(sql`UPDATE customer_portfolios SET import_method = ${"cas_pdf"}, last_synced = NOW() WHERE id = ${req.params.id}`);
+      res.json({ success: true, imported, source: parsed.source, investorName: parsed.investorName, pan: parsed.pan });
+    } catch (err: any) {
+      console.error("[Portfolio] PDF import error:", err.message);
+      res.status(500).json({ error: "Failed to parse PDF: " + err.message });
+    }
+  });
+
+  app.post("/api/advisor/portfolio/:portfolioId/import-pdf", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT p.* FROM customer_portfolios p JOIN subscriptions s ON s.user_id = p.user_id AND s.advisor_id = ${req.session.userId} AND s.status = ${"active"} WHERE p.id = ${req.params.portfolioId} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(403).json({ error: "Not authorized" });
+      if (!req.files || !req.files.file) return res.status(400).json({ error: "No PDF uploaded" });
+      const parsed = await parseCASPdf(req.files.file.data);
+      let imported = 0;
+      for (const h of parsed.holdings) {
+        if (!h.name) continue;
+        const invested = h.costValue || (h.units * h.nav) || 0;
+        const current = h.currentValue || invested;
+        await db.execute(sql`INSERT INTO portfolio_holdings (portfolio_id, asset_type, name, isin, quantity, avg_buy_price, invested_value, current_price, current_value, gain_loss, gain_loss_percent) VALUES (${req.params.portfolioId}, ${h.assetType}, ${h.name}, ${h.isin || null}, ${h.units}, ${h.nav}, ${invested}, ${h.nav}, ${current}, ${current - invested}, ${invested > 0 ? ((current - invested) / invested) * 100 : 0})`);
+        imported++;
+      }
+      await db.execute(sql`UPDATE customer_portfolios SET import_method = ${"advisor_cas_pdf"}, last_synced = NOW() WHERE id = ${req.params.portfolioId}`);
+      res.json({ success: true, imported, source: parsed.source, investorName: parsed.investorName });
+    } catch (err: any) {
+      res.status(500).json({ error: "Failed to parse PDF: " + err.message });
+    }
+  });
+
+    // Portfolio CSV templates
   app.get("/api/portfolio/templates/:type", (req: any, res: any) => {
     const templates: any = {
       stocks: "/var/www/alphamarket/uploads/templates/stocks_portfolio_template.csv",
