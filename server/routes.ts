@@ -2938,6 +2938,142 @@ export async function registerRoutes(
     }
   });
 
+    // ─── Advisor Recommendation Engine ─────────────────────────────────
+
+  // Advisor: Create recommendation for subscriber
+  app.post("/api/advisor/recommendation", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { investorId, portfolioId, title, summary, actions } = req.body;
+      if (!investorId || !title) return res.status(400).json({ error: "investorId and title required" });
+
+      const sub = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${investorId} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1`);
+      if (!(sub as any).rows?.length) return res.status(403).json({ error: "Not your subscriber" });
+
+      const result = await db.execute(sql`
+        INSERT INTO advisor_recommendations (advisor_id, investor_id, portfolio_id, title, summary, actions)
+        VALUES (${req.session.userId}, ${investorId}, ${portfolioId || null}, ${title}, ${summary || null}, ${JSON.stringify(actions || [])})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: List own recommendations
+  app.get("/api/advisor/recommendations", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT r.*, u.username as investor_name, u.company_name as investor_company, u.email as investor_email
+        FROM advisor_recommendations r
+        JOIN users u ON u.id = r.investor_id
+        WHERE r.advisor_id = ${req.session.userId}
+        ORDER BY r.created_at DESC
+      `);
+      res.json((result as any).rows || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Update / send recommendation
+  app.patch("/api/advisor/recommendation/:id", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { title, summary, actions, status } = req.body;
+      const rec = await db.execute(sql`SELECT * FROM advisor_recommendations WHERE id = ${req.params.id} AND advisor_id = ${req.session.userId} LIMIT 1`);
+      if (!(rec as any).rows?.length) return res.status(404).json({ error: "Not found" });
+
+      const isSending = status === "sent" && (rec as any).rows[0].status !== "sent";
+
+      await db.execute(sql`
+        UPDATE advisor_recommendations SET
+          title = COALESCE(${title || null}, title),
+          summary = COALESCE(${summary || null}, summary),
+          actions = COALESCE(${actions ? JSON.stringify(actions) : null}, actions),
+          status = COALESCE(${status || null}, status),
+          sent_at = ${isSending ? new Date().toISOString() : (rec as any).rows[0].sent_at}
+        WHERE id = ${req.params.id} AND advisor_id = ${req.session.userId}
+      `);
+
+      if (isSending) {
+        const investor = await storage.getUser((rec as any).rows[0].investor_id);
+        const advisor = await storage.getUser(req.session.userId!);
+        if (investor) {
+          await storage.createNotification({
+            userId: investor.id,
+            title: "New Recommendation from " + (advisor?.companyName || "Your Advisor"),
+            message: title || "Your advisor has sent you a new portfolio recommendation. Check your dashboard.",
+            type: "recommendation",
+          });
+        }
+      }
+
+      res.json({ success: true, sent: isSending });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Delete recommendation
+  app.delete("/api/advisor/recommendation/:id", requireAdvisor, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`DELETE FROM advisor_recommendations WHERE id = ${req.params.id} AND advisor_id = ${req.session.userId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Investor: Get recommendations from advisors
+  app.get("/api/investor/recommendations-from-advisor", requireAuth, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT r.*, u.username as advisor_name, u.company_name as advisor_company
+        FROM advisor_recommendations r
+        JOIN users u ON u.id = r.advisor_id
+        WHERE r.investor_id = ${req.session.userId} AND r.status = ${"sent"}
+        ORDER BY r.sent_at DESC
+      `);
+
+      const recs = (result as any).rows || [];
+      for (const rec of recs) {
+        if (!rec.viewed_at) {
+          await db.execute(sql`UPDATE advisor_recommendations SET viewed_at = NOW(), status = ${"viewed"} WHERE id = ${rec.id}`);
+          rec.viewed_at = new Date().toISOString();
+          rec.status = "viewed";
+        }
+      }
+
+      res.json(recs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Investor: Mark action as done
+  app.patch("/api/investor/recommendation/:id/action/:idx", requireAuth, async (req: any, res: any) => {
+    try {
+      const rec = await db.execute(sql`SELECT * FROM advisor_recommendations WHERE id = ${req.params.id} AND investor_id = ${req.session.userId} LIMIT 1`);
+      if (!(rec as any).rows?.length) return res.status(404).json({ error: "Not found" });
+
+      const actions = (rec as any).rows[0].actions || [];
+      const idx = parseInt(req.params.idx);
+      if (idx >= 0 && idx < actions.length) {
+        actions[idx].done = !actions[idx].done;
+        await db.execute(sql`UPDATE advisor_recommendations SET actions = ${JSON.stringify(actions)} WHERE id = ${req.params.id}`);
+      }
+
+      const allDone = actions.every((a: any) => a.done);
+      if (allDone) {
+        await db.execute(sql`UPDATE advisor_recommendations SET status = ${"completed"} WHERE id = ${req.params.id}`);
+      }
+
+      res.json({ success: true, actions });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
     // ─── Financial Goals Routes ──────────────────────────────────────
 
   // Get user's goals

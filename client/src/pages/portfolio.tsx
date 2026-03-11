@@ -65,6 +65,18 @@ export default function PortfolioPage() {
     onSuccess: () => { refetchSuggestions(); },
   });
 
+  const { data: advisorRecs } = useQuery<any[]>({
+    queryKey: ["/api/investor/recommendations-from-advisor"],
+  });
+
+  const toggleAction = useMutation({
+    mutationFn: async ({ recId, idx }: { recId: string; idx: number }) => {
+      const r = await apiRequest("PATCH", "/api/investor/recommendation/" + recId + "/action/" + idx);
+      return r.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/investor/recommendations-from-advisor"] }); },
+  });
+
   const { data: analytics } = useQuery<any>({
     queryKey: ["/api/portfolio", selectedPortfolio, "analytics"],
     queryFn: async () => {
@@ -309,6 +321,41 @@ export default function PortfolioPage() {
                     )}
                   </CardContent>
                 </Card>
+
+                {advisorRecs && advisorRecs.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Advisor Recommendations ({advisorRecs.length})</CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {advisorRecs.map((rec: any) => (
+                        <div key={rec.id} className="p-3 rounded-md border space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium">{rec.title}</p>
+                              <p className="text-xs text-muted-foreground">From: {rec.advisor_company || rec.advisor_name}</p>
+                            </div>
+                            <Badge variant="secondary" className={"text-[10px] " + (rec.status === "completed" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700")}>{rec.status}</Badge>
+                          </div>
+                          {rec.summary && <p className="text-xs text-muted-foreground">{rec.summary}</p>}
+                          {rec.actions?.length > 0 && (
+                            <div className="space-y-1">
+                              {rec.actions.map((a: any, i: number) => (
+                                <div key={i} className="flex items-center gap-2 text-xs">
+                                  <button onClick={() => toggleAction.mutate({ recId: rec.id, idx: i })} className={"w-4 h-4 rounded border flex items-center justify-center shrink-0 " + (a.done ? "bg-green-500 border-green-500 text-white" : "border-gray-300")}>
+                                    {a.done && "✓"}
+                                  </button>
+                                  <span className={a.done ? "line-through text-muted-foreground" : ""}>{a.action}: {a.name} {a.details ? "- " + a.details : ""}</span>
+                                  {a.priority && <Badge variant="outline" className="text-[9px]">{a.priority}</Badge>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                )}
 
                 {analytics?.deepAnalysisLinks && (
                   <Card>
