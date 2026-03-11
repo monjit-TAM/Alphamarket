@@ -2650,7 +2650,7 @@ export async function registerRoutes(
       const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} AND user_id = ${req.session.userId} LIMIT 1`);
       if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
 
-      const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass, buyDate } = req.body;
+      const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass, buyDate, premium, sumAssured, maturityDate, interestRate, policyNumber, provider } = req.body;
       if (!name || !assetType) return res.status(400).json({ error: "name and assetType required" });
 
       const qty = Number(quantity) || 0;
@@ -2658,8 +2658,8 @@ export async function registerRoutes(
       const invested = qty * price;
 
       const result = await db.execute(sql`
-        INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector, asset_class, buy_date)
-        VALUES (${req.params.id}, ${assetType}, ${symbol || null}, ${isin || null}, ${name}, ${qty}, ${price}, ${invested}, ${sector || null}, ${assetClass || null}, ${buyDate || null})
+        INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector, asset_class, buy_date, premium, sum_assured, maturity_date, interest_rate, policy_number, provider)
+        VALUES (${req.params.id}, ${assetType}, ${symbol || null}, ${isin || null}, ${name}, ${qty}, ${price}, ${invested}, ${sector || null}, ${assetClass || null}, ${buyDate || null}, ${premium ? Number(premium) : null}, ${sumAssured ? Number(sumAssured) : null}, ${maturityDate || null}, ${interestRate ? Number(interestRate) : null}, ${policyNumber || null}, ${provider || null})
         RETURNING *
       `);
       res.json((result as any).rows[0]);

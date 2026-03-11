@@ -25,7 +25,7 @@ export default function PortfolioPage() {
   const [shareWithAdvisors, setShareWithAdvisors] = useState(false);
   const [selectedPortfolio, setSelectedPortfolio] = useState<string | null>(null);
   const [showAddHolding, setShowAddHolding] = useState(false);
-  const [holdingForm, setHoldingForm] = useState({ assetType: "equity", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "" });
+  const [holdingForm, setHoldingForm] = useState({ assetType: "equity", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "", premium: "", sumAssured: "", maturityDate: "", interestRate: "", policyNumber: "", provider: "" });
 
   const { data: portfolios, isLoading } = useQuery<any[]>({ queryKey: ["/api/portfolio"] });
 
@@ -96,7 +96,7 @@ export default function PortfolioPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/portfolio", selectedPortfolio, "holdings"] });
       queryClient.invalidateQueries({ queryKey: ["/api/portfolio", selectedPortfolio, "analytics"] });
       setShowAddHolding(false);
-      setHoldingForm({ assetType: "equity", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "" });
+      setHoldingForm({ assetType: "equity", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "", premium: "", sumAssured: "", maturityDate: "", interestRate: "", policyNumber: "", provider: "" });
       toast({ title: "Holding added" });
     },
   });
@@ -413,19 +413,58 @@ export default function PortfolioPage() {
               <select value={holdingForm.assetType} onChange={e => setHoldingForm({...holdingForm, assetType: e.target.value})} className="w-full p-2 rounded-md border text-sm bg-background">
                 <option value="equity">Stock / Equity</option>
                 <option value="mutual_fund">Mutual Fund</option>
-                <option value="debt">Debt / Bond</option>
-                <option value="gold">Gold</option>
+                <option value="elss">ELSS (Tax Saver)</option>
                 <option value="fd">Fixed Deposit</option>
+                <option value="ppf">PPF</option>
+                <option value="nps">NPS</option>
+                <option value="epf">EPF</option>
+                <option value="gold">Gold (Physical/Digital/SGB)</option>
+                <option value="insurance_term">Term Insurance</option>
+                <option value="insurance_medical">Health Insurance</option>
+                <option value="ulip">ULIP</option>
+                <option value="debt">Debt / Bond</option>
+                <option value="real_estate">Real Estate</option>
                 <option value="other">Other</option>
               </select>
             </div>
-            <div className="space-y-1"><Label className="text-sm">Name</Label><Input value={holdingForm.name} onChange={e => setHoldingForm({...holdingForm, name: e.target.value})} placeholder="e.g. HDFC Bank or Axis Bluechip Fund" /></div>
-            <div className="space-y-1"><Label className="text-sm">Symbol (optional)</Label><Input value={holdingForm.symbol} onChange={e => setHoldingForm({...holdingForm, symbol: e.target.value})} placeholder="e.g. HDFCBANK" /></div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1"><Label className="text-sm">Quantity / Units</Label><Input type="number" value={holdingForm.quantity} onChange={e => setHoldingForm({...holdingForm, quantity: e.target.value})} /></div>
-              <div className="space-y-1"><Label className="text-sm">Avg Buy Price</Label><Input type="number" value={holdingForm.avgBuyPrice} onChange={e => setHoldingForm({...holdingForm, avgBuyPrice: e.target.value})} /></div>
-            </div>
-            <div className="space-y-1"><Label className="text-sm">Sector (optional)</Label><Input value={holdingForm.sector} onChange={e => setHoldingForm({...holdingForm, sector: e.target.value})} placeholder="e.g. Banking, IT" /></div>
+            <div className="space-y-1"><Label className="text-sm">Name</Label><Input value={holdingForm.name} onChange={e => setHoldingForm({...holdingForm, name: e.target.value})} placeholder={holdingForm.assetType.includes("insurance") ? "e.g. LIC Term Plan" : holdingForm.assetType === "fd" ? "e.g. SBI FD 2025" : "e.g. HDFC Bank"} /></div>
+            <div className="space-y-1"><Label className="text-sm">Provider / Institution</Label><Input value={holdingForm.provider} onChange={e => setHoldingForm({...holdingForm, provider: e.target.value})} placeholder="e.g. HDFC, SBI, LIC, ICICI" /></div>
+            {["equity", "mutual_fund", "elss", "gold", "debt", "ulip"].includes(holdingForm.assetType) && (
+              <>
+                <div className="space-y-1"><Label className="text-sm">Symbol (optional)</Label><Input value={holdingForm.symbol} onChange={e => setHoldingForm({...holdingForm, symbol: e.target.value})} placeholder="e.g. HDFCBANK" /></div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-sm">Quantity / Units</Label><Input type="number" value={holdingForm.quantity} onChange={e => setHoldingForm({...holdingForm, quantity: e.target.value})} /></div>
+                  <div className="space-y-1"><Label className="text-sm">Avg Buy Price / NAV</Label><Input type="number" value={holdingForm.avgBuyPrice} onChange={e => setHoldingForm({...holdingForm, avgBuyPrice: e.target.value})} /></div>
+                </div>
+              </>
+            )}
+            {["fd", "ppf", "nps", "epf"].includes(holdingForm.assetType) && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-sm">Invested Amount</Label><Input type="number" value={holdingForm.avgBuyPrice} onChange={e => setHoldingForm({...holdingForm, avgBuyPrice: e.target.value, quantity: "1"})} placeholder="Total amount" /></div>
+                  <div className="space-y-1"><Label className="text-sm">Interest Rate (%)</Label><Input type="number" value={holdingForm.interestRate} onChange={e => setHoldingForm({...holdingForm, interestRate: e.target.value})} placeholder="e.g. 7.1" /></div>
+                </div>
+                <div className="space-y-1"><Label className="text-sm">Maturity Date</Label><Input type="date" value={holdingForm.maturityDate} onChange={e => setHoldingForm({...holdingForm, maturityDate: e.target.value})} /></div>
+              </>
+            )}
+            {holdingForm.assetType.includes("insurance") && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1"><Label className="text-sm">Annual Premium</Label><Input type="number" value={holdingForm.premium} onChange={e => setHoldingForm({...holdingForm, premium: e.target.value, quantity: "1", avgBuyPrice: e.target.value})} /></div>
+                  <div className="space-y-1"><Label className="text-sm">Sum Assured / Coverage</Label><Input type="number" value={holdingForm.sumAssured} onChange={e => setHoldingForm({...holdingForm, sumAssured: e.target.value})} /></div>
+                </div>
+                <div className="space-y-1"><Label className="text-sm">Policy Number</Label><Input value={holdingForm.policyNumber} onChange={e => setHoldingForm({...holdingForm, policyNumber: e.target.value})} /></div>
+              </>
+            )}
+            {holdingForm.assetType === "real_estate" && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1"><Label className="text-sm">Purchase Price</Label><Input type="number" value={holdingForm.avgBuyPrice} onChange={e => setHoldingForm({...holdingForm, avgBuyPrice: e.target.value, quantity: "1"})} /></div>
+                <div className="space-y-1"><Label className="text-sm">Current Estimate</Label><Input type="number" value={holdingForm.quantity} onChange={e => setHoldingForm({...holdingForm, quantity: e.target.value})} placeholder="Current market value" /></div>
+              </div>
+            )}
+            {["equity", "mutual_fund"].includes(holdingForm.assetType) && (
+              <div className="space-y-1"><Label className="text-sm">Sector (optional)</Label><Input value={holdingForm.sector} onChange={e => setHoldingForm({...holdingForm, sector: e.target.value})} placeholder="e.g. Banking, IT" /></div>
+            )}
             <Button className="w-full" onClick={() => addHoldingMutation.mutate()} disabled={addHoldingMutation.isPending || !holdingForm.name}>
               {addHoldingMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Plus className="w-4 h-4 mr-1" />} Add Holding
             </Button>
