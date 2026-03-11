@@ -8,7 +8,7 @@ import { Footer } from "@/components/footer";
 import { useAuth } from "@/lib/auth";
 import { useLocation, Link } from "wouter";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Calendar, Shield, ShieldCheck, AlertTriangle, Zap, BarChart3, Eye, Heart, Bell, X, Fingerprint } from "lucide-react";
+import { TrendingUp, TrendingDown, ArrowUp, ArrowDown, Calendar, Shield, ShieldCheck, AlertTriangle, Zap, BarChart3, Eye, Heart, Bell, X, Fingerprint, Target } from "lucide-react";
 import type { Call, Position, Subscription, User, Strategy } from "@shared/schema";
 import { apiRequest, queryClient as qc } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -243,6 +243,11 @@ export default function InvestorDashboard() {
           <Link href="/portfolio">
             <Button variant="outline" size="sm">
               <BarChart3 className="w-3 h-3 mr-1" /> My Portfolio
+            </Button>
+          </Link>
+          <Link href="/goals">
+            <Button variant="outline" size="sm">
+              <Target className="w-3 h-3 mr-1" /> My Goals
             </Button>
           </Link>
         </div>

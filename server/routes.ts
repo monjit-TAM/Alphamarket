@@ -2891,6 +2891,146 @@ export async function registerRoutes(
     }
   });
 
+    // ─── Financial Goals Routes ──────────────────────────────────────
+
+  // Get user's goals
+  app.get("/api/goals", requireAuth, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT * FROM financial_goals WHERE user_id = ${req.session.userId} ORDER BY priority ASC, created_at DESC`);
+      const goals = (result as any).rows || [];
+
+      const enriched = goals.map((g: any) => {
+        const target = Number(g.target_amount);
+        const current = Number(g.current_amount || 0);
+        const horizon = Number(g.horizon_years || 10);
+        const sip = Number(g.monthly_sip || 0);
+        const ret = Number(g.expected_return || 12) / 100;
+        const inf = Number(g.inflation_rate || 6) / 100;
+
+        const inflationAdjustedTarget = target * Math.pow(1 + inf, horizon);
+        const corpusGrowth = current * Math.pow(1 + ret, horizon);
+
+        let sipAccum = 0;
+        let annualSIP = sip * 12;
+        for (let y = 1; y <= horizon; y++) {
+          sipAccum += annualSIP * Math.pow(1 + ret, horizon - y);
+          annualSIP *= 1.1;
+        }
+
+        const projected = corpusGrowth + sipAccum;
+        const gap = Math.max(0, inflationAdjustedTarget - projected);
+        const probability = Math.min(95, Math.max(5, Math.round((projected / inflationAdjustedTarget) * 100)));
+
+        const additionalSIP = gap > 0 && horizon > 0
+          ? Math.round(gap / (((Math.pow(1 + ret, horizon) - 1) / ret) * 12))
+          : 0;
+
+        const progress = target > 0 ? Math.min(100, Math.round((current / target) * 100)) : 0;
+
+        return {
+          ...g,
+          inflationAdjustedTarget: Math.round(inflationAdjustedTarget),
+          projectedValue: Math.round(projected),
+          gap: Math.round(gap),
+          probability,
+          onTrack: probability >= 70,
+          additionalSIPNeeded: additionalSIP,
+          progress,
+        };
+      });
+
+      res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Create goal
+  app.post("/api/goals", requireAuth, async (req: any, res: any) => {
+    try {
+      const { name, goalType, targetAmount, currentAmount, targetDate, horizonYears,
+              monthlySip, inflationRate, expectedReturn, priority, notes } = req.body;
+      if (!name || !goalType || !targetAmount) return res.status(400).json({ error: "name, goalType, targetAmount required" });
+
+      const result = await db.execute(sql`
+        INSERT INTO financial_goals (user_id, created_by, name, goal_type, target_amount, current_amount, target_date, horizon_years, monthly_sip, inflation_rate, expected_return, priority, notes)
+        VALUES (${req.session.userId}, ${req.session.userId}, ${name}, ${goalType}, ${targetAmount}, ${currentAmount || 0}, ${targetDate || null}, ${horizonYears || 10}, ${monthlySip || 0}, ${inflationRate || 6}, ${expectedReturn || 12}, ${priority || "medium"}, ${notes || null})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update goal
+  app.patch("/api/goals/:id", requireAuth, async (req: any, res: any) => {
+    try {
+      const { name, targetAmount, currentAmount, targetDate, horizonYears,
+              monthlySip, inflationRate, expectedReturn, priority, notes, status } = req.body;
+      await db.execute(sql`
+        UPDATE financial_goals SET
+          name = COALESCE(${name || null}, name),
+          target_amount = COALESCE(${targetAmount || null}, target_amount),
+          current_amount = COALESCE(${currentAmount !== undefined ? currentAmount : null}, current_amount),
+          target_date = COALESCE(${targetDate || null}, target_date),
+          horizon_years = COALESCE(${horizonYears || null}, horizon_years),
+          monthly_sip = COALESCE(${monthlySip !== undefined ? monthlySip : null}, monthly_sip),
+          inflation_rate = COALESCE(${inflationRate || null}, inflation_rate),
+          expected_return = COALESCE(${expectedReturn || null}, expected_return),
+          priority = COALESCE(${priority || null}, priority),
+          notes = COALESCE(${notes || null}, notes),
+          status = COALESCE(${status || null}, status),
+          updated_at = NOW()
+        WHERE id = ${req.params.id} AND user_id = ${req.session.userId}
+      `);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete goal
+  app.delete("/api/goals/:id", requireAuth, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`DELETE FROM financial_goals WHERE id = ${req.params.id} AND user_id = ${req.session.userId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Create goal for subscriber
+  app.post("/api/advisor/subscriber/:userId/goal", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const sub = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${req.params.userId} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1`);
+      if (!(sub as any).rows?.length) return res.status(403).json({ error: "Not your subscriber" });
+
+      const { name, goalType, targetAmount, currentAmount, horizonYears, monthlySip, priority, notes } = req.body;
+      const result = await db.execute(sql`
+        INSERT INTO financial_goals (user_id, created_by, name, goal_type, target_amount, current_amount, horizon_years, monthly_sip, priority, notes)
+        VALUES (${req.params.userId}, ${req.session.userId}, ${name}, ${goalType}, ${targetAmount}, ${currentAmount || 0}, ${horizonYears || 10}, ${monthlySip || 0}, ${priority || "medium"}, ${notes || null})
+        RETURNING *
+      `);
+      res.json((result as any).rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: View subscriber goals
+  app.get("/api/advisor/subscriber/:userId/goals", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const sub = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${req.params.userId} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1`);
+      if (!(sub as any).rows?.length) return res.status(403).json({ error: "Not your subscriber" });
+
+      const result = await db.execute(sql`SELECT * FROM financial_goals WHERE user_id = ${req.params.userId} ORDER BY priority ASC`);
+      res.json((result as any).rows || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
     // ─── Suggestion Engine Routes ──────────────────────────────────────
 
   // Generate suggestions for a portfolio (rules-based)
