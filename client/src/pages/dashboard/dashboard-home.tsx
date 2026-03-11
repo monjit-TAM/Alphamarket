@@ -196,7 +196,7 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
 
   const [activePortfolioId, setActivePortfolioId] = useState<string | null>(null);
   const [showRecForm, setShowRecForm] = useState(false);
-  const [recForm, setRecForm] = useState({ title: "", summary: "", actions: [] as any[] });
+  const [recForm, setRecForm] = useState({ title: "", summary: "", actions: [] as any[], attachments: [] as any[] });
 
   const { data: analytics } = useQuery<any>({
     queryKey: ["/api/portfolio", activePortfolioId, "analytics-advisor"],
@@ -235,6 +235,7 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
         title: recForm.title,
         summary: recForm.summary,
         actions: recForm.actions,
+        attachments: recForm.attachments,
       });
       const rec = await r.json();
       await apiRequest("PATCH", "/api/advisor/recommendation/" + rec.id, { status: "sent" });
@@ -242,7 +243,7 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
     },
     onSuccess: () => {
       setShowRecForm(false);
-      setRecForm({ title: "", summary: "", actions: [] });
+      setRecForm({ title: "", summary: "", actions: [], attachments: [] });
       toast({ title: "Recommendation sent to investor" });
     },
   });
@@ -460,6 +461,27 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
                       </div>
                     ))}
                     <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={addRecAction}><Plus className="w-2 h-2 mr-1" /> Add Action</Button>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium">Attachments (Analysis Reports, PDFs):</p>
+                    {recForm.attachments.map((a: any, i: number) => (
+                      <div key={i} className="flex items-center gap-1 text-[10px] text-blue-600">
+                        <a href={a.url} target="_blank" rel="noopener" className="underline">{a.name}</a>
+                        <button onClick={() => setRecForm({...recForm, attachments: recForm.attachments.filter((_: any, idx: number) => idx !== i)})} className="text-red-400 text-[10px]">x</button>
+                      </div>
+                    ))}
+                    <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={async () => {
+                      const input = document.createElement("input");
+                      input.type = "file"; input.accept = ".pdf,.xlsx,.csv,.jpg,.png,.docx";
+                      input.onchange = async (e: any) => {
+                        const file = e.target.files?.[0]; if (!file) return;
+                        const fd = new FormData(); fd.append("file", file);
+                        const res = await fetch("/api/advisor/recommendation/upload", { method: "POST", body: fd, credentials: "include" });
+                        const data = await res.json();
+                        if (data.url) setRecForm(f => ({...f, attachments: [...f.attachments, { url: data.url, name: data.name }]}));
+                      };
+                      input.click();
+                    }}><Upload className="w-2 h-2 mr-1" /> Attach File</Button>
                   </div>
                   <div className="flex gap-1">
                     <Button size="sm" className="h-7 text-xs" onClick={() => sendRecMut.mutate()} disabled={!recForm.title || sendRecMut.isPending}>

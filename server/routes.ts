@@ -2940,20 +2940,40 @@ export async function registerRoutes(
     }
   });
 
+    // Upload attachment for recommendation
+  app.post("/api/advisor/recommendation/upload", requireAdvisor, async (req: any, res: any) => {
+    try {
+      if (!req.files || !req.files.file) return res.status(400).json({ error: "No file uploaded" });
+      const file = req.files.file;
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (!["pdf", "jpg", "jpeg", "png", "xlsx", "csv", "docx"].includes(ext || "")) {
+        return res.status(400).json({ error: "Allowed: PDF, images, Excel, CSV, Word" });
+      }
+      const fileName = req.session.userId + "-rec-" + Date.now() + "." + ext;
+      const fs = require("fs");
+      const dir = "/var/www/alphamarket/uploads/recommendations";
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      await file.mv(dir + "/" + fileName);
+      res.json({ url: "/uploads/recommendations/" + fileName, name: file.name });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
     // ─── Advisor Recommendation Engine ─────────────────────────────────
 
   // Advisor: Create recommendation for subscriber
   app.post("/api/advisor/recommendation", requireAdvisor, async (req: any, res: any) => {
     try {
-      const { investorId, portfolioId, title, summary, actions } = req.body;
+      const { investorId, portfolioId, title, summary, actions, attachments } = req.body;
       if (!investorId || !title) return res.status(400).json({ error: "investorId and title required" });
 
       const sub = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${investorId} AND advisor_id = ${req.session.userId} AND status = ${"active"} LIMIT 1`);
       if (!(sub as any).rows?.length) return res.status(403).json({ error: "Not your subscriber" });
 
       const result = await db.execute(sql`
-        INSERT INTO advisor_recommendations (advisor_id, investor_id, portfolio_id, title, summary, actions)
-        VALUES (${req.session.userId}, ${investorId}, ${portfolioId || null}, ${title}, ${summary || null}, ${JSON.stringify(actions || [])})
+        INSERT INTO advisor_recommendations (advisor_id, investor_id, portfolio_id, title, summary, actions, attachments)
+        VALUES (${req.session.userId}, ${investorId}, ${portfolioId || null}, ${title}, ${summary || null}, ${JSON.stringify(actions || [])}, ${JSON.stringify(attachments || [])})
         RETURNING *
       `);
       res.json((result as any).rows[0]);
