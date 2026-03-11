@@ -110,8 +110,8 @@ export function getSwaggerSpec() {
     openapi: "3.0.3",
     info: {
       title: "AlphaMarket Broker API",
-      version: "2.3.0",
-      description: "AlphaMarket Broker API Integration Guide v2.3\n\nSEBI-registered research analyst marketplace API for broker integrations. Provides access to advisors, strategies, portfolio recommendations, and live calls.\n\n**What\'s New in v2.2:**\n- Email notifications to subscribers on call/position events (new, update, close)\n- Auto Stop Loss & Target detection (every 60s during market hours)\n- Trailing Stop Loss monitoring with auto-trigger\n- Push + In-app + Email notification pipeline\n- Webhook events for all call/position lifecycle changes\n\n**v2.1:**\n- PRICE (₹) trailing SL type across all Equity and F&O forms\n- Trailing Stop Loss fully supported on F&O Position creation\n- Revised trailing SL types: PERCENTAGE | POINTS | PRICE (replaces FIXED)\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
+      version: "3.2.0",
+      description: "AlphaMarket API v3.2\n\nSEBI-registered investment advisor marketplace with full portfolio management, compliance, and financial planning.\n\n**v3.2 (Mar 2026):**\n- Portfolio Analyzer: 14 asset types, CSV/PDF import, live price sync\n- Suggestion Engine: 10 financial planning rules\n- Goal-Based Planning: 9 goal types with SIP projections\n- Advisor Recommendations: Action items + file attachments\n- Live Prices: Groww API (stocks) + mfapi.in (MF NAVs)\n- CAS/CAMS PDF Parser for mutual fund statements\n\n**v2.5:**\n- Advisor Microsite: 6-tab business config center\n- PMLA Verification: Bank account + name matching\n- Telegram Bot: 4-channel notification alerts\n\n**v2.3:**\n- Email/Push/In-app/Telegram notifications\n- Auto SL/Target + Trailing SL\n- Webhook events\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
       contact: { email: "hello@alphamarket.co.in", name: "AlphaMarket Team", url: "https://alphamarket.co.in" },
     },
     servers: [{ url: "https://alphamarket.co.in/api/v1", description: "Production" }],
