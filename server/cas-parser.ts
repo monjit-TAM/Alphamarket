@@ -1,4 +1,4 @@
-const pdfParse = require("pdf-parse");
+
 
 export interface ParsedHolding {
   name: string;
@@ -20,8 +20,28 @@ export interface CASParseResult {
 }
 
 export async function parseCASPdf(buffer: Buffer): Promise<CASParseResult> {
-  const data = await pdfParse(buffer);
-  const text = data.text;
+  const { PDFExtract } = await import("pdf.js-extract");
+  const pdfExtract = new PDFExtract();
+  const data = await pdfExtract.extractBuffer(buffer, {});
+
+  // Reconstruct text from PDF pages
+  let text = "";
+  for (const page of data.pages) {
+    const items = (page.content || []).filter((item: any) => item.str && item.str.trim());
+    items.sort((a: any, b: any) => a.y - b.y || a.x - b.x);
+    const rows: { y: number; texts: string[] }[] = [];
+    let curRow = { y: items[0]?.y || 0, texts: [] as string[] };
+    for (const item of items) {
+      if (Math.abs(item.y - curRow.y) < 3) {
+        curRow.texts.push(item.str.trim());
+      } else {
+        if (curRow.texts.length > 0) rows.push(curRow);
+        curRow = { y: item.y, texts: [item.str.trim()] };
+      }
+    }
+    if (curRow.texts.length > 0) rows.push(curRow);
+    text += rows.map(r => r.texts.join(" ")).join("\n") + "\n";
+  }
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean);
 
   const result: CASParseResult = { holdings: [], source: "unknown" };
