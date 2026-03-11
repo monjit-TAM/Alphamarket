@@ -251,6 +251,42 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
     setRecForm({ ...recForm, actions: [...recForm.actions, { action: "Buy", name: "", details: "", priority: "medium", done: false }] });
   };
 
+  const [showGoalForm, setShowGoalForm] = useState(false);
+  const [goalForm, setGoalForm] = useState({ name: "", goalType: "retirement", targetAmount: "", horizonYears: "10", monthlySip: "10000", priority: "medium", notes: "" });
+  const GOAL_TYPES = [
+    { value: "retirement", label: "Retirement" },
+    { value: "education", label: "Education" },
+    { value: "house", label: "House" },
+    { value: "emergency", label: "Emergency Fund" },
+    { value: "wealth", label: "Wealth Building" },
+    { value: "custom", label: "Custom" },
+  ];
+
+  const { data: clientGoals, refetch: refetchGoals } = useQuery<any[]>({
+    queryKey: ["/api/advisor/subscriber", userId, "goals"],
+    queryFn: async () => {
+      const r = await fetch("/api/advisor/subscriber/" + userId + "/goals", { credentials: "include" });
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!userId && open,
+  });
+
+  const createGoalMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/advisor/subscriber/" + userId + "/goal", {
+        ...goalForm, targetAmount: Number(goalForm.targetAmount), horizonYears: Number(goalForm.horizonYears), monthlySip: Number(goalForm.monthlySip),
+      });
+      return r.json();
+    },
+    onSuccess: () => {
+      refetchGoals();
+      setShowGoalForm(false);
+      setGoalForm({ name: "", goalType: "retirement", targetAmount: "", horizonYears: "10", monthlySip: "10000", priority: "medium", notes: "" });
+      toast({ title: "Goal set for client" });
+    },
+  });
+
   const uploadPdf = async (portfolioId: string) => {
     const input = document.createElement("input");
     input.type = "file"; input.accept = ".pdf";
@@ -361,6 +397,49 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
                       <p className="text-muted-foreground text-[10px]">{s.description?.substring(0, 100)}...</p>
                     </div>
                   ))}
+                </div>
+              )}
+
+              {activePortfolioId === p.id && (
+                <div className="mt-2 p-2 rounded border space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium">Client Goals ({clientGoals?.length || 0})</p>
+                    <Button variant="outline" size="sm" className="h-6 text-[10px]" onClick={() => setShowGoalForm(!showGoalForm)}>
+                      <Plus className="w-2 h-2 mr-1" /> Set Goal
+                    </Button>
+                  </div>
+                  {clientGoals && clientGoals.length > 0 && (
+                    <div className="space-y-1">
+                      {clientGoals.map((g: any) => (
+                        <div key={g.id} className="flex items-center justify-between px-2 py-1 rounded bg-muted/30 text-[10px]">
+                          <span className="font-medium">{g.name} ({g.goal_type})</span>
+                          <span>{fmtINR(Number(g.target_amount))} in {g.horizon_years}yr</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {showGoalForm && (
+                    <div className="space-y-1 p-2 rounded border bg-background">
+                      <select value={goalForm.goalType} onChange={e => setGoalForm({...goalForm, goalType: e.target.value, name: GOAL_TYPES.find(g => g.value === e.target.value)?.label || ""})} className="w-full p-1 rounded border text-xs bg-background">
+                        {GOAL_TYPES.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                      </select>
+                      <input value={goalForm.name} onChange={e => setGoalForm({...goalForm, name: e.target.value})} placeholder="Goal name" className="w-full p-1 rounded border text-xs bg-background" />
+                      <div className="grid grid-cols-3 gap-1">
+                        <input type="number" value={goalForm.targetAmount} onChange={e => setGoalForm({...goalForm, targetAmount: e.target.value})} placeholder="Target Amt" className="p-1 rounded border text-xs bg-background" />
+                        <input type="number" value={goalForm.horizonYears} onChange={e => setGoalForm({...goalForm, horizonYears: e.target.value})} placeholder="Years" className="p-1 rounded border text-xs bg-background" />
+                        <input type="number" value={goalForm.monthlySip} onChange={e => setGoalForm({...goalForm, monthlySip: e.target.value})} placeholder="Monthly SIP" className="p-1 rounded border text-xs bg-background" />
+                      </div>
+                      <input value={goalForm.notes} onChange={e => setGoalForm({...goalForm, notes: e.target.value})} placeholder="Notes for client" className="w-full p-1 rounded border text-xs bg-background" />
+                      <div className="flex gap-1">
+                        <Button size="sm" className="h-6 text-[10px]" onClick={() => createGoalMut.mutate()} disabled={!goalForm.name || !goalForm.targetAmount || createGoalMut.isPending}>Set Goal</Button>
+                        <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={() => setShowGoalForm(false)}>Cancel</Button>
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-[10px] text-muted-foreground flex gap-2">
+                    <a href="https://stocks.alphamarket.co.in" target="_blank" rel="noopener" className="text-blue-600 underline">Deep Stock Analysis</a>
+                    <a href="https://mf.alphamarket.co.in" target="_blank" rel="noopener" className="text-blue-600 underline">Deep MF Analysis</a>
+                  </div>
                 </div>
               )}
 
