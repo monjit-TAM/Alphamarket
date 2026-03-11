@@ -25,6 +25,7 @@ import {
   buildPositionUpdateSubscriberNotification,
 } from "./push";
 import { parseCASPdf } from "./cas-parser";
+import { getLiveQuote } from "./groww";
 import { sendAadhaarOtp, verifyAadhaarOtp, verifyPan, isSandboxConfigured, verifyBankAccount, fuzzyNameMatch } from "./sandbox-kyc";
 
 const scryptAsync = promisify(scrypt);
@@ -2553,6 +2554,99 @@ export async function registerRoutes(
       res.json({ success: true, imported, source: parsed.source, investorName: parsed.investorName });
     } catch (err: any) {
       res.status(500).json({ error: "Failed to parse PDF: " + err.message });
+    }
+  });
+
+    // Sync live prices for portfolio holdings
+  app.post("/api/portfolio/:id/sync-prices", requireAuth, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} LIMIT 1`);
+      if (!(portfolio as any).rows?.length) return res.status(404).json({ error: "Portfolio not found" });
+
+      const holdings = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.id}`);
+      const rows = (holdings as any).rows || [];
+      let updated = 0;
+
+      for (const h of rows) {
+        let currentPrice = 0;
+
+        if (h.asset_type === "equity" && h.symbol) {
+          const quote = await getLiveQuote(h.symbol);
+          if (quote) currentPrice = quote.ltp;
+        } else if (h.asset_type === "equity" && h.name && !h.symbol) {
+          const quote = await getLiveQuote(h.name);
+          if (quote) currentPrice = quote.ltp;
+        }
+
+        if (currentPrice > 0) {
+          const qty = Number(h.quantity) || 0;
+          const invested = Number(h.invested_value) || (qty * Number(h.avg_buy_price || 0));
+          const currentValue = qty * currentPrice;
+          const gl = currentValue - invested;
+          const glp = invested > 0 ? (gl / invested) * 100 : 0;
+
+          await db.execute(sql`
+            UPDATE portfolio_holdings SET
+              current_price = ${currentPrice},
+              current_value = ${currentValue},
+              invested_value = ${invested || Number(h.invested_value) || 0},
+              gain_loss = ${gl},
+              gain_loss_percent = ${glp},
+              updated_at = NOW()
+            WHERE id = ${h.id}
+          `);
+          updated++;
+        }
+      }
+
+      await db.execute(sql`UPDATE customer_portfolios SET last_synced = NOW() WHERE id = ${req.params.id}`);
+      res.json({ success: true, updated, total: rows.length });
+    } catch (err: any) {
+      console.error("[Portfolio] Sync prices error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Advisor: Sync prices for subscriber portfolio
+  app.post("/api/advisor/portfolio/:portfolioId/sync-prices", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const portfolio = await db.execute(sql`
+        SELECT p.* FROM customer_portfolios p
+        JOIN subscriptions s ON s.user_id = p.user_id AND s.advisor_id = ${req.session.userId} AND s.status = ${"active"}
+        WHERE p.id = ${req.params.portfolioId} LIMIT 1
+      `);
+      if (!(portfolio as any).rows?.length) return res.status(403).json({ error: "Not authorized" });
+
+      const holdings = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.portfolioId}`);
+      const rows = (holdings as any).rows || [];
+      let updated = 0;
+
+      for (const h of rows) {
+        let currentPrice = 0;
+        if ((h.asset_type === "equity") && (h.symbol || h.name)) {
+          const quote = await getLiveQuote(h.symbol || h.name);
+          if (quote) currentPrice = quote.ltp;
+        }
+        if (currentPrice > 0) {
+          const qty = Number(h.quantity) || 0;
+          const invested = Number(h.invested_value) || (qty * Number(h.avg_buy_price || 0));
+          const currentValue = qty * currentPrice;
+          const gl = currentValue - invested;
+          const glp = invested > 0 ? (gl / invested) * 100 : 0;
+          await db.execute(sql`
+            UPDATE portfolio_holdings SET current_price = ${currentPrice}, current_value = ${currentValue},
+              invested_value = ${invested || Number(h.invested_value) || 0},
+              gain_loss = ${gl}, gain_loss_percent = ${glp}, updated_at = NOW()
+            WHERE id = ${h.id}
+          `);
+          updated++;
+        }
+      }
+
+      await db.execute(sql`UPDATE customer_portfolios SET last_synced = NOW() WHERE id = ${req.params.portfolioId}`);
+      res.json({ success: true, updated, total: rows.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 

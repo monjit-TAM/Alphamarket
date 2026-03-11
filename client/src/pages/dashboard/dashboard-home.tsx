@@ -216,6 +216,17 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
     enabled: !!activePortfolioId,
   });
 
+  const syncMut = useMutation({
+    mutationFn: async (pid: string) => {
+      const r = await apiRequest("POST", "/api/advisor/portfolio/" + pid + "/sync-prices");
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      refetch();
+      toast({ title: "Prices synced: " + data.updated + " of " + data.total + " updated" });
+    },
+  });
+
   const analyzeMut = useMutation({
     mutationFn: async (pid: string) => {
       const r = await apiRequest("POST", "/api/portfolio/" + pid + "/generate-suggestions");
@@ -335,6 +346,11 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
           <div className="py-4 text-center"><Skeleton className="h-4 w-full" /><Skeleton className="h-4 w-3/4 mt-2" /></div>
         ) : data?.portfolios?.length > 0 ? (
           <div className="space-y-4">
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
+                <Plus className="w-3 h-3 mr-1" /> Add Another Portfolio
+              </Button>
+            </div>
             {data.portfolios.map((p: any) => (
               <div key={p.id} className="space-y-2">
                 <div className="flex items-center justify-between">
@@ -365,6 +381,9 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
                   <p className="text-xs text-muted-foreground">No holdings yet. Upload CSV/PDF or click Add to enter manually.</p>
                 )}
               <div className="flex gap-1 mt-2">
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => syncMut.mutate(p.id)} disabled={syncMut.isPending}>
+                  {syncMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <TrendingUp className="w-3 h-3 mr-1" />} Sync Prices
+                </Button>
                 <Button size="sm" className="h-7 text-xs" onClick={() => { setActivePortfolioId(p.id); analyzeMut.mutate(p.id); }}>
                   {analyzeMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <BarChart3 className="w-3 h-3 mr-1" />} Analyze
                 </Button>
@@ -534,7 +553,7 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
             <Button size="sm" onClick={() => createMutation.mutate()} disabled={createMutation.isPending}>
               <Plus className="w-3 h-3 mr-1" /> Create Portfolio for Client
             </Button>
-            <p className="text-xs text-muted-foreground">Creates a portfolio. You can then upload CSV/PDF or add holdings manually.</p>
+            <p className="text-xs text-muted-foreground">Creates a new portfolio. You can create multiple portfolios per client (e.g. separate for each broker/MF house).</p>
           </div>
         )}
       </DialogContent>

@@ -38,6 +38,20 @@ export default function PortfolioPage() {
     enabled: !!selectedPortfolio,
   });
 
+  const syncPrices = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/portfolio/" + selectedPortfolio + "/sync-prices");
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolio", selectedPortfolio, "holdings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolio", selectedPortfolio, "analytics"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/portfolio"] });
+      toast({ title: "Prices synced", description: data.updated + " of " + data.total + " holdings updated" });
+    },
+    onError: () => { toast({ title: "Sync failed", variant: "destructive" }); },
+  });
+
   const { data: suggestions, refetch: refetchSuggestions } = useQuery<any[]>({
     queryKey: ["/api/portfolio", selectedPortfolio, "suggestions"],
     queryFn: async () => {
@@ -212,6 +226,9 @@ export default function PortfolioPage() {
                 <div className="flex items-center gap-2">
                   <Button variant="ghost" size="sm" onClick={() => setSelectedPortfolio(null)}>&larr; All Portfolios</Button>
                   <h2 className="text-lg font-semibold flex-1">{portfolios.find((p: any) => p.id === selectedPortfolio)?.name || "Portfolio"}</h2>
+                  <Button variant="outline" size="sm" onClick={() => syncPrices.mutate()} disabled={syncPrices.isPending}>
+                    {syncPrices.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <TrendingUp className="w-3 h-3 mr-1" />} Sync Prices
+                  </Button>
                   <Button variant="outline" size="sm" onClick={uploadCsv}><Upload className="w-3 h-3 mr-1" /> Import CSV</Button>
                   <Button variant="outline" size="sm" onClick={uploadPdf}><Upload className="w-3 h-3 mr-1" /> Import CAS PDF</Button>
                   <Button size="sm" onClick={() => setShowAddHolding(true)}><Plus className="w-3 h-3 mr-1" /> Add Holding</Button>
