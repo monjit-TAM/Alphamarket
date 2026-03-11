@@ -1,4 +1,4 @@
-import pdfParse from "pdf-parse";
+const pdfParse = require("pdf-parse");
 
 export interface ParsedHolding {
   name: string;

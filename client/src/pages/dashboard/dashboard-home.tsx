@@ -159,6 +159,22 @@ interface EkycDetail {
 function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null; open: boolean; onClose: () => void }) {
   const { toast } = useToast();
   const [showCreate, setShowCreate] = useState(false);
+  const [showAddForm, setShowAddForm] = useState<string | null>(null);
+  const [hf, setHf] = useState({ assetType: "equity", name: "", symbol: "", quantity: "", avgBuyPrice: "", provider: "" });
+
+  const addHoldingMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/advisor/portfolio/" + showAddForm + "/holding", hf);
+      return r.json();
+    },
+    onSuccess: () => {
+      refetch();
+      setShowAddForm(null);
+      setHf({ assetType: "equity", name: "", symbol: "", quantity: "", avgBuyPrice: "", provider: "" });
+      toast({ title: "Holding added" });
+    },
+    onError: (err: any) => { toast({ title: "Failed", description: err.message, variant: "destructive" }); },
+  });
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/advisor/subscriber", userId, "portfolio"],
@@ -229,13 +245,10 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
               <div key={p.id} className="space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-sm font-medium">{p.name} ({p.holdings?.length || 0} holdings)</p>
-                  <div className="flex gap-1">
-                    <Button variant="outline" size="sm" onClick={() => uploadCsv(p.id)}>
-                      <Upload className="w-3 h-3 mr-1" /> CSV
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => uploadPdf(p.id)}>
-                      <Upload className="w-3 h-3 mr-1" /> PDF
-                    </Button>
+                  <div className="flex gap-1 flex-wrap">
+                    <Button variant="outline" size="sm" onClick={() => uploadCsv(p.id)}><Upload className="w-3 h-3 mr-1" /> CSV</Button>
+                    <Button variant="outline" size="sm" onClick={() => uploadPdf(p.id)}><Upload className="w-3 h-3 mr-1" /> PDF</Button>
+                    <Button variant="outline" size="sm" onClick={() => setShowAddForm(p.id)}><Plus className="w-3 h-3 mr-1" /> Add</Button>
                   </div>
                 </div>
                 <div className="text-xs text-muted-foreground flex gap-4">
@@ -255,8 +268,39 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
                     ))}
                   </div>
                 ) : (
-                  <p className="text-xs text-muted-foreground">No holdings yet. Upload CSV/PDF or use the form below to add manually.</p>
+                  <p className="text-xs text-muted-foreground">No holdings yet. Upload CSV/PDF or click Add to enter manually.</p>
                 )}
+              {showAddForm === p.id && (
+                <div className="mt-2 p-3 rounded-md border bg-muted/30 space-y-2">
+                  <p className="text-xs font-medium">Add Holding Manually</p>
+                  <select value={hf.assetType} onChange={e => setHf({...hf, assetType: e.target.value})} className="w-full p-1.5 rounded border text-xs bg-background">
+                    <option value="equity">Stock</option>
+                    <option value="mutual_fund">Mutual Fund</option>
+                    <option value="fd">FD</option>
+                    <option value="ppf">PPF</option>
+                    <option value="nps">NPS</option>
+                    <option value="gold">Gold</option>
+                    <option value="insurance_term">Term Insurance</option>
+                    <option value="insurance_medical">Health Insurance</option>
+                    <option value="elss">ELSS</option>
+                    <option value="ulip">ULIP</option>
+                    <option value="debt">Debt/Bond</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <input value={hf.name} onChange={e => setHf({...hf, name: e.target.value})} placeholder="Name (e.g. HDFC Bank, Axis Bluechip)" className="w-full p-1.5 rounded border text-xs bg-background" />
+                  <div className="grid grid-cols-3 gap-1">
+                    <input value={hf.symbol} onChange={e => setHf({...hf, symbol: e.target.value})} placeholder="Symbol" className="p-1.5 rounded border text-xs bg-background" />
+                    <input type="number" value={hf.quantity} onChange={e => setHf({...hf, quantity: e.target.value})} placeholder="Qty/Units" className="p-1.5 rounded border text-xs bg-background" />
+                    <input type="number" value={hf.avgBuyPrice} onChange={e => setHf({...hf, avgBuyPrice: e.target.value})} placeholder="Buy Price" className="p-1.5 rounded border text-xs bg-background" />
+                  </div>
+                  <div className="flex gap-1">
+                    <Button size="sm" className="h-7 text-xs" onClick={() => addHoldingMut.mutate()} disabled={!hf.name || addHoldingMut.isPending}>
+                      <Plus className="w-3 h-3 mr-1" /> Add
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowAddForm(null)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
               </div>
             ))}
           </div>
