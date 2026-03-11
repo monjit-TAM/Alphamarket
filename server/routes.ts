@@ -2570,12 +2570,39 @@ export async function registerRoutes(
       for (const h of rows) {
         let currentPrice = 0;
 
-        if (h.asset_type === "equity" && h.symbol) {
-          const quote = await getLiveQuote(h.symbol);
+        if (h.asset_type === "equity" && (h.symbol || h.name)) {
+          const quote = await getLiveQuote(h.symbol || h.name);
           if (quote) currentPrice = quote.ltp;
-        } else if (h.asset_type === "equity" && h.name && !h.symbol) {
-          const quote = await getLiveQuote(h.name);
-          if (quote) currentPrice = quote.ltp;
+        } else if (h.asset_type === "mutual_fund" || h.asset_type === "elss") {
+          try {
+            const sName = (h.name || "").replace(/^[A-Z0-9]{2,10}[-]/i, "").trim();
+            const keywords = sName.replace(/\s*-\s*/g, " ").replace(/\b(fund|plan|growth|option)\b/gi, "").replace(/\s+/g, " ").trim().split(" ").filter((w: string) => w.length > 2).slice(0, 4).join(" ");
+            if (keywords) {
+              const searchRes = await fetch("https://api.mfapi.in/mf/search?q=" + encodeURIComponent(keywords));
+              if (searchRes.ok) {
+                const results = await searchRes.json();
+                if (results && results.length > 0) {
+                  const nameLower = (h.name || "").toLowerCase();
+                  const isDirect = nameLower.includes("direct");
+                  const isGrowth = nameLower.includes("growth");
+                  let best = results[0];
+                  for (const r of results) {
+                    const rLower = r.schemeName.toLowerCase();
+                    const directMatch = isDirect ? rLower.includes("direct") : !rLower.includes("direct");
+                    const growthMatch = isGrowth ? rLower.includes("growth") : true;
+                    if (directMatch && growthMatch) { best = r; break; }
+                  }
+                  const navRes = await fetch("https://api.mfapi.in/mf/" + best.schemeCode + "/latest");
+                  if (navRes.ok) {
+                    const navData = await navRes.json();
+                    if (navData?.data?.[0]?.nav) {
+                      currentPrice = parseFloat(navData.data[0].nav);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e: any) { console.warn("[Portfolio] MF NAV lookup failed for " + h.name + ": " + e.message); }
         }
 
         if (currentPrice > 0) {
@@ -2623,9 +2650,39 @@ export async function registerRoutes(
 
       for (const h of rows) {
         let currentPrice = 0;
-        if ((h.asset_type === "equity") && (h.symbol || h.name)) {
+        if (h.asset_type === "equity" && (h.symbol || h.name)) {
           const quote = await getLiveQuote(h.symbol || h.name);
           if (quote) currentPrice = quote.ltp;
+        } else if (h.asset_type === "mutual_fund" || h.asset_type === "elss") {
+          try {
+            const sName = (h.name || "").replace(/^[A-Z0-9]{2,10}[-]/i, "").trim();
+            const keywords = sName.replace(/\s*-\s*/g, " ").replace(/\b(fund|plan|growth|option)\b/gi, "").replace(/\s+/g, " ").trim().split(" ").filter((w: string) => w.length > 2).slice(0, 4).join(" ");
+            if (keywords) {
+              const searchRes = await fetch("https://api.mfapi.in/mf/search?q=" + encodeURIComponent(keywords));
+              if (searchRes.ok) {
+                const results = await searchRes.json();
+                if (results && results.length > 0) {
+                  const nameLower = (h.name || "").toLowerCase();
+                  const isDirect = nameLower.includes("direct");
+                  const isGrowth = nameLower.includes("growth");
+                  let best = results[0];
+                  for (const r of results) {
+                    const rLower = r.schemeName.toLowerCase();
+                    const directMatch = isDirect ? rLower.includes("direct") : !rLower.includes("direct");
+                    const growthMatch = isGrowth ? rLower.includes("growth") : true;
+                    if (directMatch && growthMatch) { best = r; break; }
+                  }
+                  const navRes = await fetch("https://api.mfapi.in/mf/" + best.schemeCode + "/latest");
+                  if (navRes.ok) {
+                    const navData = await navRes.json();
+                    if (navData?.data?.[0]?.nav) {
+                      currentPrice = parseFloat(navData.data[0].nav);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e: any) { console.warn("[Portfolio] MF NAV lookup failed for " + h.name + ": " + e.message); }
         }
         if (currentPrice > 0) {
           const qty = Number(h.quantity) || 0;
