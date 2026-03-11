@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { IndianRupee, Users, TrendingUp, FileText, Plus, Download, ShieldCheck, Fingerprint, CheckCircle2, XCircle, FileSignature, Upload, BarChart3 } from "lucide-react";
+import { IndianRupee, Users, TrendingUp, FileText, Plus, Download, ShieldCheck, Fingerprint, CheckCircle2, XCircle, FileSignature, Upload, BarChart3, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/lib/auth";
 import type { Strategy, Call, Subscription, Content as ContentType, RiskProfile } from "@shared/schema";
@@ -194,6 +194,63 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
     onSuccess: () => { refetch(); setShowCreate(false); toast({ title: "Portfolio created for client" }); },
   });
 
+  const [activePortfolioId, setActivePortfolioId] = useState<string | null>(null);
+  const [showRecForm, setShowRecForm] = useState(false);
+  const [recForm, setRecForm] = useState({ title: "", summary: "", actions: [] as any[] });
+
+  const { data: analytics } = useQuery<any>({
+    queryKey: ["/api/portfolio", activePortfolioId, "analytics-advisor"],
+    queryFn: async () => {
+      const r = await fetch("/api/portfolio/" + activePortfolioId + "/analytics", { credentials: "include" });
+      return r.json();
+    },
+    enabled: !!activePortfolioId,
+  });
+
+  const { data: suggestions, refetch: refetchSuggestions } = useQuery<any[]>({
+    queryKey: ["/api/portfolio", activePortfolioId, "suggestions"],
+    queryFn: async () => {
+      const r = await fetch("/api/portfolio/" + activePortfolioId + "/suggestions", { credentials: "include" });
+      return r.json();
+    },
+    enabled: !!activePortfolioId,
+  });
+
+  const analyzeMut = useMutation({
+    mutationFn: async (pid: string) => {
+      const r = await apiRequest("POST", "/api/portfolio/" + pid + "/generate-suggestions");
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      refetchSuggestions();
+      toast({ title: data.count + " suggestions generated" });
+    },
+  });
+
+  const sendRecMut = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/advisor/recommendation", {
+        investorId: userId,
+        portfolioId: activePortfolioId,
+        title: recForm.title,
+        summary: recForm.summary,
+        actions: recForm.actions,
+      });
+      const rec = await r.json();
+      await apiRequest("PATCH", "/api/advisor/recommendation/" + rec.id, { status: "sent" });
+      return rec;
+    },
+    onSuccess: () => {
+      setShowRecForm(false);
+      setRecForm({ title: "", summary: "", actions: [] });
+      toast({ title: "Recommendation sent to investor" });
+    },
+  });
+
+  const addRecAction = () => {
+    setRecForm({ ...recForm, actions: [...recForm.actions, { action: "Buy", name: "", details: "", priority: "medium", done: false }] });
+  };
+
   const uploadPdf = async (portfolioId: string) => {
     const input = document.createElement("input");
     input.type = "file"; input.accept = ".pdf";
@@ -270,6 +327,70 @@ function PortfolioViewDialog({ userId, open, onClose }: { userId: string | null;
                 ) : (
                   <p className="text-xs text-muted-foreground">No holdings yet. Upload CSV/PDF or click Add to enter manually.</p>
                 )}
+              <div className="flex gap-1 mt-2">
+                <Button size="sm" className="h-7 text-xs" onClick={() => { setActivePortfolioId(p.id); analyzeMut.mutate(p.id); }}>
+                  {analyzeMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : <BarChart3 className="w-3 h-3 mr-1" />} Analyze
+                </Button>
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => { setActivePortfolioId(p.id); setShowRecForm(true); }}>
+                  <FileText className="w-3 h-3 mr-1" /> Send Recommendation
+                </Button>
+              </div>
+
+              {activePortfolioId === p.id && analytics?.summary && (
+                <div className="mt-2 p-2 rounded border bg-muted/30 space-y-1 text-xs">
+                  <p className="font-medium text-sm">Portfolio Analysis</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><span className="text-muted-foreground">Invested:</span> <strong>{fmtINR(analytics.summary.totalInvested)}</strong></div>
+                    <div><span className="text-muted-foreground">Current:</span> <strong>{fmtINR(analytics.summary.totalCurrent)}</strong></div>
+                    <div><span className="text-muted-foreground">Holdings:</span> <strong>{analytics.summary.totalHoldings}</strong></div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div><span className="text-muted-foreground">Stocks:</span> {analytics.summary.equityCount}</div>
+                    <div><span className="text-muted-foreground">MF:</span> {analytics.summary.mfCount}</div>
+                    <div><span className="text-muted-foreground">Top 5 Conc:</span> {analytics.concentrationRisk?.toFixed(0)}%</div>
+                  </div>
+                </div>
+              )}
+
+              {activePortfolioId === p.id && suggestions && suggestions.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  <p className="text-xs font-medium">Suggestions ({suggestions.length})</p>
+                  {suggestions.slice(0, 5).map((s: any, i: number) => (
+                    <div key={i} className={"px-2 py-1 rounded text-xs border " + (s.priority === "high" ? "border-red-200 bg-red-50" : s.priority === "medium" ? "border-amber-200 bg-amber-50" : "border-gray-200")}>
+                      <span className="font-medium">{s.title}</span>
+                      <p className="text-muted-foreground text-[10px]">{s.description?.substring(0, 100)}...</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {showRecForm && activePortfolioId === p.id && (
+                <div className="mt-2 p-2 rounded border space-y-2">
+                  <p className="text-xs font-medium">Send Recommendation to Investor</p>
+                  <input value={recForm.title} onChange={e => setRecForm({...recForm, title: e.target.value})} placeholder="Recommendation title (e.g. Q1 2026 Portfolio Review)" className="w-full p-1.5 rounded border text-xs bg-background" />
+                  <textarea value={recForm.summary} onChange={e => setRecForm({...recForm, summary: e.target.value})} placeholder="Summary of your advice..." className="w-full p-1.5 rounded border text-xs bg-background min-h-[50px]" />
+                  <div className="space-y-1">
+                    <p className="text-[10px] font-medium">Action Items:</p>
+                    {recForm.actions.map((a: any, i: number) => (
+                      <div key={i} className="flex gap-1">
+                        <select value={a.action} onChange={e => { const acts = [...recForm.actions]; acts[i].action = e.target.value; setRecForm({...recForm, actions: acts}); }} className="p-1 rounded border text-[10px] bg-background w-16">
+                          <option>Buy</option><option>Sell</option><option>Hold</option><option>Switch</option><option>SIP</option><option>Review</option>
+                        </select>
+                        <input value={a.name} onChange={e => { const acts = [...recForm.actions]; acts[i].name = e.target.value; setRecForm({...recForm, actions: acts}); }} placeholder="Stock/Fund name" className="flex-1 p-1 rounded border text-[10px] bg-background" />
+                        <input value={a.details} onChange={e => { const acts = [...recForm.actions]; acts[i].details = e.target.value; setRecForm({...recForm, actions: acts}); }} placeholder="Details" className="flex-1 p-1 rounded border text-[10px] bg-background" />
+                      </div>
+                    ))}
+                    <Button variant="ghost" size="sm" className="h-6 text-[10px]" onClick={addRecAction}><Plus className="w-2 h-2 mr-1" /> Add Action</Button>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button size="sm" className="h-7 text-xs" onClick={() => sendRecMut.mutate()} disabled={!recForm.title || sendRecMut.isPending}>
+                      {sendRecMut.isPending ? <Loader2 className="w-3 h-3 mr-1 animate-spin" /> : null} Send to Investor
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowRecForm(false)}>Cancel</Button>
+                  </div>
+                </div>
+              )}
+
               {showAddForm === p.id && (
                 <div className="mt-2 p-3 rounded-md border bg-muted/30 space-y-2">
                   <p className="text-xs font-medium">Add Holding Manually</p>
