@@ -9,7 +9,7 @@ import { promisify } from "util";
 import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail } from "./auth";
 import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, getOptionChainExpiries, getOptionChain } from "./groww";
 import type { Plan, BasketRebalance } from "@shared/schema";
-import { esignAgreements } from "@shared/schema";
+import { esignAgreements, appSettings } from "@shared/schema";
 import { db } from "./db";
 import { and, eq, desc, sql } from "drizzle-orm";
 import nseSymbols from "./data/nse-symbols.json";
@@ -4120,6 +4120,74 @@ export async function registerRoutes(
       res.status(500).send(err.message);
     }
   });
+
+
+  // ============================================================
+  // SHARED TOKEN API — Single source of truth for all apps
+  // ============================================================
+  const SHARED_TOKEN_SECRET = process.env.SHARED_TOKEN_SECRET || "alphamarket-shared-2026";
+
+  // GET /api/shared/token/groww — Any app on the server can fetch the current Groww token
+  app.get("/api/shared/token/groww", async (req: any, res: any) => {
+    try {
+      const secret = req.headers["x-shared-secret"] || req.query.secret;
+      if (secret !== SHARED_TOKEN_SECRET) return res.status(401).json({ error: "Invalid shared secret" });
+
+      const row = await db.select().from(appSettings).where(eq(appSettings.key, "groww_access_token")).limit(1);
+      if (!row.length) return res.status(404).json({ error: "No Groww token found" });
+
+      const data = JSON.parse(row[0].value);
+      res.json({
+        token: data.token,
+        expiry: data.expiry,
+        setAt: data.setAt,
+        source: "alphamarket",
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/shared/token/groww — Update Groww token from any app (e.g. admin panel)
+  app.post("/api/shared/token/groww", async (req: any, res: any) => {
+    try {
+      const secret = req.headers["x-shared-secret"] || req.query.secret;
+      if (secret !== SHARED_TOKEN_SECRET) return res.status(401).json({ error: "Invalid shared secret" });
+
+      const { token } = req.body;
+      if (!token) return res.status(400).json({ error: "Token required" });
+
+      // Use the existing setGrowwAccessToken function
+      const { setGrowwAccessToken } = require("./groww");
+      const result = setGrowwAccessToken(token);
+
+      res.json({ success: true, expiresIn: result.expiresIn, message: "Token updated across all apps" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/shared/tokens — Status of all tokens (for admin dashboard)
+  app.get("/api/shared/tokens", async (req: any, res: any) => {
+    try {
+      const secret = req.headers["x-shared-secret"] || req.query.secret;
+      if (secret !== SHARED_TOKEN_SECRET) return res.status(401).json({ error: "Invalid shared secret" });
+
+      const { getGrowwTokenStatus } = require("./groww");
+      const growwStatus = getGrowwTokenStatus();
+
+      res.json({
+        groww: {
+          hasToken: growwStatus.hasToken,
+          expiresIn: growwStatus.expiresIn,
+          setAt: growwStatus.setAt,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
 
   return httpServer;
 }
