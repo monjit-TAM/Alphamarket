@@ -71,6 +71,7 @@ function Router() {
       <Route path="/shipping-and-delivery" component={ShippingAndReturns} />
       <Route path="/contact-us" component={ContactUs} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/dashboard/subscriber/:id/portfolio" component={Dashboard} />
       <Route path="/dashboard/:rest*" component={Dashboard} />
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/:rest*" component={AdminDashboard} />

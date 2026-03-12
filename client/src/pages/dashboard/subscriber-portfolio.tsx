@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { useRoute, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -266,8 +266,10 @@ function ModalOverlay({ onClose, children }: { onClose: () => void; children: Re
 
 export default function SubscriberPortfolioPage() {
   const [, navigate] = useLocation();
-  const [match, params] = useRoute("/dashboard/subscriber/:userId/portfolio");
-  const userId = params?.userId ?? "";
+  // Extract userId from URL path
+  const pathParts = window.location.pathname.split("/");
+  const subIdx = pathParts.indexOf("subscriber");
+  const userId = subIdx !== -1 ? pathParts[subIdx + 1] ?? "" : "";
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -290,7 +292,7 @@ export default function SubscriberPortfolioPage() {
 
   const { data: portfolios = [], isLoading: loadingPortfolios } = useQuery<Portfolio[]>({
     queryKey: ["advisor-subscriber-portfolios", userId],
-    queryFn: () => apiGet(`/api/advisor/subscriber/${userId}/portfolio`),
+    queryFn: () => apiGet(`/api/advisor/subscriber/${userId}/portfolio`).then((d: any) => d.portfolios || []),
     enabled: !!userId,
   });
 
@@ -302,17 +304,17 @@ export default function SubscriberPortfolioPage() {
 
   const portfolioId = selectedPortfolio?.id;
 
-  const { data: holdings = [], isLoading: loadingHoldings } = useQuery<Holding[]>({
-    queryKey: ["portfolio-holdings", portfolioId],
-    queryFn: () => apiGet(`/api/portfolio/${portfolioId}/holdings`),
-    enabled: !!portfolioId,
-  });
+  // Holdings come embedded in portfolio response
+  const holdings: Holding[] = (selectedPortfolio as any)?.holdings || [];
+  const loadingHoldings = loadingPortfolios;
+
 
   const { data: suggestions = [] } = useQuery<Suggestion[]>({
     queryKey: ["portfolio-suggestions", portfolioId],
     queryFn: () => apiGet(`/api/portfolio/${portfolioId}/suggestions`),
     enabled: !!portfolioId,
   });
+
 
   const { data: goals = [] } = useQuery<Goal[]>({
     queryKey: ["subscriber-goals", userId],
@@ -331,7 +333,7 @@ export default function SubscriberPortfolioPage() {
   const syncPricesMut = useMutation({
     mutationFn: () => apiPost(`/api/advisor/portfolio/${portfolioId}/sync-prices`),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["portfolio-holdings", portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["advisor-subscriber-portfolios", userId] });
       toast({ title: "Prices synced", description: "Live prices updated from Groww & AMFI." });
     },
     onError: (e: Error) => toast({ title: "Sync failed", description: e.message, variant: "destructive" }),
@@ -361,7 +363,7 @@ export default function SubscriberPortfolioPage() {
       return apiPost(`/api/advisor/portfolio/${portfolioId}/import-csv`, fd);
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["portfolio-holdings", portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["advisor-subscriber-portfolios", userId] });
       toast({ title: "CSV imported", description: `${data.imported ?? ""} holdings added.` });
     },
     onError: (e: Error) => toast({ title: "CSV import failed", description: e.message, variant: "destructive" }),
@@ -373,7 +375,7 @@ export default function SubscriberPortfolioPage() {
       return apiPost(`/api/advisor/portfolio/${portfolioId}/import-pdf`, fd);
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ["portfolio-holdings", portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["advisor-subscriber-portfolios", userId] });
       toast({ title: "PDF imported", description: `${data.imported ?? ""} holdings parsed.` });
     },
     onError: (e: Error) => toast({ title: "PDF import failed", description: e.message, variant: "destructive" }),
@@ -453,7 +455,7 @@ export default function SubscriberPortfolioPage() {
       avgBuyPrice: Number(holdingForm.avgBuyPrice) || null,
     }),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["portfolio-holdings", portfolioId] });
+      queryClient.invalidateQueries({ queryKey: ["advisor-subscriber-portfolios", userId] });
       setShowManualAdd(false);
       setHoldingForm({ assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "" });
       toast({ title: "Holding added" });
@@ -522,7 +524,7 @@ export default function SubscriberPortfolioPage() {
 
   // Render
 
-  if (!match) return null;
+
 
   if (loadingPortfolios) {
     return (
