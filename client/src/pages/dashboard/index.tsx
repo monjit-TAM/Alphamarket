@@ -37,6 +37,7 @@ import MicrositeEditor from "./microsite-editor";
 import ReportsPage from "./reports";
 import PaymentsPage from "./payments-page";
 import QuestionsPage from "./questions-page";
+import SubscriberPortfolioPage from "./subscriber-portfolio";
 
 const sidebarItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/dashboard" },
@@ -84,6 +85,7 @@ export default function Dashboard() {
 
   const renderPage = () => {
     if (location === "/dashboard/strategies") return <StrategyManagement />;
+    if (location.startsWith("/dashboard/subscriber/") && location.endsWith("/portfolio")) return <SubscriberPortfolioPage />;
     if (location === "/dashboard/plans") return <PlansPage />;
     if (location === "/dashboard/payments") return <PaymentsPage />;
     if (location === "/dashboard/questions") return <QuestionsPage />;

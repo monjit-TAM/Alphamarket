@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { IndianRupee, Users, TrendingUp, FileText, Plus, Download, ShieldCheck, Fingerprint, CheckCircle2, XCircle, FileSignature, Upload, BarChart3, Loader2 } from "lucide-react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import type { Strategy, Call, Subscription, Content as ContentType, RiskProfile } from "@shared/schema";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -877,6 +877,7 @@ export default function DashboardHome() {
   const [agreementSubId, setAgreementSubId] = useState<string | null>(null);
   const [pmlaSubId, setPmlaSubId] = useState<string | null>(null);
   const [portfolioUserId, setPortfolioUserId] = useState<string | null>(null);
+  const [, navigate] = useLocation();
 
   const { data: strategies, isLoading: loadingStrategies } = useQuery<Strategy[]>({
     queryKey: ["/api/advisor/strategies"],
@@ -1212,7 +1213,7 @@ export default function DashboardHome() {
                               <span className="w-16 text-center text-xs font-medium text-primary">No</span>
                             )}
                             <button
-                              onClick={() => setPortfolioUserId(sub.userId)}
+                              onClick={() => navigate(`/dashboard/subscriber/${sub.userId}/portfolio`)}
                               className="w-16 text-center text-xs font-medium text-accent underline cursor-pointer"
                             >
                               View
