@@ -172,19 +172,23 @@ type SortDir = "asc" | "desc";
 
 // Helpers
 
-function formatINR(val: number | null | undefined): string {
+function formatINR(val: number | string | null | undefined): string {
   if (val == null) return "\u2014";
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(val);
+  const n = Number(val);
+  if (isNaN(n)) return "\u2014";
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
 }
 
-function formatPercent(val: number | null | undefined): string {
+function formatPercent(val: number | string | null | undefined): string {
   if (val == null) return "\u2014";
-  return `${val >= 0 ? "+" : ""}${val.toFixed(2)}%`;
+  const n = Number(val);
+  if (isNaN(n)) return "\u2014";
+  return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
-function pnlColor(val: number | null | undefined): string {
+function pnlColor(val: number | string | null | undefined): string {
   if (val == null) return "text-slate-500";
-  return val >= 0 ? "text-emerald-600" : "text-red-600";
+  return Number(val) >= 0 ? "text-emerald-600" : "text-red-600";
 }
 
 function apiGet(url: string) {
@@ -214,6 +218,20 @@ function apiPatch(url: string, body: any) {
     if (!r.ok) throw new Error(`PATCH ${url} failed: ${r.status}`);
     return r.json();
   });
+}
+
+// Helper: convert snake_case keys to camelCase
+function toCamel(obj: any): any {
+  if (Array.isArray(obj)) return obj.map(toCamel);
+  if (obj && typeof obj === "object") {
+    const out: any = {};
+    for (const k of Object.keys(obj)) {
+      const ck = k.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+      out[ck] = toCamel(obj[k]);
+    }
+    return out;
+  }
+  return obj;
 }
 
 // Sub-components
@@ -292,7 +310,7 @@ export default function SubscriberPortfolioPage() {
 
   const { data: portfolios = [], isLoading: loadingPortfolios } = useQuery<Portfolio[]>({
     queryKey: ["advisor-subscriber-portfolios", userId],
-    queryFn: () => apiGet(`/api/advisor/subscriber/${userId}/portfolio`).then((d: any) => d.portfolios || []),
+    queryFn: () => apiGet(`/api/advisor/subscriber/${userId}/portfolio`).then((d: any) => toCamel(d.portfolios || [])),
     enabled: !!userId,
   });
 
@@ -305,7 +323,7 @@ export default function SubscriberPortfolioPage() {
   const portfolioId = selectedPortfolio?.id;
 
   // Holdings come embedded in portfolio response
-  const holdings: Holding[] = (selectedPortfolio as any)?.holdings || [];
+  const holdings: Holding[] = toCamel((selectedPortfolio as any)?.holdings || []);
   const loadingHoldings = loadingPortfolios;
 
 
@@ -467,8 +485,8 @@ export default function SubscriberPortfolioPage() {
   const totals = useMemo(() => {
     let invested = 0, current = 0;
     for (const h of holdings) {
-      invested += h.investedValue ?? 0;
-      current += h.currentValue ?? (h.investedValue ?? 0);
+      invested += Number(h.investedValue) || 0;
+      current += Number(h.currentValue) || Number(h.investedValue) || 0;
     }
     const pnl = current - invested;
     const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
@@ -683,8 +701,8 @@ export default function SubscriberPortfolioPage() {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-slate-700 tabular-nums">{h.quantity ?? "\u2014"}</td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.avgBuyPrice != null ? `\u20B9${h.avgBuyPrice.toLocaleString("en-IN")}` : "\u2014"}</td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.currentPrice != null ? `\u20B9${h.currentPrice.toLocaleString("en-IN")}` : "\u2014"}</td>
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.avgBuyPrice != null ? `\u20B9${Number(h.avgBuyPrice).toLocaleString("en-IN")}` : "\u2014"}</td>
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.currentPrice != null ? `\u20B9${Number(h.currentPrice).toLocaleString("en-IN")}` : "\u2014"}</td>
                       <td className="py-3 px-3 font-medium text-slate-900 tabular-nums">{formatINR(h.currentValue ?? h.investedValue)}</td>
                       <td className={`py-3 px-3 font-medium tabular-nums ${pnlColor(h.gainLoss)}`}>{formatINR(h.gainLoss)}</td>
                       <td className={`py-3 px-3 font-medium tabular-nums ${pnlColor(h.gainLossPercent)}`}>{formatPercent(h.gainLossPercent)}</td>
