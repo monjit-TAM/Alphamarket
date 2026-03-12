@@ -4248,6 +4248,14 @@ export async function registerRoutes(
                 rebalancing: stockData.data.rebalancing,
                 taxImpact: stockData.data.taxImpact,
                 investmentStyle: stockData.data.investmentStyle,
+                scenarios: stockData.data.scenarios,
+                tailRisk: stockData.data.tailRisk,
+                behavior: stockData.data.behavior,
+                dividends: stockData.data.dividends,
+                growthAnalysis: stockData.data.growthAnalysis,
+                quantamental: stockData.data.quantamental,
+                advancedMetrics: stockData.data.advancedMetrics,
+                benchmarks: stockData.data.benchmarks,
               };
             }
           }
