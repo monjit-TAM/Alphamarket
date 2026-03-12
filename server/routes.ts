@@ -4189,5 +4189,113 @@ export async function registerRoutes(
   });
 
 
+
+  // ============================================================
+  // DEEP ANALYSIS INTEGRATION
+  // ============================================================
+  const STOCK_ANALYZER_URL = "http://localhost:5003";
+  const INTERNAL_API_KEY = "ak_test_anandrathi_2026";
+
+  function generateMFSuggestions(holdings: any[]): any[] {
+    const suggestions: any[] = [];
+    for (const h of holdings) {
+      if (h.name && h.name.match(/Regular/i) && !h.name.match(/Direct/i)) {
+        suggestions.push({ type: "switch_to_direct", fund: h.name, message: "Consider switching to Direct plan to save expense ratio", priority: "medium" });
+      }
+      if (h.gainLossPercent < -20) {
+        suggestions.push({ type: "review_underperformer", fund: h.name, message: h.name + " is down " + h.gainLossPercent.toFixed(1) + "%. Review fund thesis.", priority: "high" });
+      }
+      if (h.currentValue < 2000 && h.currentValue > 0) {
+        suggestions.push({ type: "consolidate", fund: h.name, message: h.name + " has very small value. Consider consolidating.", priority: "low" });
+      }
+    }
+    return suggestions;
+  }
+
+  app.post("/api/portfolio/:id/deep-analysis", requireAuth, async (req: any, res: any) => {
+    try {
+      const holdings = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.id}`);
+      const rows = (holdings as any).rows || [];
+      const equityHoldings = rows.filter((h: any) => h.asset_type === "equity" && h.symbol);
+      const mfHoldings = rows.filter((h: any) => h.asset_type === "mutual_fund");
+      const results: any = { equity: null, mutualFunds: null, combined: null };
+
+      if (equityHoldings.length > 0) {
+        try {
+          const stockPayload = equityHoldings.map((h: any) => ({
+            stockName: h.symbol || h.name,
+            buyPrice: parseFloat(h.avg_buy_price) || 0,
+            quantity: parseFloat(h.quantity) || 0,
+            buyDate: h.buy_date || undefined,
+          }));
+          const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-API-Key": INTERNAL_API_KEY },
+            body: JSON.stringify({ holdings: stockPayload }),
+          });
+          if (stockRes.ok) {
+            const stockData = await stockRes.json();
+            if (stockData.success) {
+              results.equity = {
+                summary: stockData.data.summary,
+                healthScore: stockData.data.healthScore,
+                sectorAllocation: stockData.data.sectorAllocation,
+                riskMetrics: stockData.data.riskMetrics,
+                recommendations: stockData.data.recommendations,
+                enhancedRecommendations: stockData.data.enhancedRecommendations,
+                holdings: stockData.data.holdings,
+                valueAnalysis: stockData.data.valueAnalysis,
+                rebalancing: stockData.data.rebalancing,
+                taxImpact: stockData.data.taxImpact,
+                investmentStyle: stockData.data.investmentStyle,
+              };
+            }
+          }
+        } catch (err: any) {
+          console.error("[Deep Analysis] Stock analyzer error:", err.message);
+          results.equity = { error: "Stock analyzer unavailable" };
+        }
+      }
+
+      if (mfHoldings.length > 0) {
+        let totalMFInvested = 0, totalMFCurrent = 0;
+        const mfSummary = mfHoldings.map((h: any) => {
+          const invested = parseFloat(h.invested_value) || 0;
+          const current = parseFloat(h.current_value) || 0;
+          totalMFInvested += invested;
+          totalMFCurrent += current;
+          return { name: h.name, isin: h.isin, units: parseFloat(h.quantity) || 0, nav: parseFloat(h.current_price) || 0, invested, currentValue: current, gainLoss: current - invested, gainLossPercent: invested > 0 ? ((current - invested) / invested) * 100 : 0 };
+        });
+        results.mutualFunds = {
+          summary: { totalInvested: totalMFInvested, currentValue: totalMFCurrent, totalPnl: totalMFCurrent - totalMFInvested, totalPnlPercent: totalMFInvested > 0 ? ((totalMFCurrent - totalMFInvested) / totalMFInvested) * 100 : 0, holdingsCount: mfHoldings.length },
+          holdings: mfSummary,
+          suggestions: generateMFSuggestions(mfSummary),
+        };
+      }
+
+      const eqI = results.equity?.summary?.totalInvested || 0;
+      const eqC = results.equity?.summary?.currentValue || 0;
+      const mfI = results.mutualFunds?.summary?.totalInvested || 0;
+      const mfC = results.mutualFunds?.summary?.currentValue || 0;
+      const totI = eqI + mfI, totC = eqC + mfC;
+      results.combined = {
+        totalInvested: totI, currentValue: totC, totalPnl: totC - totI,
+        totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0,
+        assetAllocation: {
+          equity: { invested: eqI, current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 },
+          mutualFunds: { invested: mfI, current: mfC, percent: totC > 0 ? (mfC / totC) * 100 : 0 },
+        },
+        healthScore: results.equity?.healthScore?.overall || null,
+        stockCount: results.equity?.summary?.holdingsCount || 0,
+        mfCount: results.mutualFunds?.summary?.holdingsCount || 0,
+      };
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
   return httpServer;
 }
