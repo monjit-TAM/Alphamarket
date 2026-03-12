@@ -461,6 +461,18 @@ export default function SubscriberPortfolioPage() {
     },
   });
 
+  // Deep Analysis
+  const [deepAnalysis, setDeepAnalysis] = useState<any>(null);
+  const deepAnalysisMut = useMutation({
+    mutationFn: () => apiPost("/api/portfolio/" + portfolioId + "/deep-analysis"),
+    onSuccess: (data: any) => {
+      setDeepAnalysis(data);
+      toast({ title: "Deep Analysis Complete", description: "Health score: " + (data.combined?.healthScore || "N/A") + "/100" });
+    },
+    onError: (e: Error) => toast({ title: "Analysis failed", description: e.message, variant: "destructive" }),
+  });
+  const runDeepAnalysis = () => deepAnalysisMut.mutate();
+
   // Manual holding form
   const [holdingForm, setHoldingForm] = useState({
     assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "",
@@ -931,21 +943,109 @@ export default function SubscriberPortfolioPage() {
         </CollapsibleSection>
       </div>
 
-      {/* Deep Analysis Links */}
+      {/* Deep Analysis */}
       <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
-        <h3 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-          <Shield className="w-4 h-4 text-blue-600" /> Deep Analysis Tools
-        </h3>
-        <div className="flex flex-wrap gap-3">
-          <a href="https://stocks.alphamarket.co.in" target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-2 text-sm px-4 py-2.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">
-            <TrendingUp className="w-4 h-4" /> Stock Analyzer
-          </a>
-          <a href="https://mf.alphamarket.co.in" target="_blank" rel="noreferrer"
-            className="inline-flex items-center gap-2 text-sm px-4 py-2.5 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors">
-            <PieChartIcon className="w-4 h-4" /> MF Analyzer
-          </a>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Shield className="w-4 h-4 text-blue-600" /> Deep Analysis (AlphaLens Engine)
+          </h3>
+          <div className="flex gap-2">
+            <button onClick={() => runDeepAnalysis()} disabled={!portfolioId || deepAnalysisMut.isPending}
+              className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+              <Shield className={`w-4 h-4 ${deepAnalysisMut.isPending ? "animate-spin" : ""}`} />
+              {deepAnalysisMut.isPending ? "Analyzing..." : "Run Deep Analysis"}
+            </button>
+            <a href="https://stocks.alphamarket.co.in" target="_blank" rel="noreferrer"
+              className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg px-3 py-2">Stock Analyzer</a>
+            <a href="https://mf.alphamarket.co.in" target="_blank" rel="noreferrer"
+              className="text-xs text-violet-600 hover:text-violet-700 border border-violet-200 rounded-lg px-3 py-2">MF Analyzer</a>
+          </div>
         </div>
+
+        {deepAnalysis && (
+          <div className="space-y-4">
+            {/* Health Score + Combined Summary */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {deepAnalysis.combined?.healthScore != null && (
+                <div className={`rounded-lg p-3 border ${deepAnalysis.combined.healthScore >= 70 ? "bg-emerald-50 border-emerald-200" : deepAnalysis.combined.healthScore >= 40 ? "bg-amber-50 border-amber-200" : "bg-red-50 border-red-200"}`}>
+                  <div className="text-xs text-slate-500 mb-1">Portfolio Health</div>
+                  <div className={`text-2xl font-bold ${deepAnalysis.combined.healthScore >= 70 ? "text-emerald-600" : deepAnalysis.combined.healthScore >= 40 ? "text-amber-600" : "text-red-600"}`}>
+                    {deepAnalysis.combined.healthScore}/100
+                  </div>
+                </div>
+              )}
+              <div className="rounded-lg p-3 border bg-blue-50 border-blue-200">
+                <div className="text-xs text-slate-500 mb-1">Stocks Analyzed</div>
+                <div className="text-2xl font-bold text-blue-700">{deepAnalysis.combined?.stockCount || 0}</div>
+              </div>
+              <div className="rounded-lg p-3 border bg-violet-50 border-violet-200">
+                <div className="text-xs text-slate-500 mb-1">Mutual Funds</div>
+                <div className="text-2xl font-bold text-violet-700">{deepAnalysis.combined?.mfCount || 0}</div>
+              </div>
+              <div className="rounded-lg p-3 border bg-slate-50 border-slate-200">
+                <div className="text-xs text-slate-500 mb-1">Combined P&L</div>
+                <div className={`text-lg font-bold ${(deepAnalysis.combined?.totalPnlPercent || 0) >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                  {(deepAnalysis.combined?.totalPnlPercent || 0).toFixed(1)}%
+                </div>
+              </div>
+            </div>
+
+            {/* Stock Recommendations */}
+            {deepAnalysis.equity?.recommendations && deepAnalysis.equity.recommendations.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-slate-700 mb-2">Stock Recommendations</h4>
+                <div className="space-y-2">
+                  {deepAnalysis.equity.recommendations.slice(0, 5).map((r: any, i: number) => (
+                    <div key={i} className="text-sm p-3 rounded-lg border border-slate-200 bg-slate-50">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${r.type === "BUY" || r.type === "ADD" ? "bg-emerald-100 text-emerald-700" : r.type === "SELL" || r.type === "TRIM" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{r.type}</span>
+                        <span className="font-medium text-slate-900">{r.stock || r.symbol || ""}</span>
+                      </div>
+                      <p className="text-slate-600 text-xs">{r.reason || r.message || ""}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Sector Allocation from Analysis */}
+            {deepAnalysis.equity?.sectorAllocation && (
+              <div>
+                <h4 className="text-sm font-semibold text-slate-700 mb-2">Sector Allocation (Stocks)</h4>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(deepAnalysis.equity.sectorAllocation).map(([sector, pct]: [string, any]) => (
+                    <span key={sector} className="text-xs px-2 py-1 rounded-full bg-blue-50 border border-blue-200 text-blue-700">
+                      {sector}: {typeof pct === "number" ? pct.toFixed(1) : pct}%
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* MF Suggestions */}
+            {deepAnalysis.mutualFunds?.suggestions && deepAnalysis.mutualFunds.suggestions.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-slate-700 mb-2">Mutual Fund Suggestions</h4>
+                <div className="space-y-2">
+                  {deepAnalysis.mutualFunds.suggestions.map((s: any, i: number) => (
+                    <div key={i} className="text-sm p-3 rounded-lg border border-slate-200 bg-slate-50">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full mr-2 ${s.priority === "high" ? "bg-red-100 text-red-700" : s.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{s.priority}</span>
+                      <span className="text-slate-600">{s.message}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Investment Style */}
+            {deepAnalysis.equity?.investmentStyle && (
+              <div className="text-sm text-slate-600">
+                <span className="font-medium text-slate-700">Investment Style: </span>
+                {deepAnalysis.equity.investmentStyle.primary || "Mixed"} | Risk: {deepAnalysis.equity.investmentStyle.riskLevel || "Moderate"}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Manual Add Holding Modal */}
