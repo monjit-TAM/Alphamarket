@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   Shield, TrendingUp, TrendingDown, AlertTriangle,
   BarChart3, PieChart as PieChartIcon, Target, Zap, Scale, Wallet,
-  ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Percent, DollarSign,
+  ChevronDown, ChevronUp, ArrowUpRight, ArrowDownRight, Percent, DollarSign, Edit3, Save, X,
 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, RadarChart, PolarGrid, PolarAngleAxis, Radar } from "recharts";
 
@@ -44,8 +44,33 @@ function Sig({ s }: { s: string }) {
   return <span className={`text-xs px-1.5 py-0.5 rounded border ${c}`}>{s}</span>;
 }
 
-export default function DeepAnalysisPanel({ data }: { data: any }) {
+export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpdate?: (d: any) => void }) {
   if (!data) return null;
+  const [editMode, setEditMode] = useState(false);
+  const [editedRecs, setEditedRecs] = useState<Record<string, { action: string; notes: string }>>({});
+  const [editedMfRecs, setEditedMfRecs] = useState<Record<number, { action: string; reason: string }>>({});
+
+  const toggleEdit = () => {
+    if (editMode && onUpdate) {
+      // Apply edits to data
+      const updated = JSON.parse(JSON.stringify(data));
+      if (updated.equity?.enhancedRecommendations) {
+        for (const r of updated.equity.enhancedRecommendations) {
+          const e = editedRecs[r.stockName];
+          if (e) { r.overallAction = e.action; r.advisorNotes = e.notes; }
+        }
+      }
+      if (updated.mutualFunds?.recommendations) {
+        updated.mutualFunds.recommendations = updated.mutualFunds.recommendations.map((r: any, i: number) => {
+          const e = editedMfRecs[i];
+          return e ? { ...r, action: e.action, reason: e.reason } : r;
+        });
+      }
+      onUpdate(updated);
+    }
+    setEditMode(!editMode);
+  };
+
   const { equity, mutualFunds, combined } = data;
   const hs = equity?.healthScore;
   const am = equity?.advancedMetrics;
@@ -67,6 +92,13 @@ export default function DeepAnalysisPanel({ data }: { data: any }) {
 
   return (
     <div className="space-y-4">
+      {/* Edit Toggle */}
+      <div className="flex justify-end">
+        <button onClick={toggleEdit} className={`flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg border transition-colors ${editMode ? "bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700" : "bg-white text-slate-600 border-slate-300 hover:bg-slate-50"}`}>
+          {editMode ? <><Save className="w-4 h-4" /> Save Changes</> : <><Edit3 className="w-4 h-4" /> Edit Recommendations</>}
+        </button>
+      </div>
+
       {/* ── Hero Row: Health + Radar + Combined ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {hs && (
@@ -158,6 +190,8 @@ export default function DeepAnalysisPanel({ data }: { data: any }) {
                   <th className="py-2 px-2 font-medium">Quant</th>
                   <th className="py-2 px-2 font-medium">Action</th>
                   <th className="py-2 px-2 font-medium">Confidence</th>
+                  {editMode && <th className="py-2 px-2 font-medium">Advisor Notes</th>}
+                  {!editMode && Object.keys(editedRecs).some(k => editedRecs[k]?.notes) && <th className="py-2 px-2 font-medium">Notes</th>}
                 </tr>
               </thead>
               <tbody>
@@ -176,8 +210,26 @@ export default function DeepAnalysisPanel({ data }: { data: any }) {
                       <td className="py-2.5 px-2"><Sig s={r.valueSignal} /></td>
                       <td className="py-2.5 px-2"><Sig s={r.growthSignal} /></td>
                       <td className="py-2.5 px-2"><Sig s={r.quantSignal} /></td>
+                      {editMode ? (
+                      <td className="py-2.5 px-2">
+                        <select value={editedRecs[r.stockName]?.action || r.overallAction} onChange={(e) => setEditedRecs(p => ({...p, [r.stockName]: {...(p[r.stockName] || {action: r.overallAction, notes: ""}), action: e.target.value}}))}
+                          className="text-xs border border-slate-200 rounded px-1.5 py-1 bg-white w-full">
+                          {["Strong Buy","Buy","Hold","Sell","Reduce","Neutral","Exit"].map(a => <option key={a}>{a}</option>)}
+                        </select>
+                      </td>
+                    ) : (
                       <td className="py-2.5 px-2"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${actionColor}`}>{r.overallAction}</span></td>
+                    )}
                       <td className="py-2.5 px-2"><span className={`text-xs font-medium ${r.confidence === "High" ? "text-emerald-600" : r.confidence === "Medium" ? "text-amber-600" : "text-slate-400"}`}>{r.confidence}</span></td>
+                      {editMode && (
+                        <td className="py-2.5 px-2">
+                          <input value={editedRecs[r.stockName]?.notes || ""} onChange={(e) => setEditedRecs(p => ({...p, [r.stockName]: {...(p[r.stockName] || {action: r.overallAction, notes: ""}), notes: e.target.value}}))}
+                            placeholder="Add advisor note..." className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full" />
+                        </td>
+                      )}
+                      {!editMode && editedRecs[r.stockName]?.notes && (
+                        <td className="py-2.5 px-2 text-xs text-blue-600 italic">{editedRecs[r.stockName].notes}</td>
+                      )}
                     </tr>
                   );
                 })}

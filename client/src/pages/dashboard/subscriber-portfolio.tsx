@@ -983,7 +983,7 @@ export default function SubscriberPortfolioPage() {
             <button onClick={() => downloadReport()} disabled={!deepAnalysis || downloadingReport} className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors disabled:opacity-50"><Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Download PDF"}</button>
           </div>
         </div>
-        <DeepAnalysisPanel data={deepAnalysis} />
+        <DeepAnalysisPanel data={deepAnalysis} onUpdate={(d: any) => setDeepAnalysis(d)} />
       </div>
 
       {/* Manual Add Holding Modal */}
