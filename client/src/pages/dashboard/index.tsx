@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/sidebar";
 import {
   LayoutDashboard,
+  HelpCircle,
   Globe,
   BarChart3,
   BookOpen,
@@ -135,6 +136,14 @@ export default function Dashboard() {
                       >
                         <LogOut className="w-4 h-4" />
                         <span>Sign Out</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild>
+                        <a href="/walkthrough.html" target="_blank" rel="noreferrer" className="flex items-center gap-2 text-blue-400 hover:text-blue-300">
+                          <HelpCircle className="w-4 h-4" />
+                          <span>Product Guide</span>
+                        </a>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   </SidebarMenu>

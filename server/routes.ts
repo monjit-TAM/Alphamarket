@@ -4497,4 +4497,58 @@ export async function registerRoutes(
 
 
   return httpServer;
+
+  // ─── File Upload (Local Storage — replaces Replit Object Storage) ────────────
+  const uploadDir = "/var/www/alphamarket/uploads/general";
+
+  app.post("/api/uploads/request-url", async (req, res) => {
+    try {
+      const { name, size, contentType } = req.body;
+      if (!name) return res.status(400).json({ error: "File name is required" });
+
+      const ext = name.includes(".") ? "." + name.split(".").pop() : "";
+      const fileId = randomBytes(16).toString("hex");
+      const fileName = fileId + ext;
+      const objectPath = "/uploads/general/" + fileName;
+      const uploadURL = "/api/uploads/" + fileId + ext;
+
+      res.json({
+        uploadURL,
+        objectPath,
+        metadata: { name, size: size || 0, contentType: contentType || "application/octet-stream" },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/uploads/:fileId", async (req, res) => {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      const filePath = path.join(uploadDir, req.params.fileId);
+      const chunks: Buffer[] = [];
+
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        const buffer = Buffer.concat(chunks);
+        fs.writeFileSync(filePath, buffer);
+        res.status(200).send("OK");
+      });
+      req.on("error", (err: Error) => {
+        res.status(500).json({ error: err.message });
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Serve uploaded files
+  app.use("/uploads", (await import("express")).static("/var/www/alphamarket/uploads"));
+
 }
