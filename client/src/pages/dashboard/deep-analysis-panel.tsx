@@ -348,6 +348,74 @@ export default function DeepAnalysisPanel({ data }: { data: any }) {
         </Sec>
       )}
 
+      {/* ── Value Analysis ── */}
+      {equity?.valueAnalysis?.length > 0 && (
+        <Sec title={"Value Analysis (" + equity.valueAnalysis.length + " stocks)"} icon={<DollarSign className="w-4 h-4 text-blue-600" />} open={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                  <th className="py-2 px-2 font-medium">Stock</th>
+                  <th className="py-2 px-2 font-medium">CMP</th>
+                  <th className="py-2 px-2 font-medium">PE</th>
+                  <th className="py-2 px-2 font-medium">PB</th>
+                  <th className="py-2 px-2 font-medium">D/E</th>
+                  <th className="py-2 px-2 font-medium">Signal</th>
+                  <th className="py-2 px-2 font-medium w-[300px]">Analysis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {equity.valueAnalysis.map((v: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 align-top">
+                    <td className="py-2.5 px-2 font-medium text-slate-900">{v.stockName}</td>
+                    <td className="py-2.5 px-2 tabular-nums text-slate-700">{fmt(v.currentPrice)}</td>
+                    <td className="py-2.5 px-2 tabular-nums text-slate-700">{v.pe ? Number(v.pe).toFixed(1) : "\u2014"}</td>
+                    <td className="py-2.5 px-2 tabular-nums text-slate-700">{v.pb ? Number(v.pb).toFixed(1) : "\u2014"}</td>
+                    <td className="py-2.5 px-2 tabular-nums text-slate-700">{v.debtEquity ? Number(v.debtEquity).toFixed(1) : "\u2014"}</td>
+                    <td className="py-2.5 px-2"><Sig s={v.signal} /></td>
+                    <td className="py-2.5 px-2 text-xs text-slate-600 max-w-[300px]">{v.narrative}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Sec>
+      )}
+
+      {/* ── Growth Analysis ── */}
+      {equity?.growthAnalysis?.length > 0 && (
+        <Sec title={"Growth Analysis (" + equity.growthAnalysis.length + " stocks)"} icon={<TrendingUp className="w-4 h-4 text-emerald-600" />} open={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                  <th className="py-2 px-2 font-medium">Stock</th>
+                  <th className="py-2 px-2 font-medium">Rev Growth</th>
+                  <th className="py-2 px-2 font-medium">Earnings Growth</th>
+                  <th className="py-2 px-2 font-medium">ROE</th>
+                  <th className="py-2 px-2 font-medium">52W Momentum</th>
+                  <th className="py-2 px-2 font-medium">Signal</th>
+                  <th className="py-2 px-2 font-medium w-[300px]">Analysis</th>
+                </tr>
+              </thead>
+              <tbody>
+                {equity.growthAnalysis.map((g: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 align-top">
+                    <td className="py-2.5 px-2 font-medium text-slate-900">{g.stockName}</td>
+                    <td className={`py-2.5 px-2 tabular-nums ${pc(g.revenueGrowth)}`}>{g.revenueGrowth != null ? pct(g.revenueGrowth) : "\u2014"}</td>
+                    <td className={`py-2.5 px-2 tabular-nums ${pc(g.earningsGrowth)}`}>{g.earningsGrowth != null ? pct(g.earningsGrowth) : "\u2014"}</td>
+                    <td className="py-2.5 px-2 tabular-nums text-slate-700">{g.roe ? Number(g.roe).toFixed(1) + "%" : "\u2014"}</td>
+                    <td className={`py-2.5 px-2 tabular-nums font-medium ${pc(g.momentum52w)}`}>{g.momentum52w != null ? pct(g.momentum52w) : "\u2014"}</td>
+                    <td className="py-2.5 px-2"><Sig s={g.signal} /></td>
+                    <td className="py-2.5 px-2 text-xs text-slate-600 max-w-[300px]">{g.narrative}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Sec>
+      )}
+
       {/* ── MF Deep Analysis ── */}
       {mutualFunds?.holdings?.length > 0 && (
         <Sec title={"Mutual Fund Analysis (" + mutualFunds.holdings.length + " funds)"} icon={<Wallet className="w-4 h-4 text-violet-600" />}>

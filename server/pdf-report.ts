@@ -203,6 +203,58 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     }
   }
 
+  // ============ VALUE ANALYSIS ============
+  if (equity?.valueAnalysis?.length > 0) {
+    newPage("Value & Growth Analysis");
+    section("Value Analysis", "Fundamental valuation metrics for each stock.");
+    const vcols = [
+      { label: "Stock", x: M, w: 70 }, { label: "CMP", x: M + 70, w: 55 },
+      { label: "PE", x: M + 125, w: 40 }, { label: "PB", x: M + 165, w: 40 },
+      { label: "D/E", x: M + 205, w: 40 }, { label: "Signal", x: M + 245, w: 55 },
+      { label: "Analysis", x: M + 300, w: 215 },
+    ];
+    tableHeader(vcols);
+    for (const v of equity.valueAnalysis) {
+      checkPage(30, "Value & Growth Analysis");
+      const sigCol = (v.signal || "").includes("Buy") ? GREEN : (v.signal || "").includes("Sell") ? RED : GRAY;
+      tableRow([
+        { text: v.stockName || "", x: M, w: 70, bold: true },
+        { text: fmt(v.currentPrice), x: M + 70, w: 55 },
+        { text: v.pe ? Number(v.pe).toFixed(1) : "-", x: M + 125, w: 40 },
+        { text: v.pb ? Number(v.pb).toFixed(1) : "-", x: M + 165, w: 40 },
+        { text: v.debtEquity ? Number(v.debtEquity).toFixed(1) : "-", x: M + 205, w: 40 },
+        { text: v.signal || "-", x: M + 245, w: 55, color: sigCol },
+        { text: (v.narrative || "").substring(0, 120), x: M + 300, w: 215 },
+      ]);
+    }
+  }
+
+  // ============ GROWTH ANALYSIS ============
+  if (equity?.growthAnalysis?.length > 0) {
+    section("Growth Analysis", "Revenue, earnings momentum and growth trajectory.");
+    const gcols = [
+      { label: "Stock", x: M, w: 70 }, { label: "Rev Grw", x: M + 70, w: 50 },
+      { label: "Earn Grw", x: M + 120, w: 50 }, { label: "ROE", x: M + 170, w: 40 },
+      { label: "52W Mom", x: M + 210, w: 50 }, { label: "Signal", x: M + 260, w: 55 },
+      { label: "Analysis", x: M + 315, w: 200 },
+    ];
+    tableHeader(gcols);
+    for (const g of equity.growthAnalysis) {
+      checkPage(30, "Value & Growth Analysis");
+      const fmtG = (n: any) => n != null ? (Number(n) >= 0 ? "+" : "") + Number(n).toFixed(1) + "%" : "-";
+      const sigCol = (g.signal || "").includes("Buy") ? GREEN : (g.signal || "").includes("Sell") ? RED : GRAY;
+      tableRow([
+        { text: g.stockName || "", x: M, w: 70, bold: true },
+        { text: fmtG(g.revenueGrowth), x: M + 70, w: 50, color: pCol(g.revenueGrowth || 0) },
+        { text: fmtG(g.earningsGrowth), x: M + 120, w: 50, color: pCol(g.earningsGrowth || 0) },
+        { text: g.roe ? Number(g.roe).toFixed(1) + "%" : "-", x: M + 170, w: 40 },
+        { text: fmtG(g.momentum52w), x: M + 210, w: 50, color: pCol(g.momentum52w || 0) },
+        { text: g.signal || "-", x: M + 260, w: 55, color: sigCol },
+        { text: (g.narrative || "").substring(0, 110), x: M + 315, w: 200 },
+      ]);
+    }
+  }
+
   // ============ DIVIDEND + TAX ============
   if (equity?.dividends?.holdings?.length > 0) {
     newPage("Income & Tax");
