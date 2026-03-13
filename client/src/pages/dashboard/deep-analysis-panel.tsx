@@ -63,7 +63,7 @@ export default function DeepAnalysisPanel({ data }: { data: any }) {
   const hasScenarios = equity?.scenarios?.length > 0;
   const hasRebalancing = equity?.rebalancing?.suggestions?.length > 0;
   const hasQuant = equity?.quantamental?.length > 0;
-  const hasMFSugg = mutualFunds?.suggestions?.length > 0;
+  const hasMFRecs = mutualFunds?.recommendations?.length > 0;
 
   return (
     <div className="space-y-4">
@@ -348,20 +348,91 @@ export default function DeepAnalysisPanel({ data }: { data: any }) {
         </Sec>
       )}
 
-      {/* ── MF Suggestions ── */}
-      {hasMFSugg && (
-        <Sec title={"Mutual Fund Insights (" + mutualFunds.suggestions.length + ")"} icon={<Wallet className="w-4 h-4 text-violet-600" />}>
-          <div className="space-y-2">
-            {mutualFunds.suggestions.map((s: any, i: number) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
-                <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full mt-0.5 ${s.priority === "high" ? "bg-red-100 text-red-700" : s.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{s.priority}</span>
-                <div>
-                  {s.fund && <div className="text-sm font-medium text-slate-900 mb-0.5">{s.fund}</div>}
-                  <p className="text-sm text-slate-600">{s.message}</p>
-                </div>
+      {/* ── MF Deep Analysis ── */}
+      {mutualFunds?.holdings?.length > 0 && (
+        <Sec title={"Mutual Fund Analysis (" + mutualFunds.holdings.length + " funds)"} icon={<Wallet className="w-4 h-4 text-violet-600" />}>
+          {/* MF Risk Metrics Summary */}
+          {mutualFunds.riskMetrics && (
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+              <Card label="Expected Return" value={mutualFunds.riskMetrics.avgExpectedReturn + "% p.a."} />
+              <Card label="Volatility" value={mutualFunds.riskMetrics.avgVolatility + "%"} />
+              <Card label="Max Drawdown" value={mutualFunds.riskMetrics.avgMaxDrawdown + "%"} cls="text-red-600" />
+              <Card label="Portfolio Risk" value={mutualFunds.riskMetrics.portfolioRisk} cls={mutualFunds.riskMetrics.portfolioRisk === "High" ? "text-red-600" : mutualFunds.riskMetrics.portfolioRisk === "Moderate" ? "text-amber-600" : "text-emerald-600"} />
+              <Card label="Direct / Regular" value={mutualFunds.riskMetrics.directCount + " / " + mutualFunds.riskMetrics.regularCount} />
+            </div>
+          )}
+
+          {/* Category Allocation */}
+          {mutualFunds.categoryAllocation?.length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Category Allocation</h4>
+              <div className="flex flex-wrap gap-2">
+                {mutualFunds.categoryAllocation.map((c: any, i: number) => (
+                  <div key={i} className="rounded-lg px-3 py-2 border border-violet-200 bg-violet-50">
+                    <div className="text-xs text-violet-600 font-medium">{c.name}</div>
+                    <div className="text-sm font-bold text-violet-900">{fmt(c.value)} <span className="text-xs font-normal text-violet-500">({Number(c.percent).toFixed(0)}%)</span></div>
+                  </div>
+                ))}
               </div>
-            ))}
+            </div>
+          )}
+
+          {/* Fund-by-Fund Table */}
+          <div className="overflow-x-auto mb-4">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                  <th className="py-2 px-2 font-medium">Fund</th>
+                  <th className="py-2 px-2 font-medium">Category</th>
+                  <th className="py-2 px-2 font-medium">NAV</th>
+                  <th className="py-2 px-2 font-medium">Value</th>
+                  <th className="py-2 px-2 font-medium">P&L</th>
+                  <th className="py-2 px-2 font-medium">vs Benchmark</th>
+                  <th className="py-2 px-2 font-medium">Risk</th>
+                  <th className="py-2 px-2 font-medium">Plan</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mutualFunds.holdings.map((f: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-2.5 px-2">
+                      <div className="font-medium text-slate-900 max-w-[200px] truncate" title={f.name}>{f.name}</div>
+                      <div className="text-[10px] text-slate-400">{f.benchmark}</div>
+                    </td>
+                    <td className="py-2.5 px-2"><span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-700 border border-violet-200">{f.category}</span></td>
+                    <td className="py-2.5 px-2 tabular-nums text-slate-700">{"₹"}{Number(f.nav).toFixed(2)}</td>
+                    <td className="py-2.5 px-2 tabular-nums font-medium text-slate-900">{fmt(f.currentValue)}</td>
+                    <td className={`py-2.5 px-2 tabular-nums font-medium ${pc(f.gainLossPercent)}`}>{pct(f.gainLossPercent)}</td>
+                    <td className="py-2.5 px-2"><span className={`text-xs px-1.5 py-0.5 rounded-full ${f.performanceRating === "Outperformer" ? "bg-emerald-100 text-emerald-700" : f.performanceRating === "Underperformer" ? "bg-red-100 text-red-700" : "bg-slate-100 text-slate-600"}`}>{f.performanceRating}</span></td>
+                    <td className="py-2.5 px-2"><span className={`text-xs ${f.riskLevel === "High" ? "text-red-600" : f.riskLevel === "Moderate" ? "text-amber-600" : "text-emerald-600"}`}>{f.riskLevel}</span></td>
+                    <td className="py-2.5 px-2"><span className={`text-xs px-1.5 py-0.5 rounded ${f.isDirect ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{f.isDirect ? "Direct" : "Regular"}</span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+
+          {/* MF Recommendations */}
+          {mutualFunds.recommendations?.length > 0 && (
+            <div>
+              <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Recommendations ({mutualFunds.recommendations.length})</h4>
+              <div className="space-y-2">
+                {mutualFunds.recommendations.map((r: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
+                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full mt-0.5 ${r.priority === "high" ? "bg-red-100 text-red-700" : r.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{r.priority}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="text-sm font-medium text-slate-900">{r.fund}</span>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${r.action === "Switch to Direct" ? "bg-blue-100 text-blue-700" : r.action === "Review" ? "bg-red-100 text-red-700" : r.action === "Diversify" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{r.action}</span>
+                        {r.category && <span className="text-[10px] text-slate-400">{r.category}</span>}
+                      </div>
+                      <p className="text-xs text-slate-600">{r.reason}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Sec>
       )}
     </div>

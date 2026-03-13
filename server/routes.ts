@@ -4267,17 +4267,115 @@ export async function registerRoutes(
 
       if (mfHoldings.length > 0) {
         let totalMFInvested = 0, totalMFCurrent = 0;
+        
+        // Category benchmarks (ported from MF Analyzer engine)
+        const MF_BENCHMARKS: Record<string, { expectedReturn: number; volatility: number; maxDrawdown: number; expenseRatioDirect: number; expenseRatioRegular: number; benchmarkName: string }> = {
+          "Large Cap": { expectedReturn: 12.5, volatility: 14, maxDrawdown: -25, expenseRatioDirect: 0.4, expenseRatioRegular: 1.5, benchmarkName: "Nifty 50 TRI" },
+          "Mid Cap": { expectedReturn: 15, volatility: 18, maxDrawdown: -32, expenseRatioDirect: 0.5, expenseRatioRegular: 1.8, benchmarkName: "Nifty Midcap 150 TRI" },
+          "Small Cap": { expectedReturn: 17, volatility: 24, maxDrawdown: -40, expenseRatioDirect: 0.6, expenseRatioRegular: 2.0, benchmarkName: "Nifty Smallcap 250 TRI" },
+          "Flexi/Multi Cap": { expectedReturn: 14, volatility: 16, maxDrawdown: -28, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty 500 TRI" },
+          "ELSS": { expectedReturn: 14, volatility: 16, maxDrawdown: -30, expenseRatioDirect: 0.5, expenseRatioRegular: 1.8, benchmarkName: "Nifty 500 TRI" },
+          "Value/Contra": { expectedReturn: 13, volatility: 15, maxDrawdown: -28, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty 500 Value 50 TRI" },
+          "Focused": { expectedReturn: 13.5, volatility: 15.5, maxDrawdown: -27, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty 50 TRI" },
+          "Large & Mid Cap": { expectedReturn: 13.5, volatility: 16, maxDrawdown: -28, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty LargeMidcap 250 TRI" },
+        };
+
+        function categorizeFund(name: string): string {
+          const l = (name || "").toLowerCase();
+          if (l.includes("elss") || l.includes("tax sav")) return "ELSS";
+          if (l.includes("small cap") || l.includes("smallcap")) return "Small Cap";
+          if (l.includes("mid cap") || l.includes("midcap")) return "Mid Cap";
+          if (l.includes("large cap") || l.includes("largecap") || l.includes("bluechip")) return "Large Cap";
+          if (l.includes("large and mid") || l.includes("large & mid")) return "Large & Mid Cap";
+          if (l.includes("flexi") || l.includes("multi cap") || l.includes("multicap")) return "Flexi/Multi Cap";
+          if (l.includes("focused")) return "Focused";
+          if (l.includes("value") || l.includes("contra")) return "Value/Contra";
+          return "Flexi/Multi Cap";
+        }
+
         const mfSummary = mfHoldings.map((h: any) => {
           const invested = parseFloat(h.invested_value) || 0;
           const current = parseFloat(h.current_value) || 0;
+          const gainLoss = current - invested;
+          const gainLossPct = invested > 0 ? ((current - invested) / invested) * 100 : 0;
           totalMFInvested += invested;
           totalMFCurrent += current;
-          return { name: h.name, isin: h.isin, units: parseFloat(h.quantity) || 0, nav: parseFloat(h.current_price) || 0, invested, currentValue: current, gainLoss: current - invested, gainLossPercent: invested > 0 ? ((current - invested) / invested) * 100 : 0 };
+
+          const name = h.name || "";
+          const category = categorizeFund(name);
+          const benchmark = MF_BENCHMARKS[category] || MF_BENCHMARKS["Flexi/Multi Cap"];
+          const isDirect = name.toLowerCase().includes("direct");
+          const isRegular = name.toLowerCase().includes("regular") || !isDirect;
+          const expenseSaving = isRegular ? (benchmark.expenseRatioRegular - benchmark.expenseRatioDirect) : 0;
+
+          // Risk assessment
+          const riskLevel = benchmark.volatility > 20 ? "High" : benchmark.volatility > 14 ? "Moderate" : "Low";
+          
+          // Performance vs benchmark
+          const annualizedReturn = gainLossPct; // simplified
+          const vsBenchmark = annualizedReturn - benchmark.expectedReturn;
+          const performanceRating = vsBenchmark > 5 ? "Outperformer" : vsBenchmark > -3 ? "In-line" : "Underperformer";
+
+          return {
+            name, isin: h.isin, units: parseFloat(h.quantity) || 0,
+            nav: parseFloat(h.current_price) || 0, invested, currentValue: current,
+            gainLoss, gainLossPercent: gainLossPct, category, benchmark: benchmark.benchmarkName,
+            isDirect, isRegular, expenseSaving,
+            expectedReturn: benchmark.expectedReturn, volatility: benchmark.volatility,
+            maxDrawdown: benchmark.maxDrawdown, riskLevel, performanceRating, vsBenchmark,
+          };
         });
+
+        // Generate recommendations
+        const mfRecommendations: any[] = [];
+        const categoryAlloc: Record<string, number> = {};
+        for (const f of mfSummary) {
+          categoryAlloc[f.category] = (categoryAlloc[f.category] || 0) + f.currentValue;
+        }
+
+        for (const f of mfSummary) {
+          if (f.isRegular) {
+            mfRecommendations.push({ fund: f.name, action: "Switch to Direct", priority: "medium", reason: "Switch from Regular to Direct plan. Save ~" + f.expenseSaving.toFixed(1) + "% p.a. in expense ratio (" + Math.round(f.currentValue * f.expenseSaving / 100) + "/yr on current value).", category: "Cost Optimization" });
+          }
+          if (f.performanceRating === "Underperformer") {
+            mfRecommendations.push({ fund: f.name, action: "Review", priority: "high", reason: f.name + " returned " + f.gainLossPercent.toFixed(1) + "% vs category benchmark of " + f.expectedReturn + "%. Consider switching to a better performer in " + f.category + " category.", category: "Performance" });
+          }
+          if (f.currentValue < 5000 && f.currentValue > 0) {
+            mfRecommendations.push({ fund: f.name, action: "Consolidate", priority: "low", reason: "Small holding of " + Math.round(f.currentValue) + ". Consider merging into larger positions for better impact.", category: "Portfolio Cleanup" });
+          }
+        }
+
+        // Check for category concentration
+        const totalMF = totalMFCurrent || 1;
+        for (const [cat, val] of Object.entries(categoryAlloc)) {
+          const pct = (val / totalMF) * 100;
+          if (pct > 50) {
+            mfRecommendations.push({ fund: cat, action: "Diversify", priority: "high", reason: cat + " is " + pct.toFixed(0) + "% of MF portfolio. Consider diversifying across other categories for better risk-adjusted returns.", category: "Diversification" });
+          }
+        }
+
+        // Check if no debt/hybrid allocation
+        const hasDebt = mfSummary.some((f: any) => f.category.includes("Debt") || f.category.includes("Liquid") || f.category.includes("Bond"));
+        if (!hasDebt && totalMFCurrent > 100000) {
+          mfRecommendations.push({ fund: "Portfolio", action: "Add Debt", priority: "medium", reason: "No debt/liquid fund allocation. Consider adding 10-20% in short-duration or liquid funds for stability and emergency access.", category: "Asset Allocation" });
+        }
+
+        // Category allocation chart data
+        const categoryData = Object.entries(categoryAlloc).map(([cat, val]) => ({ name: cat, value: val, percent: (val / totalMF) * 100 })).sort((a, b) => b.value - a.value);
+
+        // Risk metrics
+        const avgVolatility = mfSummary.reduce((s: number, f: any) => s + f.volatility * (f.currentValue / totalMF), 0);
+        const avgExpectedReturn = mfSummary.reduce((s: number, f: any) => s + f.expectedReturn * (f.currentValue / totalMF), 0);
+        const avgMaxDrawdown = mfSummary.reduce((s: number, f: any) => s + f.maxDrawdown * (f.currentValue / totalMF), 0);
+        const portfolioRisk = avgVolatility > 20 ? "High" : avgVolatility > 14 ? "Moderate" : "Low";
+
         results.mutualFunds = {
           summary: { totalInvested: totalMFInvested, currentValue: totalMFCurrent, totalPnl: totalMFCurrent - totalMFInvested, totalPnlPercent: totalMFInvested > 0 ? ((totalMFCurrent - totalMFInvested) / totalMFInvested) * 100 : 0, holdingsCount: mfHoldings.length },
           holdings: mfSummary,
+          recommendations: mfRecommendations,
           suggestions: generateMFSuggestions(mfSummary),
+          categoryAllocation: categoryData,
+          riskMetrics: { avgVolatility: +avgVolatility.toFixed(1), avgExpectedReturn: +avgExpectedReturn.toFixed(1), avgMaxDrawdown: +avgMaxDrawdown.toFixed(1), portfolioRisk, directCount: mfSummary.filter((f: any) => f.isDirect).length, regularCount: mfSummary.filter((f: any) => f.isRegular && !f.isDirect).length },
         };
       }
 
