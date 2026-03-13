@@ -4496,8 +4496,6 @@ export async function registerRoutes(
   });
 
 
-  return httpServer;
-
   // ─── File Upload (Local Storage — replaces Replit Object Storage) ────────────
   const uploadDir = "/var/www/alphamarket/uploads/general";
 
@@ -4551,4 +4549,7 @@ export async function registerRoutes(
   // Serve uploaded files
   app.use("/uploads", (await import("express")).static("/var/www/alphamarket/uploads"));
 
+
+
+  return httpServer;
 }
