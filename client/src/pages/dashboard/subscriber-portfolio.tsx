@@ -474,6 +474,26 @@ export default function SubscriberPortfolioPage() {
   });
   const runDeepAnalysis = () => deepAnalysisMut.mutate();
 
+  const [downloadingReport, setDownloadingReport] = useState(false);
+  const downloadReport = async () => {
+    setDownloadingReport(true);
+    try {
+      const res = await fetch("/api/portfolio/" + portfolioId + "/report", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ investorName: "", generatedBy: "" }),
+      });
+      if (!res.ok) throw new Error("Failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "Portfolio_Report_" + new Date().toISOString().slice(0, 10) + ".pdf";
+      a.click(); URL.revokeObjectURL(url);
+      toast({ title: "Report Downloaded" });
+    } catch (e: any) { toast({ title: "Download failed", description: e.message, variant: "destructive" }); }
+    setDownloadingReport(false);
+  };
+
   // Manual holding form
   const [holdingForm, setHoldingForm] = useState({
     assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "",
@@ -960,6 +980,7 @@ export default function SubscriberPortfolioPage() {
               className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg px-3 py-2">Stock Analyzer</a>
             <a href="https://mf.alphamarket.co.in" target="_blank" rel="noreferrer"
               className="text-xs text-violet-600 hover:text-violet-700 border border-violet-200 rounded-lg px-3 py-2">MF Analyzer</a>
+            <button onClick={() => downloadReport()} disabled={!deepAnalysis || downloadingReport} className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors disabled:opacity-50"><Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Download PDF"}</button>
           </div>
         </div>
         <DeepAnalysisPanel data={deepAnalysis} />

@@ -4403,5 +4403,98 @@ export async function registerRoutes(
   });
 
 
+
+  // POST /api/portfolio/:id/report — Generate PDF report
+  app.post("/api/portfolio/:id/report", requireAuth, async (req: any, res: any) => {
+    try {
+      // First run the deep analysis
+      const holdings = await db.execute(sql`SELECT * FROM portfolio_holdings WHERE portfolio_id = ${req.params.id}`);
+      const rows = (holdings as any).rows || [];
+      const equityHoldings = rows.filter((h: any) => h.asset_type === "equity" && h.symbol);
+      const mfHoldings = rows.filter((h: any) => h.asset_type === "mutual_fund");
+
+      let equityData = null;
+      if (equityHoldings.length > 0) {
+        const stockPayload = equityHoldings.map((h: any) => ({
+          stockName: h.symbol || h.name, buyPrice: parseFloat(h.avg_buy_price) || 0,
+          quantity: parseFloat(h.quantity) || 0, buyDate: h.buy_date || undefined,
+        }));
+        try {
+          const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
+            method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": INTERNAL_API_KEY },
+            body: JSON.stringify({ holdings: stockPayload }),
+          });
+          if (stockRes.ok) {
+            const sd = await stockRes.json();
+            if (sd.success) equityData = sd.data;
+          }
+        } catch (e) {}
+      }
+
+      // Build MF data (reuse the same logic)
+      let mfData = null;
+      if (mfHoldings.length > 0) {
+        const MF_BM: Record<string, any> = {
+          "Large Cap": { expectedReturn: 12.5, volatility: 14, maxDrawdown: -25, expenseRatioDirect: 0.4, expenseRatioRegular: 1.5, benchmarkName: "Nifty 50 TRI" },
+          "Mid Cap": { expectedReturn: 15, volatility: 18, maxDrawdown: -32, expenseRatioDirect: 0.5, expenseRatioRegular: 1.8, benchmarkName: "Nifty Midcap 150 TRI" },
+          "Small Cap": { expectedReturn: 17, volatility: 24, maxDrawdown: -40, expenseRatioDirect: 0.6, expenseRatioRegular: 2.0, benchmarkName: "Nifty Smallcap 250 TRI" },
+          "Flexi/Multi Cap": { expectedReturn: 14, volatility: 16, maxDrawdown: -28, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty 500 TRI" },
+          "ELSS": { expectedReturn: 14, volatility: 16, maxDrawdown: -30, expenseRatioDirect: 0.5, expenseRatioRegular: 1.8, benchmarkName: "Nifty 500 TRI" },
+          "Value/Contra": { expectedReturn: 13, volatility: 15, maxDrawdown: -28, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty 500 Value 50 TRI" },
+          "Focused": { expectedReturn: 13.5, volatility: 15.5, maxDrawdown: -27, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty 50 TRI" },
+          "Large & Mid Cap": { expectedReturn: 13.5, volatility: 16, maxDrawdown: -28, expenseRatioDirect: 0.5, expenseRatioRegular: 1.7, benchmarkName: "Nifty LargeMidcap 250 TRI" },
+        };
+        function catFund(name: string) {
+          const l = (name || "").toLowerCase();
+          if (l.includes("elss") || l.includes("tax sav")) return "ELSS";
+          if (l.includes("small cap")) return "Small Cap";
+          if (l.includes("mid cap")) return "Mid Cap";
+          if (l.includes("large cap") || l.includes("bluechip")) return "Large Cap";
+          if (l.includes("large and mid")) return "Large & Mid Cap";
+          if (l.includes("flexi") || l.includes("multi cap")) return "Flexi/Multi Cap";
+          if (l.includes("focused")) return "Focused";
+          if (l.includes("value") || l.includes("contra")) return "Value/Contra";
+          return "Flexi/Multi Cap";
+        }
+        let mfI = 0, mfC = 0;
+        const mfHolds = mfHoldings.map((h: any) => {
+          const inv = parseFloat(h.invested_value) || 0; const cur = parseFloat(h.current_value) || 0;
+          mfI += inv; mfC += cur;
+          const cat = catFund(h.name); const bm = MF_BM[cat] || MF_BM["Flexi/Multi Cap"];
+          const isDirect = (h.name || "").toLowerCase().includes("direct");
+          const gl = cur - inv; const glp = inv > 0 ? (gl / inv) * 100 : 0;
+          return { name: h.name, isin: h.isin, nav: parseFloat(h.current_price) || 0, units: parseFloat(h.quantity) || 0, invested: inv, currentValue: cur, gainLossPercent: glp, category: cat, isDirect, performanceRating: glp - bm.expectedReturn > 5 ? "Outperformer" : glp - bm.expectedReturn > -3 ? "In-line" : "Underperformer", benchmark: bm.benchmarkName };
+        });
+        const avgVol = mfHolds.reduce((s: number, f: any) => s + (MF_BM[f.category]?.volatility || 16) * (f.currentValue / (mfC || 1)), 0);
+        const avgRet = mfHolds.reduce((s: number, f: any) => s + (MF_BM[f.category]?.expectedReturn || 13) * (f.currentValue / (mfC || 1)), 0);
+        const avgDD = mfHolds.reduce((s: number, f: any) => s + (MF_BM[f.category]?.maxDrawdown || -28) * (f.currentValue / (mfC || 1)), 0);
+        mfData = { summary: { totalInvested: mfI, currentValue: mfC }, holdings: mfHolds, riskMetrics: { avgExpectedReturn: +avgRet.toFixed(1), avgVolatility: +avgVol.toFixed(1), avgMaxDrawdown: +avgDD.toFixed(1), portfolioRisk: avgVol > 20 ? "High" : avgVol > 14 ? "Moderate" : "Low" }, recommendations: [] };
+      }
+
+      const eqI = equityData?.summary?.totalInvested || 0; const eqC = equityData?.summary?.currentValue || 0;
+      const mfI2 = mfData?.summary?.totalInvested || 0; const mfC2 = mfData?.summary?.currentValue || 0;
+      const totI = eqI + mfI2, totC = eqC + mfC2;
+
+      const reportData = {
+        equity: equityData ? { ...equityData, healthScore: equityData.healthScore, sectorAllocation: equityData.sectorAllocation, enhancedRecommendations: equityData.enhancedRecommendations, quantamental: equityData.quantamental, rebalancing: equityData.rebalancing, taxImpact: equityData.taxImpact, dividends: equityData.dividends, scenarios: equityData.scenarios, investmentStyle: equityData.investmentStyle } : null,
+        mutualFunds: mfData,
+        combined: { totalInvested: totI, currentValue: totC, totalPnl: totC - totI, totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0, assetAllocation: { equity: { current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 }, mutualFunds: { current: mfC2, percent: totC > 0 ? (mfC2 / totC) * 100 : 0 } } },
+        investorName: req.body.investorName || "",
+        generatedBy: req.body.generatedBy || "",
+      };
+
+      const { generatePortfolioReport } = require("./pdf-report");
+      const pdfBuffer = await generatePortfolioReport(reportData);
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", "attachment; filename=Portfolio_Report_" + new Date().toISOString().slice(0, 10) + ".pdf");
+      res.send(pdfBuffer);
+    } catch (err: any) {
+      console.error("[PDF Report] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
   return httpServer;
 }
