@@ -4475,57 +4475,19 @@ export async function registerRoutes(
       const mfI2 = mfData?.summary?.totalInvested || 0; const mfC2 = mfData?.summary?.currentValue || 0;
       const totI = eqI + mfI2, totC = eqC + mfC2;
 
-      // If pre-analyzed data sent from frontend (with advisor edits), use it
-      const preAnalyzed = req.body?.deepAnalysis;
-
-      // Resolve investor name
-      let investorName = req.body.investorName || req.body.clientName || "";
-      if (!investorName) {
-        try {
-          const portfolio = await db.execute(sql`SELECT user_id FROM portfolios WHERE id = ${req.params.id}`);
-          const pRow = ((portfolio as any).rows || [])[0];
-          if (pRow?.user_id) {
-            const subUser = await db.execute(sql`SELECT name, email FROM users WHERE id = ${pRow.user_id}`);
-            const sRow = ((subUser as any).rows || [])[0];
-            investorName = sRow?.name || sRow?.email || "";
-          }
-        } catch (e) {}
-      }
-
-      // Resolve advisor name
-      let advisorName = req.body.generatedBy || req.body.advisorName || "";
-      if (!advisorName && req.session?.userId) {
-        try {
-          const advUser = await db.execute(sql`SELECT name, email FROM users WHERE id = ${req.session.userId}`);
-          const aRow = ((advUser as any).rows || [])[0];
-          advisorName = aRow?.name || aRow?.email || "";
-        } catch (e) {}
-      }
-
-      const rptId = "RPT-" + Date.now().toString(36).toUpperCase();
-      const rptDate = new Date().toLocaleString("en-IN", { dateStyle: "long", timeStyle: "short", timeZone: "Asia/Kolkata" });
-
-      let reportData;
-      if (preAnalyzed) {
-        // Use advisor-edited data directly
-        reportData = {
-          ...preAnalyzed,
-          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate,
-        };
-      } else {
-        reportData = {
-          equity: equityData ? { ...equityData, healthScore: equityData.healthScore, sectorAllocation: equityData.sectorAllocation, enhancedRecommendations: equityData.enhancedRecommendations, quantamental: equityData.quantamental, rebalancing: equityData.rebalancing, taxImpact: equityData.taxImpact, dividends: equityData.dividends, scenarios: equityData.scenarios, investmentStyle: equityData.investmentStyle, valueAnalysis: equityData.valueAnalysis, growthAnalysis: equityData.growthAnalysis } : null,
-          mutualFunds: mfData,
-          combined: { totalInvested: totI, currentValue: totC, totalPnl: totC - totI, totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0, assetAllocation: { equity: { current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 }, mutualFunds: { current: mfC2, percent: totC > 0 ? (mfC2 / totC) * 100 : 0 } } },
-          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate,
-        };
-      }
+      const reportData = {
+        equity: equityData ? { ...equityData, healthScore: equityData.healthScore, sectorAllocation: equityData.sectorAllocation, enhancedRecommendations: equityData.enhancedRecommendations, quantamental: equityData.quantamental, rebalancing: equityData.rebalancing, taxImpact: equityData.taxImpact, dividends: equityData.dividends, scenarios: equityData.scenarios, investmentStyle: equityData.investmentStyle } : null,
+        mutualFunds: mfData,
+        combined: { totalInvested: totI, currentValue: totC, totalPnl: totC - totI, totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0, assetAllocation: { equity: { current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 }, mutualFunds: { current: mfC2, percent: totC > 0 ? (mfC2 / totC) * 100 : 0 } } },
+        investorName: req.body.investorName || "",
+        generatedBy: req.body.generatedBy || "",
+      };
 
       const { generatePortfolioReport } = require("./pdf-report");
       const pdfBuffer = await generatePortfolioReport(reportData);
 
       res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", "attachment; filename=AlphaMarket_Report_" + rptId + ".pdf");
+      res.setHeader("Content-Disposition", "attachment; filename=Portfolio_Report_" + new Date().toISOString().slice(0, 10) + ".pdf");
       res.send(pdfBuffer);
     } catch (err: any) {
       console.error("[PDF Report] Error:", err);

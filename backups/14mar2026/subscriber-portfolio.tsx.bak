@@ -478,21 +478,16 @@ export default function SubscriberPortfolioPage() {
   const downloadReport = async () => {
     setDownloadingReport(true);
     try {
-      const bodyPayload: any = {};
-      // Pass advisor-edited deep analysis so edits appear in PDF
-      if (deepAnalysis) {
-        bodyPayload.deepAnalysis = deepAnalysis;
-      }
       const res = await fetch("/api/portfolio/" + portfolioId + "/report", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bodyPayload),
+        body: JSON.stringify({ investorName: "", generatedBy: "" }),
       });
       if (!res.ok) throw new Error("Failed");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = "AlphaMarket_Report_" + new Date().toISOString().slice(0, 10) + ".pdf";
+      a.href = url; a.download = "Portfolio_Report_" + new Date().toISOString().slice(0, 10) + ".pdf";
       a.click(); URL.revokeObjectURL(url);
       toast({ title: "Report Downloaded" });
     } catch (e: any) { toast({ title: "Download failed", description: e.message, variant: "destructive" }); }

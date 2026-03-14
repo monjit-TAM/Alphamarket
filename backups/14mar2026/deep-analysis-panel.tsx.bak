@@ -48,63 +48,23 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
   if (!data) return null;
   const [editMode, setEditMode] = useState(false);
   const [editedRecs, setEditedRecs] = useState<Record<string, { action: string; notes: string }>>({});
-  const [editedMfRecs, setEditedMfRecs] = useState<Record<number, { action: string; reason: string; deleted?: boolean }>>({});
-  const [newMfRecs, setNewMfRecs] = useState<Array<{ action: string; reason: string }>>([]);
-  const [editedRebalancing, setEditedRebalancing] = useState<Record<string, { action?: string; reason?: string }>>({});
-  const [editedValue, setEditedValue] = useState<Record<string, { signal?: string; narrative?: string }>>({});
-  const [editedGrowth, setEditedGrowth] = useState<Record<string, { signal?: string; narrative?: string }>>({});
-  const [editedQuantamental, setEditedQuantamental] = useState<Record<string, { classification?: string; insights?: string[] }>>({});
+  const [editedMfRecs, setEditedMfRecs] = useState<Record<number, { action: string; reason: string }>>({});
 
   const toggleEdit = () => {
     if (editMode && onUpdate) {
+      // Apply edits to data
       const updated = JSON.parse(JSON.stringify(data));
-      // Stock-by-Stock
       if (updated.equity?.enhancedRecommendations) {
         for (const r of updated.equity.enhancedRecommendations) {
           const e = editedRecs[r.stockName];
           if (e) { r.overallAction = e.action; r.advisorNotes = e.notes; }
         }
       }
-      // Rebalancing
-      if (updated.equity?.rebalancing?.suggestions && Object.keys(editedRebalancing).length > 0) {
-        for (const s of updated.equity.rebalancing.suggestions) {
-          const e = editedRebalancing[s.stockName];
-          if (e) { if (e.action) s.action = e.action; if (e.reason) s.reason = e.reason; }
-        }
-      }
-      // Value Analysis
-      if (updated.equity?.valueAnalysis && Object.keys(editedValue).length > 0) {
-        for (const v of updated.equity.valueAnalysis) {
-          const e = editedValue[v.stockName];
-          if (e) { if (e.signal) v.signal = e.signal; if (e.narrative) v.narrative = e.narrative; }
-        }
-      }
-      // Growth Analysis
-      if (updated.equity?.growthAnalysis && Object.keys(editedGrowth).length > 0) {
-        for (const g of updated.equity.growthAnalysis) {
-          const e = editedGrowth[g.stockName];
-          if (e) { if (e.signal) g.signal = e.signal; if (e.narrative) g.narrative = e.narrative; }
-        }
-      }
-      // Quantamental
-      if (updated.equity?.quantamental && Object.keys(editedQuantamental).length > 0) {
-        for (const q of updated.equity.quantamental) {
-          const e = editedQuantamental[q.stockName];
-          if (e) { if (e.classification) q.classification = e.classification; if (e.insights) q.insights = e.insights; }
-        }
-      }
-      // MF Recommendations — edit, delete, add new
       if (updated.mutualFunds?.recommendations) {
-        updated.mutualFunds.recommendations = updated.mutualFunds.recommendations
-          .map((r: any, i: number) => {
-            const e = editedMfRecs[i];
-            if (e?.deleted) return null;
-            return e ? { ...r, action: e.action, reason: e.reason } : r;
-          })
-          .filter(Boolean);
-        if (newMfRecs.length > 0) {
-          updated.mutualFunds.recommendations.push(...newMfRecs.map(nr => ({ fund: "Custom", priority: "medium", action: nr.action, reason: nr.reason })));
-        }
+        updated.mutualFunds.recommendations = updated.mutualFunds.recommendations.map((r: any, i: number) => {
+          const e = editedMfRecs[i];
+          return e ? { ...r, action: e.action, reason: e.reason } : r;
+        });
       }
       onUpdate(updated);
     }
@@ -280,45 +240,18 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
           {hasQuant && (
             <div className="mt-4 space-y-2">
               <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Quantamental Insights</h4>
-              {equity.quantamental.filter((q: any) => q.insights?.length > 0).slice(0, 6).map((q: any, i: number) => {
-                const eq = editedQuantamental[q.stockName];
-                const classification = eq?.classification ?? q.classification;
-                const insights = eq?.insights ?? q.insights ?? [];
-                return (
+              {equity.quantamental.filter((q: any) => q.insights?.length > 0).slice(0, 6).map((q: any, i: number) => (
                 <div key={i} className="p-3 rounded-lg bg-slate-50 border border-slate-200">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-sm font-semibold text-slate-900">{q.stockName}</span>
                     <span className={`text-xs px-1.5 py-0.5 rounded ${q.overallScore >= 60 ? "bg-emerald-100 text-emerald-700" : q.overallScore >= 40 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>Score: {q.overallScore}/100</span>
-                    {editMode ? (
-                      <select value={classification} onChange={(e) => setEditedQuantamental(p => ({...p, [q.stockName]: {...(p[q.stockName] || {}), classification: e.target.value}}))}
-                        className="text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white">
-                        {["Strong Outperformer","Outperformer","Market Performer","Underperformer","Strong Underperformer"].map(a => <option key={a}>{a}</option>)}
-                      </select>
-                    ) : (
-                      <span className="text-xs text-slate-400">{classification}</span>
-                    )}
+                    <span className="text-xs text-slate-400">{q.classification}</span>
                   </div>
-                  {editMode ? (
-                    <div className="space-y-1 mt-1">
-                      {insights.map((ins: string, j: number) => (
-                        <div key={j} className="flex items-center gap-1">
-                          <input value={ins} onChange={(e) => { const ni = [...insights]; ni[j] = e.target.value; setEditedQuantamental(p => ({...p, [q.stockName]: {...(p[q.stockName] || {}), insights: ni}})); }}
-                            className="text-xs border border-slate-200 rounded px-2 py-0.5 bg-white flex-1" />
-                          <button onClick={() => { const ni = insights.filter((_:any, k:number) => k !== j); setEditedQuantamental(p => ({...p, [q.stockName]: {...(p[q.stockName] || {}), insights: ni}})); }}
-                            className="text-red-400 hover:text-red-600 text-xs px-1">&times;</button>
-                        </div>
-                      ))}
-                      <button onClick={() => { const ni = [...insights, ""]; setEditedQuantamental(p => ({...p, [q.stockName]: {...(p[q.stockName] || {}), insights: ni}})); }}
-                        className="text-xs text-blue-600 hover:text-blue-800">+ Add insight</button>
-                    </div>
-                  ) : (
-                    insights.map((ins: string, j: number) => (
-                      <p key={j} className="text-xs text-slate-600 ml-1">&bull; {ins}</p>
-                    ))
-                  )}
+                  {q.insights.map((ins: string, j: number) => (
+                    <p key={j} className="text-xs text-slate-600 ml-1">&bull; {ins}</p>
+                  ))}
                 </div>
-                );
-              })}
+              ))}
             </div>
           )}
         </Sec>
@@ -428,11 +361,8 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
         <Sec title="Rebalancing Suggestions" icon={<BarChart3 className="w-4 h-4 text-emerald-600" />} open={false}>
           <div className="space-y-2">
             {equity.rebalancing.suggestions.map((s: any, i: number) => {
-              const ea = editedRebalancing[s.stockName];
-              const action = ea?.action ?? s.action;
-              const reason = ea?.reason ?? s.reason;
-              const isIncrease = action === "Increase" || action === "Buy" || action === "Add";
-              const isDecrease = action === "Decrease" || action === "Sell" || action === "Trim" || action === "Exit";
+              const isIncrease = s.action === "Increase" || s.action === "Buy" || s.action === "Add";
+              const isDecrease = s.action === "Decrease" || s.action === "Sell" || s.action === "Trim" || s.action === "Exit";
               return (
                 <div key={i} className={`flex items-start gap-3 p-3 rounded-lg border ${isDecrease ? "bg-red-50 border-red-200" : isIncrease ? "bg-emerald-50 border-emerald-200" : "bg-slate-50 border-slate-200"}`}>
                   <span className="shrink-0 mt-0.5">
@@ -440,23 +370,10 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
                   </span>
                   <div className="flex-1">
                     <div className="text-sm font-medium text-slate-900">
-                      {s.stockName}:{" "}
-                      {editMode ? (
-                        <select value={action} onChange={(e) => setEditedRebalancing(p => ({...p, [s.stockName]: {...(p[s.stockName] || {}), action: e.target.value}}))}
-                          className="text-xs border border-slate-300 rounded px-1.5 py-0.5 bg-white ml-1">
-                          {["Hold","Increase","Decrease","Exit","Add","Trim","Buy","Sell"].map(a => <option key={a}>{a}</option>)}
-                        </select>
-                      ) : (
-                        <span className={isDecrease ? "text-red-600" : isIncrease ? "text-emerald-600" : "text-slate-600"}>{action}</span>
-                      )}
+                      {s.stockName}: <span className={isDecrease ? "text-red-600" : isIncrease ? "text-emerald-600" : "text-slate-600"}>{s.action}</span>
                       <span className="text-xs text-slate-400 ml-2">{Number(s.currentWeight).toFixed(1)}% &rarr; {Number(s.targetWeight).toFixed(1)}%</span>
                     </div>
-                    {editMode ? (
-                      <input value={reason} onChange={(e) => setEditedRebalancing(p => ({...p, [s.stockName]: {...(p[s.stockName] || {}), reason: e.target.value}}))}
-                        className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full mt-1" />
-                    ) : (
-                      <p className="text-xs text-slate-500 mt-0.5">{reason}</p>
-                    )}
+                    <p className="text-xs text-slate-500 mt-0.5">{s.reason}</p>
                   </div>
                 </div>
               );
@@ -500,34 +417,17 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
                 </tr>
               </thead>
               <tbody>
-                {equity.valueAnalysis.map((v: any, i: number) => {
-                  const ev = editedValue[v.stockName];
-                  const signal = ev?.signal ?? v.signal;
-                  const narrative = ev?.narrative ?? v.narrative;
-                  return (
+                {equity.valueAnalysis.map((v: any, i: number) => (
                   <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 align-top">
                     <td className="py-2.5 px-2 font-medium text-slate-900">{v.stockName}</td>
                     <td className="py-2.5 px-2 tabular-nums text-slate-700">{fmt(v.currentPrice)}</td>
                     <td className="py-2.5 px-2 tabular-nums text-slate-700">{v.pe ? Number(v.pe).toFixed(1) : "\u2014"}</td>
                     <td className="py-2.5 px-2 tabular-nums text-slate-700">{v.pb ? Number(v.pb).toFixed(1) : "\u2014"}</td>
                     <td className="py-2.5 px-2 tabular-nums text-slate-700">{v.debtEquity ? Number(v.debtEquity).toFixed(1) : "\u2014"}</td>
-                    <td className="py-2.5 px-2">
-                      {editMode ? (
-                        <select value={signal || ""} onChange={(e) => setEditedValue(p => ({...p, [v.stockName]: {...(p[v.stockName] || {}), signal: e.target.value}}))}
-                          className="text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white">
-                          {["Strong Buy","Buy","Hold","Sell","Undervalued","Overvalued","Fair Value"].map(a => <option key={a}>{a}</option>)}
-                        </select>
-                      ) : <Sig s={signal} />}
-                    </td>
-                    <td className="py-2.5 px-2 max-w-[300px]">
-                      {editMode ? (
-                        <textarea value={narrative || ""} onChange={(e) => setEditedValue(p => ({...p, [v.stockName]: {...(p[v.stockName] || {}), narrative: e.target.value}}))}
-                          rows={2} className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full" />
-                      ) : <span className="text-xs text-slate-600">{narrative}</span>}
-                    </td>
+                    <td className="py-2.5 px-2"><Sig s={v.signal} /></td>
+                    <td className="py-2.5 px-2 text-xs text-slate-600 max-w-[300px]">{v.narrative}</td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>
@@ -551,34 +451,17 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
                 </tr>
               </thead>
               <tbody>
-                {equity.growthAnalysis.map((g: any, i: number) => {
-                  const eg = editedGrowth[g.stockName];
-                  const signal = eg?.signal ?? g.signal;
-                  const narrative = eg?.narrative ?? g.narrative;
-                  return (
+                {equity.growthAnalysis.map((g: any, i: number) => (
                   <tr key={i} className="border-b border-slate-100 hover:bg-slate-50 align-top">
                     <td className="py-2.5 px-2 font-medium text-slate-900">{g.stockName}</td>
                     <td className={`py-2.5 px-2 tabular-nums ${pc(g.revenueGrowth)}`}>{g.revenueGrowth != null ? pct(g.revenueGrowth) : "\u2014"}</td>
                     <td className={`py-2.5 px-2 tabular-nums ${pc(g.earningsGrowth)}`}>{g.earningsGrowth != null ? pct(g.earningsGrowth) : "\u2014"}</td>
                     <td className="py-2.5 px-2 tabular-nums text-slate-700">{g.roe ? Number(g.roe).toFixed(1) + "%" : "\u2014"}</td>
                     <td className={`py-2.5 px-2 tabular-nums font-medium ${pc(g.momentum52w)}`}>{g.momentum52w != null ? pct(g.momentum52w) : "\u2014"}</td>
-                    <td className="py-2.5 px-2">
-                      {editMode ? (
-                        <select value={signal || ""} onChange={(e) => setEditedGrowth(p => ({...p, [g.stockName]: {...(p[g.stockName] || {}), signal: e.target.value}}))}
-                          className="text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white">
-                          {["Strong Growth","Moderate Growth","Stable","Declining","High Growth","Turnaround"].map(a => <option key={a}>{a}</option>)}
-                        </select>
-                      ) : <Sig s={signal} />}
-                    </td>
-                    <td className="py-2.5 px-2 max-w-[300px]">
-                      {editMode ? (
-                        <textarea value={narrative || ""} onChange={(e) => setEditedGrowth(p => ({...p, [g.stockName]: {...(p[g.stockName] || {}), narrative: e.target.value}}))}
-                          rows={2} className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full" />
-                      ) : <span className="text-xs text-slate-600">{narrative}</span>}
-                    </td>
+                    <td className="py-2.5 px-2"><Sig s={g.signal} /></td>
+                    <td className="py-2.5 px-2 text-xs text-slate-600 max-w-[300px]">{g.narrative}</td>
                   </tr>
-                  );
-                })}
+                ))}
               </tbody>
             </table>
           </div>
@@ -654,62 +537,19 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
             <div>
               <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Recommendations ({mutualFunds.recommendations.length})</h4>
               <div className="space-y-2">
-                {mutualFunds.recommendations.map((r: any, i: number) => {
-                  const em = editedMfRecs[i];
-                  if (em?.deleted) return null;
-                  const action = em?.action ?? r.action;
-                  const reason = em?.reason ?? r.reason;
-                  return (
+                {mutualFunds.recommendations.map((r: any, i: number) => (
                   <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
                     <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full mt-0.5 ${r.priority === "high" ? "bg-red-100 text-red-700" : r.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{r.priority}</span>
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-0.5">
                         <span className="text-sm font-medium text-slate-900">{r.fund}</span>
-                        {editMode ? (
-                          <select value={action} onChange={(e) => setEditedMfRecs(p => ({...p, [i]: {...(p[i] || {action: r.action, reason: r.reason}), action: e.target.value}}))}
-                            className="text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white">
-                            {["Switch to Direct","Review","Diversify","Consolidate","Increase SIP","Reduce Exposure","Hold","Exit"].map(a => <option key={a}>{a}</option>)}
-                          </select>
-                        ) : (
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${action === "Switch to Direct" ? "bg-blue-100 text-blue-700" : action === "Review" ? "bg-red-100 text-red-700" : action === "Diversify" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{action}</span>
-                        )}
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${r.action === "Switch to Direct" ? "bg-blue-100 text-blue-700" : r.action === "Review" ? "bg-red-100 text-red-700" : r.action === "Diversify" ? "bg-violet-100 text-violet-700" : "bg-slate-100 text-slate-600"}`}>{r.action}</span>
                         {r.category && <span className="text-[10px] text-slate-400">{r.category}</span>}
                       </div>
-                      {editMode ? (
-                        <input value={reason} onChange={(e) => setEditedMfRecs(p => ({...p, [i]: {...(p[i] || {action: r.action, reason: r.reason}), reason: e.target.value}}))}
-                          className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full mt-0.5" />
-                      ) : (
-                        <p className="text-xs text-slate-600">{reason}</p>
-                      )}
+                      <p className="text-xs text-slate-600">{r.reason}</p>
                     </div>
-                    {editMode && (
-                      <button onClick={() => setEditedMfRecs(p => ({...p, [i]: {...(p[i] || {action: r.action, reason: r.reason}), deleted: true}}))}
-                        className="text-red-400 hover:text-red-600 mt-1"><X className="w-4 h-4" /></button>
-                    )}
                   </div>
-                  );
-                })}
-                {editMode && (
-                  <>
-                    {newMfRecs.map((nr, idx) => (
-                      <div key={`new-${idx}`} className="flex items-start gap-3 p-3 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50">
-                        <span className="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full mt-0.5 bg-blue-100 text-blue-700">new</span>
-                        <div className="flex-1">
-                          <select value={nr.action} onChange={(e) => { const u = [...newMfRecs]; u[idx] = {...u[idx], action: e.target.value}; setNewMfRecs(u); }}
-                            className="text-xs border border-slate-200 rounded px-1.5 py-0.5 bg-white mb-1">
-                            {["Switch to Direct","Review","Diversify","Consolidate","Increase SIP","Reduce Exposure","Hold","Exit","Custom"].map(a => <option key={a}>{a}</option>)}
-                          </select>
-                          <input value={nr.reason} onChange={(e) => { const u = [...newMfRecs]; u[idx] = {...u[idx], reason: e.target.value}; setNewMfRecs(u); }}
-                            placeholder="Reason..." className="text-xs border border-slate-200 rounded px-2 py-1 bg-white w-full" />
-                        </div>
-                        <button onClick={() => setNewMfRecs(p => p.filter((_, k) => k !== idx))}
-                          className="text-red-400 hover:text-red-600 mt-1"><X className="w-4 h-4" /></button>
-                      </div>
-                    ))}
-                    <button onClick={() => setNewMfRecs(p => [...p, {action: "Custom", reason: ""}])}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-medium">+ Add Recommendation</button>
-                  </>
-                )}
+                ))}
               </div>
             </div>
           )}

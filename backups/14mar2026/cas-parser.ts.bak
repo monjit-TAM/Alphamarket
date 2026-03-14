@@ -20,25 +20,6 @@ export interface CASParseResult {
   source: string;
 }
 
-// Known ISINs for funds that may be missed by automated parsing
-const KNOWN_ISIN_NAMES: Record<string, string> = {
-  "INF200K01495": "SBI ELSS Tax Saver Fund - Direct Plan - Growth",
-  "INF200K01RA3": "SBI ELSS Tax Saver Fund - Regular Plan - Growth",
-  "INF179KA1RW5": "HDFC Small Cap Fund - Direct Plan - Growth",
-  "INF179KA1RX3": "HDFC Small Cap Fund - Regular Plan - Growth",
-  "INF846K01DP8": "Axis Large Cap Fund - Direct Plan - Growth",
-  "INF846K01DQ6": "Axis Large Cap Fund - Regular Plan - Growth",
-};
-
-function cleanSchemeName(name: string): string {
-  return name
-    .replace(/Scheme\s+Code\s*:\s*\d+/gi, "")
-    .replace(/Advisor\s*:\s*[\w\s]+$/gi, "")
-    .replace(/Registrar\s*:\s*[\w\s]+/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 export async function parseCASPdf(buffer: Buffer): Promise<CASParseResult> {
   const { PDFExtract } = await import("pdf.js-extract");
   const pdfExtract = new PDFExtract();
@@ -191,8 +172,8 @@ export async function parseCASPdf(buffer: Buffer): Promise<CASParseResult> {
     const folioMatch = afterISINForFolio.match(/^([\d]+\/[\d]+)/);
     const folio = folioMatch ? folioMatch[1] : "";
 
-    // Get clean scheme name from metadata map (preferred) or known ISINs or parse from line
-    let schemeName = isinToName.get(isin) || KNOWN_ISIN_NAMES[isin] || "";
+    // Get clean scheme name from metadata map (preferred) or parse from line
+    let schemeName = isinToName.get(isin) || "";
     if (!schemeName) {
       // Fallback: extract from text before ISIN
       schemeName = pendingLine.substring(0, pendingLine.indexOf(isin)).trim();
@@ -258,7 +239,7 @@ export async function parseCASPdf(buffer: Buffer): Promise<CASParseResult> {
         if (ratio > 0.8 && ratio < 1.2) {
           // Good match — use the data
           result.holdings.push({
-            name: cleanSchemeName(schemeName),
+            name: schemeName,
             folio: folio || undefined,
             isin,
             units,
@@ -371,67 +352,6 @@ export async function parseCASPdf(buffer: Buffer): Promise<CASParseResult> {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────
-  // RESCUE PASS: Find known ISINs that were missed by all strategies
-  // ──────────────────────────────────────────────────────────────────────
-  const foundISINs = new Set(result.holdings.map(h => h.isin).filter(Boolean));
-  const knownISINs = Object.keys(KNOWN_ISIN_NAMES);
-  const missingKnown = knownISINs.filter(isin => !foundISINs.has(isin));
-
-  for (const targetISIN of missingKnown) {
-    // Search all lines for this ISIN
-    for (let i = 0; i < lines.length; i++) {
-      if (!lines[i].includes(targetISIN)) continue;
-
-      // Found the ISIN — gather numbers from this line + next 2 lines
-      const searchWindow = [lines[i], lines[i + 1] || "", lines[i + 2] || ""].join(" ");
-      // Remove scheme code patterns before extracting numbers
-      const cleaned = searchWindow.replace(/Scheme\s+Code\s*:\s*\d+/gi, "").replace(/Folio\s+No\s*:\s*[\d\/]+/gi, "");
-      const nums: number[] = [];
-      const numRegex = /([\d,]+\.?\d*)/g;
-      let m;
-      while ((m = numRegex.exec(cleaned)) !== null) {
-        const v = parseFloat(m[1].replace(/,/g, ""));
-        if (!isNaN(v) && v > 0 && v < 100000000) nums.push(v);
-      }
-
-      // Try to find units, NAV, valuation where units * NAV ≈ valuation
-      let rescued = false;
-      for (let a = 0; a < nums.length && !rescued; a++) {
-        for (let b = 0; b < nums.length && !rescued; b++) {
-          if (a === b) continue;
-          const product = nums[a] * nums[b];
-          for (let c = 0; c < nums.length; c++) {
-            if (c === a || c === b) continue;
-            const ratio = product / nums[c];
-            if (ratio > 0.85 && ratio < 1.15 && nums[c] > 100) {
-              // Found valid triple
-              let units = nums[a], nav = nums[b], valuation = nums[c];
-              // NAV is typically between 10 and 5000
-              if (nav > 5000 || (units < nav && units < 100)) {
-                [units, nav] = [nav, units];
-              }
-
-              const name = KNOWN_ISIN_NAMES[targetISIN] || "Fund " + targetISIN;
-              result.holdings.push({
-                name: cleanSchemeName(name),
-                isin: targetISIN,
-                units,
-                nav,
-                costValue: valuation, // CAS summary may not always have cost
-                currentValue: valuation,
-                assetType: "mutual_fund",
-              });
-              console.log("[CAS Parser] RESCUED: " + targetISIN + " => " + name + " | " + units + " units @ NAV " + nav.toFixed(2) + " = " + valuation);
-              rescued = true;
-            }
-          }
-        }
-      }
-      if (rescued) break;
-    }
-  }
-
-  console.log("[CAS Parser] Source: " + result.source + ", Total Holdings: " + result.holdings.length + " (rescued: " + (result.holdings.length - foundISINs.size) + " additional)");
+  console.log(`[CAS Parser] Source: ${result.source}, Total Holdings: ${result.holdings.length}`);
   return result;
 }
