@@ -716,6 +716,66 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
         </Sec>
       )}
 
+      {/* ── Other Assets (Gold, FD, RE, Insurance, etc.) ── */}
+      {data.otherAssets?.categories?.length > 0 && (
+        <Sec title={"Other Assets (" + data.otherAssets.summary.holdingsCount + " holdings)"} icon={<Wallet className="w-4 h-4 text-amber-600" />}>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+            <Card label="Total Invested" value={fmt(data.otherAssets.summary.totalInvested)} />
+            <Card label="Current Value" value={fmt(data.otherAssets.summary.currentValue)} />
+            <Card label="P&L" value={fmt(data.otherAssets.summary.currentValue - data.otherAssets.summary.totalInvested)} cls={pc(data.otherAssets.summary.currentValue - data.otherAssets.summary.totalInvested)} />
+          </div>
+          {data.otherAssets.categories.map((cat: any) => (
+            <div key={cat.type} className="mb-4">
+              <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">{cat.label} ({cat.count})</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                    <th className="py-2 px-2 font-medium">Name</th>
+                    <th className="py-2 px-2 font-medium">Invested</th>
+                    <th className="py-2 px-2 font-medium">Current Value</th>
+                    {(cat.type === "fd" || cat.type === "ppf" || cat.type === "nps" || cat.type === "epf" || cat.type === "bond") && <th className="py-2 px-2 font-medium">Rate</th>}
+                    {(cat.type === "fd" || cat.type === "bond") && <th className="py-2 px-2 font-medium">Maturity</th>}
+                    {cat.type === "insurance" && <th className="py-2 px-2 font-medium">Premium</th>}
+                    {cat.type === "insurance" && <th className="py-2 px-2 font-medium">Sum Assured</th>}
+                    <th className="py-2 px-2 font-medium">P&L</th>
+                  </tr></thead>
+                  <tbody>
+                    {cat.holdings.map((h: any, i: number) => (
+                      <tr key={i} className="border-b border-slate-100">
+                        <td className="py-2 px-2 font-medium text-slate-900">{h.name}{h.provider ? <span className="text-xs text-slate-400 ml-1">({h.provider})</span> : null}</td>
+                        <td className="py-2 px-2 tabular-nums text-slate-700">{fmt(h.investedValue)}</td>
+                        <td className="py-2 px-2 tabular-nums font-medium text-slate-900">{fmt(h.currentValue)}</td>
+                        {(cat.type === "fd" || cat.type === "ppf" || cat.type === "nps" || cat.type === "epf" || cat.type === "bond") && <td className="py-2 px-2 text-emerald-600">{h.interestRate ? h.interestRate + "%" : "—"}</td>}
+                        {(cat.type === "fd" || cat.type === "bond") && <td className="py-2 px-2 text-slate-500">{h.maturityDate || "—"}</td>}
+                        {cat.type === "insurance" && <td className="py-2 px-2 tabular-nums">{fmt(h.premium)}</td>}
+                        {cat.type === "insurance" && <td className="py-2 px-2 tabular-nums">{fmt(h.sumAssured)}</td>}
+                        <td className={`py-2 px-2 tabular-nums font-medium ${pc(h.gainLoss)}`}>{fmt(h.gainLoss)} ({pct(h.gainLossPercent)})</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+          {data.otherAssets.recommendations?.length > 0 && (
+            <div className="mt-4">
+              <h4 className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Recommendations</h4>
+              <div className="space-y-2">
+                {data.otherAssets.recommendations.map((r: any, i: number) => (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
+                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full mt-0.5 ${r.priority === "high" ? "bg-red-100 text-red-700" : r.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{r.priority}</span>
+                    <div className="flex-1">
+                      <div className="text-sm font-medium text-slate-900">{r.asset} <span className="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 ml-1">{r.action}</span></div>
+                      <p className="text-xs text-slate-600 mt-0.5">{r.reason}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Sec>
+      )}
+
       {/* ── P3: Enhanced MF Sections ── */}
       {mutualFunds?.isEnhanced && (
         <>

@@ -468,6 +468,60 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     }
   }
 
+  // ============ OTHER ASSETS (Gold, FD, RE, Insurance, etc.) ============
+  if (data.otherAssets?.categories?.length > 0) {
+    newPage("Other Assets");
+    section("Other Asset Holdings", "Gold, Fixed Deposits, Real Estate, Insurance, PPF, NPS, and other assets.");
+
+    const oa = data.otherAssets;
+    const y = doc.y;
+    const bw = (W - 8) / 3;
+    metricBox(M, y, bw, "Total Invested", fmt(oa.summary.totalInvested));
+    metricBox(M + bw + 4, y, bw, "Current Value", fmt(oa.summary.currentValue));
+    metricBox(M + (bw + 4) * 2, y, bw, "Holdings", String(oa.summary.holdingsCount));
+    doc.y = y + 50;
+
+    for (const cat of oa.categories) {
+      checkPage(50, "Other Assets");
+      section(cat.label + " (" + cat.count + ")");
+      const oCols = [
+        { label: "Name", x: M, w: 160 }, { label: "Invested", x: M + 160, w: 90 },
+        { label: "Current Value", x: M + 250, w: 90 }, { label: "P&L", x: M + 340, w: 80 },
+        { label: "Details", x: M + 420, w: 95 },
+      ];
+      tableHeader(oCols);
+      for (const h of cat.holdings) {
+        const gl = (h.currentValue || 0) - (h.investedValue || 0);
+        let detail = "";
+        if (h.interestRate) detail += h.interestRate + "% p.a. ";
+        if (h.maturityDate) detail += "Mat: " + h.maturityDate + " ";
+        if (h.premium) detail += "Prem: " + fmt(h.premium) + " ";
+        if (h.sumAssured) detail += "SA: " + fmt(h.sumAssured);
+        if (h.provider) detail = h.provider + " | " + detail;
+        tableRow([
+          { text: h.name || "", x: M, w: 160, bold: true },
+          { text: fmt(h.investedValue), x: M + 160, w: 90 },
+          { text: fmt(h.currentValue), x: M + 250, w: 90 },
+          { text: fmt(gl), x: M + 340, w: 80, color: pCol(gl) },
+          { text: detail.trim() || "-", x: M + 420, w: 95 },
+        ]);
+      }
+    }
+
+    // Other asset recommendations
+    if (oa.recommendations?.length > 0) {
+      section("Other Assets — Recommendations");
+      for (const r of oa.recommendations) {
+        checkPage(30);
+        const col = r.priority === "high" ? RED : r.priority === "medium" ? "#eab308" : GREEN;
+        doc.rect(M, doc.y, 3, 20).fill(col);
+        doc.fontSize(8).fillColor(BRAND).font("Helvetica-Bold").text(r.asset + " — " + r.action, M + 10, doc.y + 2, { width: W - 20 });
+        doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(r.reason, M + 10, doc.y + 14, { width: W - 20 });
+        doc.y += 28;
+      }
+    }
+  }
+
   // ============ INVESTMENT STYLE ============
   if (equity?.investmentStyle?.styleLabel) {
     checkPage(100);

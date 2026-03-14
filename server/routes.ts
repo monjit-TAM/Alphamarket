@@ -4220,7 +4220,8 @@ export async function registerRoutes(
       const rows = (holdings as any).rows || [];
       const equityHoldings = rows.filter((h: any) => h.asset_type === "equity" && h.symbol);
       const mfHoldings = rows.filter((h: any) => h.asset_type === "mutual_fund");
-      const results: any = { equity: null, mutualFunds: null, combined: null };
+      const otherHoldings = rows.filter((h: any) => !["equity", "mutual_fund"].includes(h.asset_type));
+      const results: any = { equity: null, mutualFunds: null, otherAssets: null, combined: null };
 
       if (equityHoldings.length > 0) {
         try {
@@ -4381,21 +4382,110 @@ export async function registerRoutes(
         };
       }
 
+      // ── Other Asset Classes (Gold, RE, FD, Insurance, PPF, NPS, etc.) ──
+      if (otherHoldings.length > 0) {
+        const otherByType: Record<string, any[]> = {};
+        let otherTotalInvested = 0, otherTotalCurrent = 0;
+        const otherRecs: any[] = [];
+
+        for (const h of otherHoldings) {
+          const type = h.asset_type || "other";
+          if (!otherByType[type]) otherByType[type] = [];
+          const inv = Number(h.invested_value) || (Number(h.quantity) * Number(h.avg_buy_price)) || 0;
+          const cur = Number(h.current_value) || inv;
+          const gl = cur - inv;
+          const glp = inv > 0 ? (gl / inv) * 100 : 0;
+          const item = {
+            name: h.name, type, quantity: Number(h.quantity) || 0,
+            investedValue: inv, currentValue: cur, gainLoss: gl, gainLossPercent: glp,
+            provider: h.provider, interestRate: Number(h.interest_rate) || null,
+            maturityDate: h.maturity_date, premium: Number(h.premium) || null,
+            sumAssured: Number(h.sum_assured) || null, policyNumber: h.policy_number, buyDate: h.buy_date,
+          };
+          otherByType[type].push(item);
+          otherTotalInvested += inv;
+          otherTotalCurrent += cur;
+
+          // Generate recommendations per asset type
+          if (type === "fd") {
+            if (item.interestRate && item.interestRate < 7) {
+              otherRecs.push({ asset: item.name, type: "FD", action: "Review Rate", priority: "medium", reason: "FD rate of " + item.interestRate + "% is below current best rates (~8-8.5%). Consider switching at maturity." });
+            }
+            if (item.maturityDate && new Date(item.maturityDate) < new Date(Date.now() + 90 * 86400000)) {
+              otherRecs.push({ asset: item.name, type: "FD", action: "Maturing Soon", priority: "high", reason: "FD matures on " + item.maturityDate + ". Plan reinvestment or redeployment." });
+            }
+          }
+          if (type === "gold") {
+            const goldPct = inv / ((otherTotalInvested + (Number(results.equity?.summary?.totalInvested) || 0) + (Number(results.mutualFunds?.summary?.totalInvested) || 0)) || 1) * 100;
+            if (goldPct > 20) {
+              otherRecs.push({ asset: item.name, type: "Gold", action: "Overweight", priority: "medium", reason: "Gold allocation is ~" + goldPct.toFixed(0) + "% of portfolio. Consider limiting to 10-15% for optimal diversification." });
+            }
+          }
+          if (type === "real_estate") {
+            otherRecs.push({ asset: item.name, type: "Real Estate", action: "Review Valuation", priority: "low", reason: "Update current market value periodically. Real estate is illiquid — ensure emergency fund covers 6+ months." });
+          }
+          if (type === "insurance") {
+            if (item.sumAssured && item.premium) {
+              const coverRatio = item.sumAssured / item.premium;
+              if (coverRatio < 10) {
+                otherRecs.push({ asset: item.name, type: "Insurance", action: "Low Coverage", priority: "high", reason: "Sum assured is only " + coverRatio.toFixed(0) + "x premium. Consider term insurance for better coverage-to-cost ratio." });
+              }
+            }
+          }
+          if (type === "ppf" || type === "epf" || type === "nps") {
+            if (type === "ppf" && inv > 0) {
+              otherRecs.push({ asset: item.name, type: type.toUpperCase(), action: "Maximize", priority: "low", reason: "Ensure annual PPF contribution reaches Rs 1.5L limit for maximum Section 80C benefit." });
+            }
+            if (type === "nps") {
+              otherRecs.push({ asset: item.name, type: "NPS", action: "Review Allocation", priority: "low", reason: "Review equity-debt split in NPS based on retirement timeline. Additional Rs 50K deduction under 80CCD(1B)." });
+            }
+          }
+        }
+
+        const categoryBreakdown = Object.entries(otherByType).map(([type, items]) => ({
+          type, label: type === "fd" ? "Fixed Deposits" : type === "gold" ? "Gold" : type === "real_estate" ? "Real Estate" : type === "insurance" ? "Insurance" : type === "ppf" ? "PPF" : type === "nps" ? "NPS" : type === "epf" ? "EPF" : type === "bond" ? "Bonds" : type === "crypto" ? "Crypto" : type === "cash" ? "Cash" : type,
+          count: items.length,
+          totalInvested: items.reduce((s, i) => s + i.investedValue, 0),
+          totalCurrent: items.reduce((s, i) => s + i.currentValue, 0),
+          holdings: items,
+        }));
+
+        results.otherAssets = {
+          summary: { totalInvested: otherTotalInvested, currentValue: otherTotalCurrent, holdingsCount: otherHoldings.length },
+          categories: categoryBreakdown,
+          holdings: otherHoldings.map((h: any) => ({ name: h.name, type: h.asset_type, investedValue: Number(h.invested_value) || 0, currentValue: Number(h.current_value) || Number(h.invested_value) || 0, provider: h.provider, interestRate: Number(h.interest_rate) || null, maturityDate: h.maturity_date, premium: Number(h.premium) || null, sumAssured: Number(h.sum_assured) || null })),
+          recommendations: otherRecs,
+        };
+      }
+
       const eqI = results.equity?.summary?.totalInvested || 0;
       const eqC = results.equity?.summary?.currentValue || 0;
       const mfI = results.mutualFunds?.summary?.totalInvested || 0;
       const mfC = results.mutualFunds?.summary?.currentValue || 0;
-      const totI = eqI + mfI, totC = eqC + mfC;
+      const othI = results.otherAssets?.summary?.totalInvested || 0;
+      const othC = results.otherAssets?.summary?.currentValue || 0;
+      const totI = eqI + mfI + othI, totC = eqC + mfC + othC;
+
+      // Build full asset allocation
+      const assetAllocation: any = {
+        equity: { invested: eqI, current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 },
+        mutualFunds: { invested: mfI, current: mfC, percent: totC > 0 ? (mfC / totC) * 100 : 0 },
+      };
+      // Add each other asset type to allocation
+      if (results.otherAssets?.categories) {
+        for (const cat of results.otherAssets.categories) {
+          assetAllocation[cat.type] = { invested: cat.totalInvested, current: cat.totalCurrent, percent: totC > 0 ? (cat.totalCurrent / totC) * 100 : 0 };
+        }
+      }
+
       results.combined = {
         totalInvested: totI, currentValue: totC, totalPnl: totC - totI,
         totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0,
-        assetAllocation: {
-          equity: { invested: eqI, current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 },
-          mutualFunds: { invested: mfI, current: mfC, percent: totC > 0 ? (mfC / totC) * 100 : 0 },
-        },
+        assetAllocation,
         healthScore: results.equity?.healthScore?.overall || null,
         stockCount: results.equity?.summary?.holdingsCount || 0,
         mfCount: results.mutualFunds?.summary?.holdingsCount || 0,
+        otherCount: otherHoldings.length,
       };
 
       // ── P3: Enhanced MF Analysis (ported from MF Analyzer) ──
