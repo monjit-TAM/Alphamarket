@@ -3027,9 +3027,11 @@ export async function registerRoutes(
       const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass,
         provider, interestRate, maturityDate, lockInUntil, premium, sumAssured, policyNumber, buyDate } = req.body;
       if (!name || !assetType) return res.status(400).json({ error: "name and assetType required" });
-      const qty = Number(quantity) || (["fd","ppf","nps","epf","insurance","cash"].includes(assetType) ? 1 : 0);
+      const lumpSumTypes = ["fd","ppf","nps","epf","insurance","cash","real_estate"];
+      const isLumpSum = lumpSumTypes.includes(assetType);
+      const qty = isLumpSum ? 1 : (Number(quantity) || 0);
       const price = Number(avgBuyPrice) || 0;
-      const invested = qty * price;
+      const invested = isLumpSum ? price : qty * price;
       const currentValue = invested; // Will be updated by price sync
 
       const result = await db.execute(sql`
