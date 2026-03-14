@@ -3024,15 +3024,17 @@ export async function registerRoutes(
       `);
       if (!(portfolio as any).rows?.length) return res.status(403).json({ error: "Not authorized" });
 
-      const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass } = req.body;
+      const { assetType, symbol, isin, name, quantity, avgBuyPrice, sector, assetClass,
+        provider, interestRate, maturityDate, lockInUntil, premium, sumAssured, policyNumber, buyDate } = req.body;
       if (!name || !assetType) return res.status(400).json({ error: "name and assetType required" });
-      const qty = Number(quantity) || 0;
+      const qty = Number(quantity) || (["fd","ppf","nps","epf","insurance","cash"].includes(assetType) ? 1 : 0);
       const price = Number(avgBuyPrice) || 0;
       const invested = qty * price;
+      const currentValue = invested; // Will be updated by price sync
 
       const result = await db.execute(sql`
-        INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, sector, asset_class)
-        VALUES (${req.params.portfolioId}, ${assetType}, ${symbol || null}, ${isin || null}, ${name}, ${qty}, ${price}, ${invested}, ${sector || null}, ${assetClass || null})
+        INSERT INTO portfolio_holdings (portfolio_id, asset_type, symbol, isin, name, quantity, avg_buy_price, invested_value, current_price, current_value, sector, asset_class, provider, interest_rate, maturity_date, lock_in_until, premium, sum_assured, policy_number, buy_date)
+        VALUES (${req.params.portfolioId}, ${assetType}, ${symbol || null}, ${isin || null}, ${name}, ${qty}, ${price}, ${invested}, ${price}, ${currentValue}, ${sector || null}, ${assetClass || null}, ${provider || null}, ${Number(interestRate) || null}, ${maturityDate || null}, ${lockInUntil || null}, ${Number(premium) || null}, ${Number(sumAssured) || null}, ${policyNumber || null}, ${buyDate || null})
         RETURNING *
       `);
       res.json((result as any).rows[0]);

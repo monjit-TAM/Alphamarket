@@ -500,8 +500,10 @@ export default function SubscriberPortfolioPage() {
   };
 
   // Manual holding form
-  const [holdingForm, setHoldingForm] = useState({
+  const [holdingForm, setHoldingForm] = useState<Record<string, string>>({
     assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "",
+    isin: "", provider: "", interestRate: "", maturityDate: "", lockInUntil: "",
+    premium: "", sumAssured: "", policyNumber: "", buyDate: "",
   });
 
   const addHoldingMut = useMutation({
@@ -509,11 +511,14 @@ export default function SubscriberPortfolioPage() {
       ...holdingForm,
       quantity: Number(holdingForm.quantity) || null,
       avgBuyPrice: Number(holdingForm.avgBuyPrice) || null,
+      premium: Number(holdingForm.premium) || null,
+      sumAssured: Number(holdingForm.sumAssured) || null,
+      interestRate: Number(holdingForm.interestRate) || null,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["advisor-subscriber-portfolios", userId] });
       setShowManualAdd(false);
-      setHoldingForm({ assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "" });
+      setHoldingForm({ assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "", isin: "", provider: "", interestRate: "", maturityDate: "", lockInUntil: "", premium: "", sumAssured: "", policyNumber: "", buyDate: "" });
       toast({ title: "Holding added" });
     },
   });
@@ -1000,25 +1005,159 @@ export default function SubscriberPortfolioPage() {
         <DeepAnalysisPanel data={deepAnalysis} onUpdate={(d: any) => setDeepAnalysis(d)} />
       </div>
 
-      {/* Manual Add Holding Modal */}
+      {/* Manual Add Holding Modal — Asset-class specific fields */}
       {showManualAdd && (
         <ModalOverlay onClose={() => setShowManualAdd(false)}>
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold text-slate-900 mb-4">Add Holding Manually</h3>
             <div className="space-y-3">
-              <select value={holdingForm.assetType} onChange={(e) => setHoldingForm((f) => ({ ...f, assetType: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2">
-                {Object.entries(ASSET_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <input placeholder="Name *" value={holdingForm.name} onChange={(e) => setHoldingForm((f) => ({ ...f, name: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
-              <input placeholder="Symbol (e.g. RELIANCE)" value={holdingForm.symbol} onChange={(e) => setHoldingForm((f) => ({ ...f, symbol: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
-              <div className="grid grid-cols-2 gap-3">
-                <input placeholder="Quantity" type="number" value={holdingForm.quantity} onChange={(e) => setHoldingForm((f) => ({ ...f, quantity: e.target.value }))} className="text-sm border border-slate-200 rounded-lg px-3 py-2" />
-                <input placeholder="Avg Buy Price" type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value }))} className="text-sm border border-slate-200 rounded-lg px-3 py-2" />
+              {/* Asset type selector */}
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">Asset Type</label>
+                <select value={holdingForm.assetType} onChange={(e) => setHoldingForm((f) => ({ ...f, assetType: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5 bg-white">
+                  {Object.entries(ASSET_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                </select>
               </div>
-              <input placeholder="Sector (optional)" value={holdingForm.sector} onChange={(e) => setHoldingForm((f) => ({ ...f, sector: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+
+              {/* Common: Name (always shown) */}
+              <div>
+                <label className="text-xs font-medium text-slate-500 mb-1 block">
+                  {holdingForm.assetType === "mutual_fund" ? "Scheme Name *" : holdingForm.assetType === "insurance" ? "Policy Name *" : holdingForm.assetType === "fd" ? "FD Name / Bank *" : holdingForm.assetType === "real_estate" ? "Property Name *" : "Name *"}
+                </label>
+                <input value={holdingForm.name} onChange={(e) => setHoldingForm((f) => ({ ...f, name: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" />
+              </div>
+
+              {/* ── STOCK / ETF fields ── */}
+              {(holdingForm.assetType === "stock" || holdingForm.assetType === "etf") && (<>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Symbol *</label>
+                    <input placeholder="e.g. RELIANCE" value={holdingForm.symbol} onChange={(e) => setHoldingForm((f) => ({ ...f, symbol: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Sector</label>
+                    <input placeholder="e.g. IT, Banking" value={holdingForm.sector} onChange={(e) => setHoldingForm((f) => ({ ...f, sector: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Quantity *</label>
+                    <input type="number" value={holdingForm.quantity} onChange={(e) => setHoldingForm((f) => ({ ...f, quantity: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Price</label>
+                    <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Date</label>
+                    <input type="date" value={holdingForm.buyDate} onChange={(e) => setHoldingForm((f) => ({ ...f, buyDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+              </>)}
+
+              {/* ── MUTUAL FUND fields ── */}
+              {holdingForm.assetType === "mutual_fund" && (<>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">ISIN</label>
+                    <input placeholder="e.g. INF200K01495" value={holdingForm.isin} onChange={(e) => setHoldingForm((f) => ({ ...f, isin: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">AMC / Provider</label>
+                    <input placeholder="e.g. SBI, HDFC" value={holdingForm.provider} onChange={(e) => setHoldingForm((f) => ({ ...f, provider: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Units *</label>
+                    <input type="number" step="0.001" value={holdingForm.quantity} onChange={(e) => setHoldingForm((f) => ({ ...f, quantity: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">NAV / Avg Price</label>
+                    <input type="number" step="0.01" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Date</label>
+                    <input type="date" value={holdingForm.buyDate} onChange={(e) => setHoldingForm((f) => ({ ...f, buyDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+              </>)}
+
+              {/* ── FIXED DEPOSIT fields ── */}
+              {holdingForm.assetType === "fd" && (<>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Bank / Provider *</label>
+                    <input placeholder="e.g. SBI, HDFC" value={holdingForm.provider} onChange={(e) => setHoldingForm((f) => ({ ...f, provider: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Interest Rate (% p.a.)</label>
+                    <input type="number" step="0.1" placeholder="e.g. 7.5" value={holdingForm.interestRate} onChange={(e) => setHoldingForm((f) => ({ ...f, interestRate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Invested Amount *</label>
+                    <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value, quantity: "1" }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Maturity Date</label>
+                    <input type="date" value={holdingForm.maturityDate} onChange={(e) => setHoldingForm((f) => ({ ...f, maturityDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Start Date</label>
+                    <input type="date" value={holdingForm.buyDate} onChange={(e) => setHoldingForm((f) => ({ ...f, buyDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Lock-in Until</label>
+                    <input type="date" value={holdingForm.lockInUntil} onChange={(e) => setHoldingForm((f) => ({ ...f, lockInUntil: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+              </>)}
+
+              {/* ── PPF / NPS / EPF fields ── */}
+              {(holdingForm.assetType === "ppf" || holdingForm.assetType === "nps" || holdingForm.assetType === "epf") && (<>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Current Balance *</label>
+                    <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value, quantity: "1" }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Interest Rate (% p.a.)</label>
+                    <input type="number" step="0.1" placeholder={holdingForm.assetType === "ppf" ? "7.1" : holdingForm.assetType === "epf" ? "8.25" : "9.5"} value={holdingForm.interestRate} onChange={(e) => setHoldingForm((f) => ({ ...f, interestRate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Maturity Date</label>
+                    <input type="date" value={holdingForm.maturityDate} onChange={(e) => setHoldingForm((f) => ({ ...f, maturityDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Monthly Contribution</label>
+                    <input type="number" placeholder="e.g. 12500" value={holdingForm.premium} onChange={(e) => setHoldingForm((f) => ({ ...f, premium: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+              </>)}
+
+              {/* ── INSURANCE fields ── */}
+              {holdingForm.assetType === "insurance" && (<>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Provider *</label>
+                    <input placeholder="e.g. LIC, HDFC Life" value={holdingForm.provider} onChange={(e) => setHoldingForm((f) => ({ ...f, provider: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Policy Number</label>
+                    <input value={holdingForm.policyNumber} onChange={(e) => setHoldingForm((f) => ({ ...f, policyNumber: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Annual Premium *</label>
+                    <input type="number" value={holdingForm.premium} onChange={(e) => setHoldingForm((f) => ({ ...f, premium: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Sum Assured</label>
+                    <input type="number" value={holdingForm.sumAssured} onChange={(e) => setHoldingForm((f) => ({ ...f, sumAssured: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Current Value</label>
+                    <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value, quantity: "1" }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Start Date</label>
+                    <input type="date" value={holdingForm.buyDate} onChange={(e) => setHoldingForm((f) => ({ ...f, buyDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Maturity Date</label>
+                    <input type="date" value={holdingForm.maturityDate} onChange={(e) => setHoldingForm((f) => ({ ...f, maturityDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+              </>)}
+
+              {/* ── GOLD / REAL ESTATE / BOND / CRYPTO fields ── */}
+              {(holdingForm.assetType === "gold" || holdingForm.assetType === "real_estate" || holdingForm.assetType === "bond" || holdingForm.assetType === "crypto") && (<>
+                <div className="grid grid-cols-3 gap-3">
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">{holdingForm.assetType === "real_estate" ? "Units / Sq ft" : "Quantity"}</label>
+                    <input type="number" step="0.001" value={holdingForm.quantity} onChange={(e) => setHoldingForm((f) => ({ ...f, quantity: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Price / Value *</label>
+                    <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Date</label>
+                    <input type="date" value={holdingForm.buyDate} onChange={(e) => setHoldingForm((f) => ({ ...f, buyDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                </div>
+                {holdingForm.assetType === "bond" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="text-xs font-medium text-slate-500 mb-1 block">Coupon Rate (%)</label>
+                      <input type="number" step="0.1" value={holdingForm.interestRate} onChange={(e) => setHoldingForm((f) => ({ ...f, interestRate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                    <div><label className="text-xs font-medium text-slate-500 mb-1 block">Maturity Date</label>
+                      <input type="date" value={holdingForm.maturityDate} onChange={(e) => setHoldingForm((f) => ({ ...f, maturityDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                  </div>
+                )}
+                {holdingForm.assetType === "real_estate" && (
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Location / Address</label>
+                    <input value={holdingForm.sector} onChange={(e) => setHoldingForm((f) => ({ ...f, sector: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+                )}
+              </>)}
+
+              {/* ── CASH fields ── */}
+              {holdingForm.assetType === "cash" && (
+                <div><label className="text-xs font-medium text-slate-500 mb-1 block">Amount *</label>
+                  <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value, quantity: "1" }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
+              )}
             </div>
+
             <div className="flex gap-2 mt-5">
-              <button onClick={() => addHoldingMut.mutate()} disabled={!holdingForm.name} className="flex-1 text-sm px-4 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">Add Holding</button>
+              <button onClick={() => addHoldingMut.mutate()} disabled={!holdingForm.name || addHoldingMut.isPending} className="flex-1 text-sm px-4 py-2.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50">{addHoldingMut.isPending ? "Adding..." : "Add Holding"}</button>
               <button onClick={() => setShowManualAdd(false)} className="text-sm px-4 py-2.5 rounded-lg border border-slate-300 hover:bg-slate-50">Cancel</button>
             </div>
           </div>
