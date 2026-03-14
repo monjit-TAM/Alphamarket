@@ -368,6 +368,106 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     }
   }
 
+  // ============ MF STRESS TESTS ============
+  if (mutualFunds?.stressTests?.length > 0) {
+    section("MF Stress Test Scenarios");
+    const stCols = [
+      { label: "Scenario", x: M, w: 180 }, { label: "Description", x: M + 180, w: 160 },
+      { label: "Impact", x: M + 340, w: 65 }, { label: "Loss", x: M + 405, w: 65 },
+      { label: "Severity", x: M + 470, w: 45 },
+    ];
+    tableHeader(stCols);
+    for (const s of mutualFunds.stressTests) {
+      tableRow([
+        { text: s.scenario, x: M, w: 180, bold: true },
+        { text: s.description || "", x: M + 180, w: 160 },
+        { text: s.portfolioImpact + "%", x: M + 340, w: 65, color: RED },
+        { text: fmt(s.projectedLoss), x: M + 405, w: 65, color: RED },
+        { text: s.severity || "", x: M + 470, w: 45 },
+      ]);
+    }
+  }
+
+  // ============ MF FORWARD PROJECTIONS ============
+  if (mutualFunds?.forwardProjections?.length > 0) {
+    section("MF Forward Projections");
+    const fpCols = [
+      { label: "Horizon", x: M, w: 60 }, { label: "Expected", x: M + 60, w: 90 },
+      { label: "Optimistic", x: M + 150, w: 90 }, { label: "Pessimistic", x: M + 240, w: 90 },
+      { label: "CAGR", x: M + 330, w: 55 }, { label: "Wealth Multiple", x: M + 385, w: 70 },
+    ];
+    tableHeader(fpCols);
+    for (const p of mutualFunds.forwardProjections) {
+      tableRow([
+        { text: p.years + " Year" + (p.years > 1 ? "s" : ""), x: M, w: 60, bold: true },
+        { text: fmt(p.expectedValue), x: M + 60, w: 90, color: GREEN },
+        { text: fmt(p.optimisticValue), x: M + 150, w: 90 },
+        { text: fmt(p.pessimisticValue), x: M + 240, w: 90, color: RED },
+        { text: p.expectedCAGR + "%", x: M + 330, w: 55 },
+        { text: p.wealthMultiple + "x", x: M + 385, w: 70 },
+      ]);
+    }
+  }
+
+  // ============ MF HEALTH CHECK ============
+  if (mutualFunds?.healthCheck) {
+    section("MF Portfolio Health Check");
+    const hc = mutualFunds.healthCheck;
+    const hcEntries = Object.entries(hc);
+    const y = doc.y;
+    const bw = (W - 12) / Math.min(hcEntries.length, 4);
+    let hx = 0;
+    for (const [key, val] of hcEntries as any) {
+      const col = val.status === "Good" || val.score > 70 ? GREEN : val.status === "Fair" || val.score > 40 ? "#eab308" : RED;
+      const label = key.replace(/([A-Z])/g, " $1").trim();
+      metricBox(M + hx * (bw + 4), y, bw, label, val.status + " (" + val.score + ")", col);
+      hx++;
+    }
+    doc.y = y + 50;
+    for (const [key, val] of hcEntries as any) {
+      if (val.message) {
+        doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("• " + key.replace(/([A-Z])/g, " $1").trim() + ": " + val.message, M + 8, doc.y, { width: W - 16 });
+        doc.moveDown(0.2);
+      }
+    }
+  }
+
+  // ============ MF OVERLAP ============
+  if (mutualFunds?.overlapAnalysis?.overlaps?.length > 0) {
+    section("MF Overlap Analysis (Level: " + (mutualFunds.overlapAnalysis.overallLevel || "") + ")");
+    for (const o of mutualFunds.overlapAnalysis.overlaps) {
+      checkPage(25);
+      const col = o.severity === "High" ? RED : o.severity === "Medium" ? "#eab308" : GREEN;
+      doc.rect(M, doc.y, 3, 18).fill(col);
+      doc.fontSize(9).fillColor(BRAND).font("Helvetica-Bold").text(o.category + " (" + o.overlapPct + "% overlap)", M + 10, doc.y + 1);
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(o.funds.join("  •  "), M + 10, doc.y + 12, { width: W - 20 });
+      doc.y += 24;
+    }
+  }
+
+  // ============ STOCK-MF CROSS-ASSET OVERLAP (P4) ============
+  if (data.stockOverlap?.length > 0) {
+    newPage("Cross-Asset Overlap");
+    section("Stock-MF Overlap (" + data.stockOverlap.length + " overlapping stocks)", "Stocks held directly AND through mutual fund top holdings. High overlap = concentrated risk.");
+    const olCols = [
+      { label: "Stock", x: M, w: 80 }, { label: "Direct %", x: M + 80, w: 60 },
+      { label: "Via MFs %", x: M + 140, w: 60 }, { label: "Total %", x: M + 200, w: 60 },
+      { label: "Risk", x: M + 260, w: 55 }, { label: "MF Sources", x: M + 315, w: 200 },
+    ];
+    tableHeader(olCols);
+    for (const o of data.stockOverlap) {
+      const rCol = o.concentrationRisk === "Critical" || o.concentrationRisk === "High" ? RED : o.concentrationRisk === "Medium" ? "#eab308" : GREEN;
+      tableRow([
+        { text: o.stockName, x: M, w: 80, bold: true },
+        { text: o.directExposure + "%", x: M + 80, w: 60 },
+        { text: o.mfExposure + "%", x: M + 140, w: 60, color: ACCENT },
+        { text: o.totalExposure + "%", x: M + 200, w: 60, bold: true },
+        { text: o.concentrationRisk, x: M + 260, w: 55, color: rCol },
+        { text: (o.mfSources || []).join(", "), x: M + 315, w: 200 },
+      ]);
+    }
+  }
+
   // ============ INVESTMENT STYLE ============
   if (equity?.investmentStyle?.styleLabel) {
     checkPage(100);
