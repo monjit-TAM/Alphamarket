@@ -32,7 +32,7 @@ const KNOWN_ISIN_NAMES: Record<string, string> = {
 
 function cleanSchemeName(name: string): string {
   return name
-    .replace(/Scheme\s+Code\s*:\s*\d+/gi, "")
+    .replace(/Scheme\s+Code\s*:\s*[\w]+/gi, "")
     .replace(/Advisor\s*:\s*[\w\s]+$/gi, "")
     .replace(/Registrar\s*:\s*[\w\s]+/gi, "")
     .replace(/\s{2,}/g, " ")
@@ -386,7 +386,7 @@ export async function parseCASPdf(buffer: Buffer): Promise<CASParseResult> {
       // Found the ISIN — gather numbers from this line + next 2 lines
       const searchWindow = [lines[i], lines[i + 1] || "", lines[i + 2] || ""].join(" ");
       // Remove scheme code patterns before extracting numbers
-      const cleaned = searchWindow.replace(/Scheme\s+Code\s*:\s*\d+/gi, "").replace(/Folio\s+No\s*:\s*[\d\/]+/gi, "");
+      const cleaned = searchWindow.replace(/Scheme\s+Code\s*:\s*[\w]+/gi, "").replace(/Folio\s+No\s*:\s*[\d\/]+/gi, "");
       const nums: number[] = [];
       const numRegex = /([\d,]+\.?\d*)/g;
       let m;

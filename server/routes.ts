@@ -4482,12 +4482,12 @@ export async function registerRoutes(
       let investorName = req.body.investorName || req.body.clientName || "";
       if (!investorName) {
         try {
-          const portfolio = await db.execute(sql`SELECT user_id FROM portfolios WHERE id = ${req.params.id}`);
+          const portfolio = await db.execute(sql`SELECT user_id FROM customer_portfolios WHERE id = ${req.params.id}`);
           const pRow = ((portfolio as any).rows || [])[0];
           if (pRow?.user_id) {
-            const subUser = await db.execute(sql`SELECT name, email FROM users WHERE id = ${pRow.user_id}`);
+            const subUser = await db.execute(sql`SELECT username, email FROM users WHERE id = ${pRow.user_id}`);
             const sRow = ((subUser as any).rows || [])[0];
-            investorName = sRow?.name || sRow?.email || "";
+            investorName = sRow?.username || sRow?.email || "";
           }
         } catch (e) {}
       }
@@ -4496,9 +4496,9 @@ export async function registerRoutes(
       let advisorName = req.body.generatedBy || req.body.advisorName || "";
       if (!advisorName && req.session?.userId) {
         try {
-          const advUser = await db.execute(sql`SELECT name, email FROM users WHERE id = ${req.session.userId}`);
+          const advUser = await db.execute(sql`SELECT username, email, company_name FROM users WHERE id = ${req.session.userId}`);
           const aRow = ((advUser as any).rows || [])[0];
-          advisorName = aRow?.name || aRow?.email || "";
+          advisorName = aRow?.company_name || aRow?.username || aRow?.email || "";
         } catch (e) {}
       }
 
