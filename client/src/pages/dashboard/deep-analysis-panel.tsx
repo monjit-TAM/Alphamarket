@@ -715,6 +715,125 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
           )}
         </Sec>
       )}
+
+      {/* ── P3: Enhanced MF Sections ── */}
+      {mutualFunds?.isEnhanced && (
+        <>
+          {/* MF Forward Projections */}
+          {mutualFunds.forwardProjections?.length > 0 && (
+            <Sec title="MF Forward Projections" icon={<TrendingUp className="w-4 h-4 text-blue-600" />} open={false}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                    <th className="py-2 px-2 font-medium">Horizon</th>
+                    <th className="py-2 px-2 font-medium">Expected</th>
+                    <th className="py-2 px-2 font-medium">Optimistic</th>
+                    <th className="py-2 px-2 font-medium">Pessimistic</th>
+                    <th className="py-2 px-2 font-medium">CAGR</th>
+                    <th className="py-2 px-2 font-medium">Wealth Multiple</th>
+                  </tr></thead>
+                  <tbody>
+                    {mutualFunds.forwardProjections.map((p: any) => (
+                      <tr key={p.years} className="border-b border-slate-100">
+                        <td className="py-2 px-2 font-medium text-slate-900">{p.years}Y</td>
+                        <td className="py-2 px-2 tabular-nums text-emerald-600 font-medium">{fmt(p.expectedValue)}</td>
+                        <td className="py-2 px-2 tabular-nums text-emerald-500">{fmt(p.optimisticValue)}</td>
+                        <td className="py-2 px-2 tabular-nums text-red-500">{fmt(p.pessimisticValue)}</td>
+                        <td className="py-2 px-2 tabular-nums text-slate-700">{p.expectedCAGR}%</td>
+                        <td className="py-2 px-2 tabular-nums text-slate-700">{p.wealthMultiple}x</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Sec>
+          )}
+
+          {/* MF Stress Tests */}
+          {mutualFunds.stressTests?.length > 0 && (
+            <Sec title="MF Stress Test" icon={<AlertTriangle className="w-4 h-4 text-amber-600" />} open={false}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {mutualFunds.stressTests.map((s: any, i: number) => (
+                  <div key={i} className="rounded-lg p-4 border border-slate-200 bg-slate-50">
+                    <div className="text-sm font-semibold text-slate-900 mb-1">{s.scenario}</div>
+                    <div className="text-xs text-slate-500 mb-2">{s.description}</div>
+                    <div className="flex items-baseline gap-3">
+                      <span className="text-lg font-bold text-red-600">{fmt(s.projectedLoss)}</span>
+                      <span className="text-sm text-red-500">{s.portfolioImpact}%</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${s.severity === "High" ? "bg-red-100 text-red-700" : s.severity === "Medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{s.severity}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Sec>
+          )}
+
+          {/* MF Health Check */}
+          {mutualFunds.healthCheck && (
+            <Sec title="MF Health Check" icon={<Shield className="w-4 h-4 text-emerald-600" />} open={false}>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Object.entries(mutualFunds.healthCheck).map(([key, val]: [string, any]) => (
+                  <div key={key} className="rounded-lg p-3 border border-slate-200 bg-slate-50">
+                    <div className="text-xs text-slate-500 capitalize mb-1">{key.replace(/([A-Z])/g, " $1").trim()}</div>
+                    <div className={`text-sm font-bold ${val.status === "Good" || val.score > 70 ? "text-emerald-600" : val.status === "Fair" || val.score > 40 ? "text-amber-600" : "text-red-600"}`}>
+                      {val.status} ({val.score}/100)
+                    </div>
+                    <div className="text-xs text-slate-400 mt-1">{val.message}</div>
+                  </div>
+                ))}
+              </div>
+            </Sec>
+          )}
+
+          {/* MF Overlap */}
+          {mutualFunds.overlapAnalysis?.overlaps?.length > 0 && (
+            <Sec title={"MF Overlap Analysis (Level: " + mutualFunds.overlapAnalysis.overallLevel + ")"} icon={<PieChartIcon className="w-4 h-4 text-violet-600" />} open={false}>
+              <div className="space-y-2">
+                {mutualFunds.overlapAnalysis.overlaps.map((o: any, i: number) => (
+                  <div key={i} className="p-3 rounded-lg border border-slate-200 bg-slate-50">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-semibold text-slate-900">{o.category}</span>
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${o.severity === "High" ? "bg-red-100 text-red-700" : o.severity === "Medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{o.overlapPct}% overlap</span>
+                    </div>
+                    <div className="text-xs text-slate-500">{o.funds.join(" • ")}</div>
+                  </div>
+                ))}
+              </div>
+            </Sec>
+          )}
+        </>
+      )}
+
+      {/* ── P4: Stock-MF Overlap ── */}
+      {data.stockOverlap?.length > 0 && (
+        <Sec title={"Stock-MF Overlap (" + data.stockOverlap.length + " stocks)"} icon={<BarChart3 className="w-4 h-4 text-blue-600" />} open={false}>
+          <p className="text-xs text-slate-500 mb-3">Stocks you hold directly AND through your mutual funds. High overlap = concentrated risk.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                <th className="py-2 px-2 font-medium">Stock</th>
+                <th className="py-2 px-2 font-medium">Direct %</th>
+                <th className="py-2 px-2 font-medium">Via MFs %</th>
+                <th className="py-2 px-2 font-medium">Total %</th>
+                <th className="py-2 px-2 font-medium">Risk</th>
+                <th className="py-2 px-2 font-medium">MF Sources</th>
+              </tr></thead>
+              <tbody>
+                {data.stockOverlap.map((o: any, i: number) => (
+                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="py-2 px-2 font-medium text-slate-900">{o.stockName}</td>
+                    <td className="py-2 px-2 tabular-nums">{o.directExposure}%</td>
+                    <td className="py-2 px-2 tabular-nums text-blue-600">{o.mfExposure}%</td>
+                    <td className="py-2 px-2 tabular-nums font-semibold">{o.totalExposure}%</td>
+                    <td className="py-2 px-2"><span className={`text-xs px-1.5 py-0.5 rounded-full ${o.concentrationRisk === "Critical" ? "bg-red-100 text-red-700" : o.concentrationRisk === "High" ? "bg-red-50 text-red-600" : o.concentrationRisk === "Medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}`}>{o.concentrationRisk}</span></td>
+                    <td className="py-2 px-2 text-xs text-slate-500 max-w-[200px]">{o.mfSources?.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Sec>
+      )}
     </div>
   );
 }

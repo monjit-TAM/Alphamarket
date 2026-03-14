@@ -4396,6 +4396,133 @@ export async function registerRoutes(
         mfCount: results.mutualFunds?.summary?.holdingsCount || 0,
       };
 
+      // ── P3: Enhanced MF Analysis (ported from MF Analyzer) ──
+      if (results.mutualFunds?.holdings?.length > 0) {
+        const mfHolds = results.mutualFunds.holdings;
+        const totalMFVal = mfHolds.reduce((s: number, h: any) => s + (h.currentValue || 0), 0);
+
+        // MF Stress Tests
+        const mfStressScenarios = [
+          { name: "Interest Rate Hike (+200bps)", equityImpact: -0.08, debtImpact: -0.04, description: "RBI raises repo rate by 200 basis points" },
+          { name: "Currency Depreciation (10%)", equityImpact: -0.05, debtImpact: -0.01, description: "INR depreciates 10% against USD" },
+          { name: "Global Recession", equityImpact: -0.25, debtImpact: 0.02, description: "Major global economic slowdown" },
+          { name: "FII Outflow (Large)", equityImpact: -0.15, debtImpact: -0.03, description: "Significant FII selling" },
+          { name: "Oil Price Shock (+50%)", equityImpact: -0.12, debtImpact: -0.02, description: "Crude oil prices surge by 50%" },
+        ];
+
+        results.mutualFunds.stressTests = mfStressScenarios.map(sc => {
+          let stressed = 0;
+          for (const h of mfHolds) {
+            const cat = (h.category || "").toLowerCase();
+            let impact = sc.equityImpact;
+            if (cat.includes("debt") || cat.includes("liquid")) impact = sc.debtImpact;
+            if (cat.includes("small cap")) impact *= 1.3;
+            else if (cat.includes("mid cap")) impact *= 1.15;
+            else if (cat.includes("large cap") || cat.includes("index")) impact *= 0.9;
+            stressed += (h.currentValue || 0) * (1 + impact);
+          }
+          return { scenario: sc.name, description: sc.description, projectedLoss: Math.round(stressed - totalMFVal), portfolioImpact: totalMFVal > 0 ? +((stressed - totalMFVal) / totalMFVal * 100).toFixed(1) : 0, severity: Math.abs(stressed - totalMFVal) / (totalMFVal || 1) > 0.15 ? "High" : Math.abs(stressed - totalMFVal) / (totalMFVal || 1) > 0.08 ? "Medium" : "Low" };
+        });
+
+        // MF Forward Projections
+        const rm = results.mutualFunds.riskMetrics;
+        const pRet = (rm?.avgExpectedReturn || 13) / 100;
+        const pVol = (rm?.avgVolatility || 16) / 100;
+        results.mutualFunds.forwardProjections = [1, 3, 5, 7, 10, 15, 20].map(yr => {
+          const expected = totalMFVal * Math.pow(1 + pRet, yr);
+          const optimistic = totalMFVal * Math.pow(1 + pRet + pVol, yr);
+          const pessimistic = totalMFVal * Math.pow(1 + Math.max(pRet - pVol, -0.3), yr);
+          return { years: yr, expectedValue: Math.round(expected), optimisticValue: Math.round(optimistic), pessimisticValue: Math.round(pessimistic), expectedCAGR: +(pRet * 100).toFixed(1), wealthMultiple: +(expected / totalMFVal).toFixed(2) };
+        });
+
+        // MF Overlap Analysis (category-based)
+        const catGroups: Record<string, any[]> = {};
+        mfHolds.forEach((h: any) => { const k = h.category || "Other"; if (!catGroups[k]) catGroups[k] = []; catGroups[k].push(h); });
+        const overlaps: any[] = [];
+        for (const [cat, funds] of Object.entries(catGroups)) {
+          if (funds.length >= 2) {
+            const basePct = cat.toLowerCase().includes("large cap") || cat.toLowerCase().includes("index") ? 70 : cat.toLowerCase().includes("mid cap") ? 50 : cat.toLowerCase().includes("flexi") || cat.toLowerCase().includes("multi") ? 45 : 30;
+            overlaps.push({ category: cat, funds: funds.map((f: any) => (f.name || "").substring(0, 35)), overlapPct: Math.min(90, basePct), severity: basePct > 60 ? "High" : basePct > 40 ? "Medium" : "Low" });
+          }
+        }
+        const avgOverlap = overlaps.length > 0 ? overlaps.reduce((s, o) => s + o.overlapPct, 0) / overlaps.length : 0;
+        results.mutualFunds.overlapAnalysis = { overlaps, overallLevel: avgOverlap > 50 ? "High" : avgOverlap > 30 ? "Moderate" : "Low", overallScore: Math.round(avgOverlap), consolidationOpportunities: overlaps.filter(o => o.severity === "High").length };
+
+        // MF Health Check
+        const directPct = mfHolds.filter((h: any) => h.isDirect).length / (mfHolds.length || 1) * 100;
+        const diversified = Object.keys(catGroups).length;
+        results.mutualFunds.healthCheck = {
+          directVsRegular: { score: Math.round(directPct), status: directPct >= 70 ? "Good" : directPct >= 40 ? "Fair" : "Poor", message: directPct >= 70 ? "Most funds in Direct plan" : "Switch Regular plans to Direct to save on expense ratio" },
+          diversification: { score: Math.min(100, diversified * 25), status: diversified >= 4 ? "Good" : diversified >= 2 ? "Fair" : "Poor", message: diversified + " categories covered" },
+          overlapRisk: { score: Math.max(0, 100 - Math.round(avgOverlap)), status: avgOverlap < 30 ? "Good" : avgOverlap < 50 ? "Fair" : "Poor", message: overlaps.length + " overlapping category groups found" },
+          portfolioRisk: { score: rm?.portfolioRisk === "Low" ? 85 : rm?.portfolioRisk === "Moderate" ? 60 : 35, status: rm?.portfolioRisk || "Unknown", message: "Volatility: " + (rm?.avgVolatility || 0) + "%, Max DD: " + (rm?.avgMaxDrawdown || 0) + "%" },
+        };
+
+        results.mutualFunds.isEnhanced = true;
+      }
+
+      // ── P4: Stock-MF Overlap (cross-asset) ──
+      if (results.equity?.holdings?.length > 0 && results.mutualFunds?.holdings?.length > 0) {
+        const stockHoldings = results.equity.holdings;
+        const mfHolds = results.mutualFunds.holdings;
+        const eqTotal = stockHoldings.reduce((s: number, h: any) => s + (h.currentValue || h.marketValue || 0), 0);
+        const mfTotal = mfHolds.reduce((s: number, h: any) => s + (h.currentValue || 0), 0);
+        const portfolioTotal = eqTotal + mfTotal;
+
+        // Known top holdings for common MF categories
+        const categoryTopStocks: Record<string, string[]> = {
+          "Large Cap": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "BHARTIARTL", "ITC", "SBIN", "KOTAKBANK", "LT"],
+          "Flexi/Multi Cap": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "BHARTIARTL", "ITC", "TCS", "AXISBANK", "SBIN", "LT"],
+          "Mid Cap": ["HAL", "PERSISTENT", "COFORGE", "DIXON", "POLYCAB", "TRENT", "BEL", "MPHASIS", "TIINDIA", "DEEPAKNTR"],
+          "Small Cap": ["THERMAX", "ATUL", "DEEPAKNTR", "IEX", "POLYCAB", "DIXON", "TIINDIA", "BEL", "TRENT", "PERSISTENT"],
+          "ELSS": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "TCS", "AXISBANK", "BHARTIARTL", "ITC", "SBIN", "MARUTI"],
+          "Value/Contra": ["SBIN", "ITC", "NTPC", "ONGC", "HDFCBANK", "ICICIBANK", "BHARTIARTL", "RELIANCE", "AXISBANK", "LT"],
+          "Focused": ["RELIANCE", "HDFCBANK", "ICICIBANK", "INFY", "BHARTIARTL", "TCS", "AXISBANK", "SBIN", "LT", "ITC"],
+          "Large & Mid Cap": ["RELIANCE", "HDFCBANK", "ICICIBANK", "HAL", "BHARTIARTL", "INFY", "DLF", "SBIN", "TCS", "LT"],
+        };
+
+        const overlapMap: Record<string, { directPct: number; mfPct: number; mfSources: string[] }> = {};
+        // Direct exposures
+        for (const h of stockHoldings) {
+          const sym = (h.stockName || h.symbol || "").toUpperCase();
+          const val = h.currentValue || h.marketValue || 0;
+          if (sym && portfolioTotal > 0) {
+            overlapMap[sym] = { directPct: (val / portfolioTotal) * 100, mfPct: 0, mfSources: [] };
+          }
+        }
+
+        // Estimate MF exposures
+        for (const mf of mfHolds) {
+          const cat = mf.category || "Flexi/Multi Cap";
+          const topStocks = categoryTopStocks[cat] || categoryTopStocks["Flexi/Multi Cap"];
+          const mfWeight = (mf.currentValue || 0) / (portfolioTotal || 1);
+          for (const stock of topStocks) {
+            if (overlapMap[stock]) {
+              const estWeight = mfWeight * (10 / topStocks.length) * 100; // Rough estimate: top 10 holdings ~10% each
+              overlapMap[stock].mfPct += estWeight;
+              overlapMap[stock].mfSources.push((mf.name || "").substring(0, 30) + " (~" + estWeight.toFixed(1) + "%)");
+            }
+          }
+        }
+
+        // Filter to actual overlaps and sort
+        const stockOverlap = Object.entries(overlapMap)
+          .filter(([_, v]) => v.directPct > 0 && v.mfPct > 0)
+          .map(([stock, v]) => ({
+            stockName: stock,
+            directExposure: +v.directPct.toFixed(1),
+            mfExposure: +v.mfPct.toFixed(2),
+            totalExposure: +(v.directPct + v.mfPct).toFixed(1),
+            mfSources: v.mfSources,
+            concentrationRisk: (v.directPct + v.mfPct) > 15 ? "Critical" : (v.directPct + v.mfPct) > 10 ? "High" : (v.directPct + v.mfPct) > 5 ? "Medium" : "Low",
+          }))
+          .sort((a, b) => b.totalExposure - a.totalExposure);
+
+        if (stockOverlap.length > 0) {
+          results.stockOverlap = stockOverlap;
+        }
+      }
+
       res.json(results);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
