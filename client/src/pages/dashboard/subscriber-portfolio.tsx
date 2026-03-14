@@ -297,7 +297,7 @@ export default function SubscriberPortfolioPage() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [holdingSearch, setHoldingSearch] = useState("");
   const [expandedSections, setExpandedSections] = useState({
-    holdings: true, suggestions: true, goals: true, recommendations: true,
+    holdings: true, suggestions: true, goals: false, recommendations: false,
   });
   const [showAddGoalForm, setShowAddGoalForm] = useState(false);
   const [showRecoForm, setShowRecoForm] = useState(false);
@@ -544,11 +544,19 @@ export default function SubscriberPortfolioPage() {
 
   const sectorData = useMemo(() => {
     const map = new Map<string, number>();
+    // First try holdings sector data
     for (const h of holdings) {
       if (h.sector) map.set(h.sector, (map.get(h.sector) ?? 0) + (h.currentValue ?? h.investedValue ?? 0));
     }
+    // If no sectors in holdings, derive from deep analysis sectorAllocation
+    if (map.size === 0 && deepAnalysis?.equity?.sectorAllocation) {
+      const totalEq = holdings.filter(h => h.assetType === "equity").reduce((s, h) => s + (h.currentValue ?? 0), 0);
+      for (const [sector, pct] of Object.entries(deepAnalysis.equity.sectorAllocation)) {
+        map.set(sector, totalEq * (Number(pct) / 100));
+      }
+    }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
-  }, [holdings]);
+  }, [holdings, deepAnalysis]);
 
   const sortedHoldings = useMemo(() => {
     let filtered = holdings;
@@ -838,8 +846,8 @@ export default function SubscriberPortfolioPage() {
             </div>
           )}
           {goals.length === 0 && !showAddGoalForm ? (
-            <div className="text-center py-8 text-slate-400 text-sm">
-              <Target className="w-8 h-8 mx-auto mb-2 opacity-40" />No goals set yet. Click "Add Goal" to get started.
+            <div className="text-center py-3 text-slate-400 text-sm">
+              No goals set yet. Click "Add Goal" to get started.
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -928,8 +936,8 @@ export default function SubscriberPortfolioPage() {
             </div>
           )}
           {recommendations.length === 0 && !showRecoForm ? (
-            <div className="text-center py-8 text-slate-400 text-sm">
-              <Send className="w-8 h-8 mx-auto mb-2 opacity-40" />No recommendations sent yet.
+            <div className="text-center py-3 text-slate-400 text-sm">
+              No recommendations sent yet.
             </div>
           ) : (
             <div className="space-y-3">
