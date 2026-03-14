@@ -550,9 +550,10 @@ export default function SubscriberPortfolioPage() {
     }
     // If no sectors in holdings, derive from deep analysis sectorAllocation
     if (map.size === 0 && deepAnalysis?.equity?.sectorAllocation) {
-      const totalEq = holdings.filter(h => h.assetType === "equity").reduce((s, h) => s + (h.currentValue ?? 0), 0);
+      const totalEq = holdings.filter(h => h.assetType === "equity").reduce((s, h) => s + (Number(h.currentValue) || 0), 0);
       for (const [sector, pct] of Object.entries(deepAnalysis.equity.sectorAllocation)) {
-        map.set(sector, totalEq * (Number(pct) / 100));
+        const val = totalEq * (Number(pct) / 100);
+        if (val > 0 && isFinite(val)) map.set(sector, val);
       }
     }
     return Array.from(map.entries()).map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, 10);
