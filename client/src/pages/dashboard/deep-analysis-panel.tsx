@@ -191,29 +191,7 @@ export default function DeepAnalysisPanel({ data, onUpdate }: { data: any; onUpd
         )}
       </div>
 
-      {/* ── Sector Allocation ── */}
-      {sectorData.length > 0 && (
-        <Sec title="Sector Allocation" icon={<PieChartIcon className="w-4 h-4 text-blue-600" />}>
-          <div className="flex flex-col lg:flex-row items-center gap-4">
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={sectorData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} innerRadius={50} paddingAngle={2}>
-                  {sectorData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                </Pie>
-                <Tooltip formatter={(v: number) => v.toFixed(1) + "%"} />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="flex flex-wrap gap-2">
-              {sectorData.map((s, i) => (
-                <span key={i} className="inline-flex items-center gap-1.5 text-xs px-2 py-1 rounded-full border border-slate-200 bg-white">
-                  <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                  {s.name}: {s.value.toFixed(1)}%
-                </span>
-              ))}
-            </div>
-          </div>
-        </Sec>
-      )}
+      {/* Sector Allocation moved to portfolio page charts */}
 
       {/* ── Stock-by-Stock + Quantamental ── */}
       {equity?.enhancedRecommendations?.length > 0 && (

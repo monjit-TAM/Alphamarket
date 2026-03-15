@@ -190,6 +190,7 @@ function formatPercent(val: number | string | null | undefined): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
+const SECTOR_COLORS = ["#2563eb","#7c3aed","#059669","#d97706","#dc2626","#0891b2","#4f46e5","#be185d","#65a30d","#a855f7","#f59e0b","#14b8a6"];
 function assetDetails(h: Holding): string {
   const parts: string[] = [];
   const t = h.assetType;
@@ -776,9 +777,34 @@ export default function SubscriberPortfolioPage() {
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-              <BarChart3 className="w-4 h-4 text-emerald-600" /> Sector Exposure
+              <PieChartIcon className="w-4 h-4 text-emerald-600" /> Sector Allocation
             </h3>
-            {sectorData.length > 0 ? (
+            {deepAnalysis?.equity?.sectorAllocation ? (() => {
+              const saData = Object.entries(deepAnalysis.equity.sectorAllocation)
+                .map(([name, pct]: [string, any], i: number) => ({ name, value: Number(pct), color: SECTOR_COLORS[i % SECTOR_COLORS.length] }))
+                .filter((s: any) => s.value > 0)
+                .sort((a: any, b: any) => b.value - a.value);
+              return (
+                <div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <PieChart>
+                      <Pie data={saData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} innerRadius={45} paddingAngle={2}>
+                        {saData.map((e: any, i: number) => <Cell key={i} fill={e.color} />)}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => v.toFixed(1) + "%"} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {saData.map((s: any, i: number) => (
+                      <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-200 bg-white">
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                        {s.name}: {s.value.toFixed(1)}%
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })() : sectorData.length > 0 ? (
               <ResponsiveContainer width="100%" height={280}>
                 <BarChart data={sectorData} layout="vertical" margin={{ left: 80, right: 20 }}>
                   <XAxis type="number" tickFormatter={(v: number) => `\u20B9${(v / 1000).toFixed(0)}K`} />
@@ -788,7 +814,7 @@ export default function SubscriberPortfolioPage() {
                 </BarChart>
               </ResponsiveContainer>
             ) : (
-              <div className="flex items-center justify-center h-[280px] text-slate-400 text-sm">No sector data available. Add sectors to holdings.</div>
+              <div className="flex items-center justify-center h-[280px] text-slate-400 text-sm">Run Deep Analysis to see sector allocation.</div>
             )}
           </div>
         </div>
