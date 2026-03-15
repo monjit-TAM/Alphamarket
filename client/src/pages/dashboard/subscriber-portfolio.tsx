@@ -628,9 +628,11 @@ export default function SubscriberPortfolioPage() {
     const map = new Map<string, number>();
     for (const h of holdings) {
       const type = h.assetType || "other";
-      map.set(type, (map.get(type) ?? 0) + (h.currentValue ?? h.investedValue ?? 0));
+      const val = Number(h.currentValue) || Number(h.investedValue) || 0;
+      map.set(type, (map.get(type) ?? 0) + val);
     }
     return Array.from(map.entries())
+      .filter(([, value]) => value > 0)
       .map(([type, value]) => ({ name: ASSET_LABELS[type] || type, value, color: ASSET_COLORS[type] || "#94a3b8" }))
       .sort((a, b) => b.value - a.value);
   }, [holdings]);
@@ -764,16 +766,23 @@ export default function SubscriberPortfolioPage() {
             <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
               <PieChartIcon className="w-4 h-4 text-blue-600" /> Asset Allocation
             </h3>
-            <ResponsiveContainer width="100%" height={280}>
+            <ResponsiveContainer width="100%" height={200}>
               <PieChart>
                 <Pie data={allocationData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                  outerRadius={100} innerRadius={55} paddingAngle={2}
-                  label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                  outerRadius={85} innerRadius={45} paddingAngle={2}>
                   {allocationData.map((entry, i) => (<Cell key={i} fill={entry.color} />))}
                 </Pie>
                 <Tooltip formatter={(value: number) => formatINR(value)} />
               </PieChart>
             </ResponsiveContainer>
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {allocationData.map((entry, i) => (
+                <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-200 bg-white">
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
+                  {entry.name}: {((entry.value / allocationData.reduce((s, e) => s + e.value, 0)) * 100).toFixed(0)}%
+                </span>
+              ))}
+            </div>
           </div>
           <div className="bg-white rounded-xl border border-slate-200 p-5">
             <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
