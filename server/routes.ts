@@ -4486,12 +4486,7 @@ export async function registerRoutes(
               otherRecs.push({ asset: item.name, type: "FD", action: "Maturing Soon", priority: "high", reason: "FD matures on " + item.maturityDate + ". Plan reinvestment or redeployment." });
             }
           }
-          if (type === "gold") {
-            const goldPct = inv / ((otherTotalInvested + (Number(results.equity?.summary?.totalInvested) || 0) + (Number(results.mutualFunds?.summary?.totalInvested) || 0)) || 1) * 100;
-            if (goldPct > 20) {
-              otherRecs.push({ asset: item.name, type: "Gold", action: "Overweight", priority: "medium", reason: "Gold allocation is ~" + goldPct.toFixed(0) + "% of portfolio. Consider limiting to 10-15% for optimal diversification." });
-            }
-          }
+          // Gold % check moved after loop (needs full totals)
           if (type === "real_estate") {
             otherRecs.push({ asset: item.name, type: "Real Estate", action: "Review Valuation", priority: "low", reason: "Update current market value periodically. Real estate is illiquid — ensure emergency fund covers 6+ months." });
           }
@@ -4510,6 +4505,24 @@ export async function registerRoutes(
             if (type === "nps") {
               otherRecs.push({ asset: item.name, type: "NPS", action: "Review Allocation", priority: "low", reason: "Review equity-debt split in NPS based on retirement timeline. Additional Rs 50K deduction under 80CCD(1B)." });
             }
+          }
+        }
+
+        // Post-loop: percentage-based recommendations using full portfolio totals
+        const fullPortfolioValue = otherTotalCurrent + (Number(results.equity?.summary?.currentValue) || Number(results.equity?.summary?.totalInvested) || 0) + (Number(results.mutualFunds?.summary?.currentValue) || Number(results.mutualFunds?.summary?.totalInvested) || 0);
+        if (otherByType["gold"]) {
+          for (const g of otherByType["gold"]) {
+            const goldPct = fullPortfolioValue > 0 ? (g.currentValue / fullPortfolioValue) * 100 : 0;
+            if (goldPct > 20) {
+              otherRecs.push({ asset: g.name, type: "Gold", action: "Overweight", priority: "medium", reason: "Gold allocation is ~" + goldPct.toFixed(0) + "% of portfolio. Consider limiting to 10-15% for optimal diversification." });
+            }
+          }
+        }
+        if (otherByType["fd"]) {
+          const fdTotal = otherByType["fd"].reduce((s: number, i: any) => s + i.currentValue, 0);
+          const fdPct = fullPortfolioValue > 0 ? (fdTotal / fullPortfolioValue) * 100 : 0;
+          if (fdPct > 30) {
+            otherRecs.push({ asset: "Fixed Deposits", type: "FD", action: "High FD Allocation", priority: "low", reason: "FDs are ~" + fdPct.toFixed(0) + "% of portfolio. After emergency fund, consider deploying excess into equity SIPs." });
           }
         }
 

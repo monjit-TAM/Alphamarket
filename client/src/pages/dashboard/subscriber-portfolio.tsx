@@ -190,6 +190,35 @@ function formatPercent(val: number | string | null | undefined): string {
   return `${n >= 0 ? "+" : ""}${n.toFixed(2)}%`;
 }
 
+function assetDetails(h: Holding): string {
+  const parts: string[] = [];
+  const t = h.assetType;
+  if (h.provider) parts.push(h.provider);
+  if (t === "fd" || t === "ppf" || t === "epf" || t === "nps") {
+    if (h.interestRate) parts.push(h.interestRate + "% p.a.");
+    if (h.maturityDate) parts.push("Mat: " + new Date(h.maturityDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
+    if (h.lockInUntil) parts.push("Lock-in: " + new Date(h.lockInUntil).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
+  }
+  if (t === "insurance") {
+    if (h.policyNumber) parts.push("#" + h.policyNumber);
+    if (h.premium) parts.push("Prem: \u20B9" + Number(h.premium).toLocaleString("en-IN"));
+    if (h.sumAssured) parts.push("SA: \u20B9" + Number(h.sumAssured).toLocaleString("en-IN"));
+    if (h.maturityDate) parts.push("Mat: " + new Date(h.maturityDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
+  }
+  if (t === "real_estate" && h.provider) return h.provider;
+  if (t === "bond") {
+    if (h.interestRate) parts.push(h.interestRate + "% coupon");
+    if (h.maturityDate) parts.push("Mat: " + new Date(h.maturityDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }));
+  }
+  if (t === "gold" || t === "crypto") {
+    if (h.provider) return h.provider;
+  }
+  if ((t === "equity" || t === "stock" || t === "etf" || t === "mutual_fund") && h.sector) {
+    return h.sector;
+  }
+  return parts.join(" \u00B7 ") || "\u2014";
+}
+
 function pnlColor(val: number | string | null | undefined): string {
   if (val == null) return "text-slate-500";
   return Number(val) >= 0 ? "text-emerald-600" : "text-red-600";
@@ -787,7 +816,7 @@ export default function SubscriberPortfolioPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-200">
-                    {([["name","Name"],["assetType","Type"],["quantity","Qty"],["avgBuyPrice","Buy Price"],["currentPrice","CMP"],["currentValue","Value"],["gainLoss","P&L"],["gainLossPercent","P&L %"]] as [SortField,string][]).map(([field,label]) => (
+                    {([["name","Name"],["assetType","Type"],["quantity","Qty"],["avgBuyPrice","Buy Price"],["currentPrice","CMP"],["currentValue","Value"],["gainLoss","P&L"],["gainLossPercent","P&L %"],["details" as SortField,"Details"]] as [SortField,string][]).map(([field,label]) => (
                       <th key={field} onClick={() => toggleSort(field)}
                         className="py-3 px-3 text-left font-medium text-slate-600 cursor-pointer hover:text-slate-900 select-none whitespace-nowrap">
                         <span className="inline-flex items-center gap-1">{label}
@@ -810,12 +839,13 @@ export default function SubscriberPortfolioPage() {
                           {ASSET_LABELS[h.assetType] || h.assetType}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.quantity ?? "\u2014"}</td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.avgBuyPrice != null ? `\u20B9${Number(h.avgBuyPrice).toLocaleString("en-IN")}` : "\u2014"}</td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{h.currentPrice != null ? `\u20B9${Number(h.currentPrice).toLocaleString("en-IN")}` : "\u2014"}</td>
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash","real_estate"].includes(h.assetType) ? "\u2014" : (h.quantity ?? "\u2014")}</td>
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash"].includes(h.assetType) ? (h.interestRate ? h.interestRate + "%" : "\u2014") : (h.avgBuyPrice != null ? `\u20B9${Number(h.avgBuyPrice).toLocaleString("en-IN")}` : "\u2014")}</td>
+                      <td className="py-3 px-3 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash","real_estate"].includes(h.assetType) ? "\u2014" : (h.currentPrice != null ? `\u20B9${Number(h.currentPrice).toLocaleString("en-IN")}` : "\u2014")}</td>
                       <td className="py-3 px-3 font-medium text-slate-900 tabular-nums">{formatINR(h.currentValue ?? h.investedValue)}</td>
                       <td className={`py-3 px-3 font-medium tabular-nums ${pnlColor(h.gainLoss)}`}>{formatINR(h.gainLoss)}</td>
                       <td className={`py-3 px-3 font-medium tabular-nums ${pnlColor(h.gainLossPercent)}`}>{formatPercent(h.gainLossPercent)}</td>
+                      <td className="py-3 px-3 text-xs text-slate-500 max-w-[200px] truncate" title={assetDetails(h)}>{assetDetails(h)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -825,6 +855,7 @@ export default function SubscriberPortfolioPage() {
                     <td className="py-3 px-3 text-slate-900 tabular-nums">{formatINR(totals.current)}</td>
                     <td className={`py-3 px-3 tabular-nums ${pnlColor(totals.pnl)}`}>{formatINR(totals.pnl)}</td>
                     <td className={`py-3 px-3 tabular-nums ${pnlColor(totals.pnlPct)}`}>{formatPercent(totals.pnlPct)}</td>
+                    <td></td>
                   </tr>
                 </tfoot>
               </table>
