@@ -3891,7 +3891,153 @@ export async function registerRoutes(
   });
 
     
-  // ─── Advisor Branding Routes ─────────────────────────────────
+
+  // ─── Advisor Bank & Payment Routes ───────────────────────────
+
+  // Get advisor bank details (advisor sees own, admin sees any)
+  app.get("/api/advisor/bank-details", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(
+        sql`SELECT * FROM advisor_bank_details WHERE advisor_id = ${req.session.userId}`
+      );
+      const row = ((result as any).rows || [])[0];
+      res.json(row || { advisor_id: req.session.userId });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Save advisor bank details
+  app.put("/api/advisor/bank-details", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { bankName, accountNumber, ifscCode, accountHolderName, upiId, accountType, micrCode, branchAddress } = req.body;
+      const existing = await db.execute(
+        sql`SELECT id FROM advisor_bank_details WHERE advisor_id = ${req.session.userId}`
+      );
+      if (((existing as any).rows || []).length > 0) {
+        await db.execute(sql`UPDATE advisor_bank_details SET
+          bank_name = ${bankName || null}, account_number = ${accountNumber || null},
+          ifsc_code = ${ifscCode || null}, account_holder_name = ${accountHolderName || null},
+          upi_id = ${upiId || null}, account_type = ${accountType || 'savings'},
+          micr_code = ${micrCode || null}, branch_address = ${branchAddress || null}, updated_at = NOW()
+          WHERE advisor_id = ${req.session.userId}`);
+      } else {
+        await db.execute(sql`INSERT INTO advisor_bank_details (advisor_id, bank_name, account_number, ifsc_code, account_holder_name, upi_id, account_type, micr_code, branch_address)
+          VALUES (${req.session.userId}, ${bankName || null}, ${accountNumber || null}, ${ifscCode || null}, ${accountHolderName || null}, ${upiId || null}, ${accountType || 'savings'}, ${micrCode || null}, ${branchAddress || null})`);
+      }
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Get advisor revenue summary
+  app.get("/api/advisor/revenue", requireAdvisor, async (req: any, res: any) => {
+    try {
+      // Total revenue = sum of all credits
+      const credits = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE advisor_id = ${req.session.userId} AND type = 'credit'`
+      );
+      const totalRevenue = Number(((credits as any).rows || [])[0]?.total) || 0;
+
+      // Total paid = sum of completed debits (payouts)
+      const debits = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE advisor_id = ${req.session.userId} AND type = 'debit' AND status = 'completed'`
+      );
+      const totalPaid = Number(((debits as any).rows || [])[0]?.total) || 0;
+
+      // Pending requests
+      const pending = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE advisor_id = ${req.session.userId} AND type = 'debit' AND status = 'pending'`
+      );
+      const pendingAmount = Number(((pending as any).rows || [])[0]?.total) || 0;
+
+      const claimable = totalRevenue - totalPaid - pendingAmount;
+
+      res.json({ totalRevenue, totalPaid, pendingAmount, claimable });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Get advisor payment history
+  app.get("/api/advisor/payments", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(
+        sql`SELECT * FROM advisor_payments WHERE advisor_id = ${req.session.userId} ORDER BY requested_at DESC`
+      );
+      res.json((result as any).rows || []);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Advisor requests payment
+  app.post("/api/advisor/request-payment", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { amount, notes } = req.body;
+      if (!amount || Number(amount) <= 0) return res.status(400).json({ error: "Invalid amount" });
+      await db.execute(sql`INSERT INTO advisor_payments (advisor_id, amount, type, status, notes)
+        VALUES (${req.session.userId}, ${Number(amount)}, 'debit', 'pending', ${notes || 'Payment request'})`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ─── Admin: Bank & Payment Management ────────────────────────
+
+  // Admin: View advisor bank details
+  app.get("/api/admin/advisor/:id/bank-details", requireAdmin, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(
+        sql`SELECT b.*, u.username, u.company_name, u.email FROM advisor_bank_details b
+            JOIN users u ON u.id = b.advisor_id WHERE b.advisor_id = ${req.params.id}`
+      );
+      res.json(((result as any).rows || [])[0] || null);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Admin: View advisor revenue + payments
+  app.get("/api/admin/advisor/:id/payments", requireAdmin, async (req: any, res: any) => {
+    try {
+      const payments = await db.execute(
+        sql`SELECT * FROM advisor_payments WHERE advisor_id = ${req.params.id} ORDER BY requested_at DESC`
+      );
+      const credits = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE advisor_id = ${req.params.id} AND type = 'credit'`
+      );
+      const debits = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE advisor_id = ${req.params.id} AND type = 'debit' AND status = 'completed'`
+      );
+      const pending = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE advisor_id = ${req.params.id} AND type = 'debit' AND status = 'pending'`
+      );
+      const totalRevenue = Number(((credits as any).rows || [])[0]?.total) || 0;
+      const totalPaid = Number(((debits as any).rows || [])[0]?.total) || 0;
+      const pendingAmount = Number(((pending as any).rows || [])[0]?.total) || 0;
+      res.json({
+        payments: (payments as any).rows || [],
+        summary: { totalRevenue, totalPaid, pendingAmount, claimable: totalRevenue - totalPaid - pendingAmount }
+      });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Admin: Add revenue credit to advisor
+  app.post("/api/admin/advisor/:id/add-revenue", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { amount, notes } = req.body;
+      if (!amount || Number(amount) <= 0) return res.status(400).json({ error: "Invalid amount" });
+      await db.execute(sql`INSERT INTO advisor_payments (advisor_id, amount, type, status, notes, processed_by, processed_at)
+        VALUES (${req.params.id}, ${Number(amount)}, 'credit', 'completed', ${notes || 'Revenue credit'}, ${req.session.userId}, NOW())`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Admin: Process payment (approve/reject pending request)
+  app.put("/api/admin/advisor/:id/process-payment/:paymentId", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { status, notes } = req.body;
+      if (!["completed", "rejected"].includes(status)) return res.status(400).json({ error: "Invalid status" });
+      await db.execute(sql`UPDATE advisor_payments SET
+        status = ${status}, processed_by = ${req.session.userId}, processed_at = NOW(),
+        notes = COALESCE(${notes}, notes)
+        WHERE id = ${req.params.paymentId} AND advisor_id = ${req.params.id}`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+    // ─── Advisor Branding Routes ─────────────────────────────────
 
   // Upload advisor logo for PDF reports
   app.post("/api/advisor/branding/upload-logo", requireAdvisor, async (req: any, res: any) => {
