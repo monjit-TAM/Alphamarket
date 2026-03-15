@@ -3772,7 +3772,76 @@ export async function registerRoutes(
     }
   });
 
-    // ─── PMLA Routes ───────────────────────────────────────────────
+    
+  // ─── Advisor Branding Routes ─────────────────────────────────
+
+  // Upload advisor logo for PDF reports
+  app.post("/api/advisor/branding/upload-logo", requireAdvisor, async (req: any, res: any) => {
+    try {
+      if (!req.files || !req.files.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const file = req.files.file;
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (!["jpg", "jpeg", "png", "webp"].includes(ext || "")) {
+        return res.status(400).json({ error: "Only image files allowed (jpg, jpeg, png, webp)" });
+      }
+      const fileName = req.session.userId + "-logo-" + Date.now() + "." + ext;
+      const uploadDir = "/var/www/alphamarket/uploads/logos";
+      const fs = require("fs");
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+      await file.mv(uploadDir + "/" + fileName);
+      const url = "/uploads/logos/" + fileName;
+
+      // Save to users table
+      await db.execute(sql`UPDATE users SET logo_url = ${url} WHERE id = ${req.session.userId}`);
+      res.json({ url, fileName });
+    } catch (err: any) {
+      console.error("[Branding] Logo upload error:", err.message);
+      res.status(500).json({ error: "Failed to upload logo" });
+    }
+  });
+
+  // Get advisor branding settings
+  app.get("/api/advisor/branding", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(
+        sql`SELECT logo_url, sebi_reg_number, custom_disclaimer, advisor_contact, advisor_website, company_name
+            FROM users WHERE id = ${req.session.userId}`
+      );
+      const row = ((result as any).rows || [])[0];
+      res.json({
+        logoUrl: row?.logo_url || null,
+        sebiRegNumber: row?.sebi_reg_number || "",
+        customDisclaimer: row?.custom_disclaimer || "",
+        advisorContact: row?.advisor_contact || "",
+        advisorWebsite: row?.advisor_website || "",
+        companyName: row?.company_name || "",
+      });
+    } catch (err: any) {
+      console.error("[Branding] Fetch error:", err.message);
+      res.status(500).json({ error: "Failed to fetch branding" });
+    }
+  });
+
+  // Save advisor branding settings
+  app.put("/api/advisor/branding", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { sebiRegNumber, customDisclaimer, advisorContact, advisorWebsite } = req.body;
+      await db.execute(sql`UPDATE users SET
+        sebi_reg_number = ${sebiRegNumber || null},
+        custom_disclaimer = ${customDisclaimer || null},
+        advisor_contact = ${advisorContact || null},
+        advisor_website = ${advisorWebsite || null}
+        WHERE id = ${req.session.userId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[Branding] Save error:", err.message);
+      res.status(500).json({ error: "Failed to save branding" });
+    }
+  });
+
+  // ─── PMLA Routes ───────────────────────────────────────────────
 
   app.get("/api/pmla/status", requireAuth, async (req: any, res: any) => {
     try {
@@ -4726,19 +4795,45 @@ export async function registerRoutes(
       const rptId = "RPT-" + Date.now().toString(36).toUpperCase();
       const rptDate = new Date().toLocaleString("en-IN", { dateStyle: "long", timeStyle: "short", timeZone: "Asia/Kolkata" });
 
+      // Fetch advisor branding for PDF
+      let branding: any = {};
+      if (req.session?.userId) {
+        try {
+          const brandRes = await db.execute(
+            sql`SELECT logo_url, sebi_reg_number, custom_disclaimer, advisor_contact, advisor_website, company_name
+                FROM users WHERE id = ${req.session.userId}`
+          );
+          const bRow = ((brandRes as any).rows || [])[0];
+          if (bRow) {
+            branding = {
+              logoUrl: bRow.logo_url || null,
+              sebiRegNumber: bRow.sebi_reg_number || "",
+              customDisclaimer: bRow.custom_disclaimer || "",
+              advisorContact: bRow.advisor_contact || "",
+              advisorWebsite: bRow.advisor_website || "",
+              companyName: bRow.company_name || "",
+            };
+          }
+        } catch (e) {}
+      }
+      // Merge frontend branding overrides (from dialog) if provided
+      if (req.body?.branding) {
+        branding = { ...branding, ...req.body.branding };
+      }
+
       let reportData;
       if (preAnalyzed) {
         // Use advisor-edited data directly
         reportData = {
           ...preAnalyzed,
-          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate,
+          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate, branding,
         };
       } else {
         reportData = {
           equity: equityData ? { ...equityData, healthScore: equityData.healthScore, sectorAllocation: equityData.sectorAllocation, enhancedRecommendations: equityData.enhancedRecommendations, quantamental: equityData.quantamental, rebalancing: equityData.rebalancing, taxImpact: equityData.taxImpact, dividends: equityData.dividends, scenarios: equityData.scenarios, investmentStyle: equityData.investmentStyle, valueAnalysis: equityData.valueAnalysis, growthAnalysis: equityData.growthAnalysis } : null,
           mutualFunds: mfData,
           combined: { totalInvested: totI, currentValue: totC, totalPnl: totC - totI, totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0, assetAllocation: { equity: { current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 }, mutualFunds: { current: mfC2, percent: totC > 0 ? (mfC2 / totC) * 100 : 0 } } },
-          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate,
+          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate, branding,
         };
       }
 

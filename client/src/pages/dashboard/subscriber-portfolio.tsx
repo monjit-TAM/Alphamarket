@@ -31,6 +31,9 @@ import {
   Shield,
   Search,
   Download,
+  Settings,
+  X,
+  Image,
 } from "lucide-react";
 import {
   PieChart,
@@ -475,13 +478,67 @@ export default function SubscriberPortfolioPage() {
   const runDeepAnalysis = () => deepAnalysisMut.mutate();
 
   const [downloadingReport, setDownloadingReport] = useState(false);
-  const downloadReport = async () => {
+  const [showPdfDialog, setShowPdfDialog] = useState(false);
+  const [pdfBranding, setPdfBranding] = useState<any>({
+    logoUrl: null, sebiRegNumber: "", customDisclaimer: "", advisorContact: "", advisorWebsite: "", companyName: "",
+  });
+  const [brandingLoaded, setBrandingLoaded] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch saved branding when dialog opens
+  const loadBranding = async () => {
+    if (brandingLoaded) return;
+    try {
+      const res = await fetch("/api/advisor/branding", { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setPdfBranding(data);
+        setBrandingLoaded(true);
+      }
+    } catch (e) {}
+  };
+
+  const uploadLogo = async (file: File) => {
+    setUploadingLogo(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/advisor/branding/upload-logo", { method: "POST", credentials: "include", body: fd });
+      if (res.ok) {
+        const data = await res.json();
+        setPdfBranding((prev: any) => ({ ...prev, logoUrl: data.url }));
+        toast({ title: "Logo uploaded" });
+      }
+    } catch (e) { toast({ title: "Upload failed", variant: "destructive" }); }
+    setUploadingLogo(false);
+  };
+
+  const saveBranding = async () => {
+    try {
+      await fetch("/api/advisor/branding", {
+        method: "PUT", credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sebiRegNumber: pdfBranding.sebiRegNumber,
+          customDisclaimer: pdfBranding.customDisclaimer,
+          advisorContact: pdfBranding.advisorContact,
+          advisorWebsite: pdfBranding.advisorWebsite,
+        }),
+      });
+    } catch (e) {}
+  };
+  const downloadReport = async (brandingOverrides?: any) => {
     setDownloadingReport(true);
     try {
       const bodyPayload: any = {};
       // Pass advisor-edited deep analysis so edits appear in PDF
       if (deepAnalysis) {
         bodyPayload.deepAnalysis = deepAnalysis;
+      }
+      // Pass branding settings
+      if (brandingOverrides) {
+        bodyPayload.branding = brandingOverrides;
       }
       const res = await fetch("/api/portfolio/" + portfolioId + "/report", {
         method: "POST", credentials: "include",
@@ -495,6 +552,7 @@ export default function SubscriberPortfolioPage() {
       a.href = url; a.download = "AlphaMarket_Report_" + new Date().toISOString().slice(0, 10) + ".pdf";
       a.click(); URL.revokeObjectURL(url);
       toast({ title: "Report Downloaded" });
+      setShowPdfDialog(false);
     } catch (e: any) { toast({ title: "Download failed", description: e.message, variant: "destructive" }); }
     setDownloadingReport(false);
   };
@@ -999,11 +1057,98 @@ export default function SubscriberPortfolioPage() {
               className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg px-3 py-2">Stock Analyzer</a>
             <a href="https://mf.alphamarket.co.in" target="_blank" rel="noreferrer"
               className="text-xs text-violet-600 hover:text-violet-700 border border-violet-200 rounded-lg px-3 py-2">MF Analyzer</a>
-            <button onClick={() => downloadReport()} disabled={!deepAnalysis || downloadingReport} className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors disabled:opacity-50"><Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Download PDF"}</button>
+            <button onClick={() => { setShowPdfDialog(true); loadBranding(); }} disabled={!deepAnalysis || downloadingReport} className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors disabled:opacity-50"><Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Download PDF"}</button>
           </div>
         </div>
         <DeepAnalysisPanel data={deepAnalysis} onUpdate={(d: any) => setDeepAnalysis(d)} />
       </div>
+
+      {/* PDF Download Dialog with Advisor Branding */}
+      {showPdfDialog && (
+        <ModalOverlay onClose={() => setShowPdfDialog(false)}>
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-4 border-b border-slate-200">
+              <h3 className="text-lg font-semibold text-slate-800">PDF Report Settings</h3>
+              <button onClick={() => setShowPdfDialog(false)} className="p-1 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
+            </div>
+
+            <div className="p-4 space-y-4">
+              {/* Logo Upload */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Company Logo</label>
+                <div className="flex items-center gap-3">
+                  {pdfBranding.logoUrl ? (
+                    <div className="relative">
+                      <img src={pdfBranding.logoUrl} alt="Logo" className="h-12 max-w-[160px] object-contain border border-slate-200 rounded-lg p-1" />
+                      <button onClick={() => setPdfBranding((p: any) => ({ ...p, logoUrl: null }))} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5"><X className="w-3 h-3" /></button>
+                    </div>
+                  ) : (
+                    <button onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo}
+                      className="flex items-center gap-2 px-4 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-slate-600 hover:bg-slate-50">
+                      <Image className="w-4 h-4" />{uploadingLogo ? "Uploading..." : "Upload Logo"}
+                    </button>
+                  )}
+                  <input ref={logoInputRef} type="file" accept="image/*" className="hidden"
+                    onChange={(e) => e.target.files?.[0] && uploadLogo(e.target.files[0])} />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Appears in PDF header. Recommended: PNG with transparent background, max 400x100px.</p>
+              </div>
+
+              {/* SEBI Registration */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">SEBI Registration Number</label>
+                <input type="text" value={pdfBranding.sebiRegNumber || ""} placeholder="e.g. INH000012345"
+                  onChange={(e) => setPdfBranding((p: any) => ({ ...p, sebiRegNumber: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+
+              {/* Contact */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Contact (phone or email)</label>
+                <input type="text" value={pdfBranding.advisorContact || ""} placeholder="e.g. +91 98765 43210 or advisor@example.com"
+                  onChange={(e) => setPdfBranding((p: any) => ({ ...p, advisorContact: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+
+              {/* Website */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Website</label>
+                <input type="text" value={pdfBranding.advisorWebsite || ""} placeholder="e.g. www.youradvisory.com"
+                  onChange={(e) => setPdfBranding((p: any) => ({ ...p, advisorWebsite: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+
+              {/* Custom Disclaimer */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Custom Disclaimer</label>
+                <textarea rows={3} value={pdfBranding.customDisclaimer || ""}
+                  placeholder="Leave blank to use the default AlphaMarket disclaimer"
+                  onChange={(e) => setPdfBranding((p: any) => ({ ...p, customDisclaimer: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none" />
+                <p className="text-xs text-slate-400 mt-1">Replaces the default disclaimer at the bottom of the report.</p>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex items-center justify-between p-4 border-t border-slate-200 bg-slate-50 rounded-b-xl">
+              <button onClick={() => { saveBranding(); toast({ title: "Branding saved" }); }}
+                className="text-sm text-blue-600 hover:text-blue-700 font-medium">
+                Save as Default
+              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setShowPdfDialog(false)}
+                  className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100">
+                  Cancel
+                </button>
+                <button onClick={() => { saveBranding(); downloadReport(pdfBranding); }} disabled={downloadingReport}
+                  className="flex items-center gap-1.5 px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-900 disabled:opacity-50">
+                  <Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Generate PDF"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
 
       {/* Manual Add Holding Modal — Asset-class specific fields */}
       {showManualAdd && (
