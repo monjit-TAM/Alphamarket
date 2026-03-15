@@ -2558,6 +2558,110 @@ export async function registerRoutes(
   });
 
     // Sync live prices for portfolio holdings
+
+  // ─── Non-Equity Price Sync Helper ────────────────────────────
+  async function syncNonEquityPrice(h: any): Promise<{ currentPrice: number; currentValue: number } | null> {
+    const type = h.asset_type;
+    const qty = Number(h.quantity) || 0;
+    const invested = Number(h.invested_value) || (qty * Number(h.avg_buy_price || 0));
+
+    // ETF — same as equity, use Groww live quote
+    if (type === "etf" && (h.symbol || h.name)) {
+      const quote = await getLiveQuote(h.symbol || h.name);
+      if (quote) return { currentPrice: quote.ltp, currentValue: qty * quote.ltp };
+    }
+
+    // Real estate — manual update only
+    if (type === "real_estate") {
+      return null;
+    }
+
+    // Gold — quantity is in grams, price is per gram
+    // Use GOLDBEES ETF (NSE) as proxy — 1 unit ≈ 1g gold price
+    if (type === "gold") {
+      try {
+        const goldEtfQuote = await getLiveQuote("GOLDBEES");
+        if (goldEtfQuote && goldEtfQuote.ltp > 0) {
+          // GOLDBEES tracks ~1g gold. Its price ≈ per gram price (approx, within 1-2%)
+          const pricePerGram = goldEtfQuote.ltp;
+          return { currentPrice: pricePerGram, currentValue: qty * pricePerGram };
+        }
+      } catch (e) { console.warn("[Sync] GOLDBEES quote unavailable"); }
+      // If market is closed, keep existing values
+      return null;
+    }
+
+    // FD — compound interest: A = P(1 + r/4)^(4t) (quarterly compounding)
+    if (type === "fd") {
+      const rate = Number(h.interest_rate) || 0;
+      const buyDate = h.buy_date ? new Date(h.buy_date) : null;
+      if (rate > 0 && buyDate) {
+        const years = (Date.now() - buyDate.getTime()) / (365.25 * 86400000);
+        const currentValue = invested * Math.pow(1 + rate / 400, 4 * years);
+        return { currentPrice: currentValue, currentValue };
+      }
+      return null;
+    }
+
+    // PPF — annual compounding at declared rate (default 7.1%)
+    if (type === "ppf") {
+      const rate = Number(h.interest_rate) || 7.1;
+      const buyDate = h.buy_date ? new Date(h.buy_date) : null;
+      if (buyDate) {
+        const years = (Date.now() - buyDate.getTime()) / (365.25 * 86400000);
+        const currentValue = invested * Math.pow(1 + rate / 100, years);
+        return { currentPrice: currentValue, currentValue };
+      }
+      return null;
+    }
+
+    // EPF — annual compounding at declared rate (default 8.25%)
+    if (type === "epf") {
+      const rate = Number(h.interest_rate) || 8.25;
+      const buyDate = h.buy_date ? new Date(h.buy_date) : null;
+      if (buyDate) {
+        const years = (Date.now() - buyDate.getTime()) / (365.25 * 86400000);
+        const currentValue = invested * Math.pow(1 + rate / 100, years);
+        return { currentPrice: currentValue, currentValue };
+      }
+      return null;
+    }
+
+    // NPS — annual compounding at declared rate (default 9.5%)
+    if (type === "nps") {
+      const rate = Number(h.interest_rate) || 9.5;
+      const buyDate = h.buy_date ? new Date(h.buy_date) : null;
+      if (buyDate) {
+        const years = (Date.now() - buyDate.getTime()) / (365.25 * 86400000);
+        const currentValue = invested * Math.pow(1 + rate / 100, years);
+        return { currentPrice: currentValue, currentValue };
+      }
+      return null;
+    }
+
+    // Bonds — simple coupon accrual
+    if (type === "bond") {
+      const rate = Number(h.interest_rate) || 0;
+      const buyDate = h.buy_date ? new Date(h.buy_date) : null;
+      if (rate > 0 && buyDate) {
+        const years = (Date.now() - buyDate.getTime()) / (365.25 * 86400000);
+        const accrued = invested * (rate / 100) * years;
+        const currentValue = invested + accrued;
+        return { currentPrice: currentValue / (qty || 1), currentValue };
+      }
+      // If no rate, try Groww by symbol (for listed bonds)
+      if (h.symbol) {
+        const quote = await getLiveQuote(h.symbol);
+        if (quote) return { currentPrice: quote.ltp, currentValue: qty * quote.ltp };
+      }
+      return null;
+    }
+
+    // Insurance — current value stays as invested (no market price)
+    // Real Estate — manual only, skip
+    return null;
+  }
+
   app.post("/api/portfolio/:id/sync-prices", requireAuth, async (req: any, res: any) => {
     try {
       const portfolio = await db.execute(sql`SELECT * FROM customer_portfolios WHERE id = ${req.params.id} LIMIT 1`);
@@ -2569,6 +2673,8 @@ export async function registerRoutes(
 
       for (const h of rows) {
         let currentPrice = 0;
+        let currentValue = 0;
+        let useDirect = false; // flag for lump-sum assets where currentValue is computed directly
 
         if (h.asset_type === "equity" && (h.symbol || h.name)) {
           const quote = await getLiveQuote(h.symbol || h.name);
@@ -2603,12 +2709,20 @@ export async function registerRoutes(
               }
             }
           } catch (e: any) { console.warn("[Portfolio] MF NAV lookup failed for " + h.name + ": " + e.message); }
+        } else {
+          // Non-equity/MF: Gold, FD, PPF, EPF, NPS, ETF, Bond
+          const result = await syncNonEquityPrice(h);
+          if (result) {
+            currentPrice = result.currentPrice;
+            currentValue = result.currentValue;
+            useDirect = true;
+          }
         }
 
-        if (currentPrice > 0) {
+        if (currentPrice > 0 || useDirect) {
           const qty = Number(h.quantity) || 0;
           const invested = Number(h.invested_value) || (qty * Number(h.avg_buy_price || 0));
-          const currentValue = qty * currentPrice;
+          if (!useDirect) currentValue = qty * currentPrice;
           const gl = currentValue - invested;
           const glp = invested > 0 ? (gl / invested) * 100 : 0;
 
@@ -2650,6 +2764,8 @@ export async function registerRoutes(
 
       for (const h of rows) {
         let currentPrice = 0;
+        let currentValue = 0;
+        let useDirect = false;
         if (h.asset_type === "equity" && (h.symbol || h.name)) {
           const quote = await getLiveQuote(h.symbol || h.name);
           if (quote) currentPrice = quote.ltp;
@@ -2683,11 +2799,14 @@ export async function registerRoutes(
               }
             }
           } catch (e: any) { console.warn("[Portfolio] MF NAV lookup failed for " + h.name + ": " + e.message); }
+        } else {
+          const result = await syncNonEquityPrice(h);
+          if (result) { currentPrice = result.currentPrice; currentValue = result.currentValue; useDirect = true; }
         }
-        if (currentPrice > 0) {
+        if (currentPrice > 0 || useDirect) {
           const qty = Number(h.quantity) || 0;
           const invested = Number(h.invested_value) || (qty * Number(h.avg_buy_price || 0));
-          const currentValue = qty * currentPrice;
+          if (!useDirect) currentValue = qty * currentPrice;
           const gl = currentValue - invested;
           const glp = invested > 0 ? (gl / invested) * 100 : 0;
           await db.execute(sql`
@@ -2699,7 +2818,6 @@ export async function registerRoutes(
           updated++;
         }
       }
-
       await db.execute(sql`UPDATE customer_portfolios SET last_synced = NOW() WHERE id = ${req.params.portfolioId}`);
       res.json({ success: true, updated, total: rows.length });
     } catch (err: any) {
