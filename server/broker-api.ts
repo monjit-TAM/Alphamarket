@@ -110,8 +110,8 @@ export function getSwaggerSpec() {
     openapi: "3.0.3",
     info: {
       title: "AlphaMarket Broker API",
-      version: "3.2.0",
-      description: "AlphaMarket API v3.3\n\nSEBI-registered investment advisor marketplace with full portfolio management, compliance, and financial planning.\n\n**v3.2 (Mar 2026):**\n- Portfolio Analyzer: 14 asset types, CSV/PDF import, live price sync\n- Suggestion Engine: 10 financial planning rules\n- Goal-Based Planning: 9 goal types with SIP projections\n- Advisor Recommendations: Action items + file attachments\n- Live Prices: Groww API (stocks) + mfapi.in (MF NAVs)\n- CAS/CAMS PDF Parser for mutual fund statements\n\n**v2.5:**\n- Advisor Microsite: 6-tab business config center\n- PMLA Verification: Bank account + name matching\n- Telegram Bot: 4-channel notification alerts\n\n**v2.3:**\n- Email/Push/In-app/Telegram notifications\n- Auto SL/Target + Trailing SL\n- Webhook events\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
+      version: "3.4.0",
+      description: "AlphaMarket API v3.4\n\nSEBI-registered investment advisor marketplace with full portfolio management, compliance, and financial planning.\n\n**v3.4 (17 Mar 2026):**\n- Admin Dashboard: Advisor analytics, dashboard stats, monetization config\n- PDF Reports: Donut charts, card-based stock layouts, top holdings bars\n- Portfolio UI: Sticky section nav, dark mode, mobile responsive\n- Monetization: Configurable pricing for DYOR, Stock/MF Analyzer, Portfolio Tool\n\n**v3.2 (Mar 2026):**\n- Portfolio Analyzer: 14 asset types, CSV/PDF import, live price sync\n- Suggestion Engine: 10 financial planning rules\n- Goal-Based Planning: 9 goal types with SIP projections\n- Advisor Recommendations: Action items + file attachments\n- Live Prices: Groww API (stocks) + mfapi.in (MF NAVs)\n- CAS/CAMS PDF Parser for mutual fund statements\n\n**v2.5:**\n- Advisor Microsite: 6-tab business config center\n- PMLA Verification: Bank account + name matching\n- Telegram Bot: 4-channel notification alerts\n\n**v2.3:**\n- Email/Push/In-app/Telegram notifications\n- Auto SL/Target + Trailing SL\n- Webhook events\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
       contact: { email: "hello@alphamarket.co.in", name: "AlphaMarket Team", url: "https://alphamarket.co.in" },
     },
     servers: [{ url: "https://alphamarket.co.in/api/v1", description: "Production" }],
@@ -341,6 +341,105 @@ export function getSwaggerSpec() {
           summary: "Health check (no auth required)",
           security: [],
           responses: { "200": { description: "OK" } },
+        },
+      },
+
+      "/admin/dashboard-stats": {
+        get: {
+          tags: ["Admin"],
+          summary: "Get platform-wide aggregate statistics",
+          description: "Returns total advisors, investors, strategies, active subscriptions, AUM, revenue, advisor credits, and calls this month.",
+          responses: {
+            200: {
+              description: "Dashboard stats",
+              content: { "application/json": { schema: { type: "object", properties: {
+                totalAdvisors: { type: "integer" },
+                totalInvestors: { type: "integer" },
+                totalStrategies: { type: "integer" },
+                activeSubscriptions: { type: "integer" },
+                totalAUM: { type: "number" },
+                totalRevenue: { type: "number" },
+                totalAdvisorCredits: { type: "number" },
+                callsThisMonth: { type: "integer" },
+              }}}},
+            },
+            401: { description: "Not authenticated" },
+            403: { description: "Admin access required" },
+          },
+        },
+      },
+      "/admin/advisor/{advisorId}/analytics": {
+        get: {
+          tags: ["Admin"],
+          summary: "Get per-advisor analytics",
+          description: "Returns calls/positions stats, subscriber counts, portfolio AUM, and sales revenue for a specific advisor.",
+          parameters: [
+            { name: "advisorId", in: "path", required: true, schema: { type: "string", format: "uuid" }, description: "Advisor user ID" },
+          ],
+          responses: {
+            200: {
+              description: "Advisor analytics",
+              content: { "application/json": { schema: { type: "object", properties: {
+                calls: { type: "object", properties: {
+                  total: { type: "integer" }, published: { type: "integer" }, active: { type: "integer" },
+                  closed: { type: "integer" }, thisWeek: { type: "integer" }, thisMonth: { type: "integer" },
+                  ytd: { type: "integer" }, hitRate: { type: "number" }, avgReturn: { type: "number" },
+                }},
+                customers: { type: "object", properties: {
+                  totalSubscribers: { type: "integer" }, newThisWeek: { type: "integer" },
+                  newThisMonth: { type: "integer" }, activeSubs: { type: "integer" }, churned: { type: "integer" },
+                }},
+                portfolios: { type: "object", properties: {
+                  totalPortfolios: { type: "integer" }, totalAUM: { type: "number" },
+                  avgPortfolioSize: { type: "number" }, largestPortfolio: { type: "number" },
+                  sizeBuckets: { type: "object" },
+                }},
+                sales: { type: "object", properties: {
+                  totalRevenue: { type: "number" }, weeklySales: { type: "number" },
+                  monthlySales: { type: "number" }, ytdSales: { type: "number" },
+                }},
+              }}}},
+            },
+          },
+        },
+      },
+      "/admin/monetization-config": {
+        get: {
+          tags: ["Admin"],
+          summary: "Get monetization configuration",
+          description: "Returns the current monetization config (pricing, free tiers, onboarding costs) or null if not yet configured.",
+          responses: {
+            200: { description: "Monetization config JSON or null" },
+          },
+        },
+        put: {
+          tags: ["Admin"],
+          summary: "Save monetization configuration",
+          description: "Saves monetization config to app_settings. Includes pricing for DYOR, Stock Analyzer, MF Analyzer, Portfolio Tool, Advisor Platform, and onboarding costs.",
+          requestBody: {
+            required: true,
+            content: { "application/json": { schema: { type: "object", properties: {
+              dyor: { type: "object", properties: { enabled: { type: "boolean" }, freeTierLimit: { type: "integer" }, proPrice: { type: "number" }, label: { type: "string" } }},
+              stockAnalyzer: { type: "object", properties: { enabled: { type: "boolean" }, freeTierLimit: { type: "integer" }, proPrice: { type: "number" } }},
+              mfAnalyzer: { type: "object", properties: { enabled: { type: "boolean" }, freeTierLimit: { type: "integer" }, proPrice: { type: "number" } }},
+              portfolioTool: { type: "object", properties: { enabled: { type: "boolean" }, proPrice: { type: "number" }, quarterlyPrice: { type: "number" } }},
+              advisorPlatform: { type: "object", properties: { enabled: { type: "boolean" }, freeClients: { type: "integer" }, proPrice: { type: "number" } }},
+              onboarding: { type: "object", properties: { ekycCost: { type: "number" }, esignCost: { type: "number" }, pmlaCost: { type: "number" }, strategy: { type: "string", enum: ["absorb", "pass_to_advisor", "pass_to_investor"] } }},
+            }}}},
+          },
+          responses: {
+            200: { description: "Success", content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" } }}}}},
+          },
+        },
+      },
+      "/monetization-config": {
+        get: {
+          tags: ["Public"],
+          summary: "Get public monetization config",
+          description: "Returns monetization pricing and free tier limits. Used by frontends to display pricing and gate access. No auth required.",
+          responses: {
+            200: { description: "Monetization config with defaults if not configured" },
+          },
         },
       },
     },
