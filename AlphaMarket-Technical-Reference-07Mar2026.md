@@ -1,5 +1,5 @@
 # AlphaMarket Ecosystem — Complete Technical Reference
-## Date: 7 March 2026 | Version: 2.2.0
+## Date: 17 March 2026 | Version: 3.4.0 (Updated from 2.2.0)
 ## Purpose: Complete context for a new agent to continue development
 
 ---
@@ -505,3 +505,134 @@ cd /var/www/alphamarket && git log --oneline -5
 ---
 
 *End of Technical Reference — AlphaMarket Ecosystem, 7 March 2026*
+
+
+---
+
+## 12. CHANGES SINCE v2.2.0 (7 Mar — 17 Mar 2026)
+
+### 12.1 New Applications & Services
+
+| Service | Port | Purpose | Endpoint |
+|---------|------|---------|----------|
+| AlphaMarket | 5001 | Main marketplace + portfolio platform | alphamarket.co.in |
+| Stock Analyzer | 5003 | Equity analysis engine | stocks.alphamarket.co.in |
+| MF Analyzer | 5002 | Mutual fund analysis engine | mf.alphamarket.co.in |
+
+### 12.2 New Database Tables (since v2.2)
+
+- `advisor_bank_details` — Bank account info for advisor payouts
+- `advisor_payments` — Revenue credits and payment requests (credit/debit, pending/completed/rejected)
+- `customer_portfolios` — Investor portfolios (multiple per user)
+- `portfolio_holdings` — 14 asset types with 23 columns (including premium, sum_assured, maturity_date, interest_rate, policy_number, provider)
+- `portfolio_suggestions` — AI-generated suggestions per portfolio
+- `portfolio_analyses` — Deep analysis results (owned by alphalensmf_user)
+- `advisor_recommendations` — Advisor action items with file attachments
+- `financial_goals` — 9 goal types with SIP projections
+- `advisor_microsites` — 6-tab advisor branding config
+- `advisor_questions` — Investor Q&A per advisor
+- `app_settings` — Key-value config store (Groww token, monetization_config)
+
+### 12.3 New API Endpoints (42 endpoints added)
+
+**Admin (requireAdmin):**
+- `GET /api/admin/dashboard-stats` — Platform aggregate stats
+- `GET /api/admin/advisor/:id/analytics` — Per-advisor analytics
+- `GET /api/admin/advisor/:id/bank-details` — Bank account info
+- `GET /api/admin/advisor/:id/payments` — Revenue/payment history
+- `POST /api/admin/advisor/:id/add-revenue` — Credit revenue
+- `PUT /api/admin/advisor/:id/process-payment/:paymentId` — Approve/reject
+- `GET /api/admin/monetization-config` — Read pricing config
+- `PUT /api/admin/monetization-config` — Save pricing config
+- `POST /api/admin/notifications` — Broadcast push notification
+
+**Public (no auth):**
+- `GET /api/monetization-config` — Pricing/free tier config
+
+**Portfolio (requireAuth):**
+- `POST /api/portfolio/import-csv` — CSV holdings import
+- `POST /api/portfolio/import-cas` — CAS PDF import
+- `POST /api/portfolio/:id/add-holding` — Manual holding add (14 asset types)
+- `POST /api/portfolio/:id/sync-prices` — Live price sync
+- `POST /api/portfolio/:id/deep-analysis` — Full analysis (equity + MF + other)
+- `GET /api/portfolio/:id/pdf-report` — Branded PDF generation
+- `PUT /api/portfolio/holding/:holdingId` — Manual price update
+- `POST /api/portfolio/:id/suggestions` — AI suggestions
+- `POST /api/portfolio/:id/goals` — Financial goals
+- `POST /api/portfolio/:id/recommend` — Advisor recommendation
+- `POST /api/portfolio/create` — Create new portfolio
+
+**Internal (server-to-server):**
+- `POST localhost:5002/api/analyze-direct` — MF direct analysis (no auth)
+- `POST localhost:5003/api/v1/analyze` — Stock analysis (X-API-Key)
+
+### 12.4 New Frontend Pages
+
+| Page | Path | Description |
+|------|------|-------------|
+| Admin Dashboard Home | /admin | 8 stat cards, clickable navigation |
+| Admin Monetization | /admin/monetization | Pricing config for 5 products |
+| Admin Advisors (updated) | /admin/advisors | Analytics tab, Bank & Pay dialog |
+| Subscriber Portfolio | /dashboard/subscriber/:id/portfolio | Full-page portfolio dashboard |
+| Deep Analysis Panel | (embedded component) | Multi-tab analysis results |
+| DYOR Research | /dyor | Stock research tool |
+| Advisor Microsite | /advisor/:slug | Public advisor profile |
+| Product Guide | (sidebar link) | Interactive walkthrough |
+
+### 12.5 PDF Report Engine (server/pdf-report.ts — 900+ lines)
+
+Built with PDFKit for A4 reports:
+- Cover page with advisor branding (logo, SEBI reg, contact)
+- Table of Contents with section checkboxes
+- Portfolio Overview with metric cards
+- Health Score with component breakdown
+- **Card-based stock holdings** (rounded boxes, accent bars, action badges)
+- **Asset Allocation donut chart** with center value and legend
+- **Top Holdings bar chart** (top 8 by value)
+- **Sector Allocation donut + horizontal bars**
+- Quantamental analysis per stock
+- Value & Growth analysis tables
+- Dividend yield + Tax impact (STCG/LTCG per Indian law)
+- MF Holdings with risk metrics
+- MF Stress Tests, Forward Projections, Health Check
+- MF Overlap + Stock-MF Cross-Asset Overlap
+- Other Assets (Gold, FD, RE, Insurance, PPF/NPS/EPF)
+- Investment Style Profile (Value vs Growth bar)
+- Rebalancing suggestions (card-style)
+- 5-section disclaimer page
+- Footer with advisor info + copyright
+
+### 12.6 Key Architecture Decisions
+
+1. **Deep analysis is cross-service**: AlphaMarket orchestrates calls to Stock Analyzer (5003) and MF Analyzer (5002), then combines results
+2. **MF Analyzer has direct endpoint**: `POST /api/analyze-direct` accepts JSON without session auth (for server-to-server)
+3. **Monetization config in app_settings**: JSON blob, not separate tables — easy to extend
+4. **Analytics counts both tables**: Recommendations = calls + positions (F&O uses positions table)
+5. **PDF uses PDFKit path API for donuts**: SVG-style arc drawing for pie/donut charts
+6. **Portfolio holdings table is polymorphic**: 14 asset types share one table with nullable columns (premium, sum_assured, etc.)
+7. **Sticky nav uses IntersectionObserver**: Active section tracking without scroll event listeners
+
+### 12.7 Git Repositories
+
+| Repo | URL | Branch |
+|------|-----|--------|
+| AlphaMarket | https://github.com/monjit-TAM/Alphamarket.git | main |
+| MF Analyzer | https://github.com/monjit-TAM/alphalensmf.git | main |
+
+### 12.8 Swagger API Documentation
+
+- **URL**: https://alphamarket.co.in/api/docs
+- **Version**: v3.4 (updated 17 Mar 2026)
+- **Tags**: Advisors, Strategies, Recommendations, Admin, Monetization, Public
+- **Auth**: x-api-key header (Broker API), session cookies (web app)
+
+### 12.9 Current PM2 Process List
+```
+alphamarket        (id: 140)  port 5001  /var/www/alphamarket
+alphalensmf        (id: 139)  port 5002  /var/www/alphalensmf
+alphalens-stocks   (id: 8)    port 5003  /var/www/alphalens-stocks
+```
+
+---
+
+*Updated: 17 March 2026 — v3.4.0*

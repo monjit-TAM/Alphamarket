@@ -765,3 +765,191 @@ Client-side routing with `wouter`. All routes defined in `client/src/App.tsx`:
 ---
 
 *This document provides a comprehensive overview of the AlphaMarket Connect platform. For implementation-level details, refer to the source code files listed in the Project Structure section.*
+
+
+---
+
+## 13. Updates Since v3.2 (7 Mar — 17 Mar 2026)
+
+### v3.3.0 — Portfolio Analysis Platform (8-12 Mar 2026)
+
+#### 13.1 Full-Page Advisor Portfolio View
+- Replaced popup dialog with full-page portfolio dashboard at `/dashboard/subscriber/:id/portfolio`
+- Shared Groww token API — Stock Analyzer uses same token as main app
+- ISIN-based CAS parser rewrite with proper folio handling and bond detection
+
+#### 13.2 Deep Analysis Engine (Cross-Service)
+- **Stock Analysis**: Integrated with AlphaLens Stock Analyzer (port 5003) via `POST /api/v1/analyze`
+- **Health Score**: Overall portfolio health with component scores (diversification, quality, momentum, risk)
+- **Sector Allocation**: Interactive pie chart with allocation percentages
+- **Recommendations**: Per-stock buy/hold/sell signals with rationale
+- **Quantamental Analysis**: Value + growth factor scores per stock
+- **Dividends & Tax**: Yield analysis, STCG/LTCG calculations per Indian tax law
+- **Investment Style**: Value vs growth tilt, momentum exposure, quality factor
+- **Rebalancing**: Weight-based suggestions with target allocations
+- **Scenarios/Stress Tests**: Bear/bull market impact projections
+
+#### 13.3 MF Deep Analysis
+- Category benchmarks for 18 fund types (Large Cap through Gilt)
+- Fund-by-fund analysis: performance rating, risk level, expense comparison
+- Stress test scenarios (2008 crisis, COVID, rate hike, etc.)
+- Forward projections (1/3/5/7/10 year expected/optimistic/pessimistic)
+- Health check (diversification, quality, overlap scores)
+- MF-MF overlap analysis within portfolio
+- Stock-MF cross-asset overlap detection
+
+#### 13.4 PDF Report Generator
+- PDFKit-based A4 report with branded cover page
+- Table of Contents on page 2 with section include/exclude checkboxes
+- Advisor branding: logo, SEBI reg, contact, website, custom disclaimer
+- Sections: Overview, Health Score, Equity Holdings, Sector Allocation, Quantamental, Value/Growth, Dividends/Tax, MF Analysis, MF Stress/Projections, MF Health/Overlap, Other Assets, Investment Style, Rebalancing, Disclaimer
+
+#### 13.5 Asset Class Support (14 Types)
+- **Equity**: Stocks with live price sync via Groww API
+- **Mutual Funds**: NAV sync via mfapi.in (AMFI data)
+- **Gold**: Quantity in grams, price per gram, manual update only
+- **Fixed Deposits**: Interest rate, maturity date, lock-in tracking
+- **Real Estate**: Property value with manual updates
+- **Insurance**: Premium, sum assured, policy number, provider, maturity
+- **PPF/NPS/EPF**: Tax optimization, VPF suggestion, corpus projection
+- **Bonds**: Yield comparison, credit risk
+- **Crypto/Cash**: Basic value tracking
+- Asset-class specific manual holding forms with different fields per type
+
+#### 13.6 Live Price Sync
+- Equity: Groww API with shared access token (persisted in app_settings)
+- Mutual Funds: mfapi.in with AMFI scheme code lookup
+- FD/PPF/EPF/NPS: Interest accrual calculation
+- ETF: Via Groww (same as equity)
+- Gold/Real Estate: Manual update via blue pencil icon
+
+#### 13.7 CAS PDF Parser
+- CDSL CAS statement parsing (primary)
+- ISIN-based scheme name lookup with rescue pass for missing schemes
+- Folio-level handling, bond detection
+- Auto-detect equity vs MF from statement format
+
+#### 13.8 Client Goals & Recommendations
+- 9 goal types with SIP projections and inflation adjustment
+- Set Financial Goal button next to Run Deep Analysis
+- Advisor recommendation workflow with action items + file attachments
+- Interactive advisor walkthrough + Product Guide
+
+### v3.3.1 — Advisor Bank & Payments (15-16 Mar 2026)
+
+#### 13.9 Admin Bank & Payment UI
+- Bank Details tab (read-only) showing advisor bank account info
+- Revenue tab with summary cards (Total Revenue, Paid Out, Pending, Claimable) + Add Revenue form
+- Payment History with pending approval/rejection workflow
+- "Bank & Pay" button on advisor rows in admin
+
+#### 13.10 Symbol & Data Fixes
+- GVT&D symbol fix (keep the &, use encodeURIComponent for API calls)
+- GOLDBEES proxy disabled (1:100 split made it invalid)
+- Manual price update endpoint: `PUT /api/portfolio/holding/:holdingId`
+- Groww symbol mapping for 50+ stocks
+- Gold: quantity=grams, price=per gram convention
+
+#### 13.11 Enhanced Asset Analysis Engine
+- FD ladder strategy + rate comparison
+- Insurance term vs ULIP + adequate coverage (10-15x income)
+- Gold historical returns + SGB recommendation
+- PPF/NPS tax optimization + corpus projection
+- EPF VPF suggestion
+- Bond yield comparison
+- Overall asset allocation review
+
+#### 13.12 Dashboard UI Overhaul
+- Professional summary cards (3xl font, icon badges)
+- Card-wrapped toolbar with IMPORT/ACTIONS groups
+- Larger pie charts, spacious table rows
+- Section navigator pills with smooth scroll
+- Collapsible sections with better styling
+
+### v3.4.0 — Admin Analytics & Monetization (17 Mar 2026)
+
+#### 13.13 Admin Dashboard & Advisor Analytics
+- **Dashboard Home** (`/admin`): 8 clickable stat cards — Total Advisors, Investors, Strategies, Active Subscriptions, Total AUM, Revenue, Advisor Credits, Calls This Month
+- **Advisor Analytics Tab**: 4th tab in Bank & Pay dialog — Recommendations (calls + positions), Subscribers, Portfolio Analytics (AUM, size buckets), Sales & Revenue
+- **APIs**: `GET /api/admin/dashboard-stats`, `GET /api/admin/advisor/:id/analytics`
+- **Sidebar**: Dashboard > Advisors > Strategies > Monetization > Settings
+
+#### 13.14 Monetization Config
+- **Admin UI** (`/admin/monetization`): Configurable pricing for 5 products
+- DYOR (5 free/mo, Rs 299 Pro), Stock Analyzer (3 free, Rs 499), MF Analyzer (2 free, Rs 399), Portfolio Tool (Rs 499/mo), Advisor Platform (Rs 2999/mo)
+- Onboarding costs: eKYC Rs 10, eSigning Rs 15, PMLA Rs 3
+- Revenue projections with auto-calculation
+- **APIs**: `GET /api/monetization-config` (public), `GET/PUT /api/admin/monetization-config` (admin)
+
+#### 13.15 PDF Report Polish
+- Card-based stock holdings with rounded boxes, accent bars, action badges
+- Asset Allocation donut chart with center value label
+- Top Holdings horizontal bar chart (top 8)
+- Sector Allocation donut chart + redesigned horizontal bars
+- Better page break thresholds, dynamic card heights
+- Tax impact P&L field mapping fix
+
+#### 13.16 Portfolio Dashboard UI Polish
+- Sticky section navigator with IntersectionObserver active highlighting
+- Dark mode support (container, header, toolbar, chart cards, nav pills)
+- Mobile responsive toolbar (hidden labels, flex-wrap, scrollable nav)
+
+#### 13.17 MF Analyzer API Integration
+- New endpoint: `POST /api/analyze-direct` on MF Analyzer (port 5002) — no auth, JSON holdings
+- AlphaMarket deep analysis calls MF Analyzer API first (30s timeout), inline fallback
+- Fetches live NAVs + enriched fund metadata from mfapi.in
+
+### Updated Technical Metrics (17 Mar 2026)
+- **Backend Code**: ~5,400 lines (routes.ts) + ~700 lines (storage.ts) + ~900 lines (pdf-report.ts) + ~800 lines (cas-parser.ts)
+- **Database Schema**: ~400 lines, 49 tables, 4 enums
+- **Frontend Pages**: 30+ pages across 3 role dashboards
+- **API Endpoints**: 100+ REST endpoints + 6 Broker API v1 endpoints
+- **Swagger**: v3.4 at https://alphamarket.co.in/api/docs
+- **Third-Party Integrations**: 8 (Cashfree, SendGrid, Groww, mfapi.in, Sandbox.co.in, Web Push, AlphaLens Stock Analyzer, AlphaLens MF Analyzer)
+
+### 7.5 Admin APIs — Updated (17 Mar 2026)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/admin/users | List all users |
+| PATCH | /api/admin/users/:id | Update user (approve/edit) |
+| DELETE | /api/admin/users/:id | Delete user |
+| GET | /api/admin/strategies | List all strategies |
+| PATCH | /api/admin/strategies/:id | Update any strategy |
+| DELETE | /api/admin/strategies/:id | Delete any strategy |
+| GET | /api/admin/groww-token-status | Groww API token status |
+| POST | /api/admin/groww-token | Set Groww access token |
+| GET | /api/admin/dashboard-stats | Platform-wide aggregate stats |
+| GET | /api/admin/advisor/:id/analytics | Per-advisor analytics (calls, subs, AUM, sales) |
+| GET | /api/admin/advisor/:id/bank-details | Advisor bank account details |
+| GET | /api/admin/advisor/:id/payments | Advisor revenue & payment history |
+| POST | /api/admin/advisor/:id/add-revenue | Add revenue credit to advisor |
+| PUT | /api/admin/advisor/:id/process-payment/:paymentId | Approve/reject payment request |
+| GET | /api/admin/monetization-config | Read monetization pricing config |
+| PUT | /api/admin/monetization-config | Save monetization pricing config |
+| POST | /api/admin/notifications | Broadcast push notification |
+
+### 7.6 Public APIs — New
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | /api/monetization-config | Public pricing/free tier config (no auth) |
+
+### 7.7 Portfolio APIs (Added since v3.2)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | /api/portfolio/:id/deep-analysis | Run deep analysis (equity + MF + other assets) |
+| GET | /api/portfolio/:id/pdf-report | Generate branded PDF report |
+| PUT | /api/portfolio/holding/:holdingId | Manual price update for Gold/RE |
+| POST | /api/portfolio/:id/sync-prices | Live price sync (Groww + mfapi.in) |
+| POST | /api/portfolio/:id/suggestions | Generate AI suggestions |
+| POST | /api/portfolio/:id/goals | Set financial goals |
+| POST | /api/portfolio/:id/recommend | Advisor recommendation with attachment |
+
+### 7.8 Internal APIs
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | localhost:5002/api/analyze-direct | MF Analyzer direct analysis (no auth, JSON holdings) |
+| POST | localhost:5003/api/v1/analyze | Stock Analyzer (requires X-API-Key header) |
