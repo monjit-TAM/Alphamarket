@@ -35,48 +35,48 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
       } catch (e) {}
     }
     const headerTitle = branding?.companyName ? branding.companyName + " — Portfolio Report" : "AlphaMarket Portfolio Report";
-    doc.fontSize(14).fillColor("#ffffff").font("Helvetica-Bold").text(headerTitle, headerTextX, 12, { width: PAGE_W - headerTextX - M });
-    doc.fontSize(9).fillColor("#94a3b8").font("Helvetica").text(title, headerTextX, 32);
-    doc.fontSize(8).fillColor("#94a3b8").text(new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }), PAGE_W - 160, 32, { width: 120, align: "right" });
-    doc.y = 65;
+    doc.fontSize(15).fillColor("#ffffff").font("Helvetica-Bold").text(headerTitle, headerTextX, 10, { width: PAGE_W - headerTextX - M });
+    doc.fontSize(9).fillColor("#94a3b8").font("Helvetica").text(title, headerTextX, 30);
+    doc.fontSize(9).fillColor("#94a3b8").text(new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }), PAGE_W - 160, 30, { width: 120, align: "right" });
+    doc.y = 70;
   };
 
   const newPage = (t: string) => { doc.addPage(); pageHeader(t); };
-  const checkPage = (need = 50, t = "") => { if (doc.y > PAGE_H - M - need - 15) newPage(t); };
+  const checkPage = (need = 80, t = "") => { if (doc.y > PAGE_H - M - need - 30) newPage(t); };
 
   const section = (title: string, desc?: string) => {
-    checkPage(60);
-    doc.moveDown(0.5);
-    doc.rect(M, doc.y, 4, 16).fill(ACCENT);
-    doc.fontSize(12).fillColor(BRAND).font("Helvetica-Bold").text(title, M + 12, doc.y + 1);
-    doc.y += 20;
-    if (desc) { doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(desc, M, doc.y, { width: W }); doc.moveDown(0.3); }
+    checkPage(80);
+    doc.moveDown(0.8);
+    doc.rect(M, doc.y, 5, 22).fill(ACCENT);
+    doc.fontSize(16).fillColor(BRAND).font("Helvetica-Bold").text(title, M + 14, doc.y + 1);
+    doc.y += 28;
+    if (desc) { doc.fontSize(9).fillColor(GRAY).font("Helvetica").text(desc, M + 14, doc.y, { width: W - 14 }); doc.moveDown(0.4); }
     doc.moveTo(M, doc.y).lineTo(M + W, doc.y).strokeColor(BORDER).lineWidth(0.5).stroke();
-    doc.moveDown(0.4);
+    doc.moveDown(0.6);
   };
 
   const metricBox = (x: number, y: number, w: number, label: string, value: string, color?: string) => {
-    doc.rect(x, y, w, 42).fill(LIGHT).strokeColor(BORDER).lineWidth(0.5).stroke();
-    doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(label, x + 8, y + 6, { width: w - 16 });
-    doc.fontSize(12).fillColor(color || BRAND).font("Helvetica-Bold").text(value, x + 8, y + 20, { width: w - 16 });
+    doc.roundedRect(x, y, w, 55, 4).fill(LIGHT).strokeColor(BORDER).lineWidth(0.5).stroke();
+    doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(label, x + 12, y + 10, { width: w - 24 });
+    doc.fontSize(16).fillColor(color || BRAND).font("Helvetica-Bold").text(value, x + 12, y + 28, { width: w - 24 });
   };
 
   const tableHeader = (cols: { label: string; x: number; w: number }[]) => {
-    checkPage(22);
+    checkPage(26);
     const hy = doc.y;
-    doc.rect(M, hy, W, 18).fill("#f1f5f9");
+    doc.rect(M, hy, W, 22).fill("#f1f5f9").strokeColor(BORDER).lineWidth(0.3).stroke();
     for (const c of cols) {
       doc.save();
-      doc.fontSize(7).fillColor(GRAY).font("Helvetica-Bold").text(c.label, c.x, hy + 5, { width: c.w - 2, lineBreak: false });
+      doc.fontSize(8).fillColor(GRAY).font("Helvetica-Bold").text(c.label, c.x, hy + 7, { width: c.w - 2, lineBreak: false });
       doc.restore();
     }
-    doc.y = hy + 20;
+    doc.y = hy + 24;
     doc.x = M;
   };
 
-  const tableRow = (cols: { text: string; x: number; w: number; color?: string; bold?: boolean }[]) => {
+  const tableRow = (cols: { text: string; x: number; w: number; color?: string; bold?: boolean }[], rowIndex?: number) => {
     // Measure tallest column for row height
-    let maxH = 11;
+    let maxH = 14;
     for (const c of cols) {
       const txt = (c.text || "-").substring(0, 500);
       const h = doc.fontSize(8).font(c.bold ? "Helvetica-Bold" : "Helvetica").heightOfString(txt, { width: c.w - 4 });
@@ -98,7 +98,61 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     doc.y += 2;
   };
 
-  // Load advisor logo if available
+
+  // ─── Chart Helpers ───
+  const drawDonut = (cx: number, cy: number, radius: number, innerRadius: number, slices: { pct: number; color: string; label: string }[]) => {
+    let startAngle = -Math.PI / 2;
+    for (const slice of slices) {
+      if (slice.pct <= 0) continue;
+      const sweepAngle = (slice.pct / 100) * Math.PI * 2;
+      const endAngle = startAngle + sweepAngle;
+      // Draw arc segment using path
+      const x1 = cx + radius * Math.cos(startAngle);
+      const y1 = cy + radius * Math.sin(startAngle);
+      const x2 = cx + radius * Math.cos(endAngle);
+      const y2 = cy + radius * Math.sin(endAngle);
+      const ix1 = cx + innerRadius * Math.cos(endAngle);
+      const iy1 = cy + innerRadius * Math.sin(endAngle);
+      const ix2 = cx + innerRadius * Math.cos(startAngle);
+      const iy2 = cy + innerRadius * Math.sin(startAngle);
+      const largeArc = sweepAngle > Math.PI ? 1 : 0;
+      doc.path(`M ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} L ${ix1} ${iy1} A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${ix2} ${iy2} Z`).fill(slice.color);
+      startAngle = endAngle;
+    }
+  };
+
+  const drawLegend = (x: number, y: number, items: { color: string; label: string; value: string }[]) => {
+    let ly = y;
+    for (const item of items) {
+      doc.roundedRect(x, ly + 1, 10, 10, 2).fill(item.color);
+      doc.fontSize(8).fillColor(BRAND).font("Helvetica-Bold").text(item.label, x + 15, ly + 1, { width: 130, lineBreak: false });
+      doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(item.value, x + 145, ly + 1, { width: 60, lineBreak: false, align: "right" });
+      ly += 16;
+    }
+    return ly;
+  };
+
+  const drawGauge = (cx: number, cy: number, radius: number, score: number, maxScore: number, color: string) => {
+    // Background arc (180 degrees, bottom half)
+    const startA = Math.PI;
+    const endA = 2 * Math.PI;
+    // Background track
+    for (let a = startA; a < endA; a += 0.02) {
+      const x1 = cx + radius * Math.cos(a);
+      const y1 = cy + radius * Math.sin(a);
+      doc.circle(x1, y1, 3).fill("#eef2f7");
+    }
+    // Filled portion
+    const fillEnd = startA + (score / maxScore) * Math.PI;
+    for (let a = startA; a < fillEnd; a += 0.02) {
+      const x1 = cx + radius * Math.cos(a);
+      const y1 = cy + radius * Math.sin(a);
+      doc.circle(x1, y1, 3).fill(color);
+    }
+  };
+
+
+    // Load advisor logo if available
   if (branding?.logoUrl) {
     try {
       const fs = require("fs");
@@ -135,11 +189,70 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     doc.fontSize(8).fillColor("#94a3b8").font("Helvetica").text(
       (reportId ? "Report: " + reportId : "") + (generatedAt ? "  |  " + generatedAt : ""), M, doc.y
     );
-    doc.moveDown(0.5);
+    doc.moveDown(1);
   }
 
-  // Combined Summary
+  // Cover page summary metrics
   if (combined) {
+    doc.moveDown(2);
+    const coverY = doc.y;
+    const cbw = (W - 8) / 3;
+    doc.rect(M, coverY, cbw, 70).fill(LIGHT).strokeColor(BORDER).lineWidth(0.5).stroke();
+    doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Total Invested", M + 15, coverY + 12, { width: cbw - 30 });
+    doc.fontSize(20).fillColor(BRAND).font("Helvetica-Bold").text(fmt(combined.totalInvested), M + 15, coverY + 30, { width: cbw - 30 });
+
+    doc.rect(M + cbw + 4, coverY, cbw, 70).fill(LIGHT).strokeColor(BORDER).lineWidth(0.5).stroke();
+    doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Current Value", M + cbw + 19, coverY + 12, { width: cbw - 30 });
+    doc.fontSize(20).fillColor(BRAND).font("Helvetica-Bold").text(fmt(combined.currentValue), M + cbw + 19, coverY + 30, { width: cbw - 30 });
+
+    doc.rect(M + (cbw + 4) * 2, coverY, cbw, 70).fill(LIGHT).strokeColor(BORDER).lineWidth(0.5).stroke();
+    doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Total P&L", M + (cbw + 4) * 2 + 15, coverY + 12, { width: cbw - 30 });
+    doc.fontSize(20).fillColor(pCol(combined.totalPnl)).font("Helvetica-Bold").text(fmt(combined.totalPnl) + " (" + fmtPct(combined.totalPnlPercent) + ")", M + (cbw + 4) * 2 + 15, coverY + 30, { width: cbw - 30 });
+    doc.y = coverY + 80;
+  }
+
+  // ============ TABLE OF CONTENTS (Page 2) ============
+  const sections = data.sections || {};
+  const isEnabled = (key: string) => sections[key] !== false;
+
+  newPage("Table of Contents");
+  doc.moveDown(0.3);
+  doc.rect(M, doc.y, 4, 20).fill(ACCENT);
+  doc.fontSize(16).fillColor(BRAND).font("Helvetica-Bold").text("Table of Contents", M + 14, doc.y + 2);
+  doc.y += 30;
+  doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Complete portfolio analysis with detailed reports", M + 14, doc.y);
+  doc.moveDown(1);
+  const tocItems = [
+    { label: "Portfolio Overview", desc: "Investment summary & health score", key: "overview" },
+    { label: "Stock Analysis", desc: "Holdings, sector allocation & insights", key: "equity" },
+    { label: "Quantamental Analysis", desc: "Value & growth factor assessment", key: "quantamental" },
+    { label: "Value & Growth Analysis", desc: "Fundamental valuation metrics", key: "valueGrowth" },
+    { label: "Dividend Yield & Tax Impact", desc: "Income analysis & tax estimates", key: "dividendTax" },
+    { label: "Mutual Fund Analysis", desc: "Fund performance & recommendations", key: "mutualFunds" },
+    { label: "MF Stress Test & Projections", desc: "Risk scenarios & forward projections", key: "mfStress" },
+    { label: "MF Health Check & Overlap", desc: "Portfolio health & overlap analysis", key: "mfHealth" },
+    { label: "Other Assets", desc: "Gold, FD, Real Estate, Insurance & more", key: "otherAssets" },
+    { label: "Investment Style Profile", desc: "Value vs growth tilt analysis", key: "investmentStyle" },
+    { label: "Rebalancing Suggestions", desc: "Portfolio optimization & stress scenarios", key: "rebalancing" },
+  ];
+  let tocNum = 1;
+  for (const item of tocItems) {
+    if (!isEnabled(item.key)) continue;
+    const ty = doc.y;
+    // Draw row background for alternating items
+    if (tocNum % 2 === 0) doc.rect(M, ty - 2, W, 28).fill("#f8fafc");
+    doc.fontSize(10).fillColor(BRAND).font("Helvetica-Bold").text(tocNum + ".  " + item.label, M + 8, ty + 2, { width: W * 0.6 });
+    doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(item.desc, M + W * 0.55, ty + 5, { width: W * 0.4, align: "right" });
+    doc.y = ty + 28;
+    doc.moveTo(M, doc.y).lineTo(M + W, doc.y).strokeColor("#eef2f7").lineWidth(0.3).stroke();
+    doc.moveDown(0.1);
+    tocNum++;
+  }
+  doc.moveDown(1);
+
+  // Combined Summary — start on new page
+  if (combined && isEnabled("overview")) {
+    newPage("Portfolio Overview");
     section("Portfolio Overview");
     const y = doc.y;
     const bw = (W - 12) / 4;
@@ -147,24 +260,42 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     metricBox(M + bw + 4, y, bw, "Current Value", fmt(combined.currentValue));
     metricBox(M + (bw + 4) * 2, y, bw, "Total P&L", fmt(combined.totalPnl), pCol(combined.totalPnl));
     metricBox(M + (bw + 4) * 3, y, bw, "Returns", fmtPct(combined.totalPnlPercent), pCol(combined.totalPnlPercent));
-    doc.y = y + 50;
+    doc.y = y + 62;
 
-    // Asset allocation
+    // Asset allocation with donut chart
     const eq = combined.assetAllocation?.equity;
     const mf = combined.assetAllocation?.mutualFunds;
     if (eq && mf) {
-      doc.moveDown(0.3);
-      const aw = W / 2 - 4;
-      doc.rect(M, doc.y, aw, 30).fill("#eff6ff").strokeColor("#bfdbfe").lineWidth(0.5).stroke();
-      doc.fontSize(8).fillColor(ACCENT).font("Helvetica-Bold").text("Equity: " + fmt(eq.current) + " (" + Number(eq.percent).toFixed(0) + "%)", M + 8, doc.y + 10, { width: aw - 16 });
-      doc.rect(M + aw + 8, doc.y, aw, 30).fill("#f5f3ff").strokeColor("#c4b5fd").lineWidth(0.5).stroke();
-      doc.fontSize(8).fillColor("#7c3aed").font("Helvetica-Bold").text("Mutual Funds: " + fmt(mf.current) + " (" + Number(mf.percent).toFixed(0) + "%)", M + aw + 16, doc.y + 10, { width: aw - 16 });
-      doc.y += 38;
+      doc.moveDown(0.5);
+      const chartY = doc.y;
+      const otherPct = Math.max(0, 100 - Number(eq.percent) - Number(mf.percent));
+
+      // Donut chart
+      const donutCx = M + 70, donutCy = chartY + 65;
+      drawDonut(donutCx, donutCy, 55, 30, [
+        { pct: Number(eq.percent), color: ACCENT, label: "Equity" },
+        { pct: Number(mf.percent), color: "#7c3aed", label: "MF" },
+        { pct: otherPct, color: "#d97706", label: "Other" },
+      ]);
+      // Center label
+      doc.fontSize(14).fillColor(BRAND).font("Helvetica-Bold").text(fmt(combined.currentValue), donutCx - 38, donutCy - 12, { width: 76, align: "center" });
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Total Value", donutCx - 30, donutCy + 4, { width: 60, align: "center" });
+
+      // Legend
+      const legendX = M + 160;
+      const legendItems = [
+        { color: ACCENT, label: "Equity", value: fmt(eq.current) + " (" + Number(eq.percent).toFixed(0) + "%)" },
+        { color: "#7c3aed", label: "Mutual Funds", value: fmt(mf.current) + " (" + Number(mf.percent).toFixed(0) + "%)" },
+      ];
+      if (otherPct > 0) legendItems.push({ color: "#d97706", label: "Other Assets", value: otherPct.toFixed(0) + "%" });
+      drawLegend(legendX, chartY + 30, legendItems);
+
+      doc.y = chartY + 135;
     }
   }
 
   // Health Score
-  if (equity?.healthScore) {
+  if (equity?.healthScore && isEnabled("overview")) {
     const hs = equity.healthScore;
     section("Portfolio Health Score", hs.summary);
     const y = doc.y;
@@ -189,49 +320,155 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
   }
 
   // ============ PAGE 2: Stock Analysis ============
-  if (equity?.holdings?.length > 0) {
+  if (isEnabled("equity") && equity?.holdings?.length > 0) {
     newPage("Equity Analysis");
     section("Stock Holdings (" + equity.holdings.length + " stocks)");
 
-    const cols = [
-      { label: "Stock", x: M, w: 70 },
-      { label: "Sector", x: M + 70, w: 70 },
-      { label: "Buy Price", x: M + 140, w: 60 },
-      { label: "CMP", x: M + 200, w: 60 },
-      { label: "Value", x: M + 260, w: 65 },
-      { label: "P&L", x: M + 325, w: 60 },
-      { label: "P&L %", x: M + 385, w: 45 },
-      { label: "Action", x: M + 430, w: 85 },
-    ];
-    tableHeader(cols);
-
-    for (const h of equity.holdings) {
+    // Card-based stock holdings
+    for (let si = 0; si < equity.holdings.length; si++) {
+      const h = equity.holdings[si];
       const rec = equity.enhancedRecommendations?.find((r: any) => r.stockName === (h.stockName || h.symbol));
       const pnl = (h.pnl || h.totalPnl || 0);
       const pnlPct = (h.pnlPercent || h.totalPnlPercent || 0);
-      tableRow([
-        { text: h.stockName || h.symbol || "", x: M, w: 70, bold: true },
-        { text: h.sector || "-", x: M + 70, w: 70 },
-        { text: fmt(h.buyPrice || h.avgBuyPrice), x: M + 140, w: 60 },
-        { text: fmt(h.currentPrice || h.ltp), x: M + 200, w: 60 },
-        { text: fmt(h.currentValue || h.marketValue), x: M + 260, w: 65 },
-        { text: fmt(pnl), x: M + 325, w: 60, color: pCol(pnl) },
-        { text: fmtPct(pnlPct), x: M + 385, w: 45, color: pCol(pnlPct) },
-        { text: rec?.overallAction || "-", x: M + 430, w: 85, color: (rec?.overallAction || "").includes("Buy") ? GREEN : (rec?.overallAction || "").includes("Sell") ? RED : GRAY },
-      ]);
+      const action = rec?.overallAction || "-";
+      const actionCol = action.includes("Buy") ? GREEN : action.includes("Sell") ? RED : GRAY;
+
+      checkPage(85, "Equity Analysis");
+      const cardY = doc.y;
+      // Card background with rounded corners
+      doc.roundedRect(M, cardY, W, 72, 4).fill("#fafbfc").strokeColor(BORDER).lineWidth(0.5).stroke();
+      // Left accent bar based on P&L
+      doc.roundedRect(M, cardY, 4, 72, 2).fill(pCol(pnl));
+
+      // Stock name + sector
+      doc.fontSize(11).fillColor(BRAND).font("Helvetica-Bold").text(h.stockName || h.symbol || "", M + 14, cardY + 8, { width: 200, lineBreak: false });
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(h.sector || "", M + 14, cardY + 22, { width: 150, lineBreak: false });
+
+      // Action badge (top-right)
+      const badgeBg = action.includes("Buy") ? "#dcfce7" : action.includes("Sell") ? "#fef2f2" : "#f1f5f9";
+      const badgeW = Math.min(doc.widthOfString(action, { fontSize: 8 }) + 16, 90);
+      doc.roundedRect(M + W - badgeW - 10, cardY + 6, badgeW, 18, 9).fill(badgeBg).strokeColor(actionCol + "40").lineWidth(0.5).stroke();
+      doc.fontSize(8).fillColor(actionCol).font("Helvetica-Bold").text(action, M + W - badgeW - 2, cardY + 10, { width: badgeW - 16, align: "center" });
+
+      // Metrics row
+      const my = cardY + 38;
+      const mw = (W - 28) / 5;
+      // Buy Price
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Buy Price", M + 14, my, { width: mw, lineBreak: false });
+      doc.fontSize(9).fillColor(BRAND).font("Helvetica-Bold").text(fmt(h.buyPrice || h.avgBuyPrice), M + 14, my + 10, { width: mw, lineBreak: false });
+      // CMP
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("CMP", M + 14 + mw, my, { width: mw, lineBreak: false });
+      doc.fontSize(9).fillColor(BRAND).font("Helvetica-Bold").text(fmt(h.currentPrice || h.ltp), M + 14 + mw, my + 10, { width: mw, lineBreak: false });
+      // Value
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Value", M + 14 + mw * 2, my, { width: mw, lineBreak: false });
+      doc.fontSize(9).fillColor(BRAND).font("Helvetica-Bold").text(fmt(h.currentValue || h.marketValue), M + 14 + mw * 2, my + 10, { width: mw, lineBreak: false });
+      // P&L
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("P&L", M + 14 + mw * 3, my, { width: mw, lineBreak: false });
+      doc.fontSize(9).fillColor(pCol(pnl)).font("Helvetica-Bold").text(fmt(pnl), M + 14 + mw * 3, my + 10, { width: mw, lineBreak: false });
+      // P&L %
+      doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("Returns", M + 14 + mw * 4, my, { width: mw, lineBreak: false });
+      doc.fontSize(9).fillColor(pCol(pnlPct)).font("Helvetica-Bold").text(fmtPct(pnlPct), M + 14 + mw * 4, my + 10, { width: mw, lineBreak: false });
+
+      doc.y = cardY + 78;
     }
 
-    // Sector Allocation
-    if (equity.sectorAllocation) {
-      section("Sector Allocation");
-      for (const [sector, pct] of Object.entries(equity.sectorAllocation) as any) {
-        checkPage(14);
-        const barW = Math.min(pct * 4, W - 120);
-        doc.rect(M, doc.y, barW, 12).fill(ACCENT + "30");
-        doc.rect(M, doc.y, barW, 12).strokeColor(ACCENT).lineWidth(0.5).stroke();
-        doc.fontSize(8).fillColor(BRAND).font("Helvetica").text(sector + ": " + Number(pct).toFixed(1) + "%", M + barW + 8, doc.y + 2, { width: 200 });
-        doc.y += 16;
+    // Top Holdings by Value — horizontal bar chart
+    if (equity.holdings?.length > 0) {
+      checkPage(160, "Equity Analysis");
+      section("Top Holdings by Value");
+      const sorted = [...equity.holdings].sort((a: any, b: any) => (b.currentValue || b.marketValue || 0) - (a.currentValue || a.marketValue || 0)).slice(0, 8);
+      const maxVal = Number(sorted[0]?.currentValue || sorted[0]?.marketValue || 1);
+      const topColors = ["#2563eb","#7c3aed","#059669","#d97706","#dc2626","#0891b2","#4f46e5","#be185d"];
+
+      for (let ti = 0; ti < sorted.length; ti++) {
+        const h = sorted[ti];
+        const val = Number(h.currentValue || h.marketValue || 0);
+        const pnlPct = Number(h.pnlPercent || h.totalPnlPercent || 0);
+        const ry = doc.y;
+        const barMaxW = W - 200;
+        const barW = Math.max(10, (val / maxVal) * barMaxW);
+        const bCol = topColors[ti % topColors.length];
+
+        // Name
+        doc.fontSize(8).fillColor(BRAND).font("Helvetica-Bold").text((h.stockName || h.symbol || "").substring(0, 18), M + 4, ry + 4, { width: 100, lineBreak: false });
+        // Bar track
+        doc.roundedRect(M + 105, ry + 2, barMaxW, 16, 3).fill("#f1f5f9");
+        // Filled bar
+        doc.roundedRect(M + 105, ry + 2, barW, 16, 3).fill(bCol);
+        // Value label
+        if (barW > 60) {
+          doc.fontSize(7).fillColor("#ffffff").font("Helvetica-Bold").text(fmt(val), M + 110, ry + 6, { width: barW - 12, lineBreak: false });
+        } else {
+          doc.fontSize(7).fillColor(bCol).font("Helvetica-Bold").text(fmt(val), M + 110 + barW + 4, ry + 6, { width: 70, lineBreak: false });
+        }
+        // P&L badge
+        doc.fontSize(7).fillColor(pCol(pnlPct)).font("Helvetica-Bold").text(fmtPct(pnlPct), M + W - 50, ry + 5, { width: 48, align: "right", lineBreak: false });
+
+        doc.y = ry + 22;
       }
+      doc.moveDown(0.5);
+    }
+
+    // Sector Allocation — donut + horizontal bar chart
+    if (equity.sectorAllocation) {
+      newPage("Equity Analysis");
+      section("Sector Allocation");
+      const sColors = ["#2563eb","#7c3aed","#059669","#d97706","#dc2626","#0891b2","#4f46e5","#be185d","#65a30d","#a855f7"];
+      const sectors = Object.entries(equity.sectorAllocation).sort((a: any, b: any) => b[1] - a[1]) as any;
+      const maxPct = sectors.length > 0 ? Number(sectors[0][1]) : 100;
+
+      // Donut chart for sectors
+      if (sectors.length > 1) {
+        const chartY = doc.y;
+        const slices = sectors.map(([s, p]: [string, any], i: number) => ({ pct: Number(p), color: sColors[i % sColors.length], label: s }));
+        drawDonut(M + 70, chartY + 60, 50, 25, slices);
+        // Center text
+        doc.fontSize(10).fillColor(BRAND).font("Helvetica-Bold").text(sectors.length.toString(), M + 58, chartY + 52, { width: 24, align: "center" });
+        doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("sectors", M + 46, chartY + 65, { width: 48, align: "center" });
+
+        // Legend (right side)
+        const legendItems = sectors.slice(0, 6).map(([s, p]: [string, any], i: number) => ({
+          color: sColors[i % sColors.length], label: s, value: Number(p).toFixed(1) + "%"
+        }));
+        drawLegend(M + 160, chartY + 15, legendItems);
+        doc.y = chartY + 130;
+        doc.moveDown(0.3);
+      }
+
+      let sIdx = 0;
+      for (const [sector, pct] of sectors) {
+        checkPage(32, "Equity Analysis");
+        const pctNum = Number(pct);
+        const sCol = sColors[sIdx % sColors.length];
+        const ry = doc.y;
+
+        // Alternating row bg
+        if (sIdx % 2 === 0) doc.rect(M, ry, W, 28).fill("#f8fafc");
+
+        // Sector name (left)
+        doc.fontSize(9).fillColor(BRAND).font("Helvetica-Bold").text(sector, M + 8, ry + 8, { width: 140, lineBreak: false });
+
+        // Full-width bar area (from x=155 to end, relative to max value)
+        const barStartX = M + 155;
+        const barMaxW = W - 175;
+        const barW = Math.max(8, (pctNum / maxPct) * barMaxW);
+
+        // Bar track (subtle gray)
+        doc.roundedRect(barStartX, ry + 7, barMaxW, 14, 3).fill("#eef2f7");
+        // Filled bar
+        doc.roundedRect(barStartX, ry + 7, barW, 14, 3).fill(sCol);
+
+        // Percentage label inside or outside bar
+        if (barW > 40) {
+          doc.fontSize(8).fillColor("#ffffff").font("Helvetica-Bold").text(pctNum.toFixed(1) + "%", barStartX + 6, ry + 10, { width: barW - 12, lineBreak: false });
+        } else {
+          doc.fontSize(8).fillColor(sCol).font("Helvetica-Bold").text(pctNum.toFixed(1) + "%", barStartX + barW + 6, ry + 10, { width: 50, lineBreak: false });
+        }
+
+        doc.y = ry + 30;
+        sIdx++;
+      }
+      doc.moveDown(0.5);
     }
 
     // Quantamental Insights
@@ -259,8 +496,9 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     }
   }
 
+
   // ============ VALUE ANALYSIS ============
-  if (equity?.valueAnalysis?.length > 0) {
+  if (isEnabled("valueGrowth") && equity?.valueAnalysis?.length > 0) {
     newPage("Value & Growth Analysis");
     section("Value Analysis", "Fundamental valuation metrics for each stock.");
     const vcols = [
@@ -271,7 +509,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     ];
     tableHeader(vcols);
     for (const v of equity.valueAnalysis) {
-      checkPage(30, "Value & Growth Analysis");
+      checkPage(45, "Value & Growth Analysis");
       const sigCol = (v.signal || "").includes("Buy") ? GREEN : (v.signal || "").includes("Sell") ? RED : GRAY;
       tableRow([
         { text: v.stockName || "", x: M, w: 70, bold: true },
@@ -296,7 +534,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     ];
     tableHeader(gcols);
     for (const g of equity.growthAnalysis) {
-      checkPage(30, "Value & Growth Analysis");
+      checkPage(45, "Value & Growth Analysis");
       const fmtG = (n: any) => n != null ? (Number(n) >= 0 ? "+" : "") + Number(n).toFixed(1) + "%" : "-";
       const sigCol = (g.signal || "").includes("Buy") ? GREEN : (g.signal || "").includes("Sell") ? RED : GRAY;
       tableRow([
@@ -311,8 +549,9 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     }
   }
 
+
   // ============ DIVIDEND + TAX ============
-  if (equity?.dividends?.holdings?.length > 0) {
+  if (isEnabled("dividendTax") && equity?.dividends?.holdings?.length > 0) {
     newPage("Income & Tax");
     section("Dividend Yield Analysis");
     const totalIncome = equity.dividends.holdings.reduce((s: number, h: any) => s + (h.annualIncome || 0), 0);
@@ -339,16 +578,56 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
   if (equity?.taxImpact?.holdings?.length > 0) {
     section("Tax Impact Analysis");
     const ti = equity.taxImpact;
+    doc.fontSize(9).fillColor(GRAY).font("Helvetica").text("Tax calculations based on Indian tax laws. STCG: 20%, LTCG: 12.5% above \u20B91.25L exemption.", M, doc.y, { width: W });
+    doc.moveDown(0.5);
     const y = doc.y;
-    const tw = (W - 8) / 3;
-    metricBox(M, y, tw, "STCG", fmt(ti.totalSTCG), pCol(ti.totalSTCG));
-    metricBox(M + tw + 4, y, tw, "STCL", fmt(ti.totalSTCL), RED);
-    metricBox(M + (tw + 4) * 2, y, tw, "Estimated Tax", fmt(ti.estimatedTax), RED);
-    doc.y = y + 50;
+    const tw = (W - 16) / 4;
+    metricBox(M, y, tw, "Short-Term Capital Gains", fmt(ti.totalSTCG), pCol(ti.totalSTCG));
+    metricBox(M + tw + 4, y, tw, "Short-Term Capital Loss", fmt(ti.totalSTCL), RED);
+    metricBox(M + (tw + 4) * 2, y, tw, "Net Taxable Gains", fmt((ti.totalSTCG || 0) - Math.abs(ti.totalSTCL || 0)), BRAND);
+    metricBox(M + (tw + 4) * 3, y, tw, "Estimated Tax Liability", fmt(ti.estimatedTax), RED);
+    doc.y = y + 62;
+    doc.moveDown(0.5);
+    // Stock-wise tax table
+    if (ti.holdings?.length > 0) {
+      const txCols = [
+        { label: "Stock", x: M, w: 90 }, { label: "Buy Date", x: M + 90, w: 65 },
+        { label: "Holding Days", x: M + 155, w: 60 }, { label: "P&L", x: M + 215, w: 80 },
+        { label: "Tax Type", x: M + 295, w: 60 }, { label: "Term", x: M + 355, w: 50 },
+        { label: "Tax Rate", x: M + 405, w: 50 }, { label: "Est. Tax", x: M + 455, w: 60 },
+      ];
+      tableHeader(txCols);
+      for (const h of ti.holdings) {
+        const days = h.holdingDays || 0;
+        const term = days > 365 ? "LTCG" : "STCG";
+        const rate = days > 365 ? "12.5%" : "20%";
+        // Try multiple P&L field names from the analyzer
+        let pnl = Number(h.gain || h.pnl || h.totalPnl || h.gainLoss || h.gain_loss || 0);
+        // If still 0 but we have price data, calculate from prices
+        if (pnl === 0 && h.currentPrice && h.buyPrice && h.quantity) {
+          pnl = (Number(h.currentPrice) - Number(h.buyPrice)) * Number(h.quantity);
+        }
+        if (pnl === 0 && h.currentPrice && h.avgBuyPrice && h.quantity) {
+          pnl = (Number(h.currentPrice) - Number(h.avgBuyPrice)) * Number(h.quantity);
+        }
+        const tax = pnl > 0 ? (days > 365 ? Math.max(0, pnl - 125000) * 0.125 : pnl * 0.20) : 0;
+        tableRow([
+          { text: h.stock || h.stockName || "-", x: M, w: 90, bold: true },
+          { text: h.buyDate ? new Date(h.buyDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" }) : "-", x: M + 90, w: 65 },
+          { text: String(days), x: M + 155, w: 60 },
+          { text: fmt(pnl), x: M + 215, w: 80, color: pCol(pnl) },
+          { text: pnl > 0 ? term : "Loss", x: M + 295, w: 60, color: pnl > 0 ? ACCENT : RED },
+          { text: days > 365 ? "Long" : "Short", x: M + 355, w: 50 },
+          { text: pnl > 0 ? rate : "-", x: M + 405, w: 50 },
+          { text: tax > 0 ? fmt(tax) : "-", x: M + 455, w: 60, color: RED },
+        ]);
+      }
+    }
   }
 
+
   // ============ MF ANALYSIS ============
-  if (mutualFunds?.holdings?.length > 0) {
+  if (isEnabled("mutualFunds") && mutualFunds?.holdings?.length > 0) {
     newPage("Mutual Fund Analysis");
     section("Mutual Fund Holdings (" + mutualFunds.holdings.length + " funds)");
 
@@ -360,7 +639,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
       metricBox(M + bw + 4, y, bw, "Volatility", rm.avgVolatility + "%");
       metricBox(M + (bw + 4) * 2, y, bw, "Max Drawdown", rm.avgMaxDrawdown + "%", RED);
       metricBox(M + (bw + 4) * 3, y, bw, "Portfolio Risk", rm.portfolioRisk);
-      doc.y = y + 50;
+      doc.y = y + 62;
     }
 
     const mcols = [
@@ -371,7 +650,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     ];
     tableHeader(mcols);
     for (const f of mutualFunds.holdings) {
-      const name = (f.name || "").substring(0, 28);
+      const name = (f.name || "").substring(0, 45);
       tableRow([
         { text: name, x: M, w: 160, bold: true },
         { text: f.category || "-", x: M + 160, w: 70 },
@@ -387,18 +666,26 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     if (mutualFunds.recommendations?.length > 0) {
       section("MF Recommendations");
       for (const r of mutualFunds.recommendations) {
-        checkPage(30);
+        checkPage(55);
         const col = r.priority === "high" ? RED : r.priority === "medium" ? "#eab308" : GREEN;
-        doc.rect(M, doc.y, 3, 20).fill(col);
-        doc.fontSize(8).fillColor(BRAND).font("Helvetica-Bold").text(r.fund + " \u2014 " + r.action, M + 10, doc.y + 2, { width: W - 20 });
-        doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(r.reason, M + 10, doc.y + 14, { width: W - 20 });
-        doc.y += 28;
+        const bgCol = r.priority === "high" ? "#fef2f2" : r.priority === "medium" ? "#fffbeb" : "#f0fdf4";
+        // Measure text heights first
+        const titleH = doc.heightOfString(r.fund + " — " + r.action, { width: W - 32, fontSize: 9 });
+        const reasonH = doc.heightOfString(r.reason, { width: W - 32, fontSize: 8 });
+        const cardH = Math.max(36, titleH + reasonH + 20);
+        doc.roundedRect(M, doc.y, W, cardH, 3).fill(bgCol).strokeColor(BORDER).lineWidth(0.3).stroke();
+        doc.rect(M, doc.y, 4, cardH).fill(col);
+        const cardY = doc.y;
+        doc.fontSize(9).fillColor(BRAND).font("Helvetica-Bold").text(r.fund + " \u2014 " + r.action, M + 14, cardY + 8, { width: W - 32 });
+        doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(r.reason, M + 14, cardY + 8 + titleH + 4, { width: W - 32 });
+        doc.y = cardY + cardH + 6;
       }
     }
   }
 
+
   // ============ MF STRESS TESTS ============
-  if (mutualFunds?.stressTests?.length > 0) {
+  if (isEnabled("mfStress") && mutualFunds?.stressTests?.length > 0) {
     section("MF Stress Test Scenarios");
     const stCols = [
       { label: "Scenario", x: M, w: 180 }, { label: "Description", x: M + 180, w: 160 },
@@ -419,6 +706,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
 
   // ============ MF FORWARD PROJECTIONS ============
   if (mutualFunds?.forwardProjections?.length > 0) {
+    newPage("MF Projections");
     section("MF Forward Projections");
     const fpCols = [
       { label: "Horizon", x: M, w: 60 }, { label: "Expected", x: M + 60, w: 90 },
@@ -438,8 +726,9 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     }
   }
 
+
   // ============ MF HEALTH CHECK ============
-  if (mutualFunds?.healthCheck) {
+  if (isEnabled("mfHealth") && mutualFunds?.healthCheck) {
     section("MF Portfolio Health Check");
     const hc = mutualFunds.healthCheck;
     const hcEntries = Object.entries(hc);
@@ -452,7 +741,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
       metricBox(M + hx * (bw + 4), y, bw, label, val.status + " (" + val.score + ")", col);
       hx++;
     }
-    doc.y = y + 50;
+    doc.y = y + 62;
     for (const [key, val] of hcEntries as any) {
       if (val.message) {
         doc.fontSize(7).fillColor(GRAY).font("Helvetica").text("• " + key.replace(/([A-Z])/g, " $1").trim() + ": " + val.message, M + 8, doc.y, { width: W - 16 });
@@ -475,7 +764,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
   }
 
   // ============ STOCK-MF CROSS-ASSET OVERLAP (P4) ============
-  if (data.stockOverlap?.length > 0) {
+  if (isEnabled("mfHealth") && data.stockOverlap?.length > 0) {
     newPage("Cross-Asset Overlap");
     section("Stock-MF Overlap (" + data.stockOverlap.length + " overlapping stocks)", "Stocks held directly AND through mutual fund top holdings. High overlap = concentrated risk.");
     const olCols = [
@@ -508,10 +797,10 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     metricBox(M, y, bw, "Total Invested", fmt(oa.summary.totalInvested));
     metricBox(M + bw + 4, y, bw, "Current Value", fmt(oa.summary.currentValue));
     metricBox(M + (bw + 4) * 2, y, bw, "Holdings", String(oa.summary.holdingsCount));
-    doc.y = y + 50;
+    doc.y = y + 62;
 
     for (const cat of oa.categories) {
-      checkPage(50, "Other Assets");
+      checkPage(90, "Other Assets");
       section(cat.label + " (" + cat.count + ")");
       const oCols = [
         { label: "Name", x: M, w: 160 }, { label: "Invested", x: M + 160, w: 90 },
@@ -561,7 +850,7 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     metricBox(M, y, bw, "Style", ist.styleLabel);
     metricBox(M + bw + 4, y, bw, "Quality Factor", ist.qualityFactor || "-");
     metricBox(M + (bw + 4) * 2, y, bw, "Volatility", ist.volatilityTilt || "-");
-    doc.y = y + 50;
+    doc.y = y + 62;
 
     // Value vs Growth bar
     const valuePct = Number(ist.valueTilt || 50);
@@ -593,13 +882,17 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
     newPage("Rebalancing & Scenarios");
     section("Rebalancing Suggestions");
     for (const s of equity.rebalancing.suggestions) {
-      checkPage(16);
-      const col = s.action === "Decrease" || s.action === "Exit" ? RED : s.action === "Increase" ? GREEN : GRAY;
-      doc.fontSize(8).fillColor(BRAND).font("Helvetica-Bold").text(s.stockName + ": ", M, doc.y, { continued: true });
-      doc.fillColor(col).text(s.action, { continued: true });
-      doc.fillColor(GRAY).font("Helvetica").text("  " + Number(s.currentWeight).toFixed(1) + "% \u2192 " + Number(s.targetWeight).toFixed(1) + "%");
-      doc.fontSize(7).fillColor(GRAY).text("  " + s.reason, M + 8, doc.y);
-      doc.moveDown(0.3);
+      checkPage(40);
+      const col = s.action === "Decrease" || s.action === "Exit" ? RED : s.action === "Increase" ? GREEN : ACCENT;
+      const bgCol = s.action === "Decrease" || s.action === "Exit" ? "#fef2f2" : s.action === "Increase" ? "#f0fdf4" : LIGHT;
+      const rebalH = Math.max(38, doc.heightOfString(s.reason, { width: W - 28, fontSize: 8 }) + 26);
+      doc.roundedRect(M, doc.y, W, rebalH, 3).fill(bgCol).strokeColor(BORDER).lineWidth(0.3).stroke();
+      doc.rect(M, doc.y, 4, rebalH).fill(col);
+      const rbY = doc.y;
+      doc.fontSize(10).fillColor(BRAND).font("Helvetica-Bold").text(s.stockName, M + 14, rbY + 6, { width: 100, lineBreak: false });
+      doc.fontSize(9).fillColor(col).font("Helvetica-Bold").text(s.action + "  " + Number(s.currentWeight).toFixed(1) + "% \u2192 " + Number(s.targetWeight).toFixed(1) + "%", M + 130, rbY + 7, { width: W - 145, lineBreak: false });
+      doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(s.reason, M + 14, rbY + 22, { width: W - 28 });
+      doc.y = rbY + rebalH + 6;
     }
   }
 
@@ -615,13 +908,55 @@ export async function generatePortfolioReport(data: any): Promise<Buffer> {
   }
 
   // ============ DISCLAIMER ============
-  checkPage(80);
-  doc.moveDown(1);
-  doc.rect(M, doc.y, W, 1).fill(BORDER);
+  newPage("Important Disclaimers");
   doc.moveDown(0.5);
-  const defaultDisclaimer = "DISCLAIMER: This report is for informational purposes only and should not be construed as investment advice. Past performance is not indicative of future results. Consult a SEBI-registered advisor before making investment decisions. Generated by AlphaMarket Portfolio Analysis Engine.";
-  const disclaimerText = branding?.customDisclaimer || defaultDisclaimer;
-  doc.fontSize(7).fillColor(GRAY).font("Helvetica").text(disclaimerText, M, doc.y, { width: W, align: "justify" });
+  doc.rect(M, doc.y, W, 1).fill(BRAND);
+  doc.moveDown(0.8);
+  doc.fontSize(14).fillColor(BRAND).font("Helvetica-Bold").text("IMPORTANT DISCLAIMERS", M, doc.y);
+  doc.moveDown(0.8);
+  doc.moveTo(M, doc.y).lineTo(M + W, doc.y).strokeColor(BORDER).lineWidth(0.5).stroke();
+  doc.moveDown(0.6);
+
+  const disclaimerSections = [
+    { title: "General Disclaimer", text: "This portfolio analysis report is generated for informational purposes only and should not be construed as financial, investment, tax, or legal advice. The information contained in this report is based on historical data and current market conditions, which are subject to change without notice. Past performance is not indicative of future results. All investments involve risk, including the potential loss of principal." },
+    { title: "Investment Risk Disclaimer", text: "Individual stock and mutual fund recommendations in this report reflect statistical analysis and market trends but should not be considered as guarantees of future performance. Before making any investment decisions, we strongly recommend consulting with a SEBI-registered investment advisor who can assess your individual financial situation, risk tolerance, and investment objectives." },
+    { title: "Tax Disclaimer", text: "Tax calculations presented in this report are estimates based on prevailing tax rates as per Union Budget 2024. STCG is taxed at 20% and LTCG at 12.5% above \u20B91.25 lakh exemption per year. Actual tax liability may vary based on individual circumstances, applicable exemptions, and deductions. We strongly recommend consulting with a qualified Chartered Accountant or Tax Advisor for personalized tax planning." },
+    { title: "Data Accuracy", text: "Stock prices, NAVs, and market data are sourced from third-party providers including NSE, BSE, AMFI, and Groww. While we strive to provide accurate information, we do not guarantee the accuracy, completeness, or timeliness of any data presented. Dividend yields are based on trailing twelve-month data and may not reflect future payments." },
+    { title: "Regulatory Compliance", text: "AlphaMarket is a portfolio analysis tool and does not provide investment advisory services as defined under SEBI (Investment Advisers) Regulations, 2013. We do not execute trades, manage portfolios, or provide personalized investment recommendations. All investment decisions are the sole responsibility of the user." },
+  ];
+
+  for (const ds of disclaimerSections) {
+    checkPage(60);
+    doc.roundedRect(M, doc.y, W, 2, 1).fill(ACCENT + "20");
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor(BRAND).font("Helvetica-Bold").text(ds.title, M + 4, doc.y);
+    doc.moveDown(0.4);
+    doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(ds.text, M + 4, doc.y, { width: W - 8, align: "justify", lineGap: 2 });
+    doc.moveDown(0.8);
+  }
+
+  // Custom disclaimer from advisor
+  if (branding?.customDisclaimer) {
+    checkPage(50);
+    doc.roundedRect(M, doc.y, W, 2, 1).fill(ACCENT + "20");
+    doc.moveDown(0.3);
+    doc.fontSize(10).fillColor(BRAND).font("Helvetica-Bold").text("Advisor Disclaimer", M + 4, doc.y);
+    doc.moveDown(0.4);
+    doc.fontSize(8).fillColor(GRAY).font("Helvetica").text(branding.customDisclaimer, M + 4, doc.y, { width: W - 8, align: "justify", lineGap: 2 });
+    doc.moveDown(0.8);
+  }
+
+  // Footer
+  doc.moveDown(0.5);
+  doc.moveTo(M, doc.y).lineTo(M + W, doc.y).strokeColor(BORDER).lineWidth(0.5).stroke();
+  doc.moveDown(0.5);
+  const advisorInfo = branding?.companyName || "AlphaMarket";
+  const contactLine = [branding?.advisorContact, branding?.advisorWebsite].filter(Boolean).join(" | ");
+  doc.fontSize(8).fillColor(GRAY).font("Helvetica").text("Report generated by " + advisorInfo + " on " + new Date().toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) + ".", M, doc.y, { width: W });
+  if (contactLine) doc.fontSize(8).fillColor(GRAY).text(contactLine, M, doc.y);
+  if (branding?.sebiRegNumber) doc.fontSize(8).fillColor(GRAY).text("SEBI Registration: " + branding.sebiRegNumber, M, doc.y);
+  doc.moveDown(0.5);
+  doc.fontSize(7).fillColor("#94a3b8").font("Helvetica").text("\u00A9 " + new Date().getFullYear() + " " + advisorInfo + ". All rights reserved. This report is confidential and intended solely for the recipient.", M, doc.y, { width: W, align: "center" });
 
   // Finalize
   doc.end();

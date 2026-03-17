@@ -2576,18 +2576,10 @@ export async function registerRoutes(
       return null;
     }
 
-    // Gold — quantity is in grams, price is per gram
-    // Use GOLDBEES ETF (NSE) as proxy — 1 unit ≈ 1g gold price
+    // Gold — manual update only (no reliable auto-sync)
+    // GOLDBEES ETF is ~0.01g gold after 1:100 split, not a valid 1:1 proxy
+    // TODO: Integrate a gold price API (e.g. metals-api.com) and add domain to network allowlist
     if (type === "gold") {
-      try {
-        const goldEtfQuote = await getLiveQuote("GOLDBEES");
-        if (goldEtfQuote && goldEtfQuote.ltp > 0) {
-          // GOLDBEES tracks ~1g gold. Its price ≈ per gram price (approx, within 1-2%)
-          const pricePerGram = goldEtfQuote.ltp;
-          return { currentPrice: pricePerGram, currentValue: qty * pricePerGram };
-        }
-      } catch (e) { console.warn("[Sync] GOLDBEES quote unavailable"); }
-      // If market is closed, keep existing values
       return null;
     }
 
@@ -2962,6 +2954,32 @@ export async function registerRoutes(
   app.delete("/api/portfolio/holding/:holdingId", requireAuth, async (req: any, res: any) => {
     try {
       await db.execute(sql`DELETE FROM portfolio_holdings WHERE id = ${req.params.holdingId}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Update holding (manual price update for gold, real estate, etc.)
+  app.put("/api/portfolio/holding/:holdingId", requireAuth, async (req: any, res: any) => {
+    try {
+      const { currentPrice, quantity, avgBuyPrice } = req.body;
+      const holding = ((await db.execute(sql`SELECT * FROM portfolio_holdings WHERE id = ${req.params.holdingId}`)) as any).rows?.[0];
+      if (!holding) return res.status(404).json({ error: "Holding not found" });
+
+      const qty = quantity !== undefined ? Number(quantity) : Number(holding.quantity);
+      const buyPrice = avgBuyPrice !== undefined ? Number(avgBuyPrice) : Number(holding.avg_buy_price);
+      const curPrice = currentPrice !== undefined ? Number(currentPrice) : Number(holding.current_price);
+      const invested = qty * buyPrice;
+      const curValue = qty * curPrice;
+      const gl = curValue - invested;
+      const glPct = invested > 0 ? (gl / invested) * 100 : 0;
+
+      await db.execute(sql`UPDATE portfolio_holdings SET
+        quantity = ${qty}, avg_buy_price = ${buyPrice}, current_price = ${curPrice},
+        current_value = ${curValue}, invested_value = ${invested},
+        gain_loss = ${gl}, gain_loss_percent = ${glPct}, updated_at = NOW()
+        WHERE id = ${req.params.holdingId}`);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -3975,6 +3993,314 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
+
+
+  // ─── Admin: Monetization Config ────────────────────────────────
+
+  // Public: Get monetization config (for frontends to check limits/pricing)
+  app.get("/api/monetization-config", async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'monetization_config'`);
+      const row = ((result as any).rows || [])[0];
+      if (row) {
+        res.json(JSON.parse(row.value));
+      } else {
+        // Default config
+        res.json({
+          dyor: {
+            enabled: true,
+            freeTierLimit: 5,
+            freeTierPeriod: "month",
+            proPrice: 299,
+            proPeriod: "month",
+            enterprisePrice: 0,
+            label: "DYOR Research Tool",
+          },
+          stockAnalyzer: {
+            enabled: true,
+            freeTierLimit: 3,
+            freeTierPeriod: "month",
+            proPrice: 499,
+            proPeriod: "month",
+            label: "Stock Analyzer (AlphaLens)",
+          },
+          mfAnalyzer: {
+            enabled: true,
+            freeTierLimit: 2,
+            freeTierPeriod: "month",
+            proPrice: 399,
+            proPeriod: "month",
+            label: "MF Analyzer",
+          },
+          portfolioTool: {
+            enabled: true,
+            freeFeatures: "Basic portfolio view + sync",
+            proPrice: 499,
+            proPeriod: "month",
+            quarterlyPrice: 1999,
+            label: "Portfolio Evaluation Tool",
+          },
+          advisorPlatform: {
+            enabled: true,
+            freeClients: 10,
+            freeStrategies: 1,
+            proPrice: 2999,
+            proPeriod: "month",
+            label: "Advisor Platform",
+          },
+          onboarding: {
+            ekycCost: 10,
+            esignCost: 15,
+            pmlaCost: 3,
+            strategy: "absorb",
+          },
+        });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Get monetization config
+  app.get("/api/admin/monetization-config", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'monetization_config'`);
+      const row = ((result as any).rows || [])[0];
+      if (row) {
+        res.json(JSON.parse(row.value));
+      } else {
+        res.json(null);
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Save monetization config
+  app.put("/api/admin/monetization-config", requireAdmin, async (req: any, res: any) => {
+    try {
+      const config = req.body;
+      if (!config || typeof config !== "object") return res.status(400).json({ error: "Invalid config" });
+      const jsonStr = JSON.stringify(config);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('monetization_config', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  // ─── Admin: Advisor Analytics ────────────────────────────────
+
+  // Admin: Get per-advisor analytics
+  app.get("/api/admin/advisor/:id/analytics", requireAdmin, async (req: any, res: any) => {
+    try {
+      const advisorId = req.params.id;
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      startOfWeek.setHours(0,0,0,0);
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+      // A1: Calls + Positions Published & Performance
+      const allCalls = await db.execute(
+        sql`SELECT c.*, s.name as strategy_name, 'call' as rec_type FROM calls c
+            JOIN strategies s ON s.id = c.strategy_id
+            WHERE s.advisor_id = ${advisorId}`
+      );
+      const allPositions = await db.execute(
+        sql`SELECT p.*, s.name as strategy_name, 'position' as rec_type FROM positions p
+            JOIN strategies s ON s.id = p.strategy_id
+            WHERE s.advisor_id = ${advisorId}`
+      );
+      const callRows = [...((allCalls as any).rows || []), ...((allPositions as any).rows || [])];
+
+      const publishedRows = callRows.filter((c: any) => c.is_published === true || c.publish_mode === 'live');
+      const activeRecs = callRows.filter((c: any) => c.status === 'Active').length;
+
+      const callsThisWeek = callRows.filter((c: any) => new Date(c.created_at) >= startOfWeek).length;
+      const callsThisMonth = callRows.filter((c: any) => new Date(c.created_at) >= startOfMonth).length;
+      const callsYTD = callRows.filter((c: any) => new Date(c.created_at) >= startOfYear).length;
+
+      const closedCalls = callRows.filter((c: any) => c.status === 'Closed' && c.gain_percent !== null);
+      const hitRate = closedCalls.length > 0
+        ? (closedCalls.filter((c: any) => Number(c.gain_percent) > 0).length / closedCalls.length * 100).toFixed(1)
+        : "0";
+      const avgReturn = closedCalls.length > 0
+        ? (closedCalls.reduce((sum: number, c: any) => sum + Number(c.gain_percent || 0), 0) / closedCalls.length).toFixed(2)
+        : "0";
+
+      // A2: Customers per Advisor
+      const subsResult = await db.execute(
+        sql`SELECT s.*, u.username, u.email, u.created_at as user_created_at
+            FROM subscriptions s JOIN users u ON u.id = s.user_id
+            WHERE s.advisor_id = ${advisorId}`
+      );
+      const subRows = (subsResult as any).rows || [];
+      const uniqueSubscribers = [...new Set(subRows.map((s: any) => s.user_id))];
+      const totalSubscribers = uniqueSubscribers.length;
+      const newThisWeek = subRows.filter((s: any) => new Date(s.created_at) >= startOfWeek)
+        .map((s: any) => s.user_id).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).length;
+      const newThisMonth = subRows.filter((s: any) => new Date(s.created_at) >= startOfMonth)
+        .map((s: any) => s.user_id).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).length;
+      const newYTD = subRows.filter((s: any) => new Date(s.created_at) >= startOfYear)
+        .map((s: any) => s.user_id).filter((v: string, i: number, a: string[]) => a.indexOf(v) === i).length;
+      const activeSubs = subRows.filter((s: any) => s.status === 'active').length;
+      const churned = subRows.filter((s: any) => s.status !== 'active').length;
+
+      // A3: Portfolio Analytics
+      const portfolioResult = await db.execute(
+        sql`SELECT cp.*, u.username FROM customer_portfolios cp
+            JOIN users u ON u.id = cp.user_id
+            JOIN subscriptions s ON s.user_id = cp.user_id AND s.advisor_id = ${advisorId}`
+      );
+      const portfolioRows = (portfolioResult as any).rows || [];
+      const portfolioIds = portfolioRows.map((p: any) => p.id);
+
+      let totalAUM = 0;
+      let portfolioSizes: number[] = [];
+      if (portfolioIds.length > 0) {
+        const holdingsResult = await db.execute(
+          sql`SELECT portfolio_id, SUM(CAST(current_value AS numeric)) as total_value
+              FROM portfolio_holdings WHERE portfolio_id IN (${sql.join(portfolioIds.map((id: string) => sql`${id}`), sql`, `)})
+              GROUP BY portfolio_id`
+        );
+        const holdingRows = (holdingsResult as any).rows || [];
+        for (const h of holdingRows) {
+          const val = Number(h.total_value) || 0;
+          totalAUM += val;
+          portfolioSizes.push(val);
+        }
+      }
+      const avgPortfolioSize = portfolioSizes.length > 0 ? totalAUM / portfolioSizes.length : 0;
+      const largestPortfolio = portfolioSizes.length > 0 ? Math.max(...portfolioSizes) : 0;
+
+      // Size buckets
+      const sizeBuckets = { 'Under 1L': 0, '1-5L': 0, '5-10L': 0, '10-25L': 0, '25-50L': 0, '50L+': 0 };
+      for (const s of portfolioSizes) {
+        if (s < 100000) sizeBuckets['Under 1L']++;
+        else if (s < 500000) sizeBuckets['1-5L']++;
+        else if (s < 1000000) sizeBuckets['5-10L']++;
+        else if (s < 2500000) sizeBuckets['10-25L']++;
+        else if (s < 5000000) sizeBuckets['25-50L']++;
+        else sizeBuckets['50L+']++;
+      }
+
+      // A4: Sales Dashboard (from advisor_payments)
+      const salesResult = await db.execute(
+        sql`SELECT * FROM advisor_payments WHERE advisor_id = ${advisorId} AND type = 'credit'`
+      );
+      const salesRows = (salesResult as any).rows || [];
+      const totalSalesRevenue = salesRows.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+      const weeklySales = salesRows
+        .filter((r: any) => new Date(r.requested_at) >= startOfWeek)
+        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+      const monthlySales = salesRows
+        .filter((r: any) => new Date(r.requested_at) >= startOfMonth)
+        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+      const ytdSales = salesRows
+        .filter((r: any) => new Date(r.requested_at) >= startOfYear)
+        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+
+      // Also include subscription payments from the payments table
+      const subPayments = await db.execute(
+        sql`SELECT * FROM payments WHERE advisor_id = ${advisorId} AND status = 'PAID'`
+      );
+      const subPayRows = (subPayments as any).rows || [];
+      const totalSubRevenue = subPayRows.reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+      const weeklySubRevenue = subPayRows
+        .filter((r: any) => r.paid_at && new Date(r.paid_at) >= startOfWeek)
+        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+      const monthlySubRevenue = subPayRows
+        .filter((r: any) => r.paid_at && new Date(r.paid_at) >= startOfMonth)
+        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+      const ytdSubRevenue = subPayRows
+        .filter((r: any) => r.paid_at && new Date(r.paid_at) >= startOfYear)
+        .reduce((sum: number, r: any) => sum + Number(r.amount || 0), 0);
+
+      res.json({
+        calls: {
+          total: callRows.length,
+          published: publishedRows.length,
+          active: activeRecs,
+          closed: closedCalls.length,
+          thisWeek: callsThisWeek,
+          thisMonth: callsThisMonth,
+          ytd: callsYTD,
+          hitRate: Number(hitRate),
+          avgReturn: Number(avgReturn),
+          closedCount: closedCalls.length,
+        },
+        customers: {
+          totalSubscribers,
+          newThisWeek,
+          newThisMonth,
+          newYTD,
+          activeSubs,
+          churned,
+        },
+        portfolios: {
+          totalPortfolios: portfolioRows.length,
+          totalAUM,
+          avgPortfolioSize,
+          largestPortfolio,
+          sizeBuckets,
+        },
+        sales: {
+          totalRevenue: totalSalesRevenue + totalSubRevenue,
+          weeklySales: weeklySales + weeklySubRevenue,
+          monthlySales: monthlySales + monthlySubRevenue,
+          ytdSales: ytdSales + ytdSubRevenue,
+          advisorPayments: totalSalesRevenue,
+          subscriptionRevenue: totalSubRevenue,
+        },
+      });
+    } catch (err: any) {
+      console.error("[Admin Analytics] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Admin: Get overall admin dashboard stats
+  app.get("/api/admin/dashboard-stats", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const advisorCount = await db.execute(sql`SELECT count(*) FROM users WHERE role = 'advisor'`);
+      const investorCount = await db.execute(sql`SELECT count(*) FROM users WHERE role = 'investor'`);
+      const strategyCount = await db.execute(sql`SELECT count(*) FROM strategies`);
+      const activeSubCount = await db.execute(sql`SELECT count(*) FROM subscriptions WHERE status = 'active'`);
+      const totalAUM = await db.execute(
+        sql`SELECT COALESCE(SUM(CAST(current_value AS numeric)), 0) as total FROM portfolio_holdings`
+      );
+      const totalRevenue = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM payments WHERE status = 'PAID'`
+      );
+      const totalAdvisorCredits = await db.execute(
+        sql`SELECT COALESCE(SUM(amount), 0) as total FROM advisor_payments WHERE type = 'credit'`
+      );
+      const callsThisMonth = await db.execute(
+        sql`SELECT count(*) FROM calls WHERE (is_published = true OR publish_mode = 'live')
+            AND created_at >= date_trunc('month', CURRENT_DATE)`
+      );
+
+      res.json({
+        totalAdvisors: Number(((advisorCount as any).rows || [])[0]?.count) || 0,
+        totalInvestors: Number(((investorCount as any).rows || [])[0]?.count) || 0,
+        totalStrategies: Number(((strategyCount as any).rows || [])[0]?.count) || 0,
+        activeSubscriptions: Number(((activeSubCount as any).rows || [])[0]?.count) || 0,
+        totalAUM: Number(((totalAUM as any).rows || [])[0]?.total) || 0,
+        totalRevenue: Number(((totalRevenue as any).rows || [])[0]?.total) || 0,
+        totalAdvisorCredits: Number(((totalAdvisorCredits as any).rows || [])[0]?.total) || 0,
+        callsThisMonth: Number(((callsThisMonth as any).rows || [])[0]?.count) || 0,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
   // ─── Admin: Bank & Payment Management ────────────────────────
 
   // Admin: View advisor bank details
@@ -4790,6 +5116,103 @@ export async function registerRoutes(
           }
         }
 
+        // ── Enhanced Analysis (Task 4.6) ──
+
+        // FD Ladder Strategy
+        if (otherByType["fd"] && otherByType["fd"].length >= 1) {
+          const fds = otherByType["fd"];
+          const fdTotal = fds.reduce((s: number, i: any) => s + i.currentValue, 0);
+          if (fds.length === 1) {
+            otherRecs.push({ asset: "FD Portfolio", type: "FD", action: "Build FD Ladder", priority: "medium", reason: "You have only 1 FD. Consider splitting into 3-5 FDs with staggered maturities (1yr, 2yr, 3yr, 5yr) for better liquidity and to capture rising interest rates." });
+          }
+          if (fds.some((f: any) => f.interestRate && f.interestRate < 7.5)) {
+            otherRecs.push({ asset: "FD Portfolio", type: "FD", action: "Compare Rates", priority: "low", reason: "Current best FD rates: SBI 7.1%, HDFC 7.25%, Post Office SCSS 8.2%, RBI Floating Rate Bond 8.05%. Consider switching low-rate FDs at maturity." });
+          }
+        }
+
+        // Insurance: Term vs ULIP, Adequate Coverage
+        if (otherByType["insurance"]) {
+          for (const ins of otherByType["insurance"]) {
+            if (ins.sumAssured && ins.premium) {
+              const coverRatio = ins.sumAssured / ins.premium;
+              if (coverRatio < 15) {
+                otherRecs.push({ asset: ins.name, type: "Insurance", action: "Consider Term Plan", priority: "high", reason: "Coverage ratio is only " + coverRatio.toFixed(0) + "x premium. A pure term plan offers 500-1000x coverage at lower cost. E.g., Rs 1Cr term cover costs ~Rs 10-15K/yr for a 30-yr-old." });
+              }
+            }
+          }
+          // Adequate coverage check (10-15x annual income estimate)
+          const totalCoverage = otherByType["insurance"].reduce((s: number, i: any) => s + (i.sumAssured || 0), 0);
+          if (totalCoverage > 0 && totalCoverage < 5000000) {
+            otherRecs.push({ asset: "Insurance Portfolio", type: "Insurance", action: "Inadequate Coverage", priority: "high", reason: "Total life coverage of " + (totalCoverage / 100000).toFixed(0) + "L may be insufficient. Rule of thumb: life cover should be 10-15x annual income. For a Rs 10L income, target Rs 1-1.5Cr cover via term insurance." });
+          }
+        }
+
+        // Gold: Historical returns comparison, optimal allocation
+        if (otherByType["gold"]) {
+          const goldTotal = otherByType["gold"].reduce((s: number, i: any) => s + i.currentValue, 0);
+          const goldPct = fullPortfolioValue > 0 ? (goldTotal / fullPortfolioValue) * 100 : 0;
+          otherRecs.push({ asset: "Gold Holdings", type: "Gold", action: "Allocation Check", priority: goldPct > 15 ? "medium" : "low", reason: "Gold allocation: " + goldPct.toFixed(1) + "%. Historical CAGR: Gold ~11% vs Nifty ~14% vs FD ~7% (10yr). Optimal gold allocation is 5-15% for inflation hedge. " + (goldPct < 5 ? "Consider adding gold via Sovereign Gold Bonds (SGBs) for 2.5% annual interest + capital gains." : goldPct > 15 ? "Reduce gold to 10-15% and redeploy into equity/MF for higher long-term growth." : "Your gold allocation is within the optimal range.") });
+          // SGB recommendation
+          if (otherByType["gold"].some((g: any) => g.name?.toLowerCase().includes("physical"))) {
+            otherRecs.push({ asset: "Physical Gold", type: "Gold", action: "Switch to SGB", priority: "medium", reason: "Physical gold has storage costs and no yield. Sovereign Gold Bonds (SGBs) offer 2.5% annual interest, no capital gains tax on maturity (8yr), and are backed by RBI." });
+          }
+        }
+
+        // PPF: Tax benefit optimization
+        if (otherByType["ppf"]) {
+          for (const ppf of otherByType["ppf"]) {
+            const annualLimit = 150000;
+            otherRecs.push({ asset: ppf.name, type: "PPF", action: "Tax Optimization", priority: "low", reason: "PPF offers EEE tax benefit (exempt at investment, growth, and withdrawal). Current rate: 7.1% p.a. (tax-free). Effective pre-tax return: ~10.1% for 30% tax bracket. Max annual contribution: Rs 1.5L under Section 80C." });
+            if (ppf.investedValue && ppf.investedValue > 0) {
+              const yearsInvested = ppf.buyDate ? (Date.now() - new Date(ppf.buyDate).getTime()) / (365.25 * 86400000) : 5;
+              const projectedAt15 = ppf.investedValue * Math.pow(1.071, Math.max(0, 15 - yearsInvested));
+              otherRecs.push({ asset: ppf.name, type: "PPF", action: "Maturity Projection", priority: "low", reason: "At 7.1% p.a., your PPF corpus is projected to grow to Rs " + (projectedAt15 / 100000).toFixed(1) + "L by maturity (15yr lock-in). Adding Rs 1.5L/yr from now would yield ~Rs 40L+ at maturity." });
+            }
+          }
+        }
+
+        // NPS: Tax benefit + retirement projection
+        if (otherByType["nps"]) {
+          for (const nps of otherByType["nps"]) {
+            otherRecs.push({ asset: nps.name, type: "NPS", action: "Tax Benefits", priority: "low", reason: "NPS offers triple tax benefit: Rs 1.5L under 80C + additional Rs 50K under 80CCD(1B) = Rs 2L total deduction. At 30% tax bracket, this saves Rs 60K/yr in taxes." });
+            otherRecs.push({ asset: nps.name, type: "NPS", action: "Equity Allocation", priority: "medium", reason: "NPS allows up to 75% equity (Active Choice) till age 50. Higher equity allocation in early years can significantly boost retirement corpus. Review your asset mix (Scheme E/C/G) annually." });
+            if (nps.investedValue && nps.investedValue > 0) {
+              const retCorpus25yr = nps.investedValue * Math.pow(1.095, 25); // 9.5% assumed
+              otherRecs.push({ asset: nps.name, type: "NPS", action: "Retirement Projection", priority: "low", reason: "At assumed 9.5% return, current NPS corpus of Rs " + (nps.investedValue / 100000).toFixed(1) + "L could grow to Rs " + (retCorpus25yr / 10000000).toFixed(1) + "Cr in 25 years. Regular contributions of Rs 50K/yr would add Rs " + ((50000 * (Math.pow(1.095, 25) - 1) / 0.095) / 10000000).toFixed(1) + "Cr more." });
+            }
+          }
+        }
+
+        // EPF optimization
+        if (otherByType["epf"]) {
+          for (const epf of otherByType["epf"]) {
+            otherRecs.push({ asset: epf.name, type: "EPF", action: "VPF Consideration", priority: "low", reason: "EPF earns 8.25% p.a. tax-free (up to Rs 2.5L/yr contribution). Consider Voluntary Provident Fund (VPF) for additional contributions at the same rate — one of the best risk-free returns available." });
+          }
+        }
+
+        // Bond analysis
+        if (otherByType["bond"]) {
+          for (const bond of otherByType["bond"]) {
+            if (bond.interestRate) {
+              const yieldComp = bond.interestRate < 8 ? "below" : "competitive with";
+              otherRecs.push({ asset: bond.name, type: "Bond", action: "Yield Review", priority: bond.interestRate < 7 ? "medium" : "low", reason: "Bond yield of " + bond.interestRate + "% is " + yieldComp + " current market rates. RBI Floating Rate Bond: 8.05%, SDL: 7.5-8%, Corporate AAA: 7.5-8.5%. Consider redeployment at maturity if yield is below 7.5%." });
+            }
+          }
+        }
+
+        // Overall asset allocation optimization
+        const eqPct = fullPortfolioValue > 0 ? ((Number(results.equity?.summary?.currentValue) || 0) / fullPortfolioValue) * 100 : 0;
+        const mfPct = fullPortfolioValue > 0 ? ((Number(results.mutualFunds?.summary?.currentValue) || 0) / fullPortfolioValue) * 100 : 0;
+        const debtPct = fullPortfolioValue > 0 ? ((otherByType["fd"] || []).concat(otherByType["ppf"] || [], otherByType["epf"] || [], otherByType["bond"] || []).reduce((s: number, i: any) => s + i.currentValue, 0) / fullPortfolioValue * 100) : 0;
+        const rePct = fullPortfolioValue > 0 ? ((otherByType["real_estate"] || []).reduce((s: number, i: any) => s + i.currentValue, 0) / fullPortfolioValue * 100) : 0;
+
+        otherRecs.push({ asset: "Overall Portfolio", type: "Asset Allocation", action: "Allocation Review", priority: "medium",
+          reason: "Current allocation: Equity " + eqPct.toFixed(0) + "%, MF " + mfPct.toFixed(0) + "%, Debt/FD " + debtPct.toFixed(0) + "%, Real Estate " + rePct.toFixed(0) + "%. " +
+          (eqPct + mfPct < 30 ? "Equity+MF is under 30% — consider increasing for long-term wealth creation (target 50-70% for aggressive, 30-50% for moderate risk profile)." :
+           eqPct + mfPct > 80 ? "Equity+MF is over 80% — high growth potential but vulnerable to market downturns. Consider 10-20% in debt/FD for stability." :
+           "Equity+MF allocation appears balanced. Review annually based on market conditions and life stage.")
+        });
+
         const categoryBreakdown = Object.entries(otherByType).map(([type, items]) => ({
           type, label: type === "fd" ? "Fixed Deposits" : type === "gold" ? "Gold" : type === "real_estate" ? "Real Estate" : type === "insurance" ? "Insurance" : type === "ppf" ? "PPF" : type === "nps" ? "NPS" : type === "epf" ? "EPF" : type === "bond" ? "Bonds" : type === "crypto" ? "Crypto" : type === "cash" ? "Cash" : type,
           count: items.length,
@@ -5103,14 +5526,14 @@ export async function registerRoutes(
         // Use advisor-edited data directly
         reportData = {
           ...preAnalyzed,
-          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate, branding,
+          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate, branding, sections: req.body?.sections,
         };
       } else {
         reportData = {
           equity: equityData ? { ...equityData, healthScore: equityData.healthScore, sectorAllocation: equityData.sectorAllocation, enhancedRecommendations: equityData.enhancedRecommendations, quantamental: equityData.quantamental, rebalancing: equityData.rebalancing, taxImpact: equityData.taxImpact, dividends: equityData.dividends, scenarios: equityData.scenarios, investmentStyle: equityData.investmentStyle, valueAnalysis: equityData.valueAnalysis, growthAnalysis: equityData.growthAnalysis } : null,
           mutualFunds: mfData,
           combined: { totalInvested: totI, currentValue: totC, totalPnl: totC - totI, totalPnlPercent: totI > 0 ? ((totC - totI) / totI) * 100 : 0, assetAllocation: { equity: { current: eqC, percent: totC > 0 ? (eqC / totC) * 100 : 0 }, mutualFunds: { current: mfC2, percent: totC > 0 ? (mfC2 / totC) * 100 : 0 } } },
-          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate, branding,
+          investorName, generatedBy: advisorName, reportId: rptId, generatedAt: rptDate, branding, sections: req.body?.sections,
         };
       }
 

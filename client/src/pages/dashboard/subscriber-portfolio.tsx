@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useLocation } from "wouter";
 import DeepAnalysisPanel from "./deep-analysis-panel";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ import {
   Settings,
   X,
   Image,
+  Pencil,
 } from "lucide-react";
 import {
   PieChart,
@@ -274,13 +275,13 @@ function SummaryCard({ label, value, sub, icon, bg, valueColor }: {
   label: string; value: string; sub?: string; icon: React.ReactNode; bg: string; valueColor?: string;
 }) {
   return (
-    <div className={`${bg} rounded-xl border border-slate-200 p-4`}>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium text-slate-500 uppercase tracking-wide">{label}</span>
-        {icon}
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow p-5">
+      <div className="flex items-center gap-3 mb-3">
+        <div className={`${bg} w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0`}>{icon}</div>
+        <span className="text-sm font-medium text-slate-500">{label}</span>
       </div>
-      <div className={`text-xl font-bold ${valueColor || "text-slate-900"}`}>{value}</div>
-      {sub && <div className={`text-xs mt-0.5 ${valueColor || "text-slate-500"}`}>{sub}</div>}
+      <div className={`text-3xl font-extrabold tracking-tight ${valueColor || "text-slate-900"}`}>{value}</div>
+      {sub && <div className={`text-sm mt-1.5 font-semibold ${valueColor || "text-slate-500"}`}>{sub}</div>}
     </div>
   );
 }
@@ -289,18 +290,21 @@ function CollapsibleSection({ title, count, icon, expanded, onToggle, action, ch
   title: string; count: number; icon: React.ReactNode; expanded: boolean; onToggle: () => void; action?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <button onClick={onToggle} className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">
-        <span className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-          {icon} {title}
-          <span className="text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">{count}</span>
+    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <button onClick={onToggle} className="w-full flex items-center justify-between px-6 py-5 hover:bg-slate-50/50 transition-colors">
+        <span className="flex items-center gap-3">
+          <span className="text-slate-400">{icon}</span>
+          <span className="text-base font-semibold text-slate-800">{title}</span>
+          <span className="text-xs font-medium text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">{count}</span>
         </span>
         <div className="flex items-center gap-3">
           {action && <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>{action}</div>}
-          {expanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${expanded ? "bg-slate-100" : "hover:bg-slate-100"}`}>
+            {expanded ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+          </div>
         </div>
       </button>
-      {expanded && <div className="px-5 pb-5">{children}</div>}
+      {expanded && <div className="px-6 pb-6 pt-4 border-t border-slate-100">{children}</div>}
     </div>
   );
 }
@@ -335,6 +339,8 @@ export default function SubscriberPortfolioPage() {
   const [showAddGoalForm, setShowAddGoalForm] = useState(false);
   const [showRecoForm, setShowRecoForm] = useState(false);
   const [showManualAdd, setShowManualAdd] = useState(false);
+  const [editHolding, setEditHolding] = useState<any>(null);
+  const [editPrice, setEditPrice] = useState("");
 
   const csvInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
@@ -514,6 +520,11 @@ export default function SubscriberPortfolioPage() {
   });
   const [brandingLoaded, setBrandingLoaded] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [pdfSections, setPdfSections] = useState<Record<string, boolean>>({
+    overview: true, equity: true, quantamental: true, valueGrowth: true,
+    dividendTax: true, mutualFunds: true, mfStress: true, mfHealth: true,
+    otherAssets: true, investmentStyle: true, rebalancing: true,
+  });
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   // Fetch saved branding when dialog opens
@@ -569,6 +580,9 @@ export default function SubscriberPortfolioPage() {
       // Pass branding settings
       if (brandingOverrides) {
         bodyPayload.branding = brandingOverrides;
+        if (brandingOverrides.sections) {
+          bodyPayload.sections = brandingOverrides.sections;
+        }
       }
       const res = await fetch("/api/portfolio/" + portfolioId + "/report", {
         method: "POST", credentials: "include",
@@ -592,6 +606,19 @@ export default function SubscriberPortfolioPage() {
     assetType: "stock", name: "", symbol: "", quantity: "", avgBuyPrice: "", sector: "",
     isin: "", provider: "", interestRate: "", maturityDate: "", lockInUntil: "",
     premium: "", sumAssured: "", policyNumber: "", buyDate: "",
+  });
+
+  const updateHoldingMut = useMutation({
+    mutationFn: async ({ id, currentPrice }: { id: string; currentPrice: number }) => {
+      const res = await fetch("/api/portfolio/holding/" + id, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPrice }), credentials: "include",
+      });
+      if (!res.ok) throw new Error("Update failed");
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["advisor-subscriber-portfolios", userId] }); toast({ title: "Price updated" }); setEditHolding(null); setEditPrice(""); },
+    onError: () => { toast({ title: "Error updating price", variant: "destructive" }); },
   });
 
   const addHoldingMut = useMutation({
@@ -679,6 +706,28 @@ export default function SubscriberPortfolioPage() {
     else { setSortField(field); setSortDir("desc"); }
   };
 
+  // Active section tracking for sticky nav
+  const [activeSection, setActiveSection] = useState("sec-overview");
+
+  useEffect(() => {
+    const sectionIds = ["sec-overview", "sec-holdings", "sec-suggestions", "sec-goals", "sec-recommendations", "sec-analysis"];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        }
+      },
+      { rootMargin: "-100px 0px -60% 0px", threshold: 0.1 }
+    );
+    for (const id of sectionIds) {
+      const el = document.getElementById(id);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [holdings, suggestions, goals]);
+
   const toggleSection = (key: keyof typeof expandedSections) =>
     setExpandedSections((s) => ({ ...s, [key]: !s[key] }));
 
@@ -696,60 +745,88 @@ export default function SubscriberPortfolioPage() {
   }
 
   return (
-    <div className="min-h-full">
+    <div className="min-h-full bg-slate-50/40 dark:bg-slate-900 dark:text-slate-100">
       <input ref={csvInputRef} type="file" accept=".csv" className="hidden" onChange={(e) => e.target.files?.[0] && importCsvMut.mutate(e.target.files[0])} />
       <input ref={pdfInputRef} type="file" accept=".pdf" className="hidden" onChange={(e) => e.target.files?.[0] && importPdfMut.mutate(e.target.files[0])} />
       <input ref={attachmentInputRef} type="file" accept=".pdf,.xlsx,.xls,.doc,.docx,.png,.jpg" className="hidden" onChange={(e) => e.target.files?.[0] && uploadAttachmentMut.mutate(e.target.files[0])} />
 
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center justify-between flex-wrap gap-3">
-          <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/dashboard")} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-              <ArrowLeft className="w-5 h-5 text-slate-600" />
+      {/* Top Header Bar */}
+      <div className="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-4 -mt-4 px-6 py-4 mb-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <button onClick={() => navigate("/dashboard")} className="p-2 rounded-xl hover:bg-slate-100 transition-colors">
+              <ArrowLeft className="w-5 h-5 text-slate-500" />
             </button>
             <div>
-              <h1 className="text-xl font-semibold text-slate-900">Client Portfolio</h1>
-              <p className="text-sm text-slate-500">{portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""} &middot; {totals.count} holdings</p>
+              <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Client Portfolio</h1>
+              <p className="text-sm text-slate-500 mt-0.5">{portfolios.length} portfolio{portfolios.length !== 1 ? "s" : ""} &middot; {totals.count} holdings &middot; Last synced: {selectedPortfolio?.lastSynced ? new Date(selectedPortfolio.lastSynced).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Never"}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {portfolios.length > 1 && (
-              <select value={portfolioId ?? ""} onChange={(e) => setActivePortfolioId(e.target.value)}
-                className="text-sm border border-slate-300 rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-                {portfolios.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-              </select>
-            )}
-            <button onClick={() => createPortfolioMut.mutate()} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors">
-              <Plus className="w-4 h-4" /> New Portfolio
+          {portfolios.length > 1 && (
+            <select value={portfolioId ?? ""} onChange={(e) => setActivePortfolioId(e.target.value)}
+              className="text-sm border border-slate-200 rounded-xl px-4 py-2.5 bg-white shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+              {portfolios.map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* Action Toolbar */}
+      <div className="flex items-center gap-2 mb-6 flex-wrap bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm px-5 py-3">
+        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline">Import</span>
+        <button onClick={() => csvInputRef.current?.click()} disabled={!portfolioId} className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-all disabled:opacity-40">
+          <Upload className="w-3.5 h-3.5" /> CSV
+        </button>
+        <button onClick={() => pdfInputRef.current?.click()} disabled={!portfolioId} className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-all disabled:opacity-40">
+          <FileText className="w-3.5 h-3.5" /> CAS PDF
+        </button>
+        <button onClick={() => setShowManualAdd(true)} disabled={!portfolioId} className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-all disabled:opacity-40">
+          <FilePlus className="w-3.5 h-3.5" /> Manual
+        </button>
+        <button onClick={() => createPortfolioMut.mutate()} className="flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 shadow-sm transition-all">
+          <Plus className="w-3.5 h-3.5" /> New Portfolio
+        </button>
+        <div className="w-px h-6 bg-slate-200 dark:bg-slate-600 mx-1 hidden sm:block" />
+        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-1 hidden sm:inline">Actions</span>
+        <button onClick={() => syncPricesMut.mutate()} disabled={!portfolioId || syncPricesMut.isPending}
+          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 shadow-sm transition-all disabled:opacity-50">
+          <RefreshCw className={`w-3.5 h-3.5 ${syncPricesMut.isPending ? "animate-spin" : ""}`} /> Sync Prices
+        </button>
+        <button onClick={() => generateSuggestionsMut.mutate()} disabled={!portfolioId || generateSuggestionsMut.isPending}
+          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm transition-all disabled:opacity-50">
+          <Lightbulb className={`w-3.5 h-3.5 ${generateSuggestionsMut.isPending ? "animate-spin" : ""}`} /> Analyze
+        </button>
+        <button onClick={() => setShowRecoForm(true)}
+          className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl bg-violet-600 text-white hover:bg-violet-700 shadow-sm transition-all">
+          <Send className="w-3.5 h-3.5" /> Recommend
+        </button>
+      </div>
+
+      {/* Section Nav — Sticky */}
+      <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-900/95 backdrop-blur-sm -mx-4 px-4 py-2 mb-4 border-b border-slate-200/60 dark:border-slate-700/60">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-hide">
+          {[
+            ["sec-overview", "Overview"],
+            ["sec-holdings", "Holdings"],
+            ["sec-suggestions", "Suggestions"],
+            ["sec-goals", "Goals"],
+            ["sec-recommendations", "Recommendations"],
+            ["sec-analysis", "Deep Analysis"],
+          ].map(([id, label]) => (
+            <button key={id} onClick={() => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              className={`text-xs font-medium px-3.5 py-2 rounded-full border transition-all whitespace-nowrap ${
+                activeSection === id
+                  ? "bg-blue-600 text-white border-blue-600 shadow-md"
+                  : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:bg-blue-50 dark:hover:bg-slate-700 hover:text-blue-700 hover:border-blue-200 shadow-sm"
+              }`}>
+              {label}
             </button>
-            <button onClick={() => csvInputRef.current?.click()} disabled={!portfolioId} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50">
-              <Upload className="w-4 h-4" /> CSV
-            </button>
-            <button onClick={() => pdfInputRef.current?.click()} disabled={!portfolioId} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50">
-              <FileText className="w-4 h-4" /> CAS PDF
-            </button>
-            <button onClick={() => setShowManualAdd(true)} disabled={!portfolioId} className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 hover:bg-slate-50 transition-colors disabled:opacity-50">
-              <FilePlus className="w-4 h-4" /> Manual
-            </button>
-            <button onClick={() => syncPricesMut.mutate()} disabled={!portfolioId || syncPricesMut.isPending}
-              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
-              <RefreshCw className={`w-4 h-4 ${syncPricesMut.isPending ? "animate-spin" : ""}`} /> Sync Prices
-            </button>
-            <button onClick={() => generateSuggestionsMut.mutate()} disabled={!portfolioId || generateSuggestionsMut.isPending}
-              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 transition-colors disabled:opacity-50">
-              <Lightbulb className={`w-4 h-4 ${generateSuggestionsMut.isPending ? "animate-spin" : ""}`} /> Analyze
-            </button>
-            <button onClick={() => setShowRecoForm(true)}
-              className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700 transition-colors">
-              <Send className="w-4 h-4" /> Recommend
-            </button>
-          </div>
+          ))}
         </div>
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div id="sec-overview" className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <SummaryCard label="Invested Value" value={formatINR(totals.invested)} icon={<Wallet className="w-5 h-5 text-blue-600" />} bg="bg-blue-50" />
         <SummaryCard label="Current Value" value={formatINR(totals.current)} icon={<IndianRupee className="w-5 h-5 text-emerald-600" />} bg="bg-emerald-50" />
         <SummaryCard label="Total P&L" value={formatINR(totals.pnl)} sub={formatPercent(totals.pnlPct)}
@@ -762,14 +839,14 @@ export default function SubscriberPortfolioPage() {
       {/* Charts */}
       {holdings.length > 0 && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-              <PieChartIcon className="w-4 h-4 text-blue-600" /> Asset Allocation
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm p-6">
+            <h3 className="text-base font-semibold text-slate-800 mb-5 flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><PieChartIcon className="w-4 h-4 text-blue-600" /></div> Asset Allocation
             </h3>
-            <ResponsiveContainer width="100%" height={200}>
+            <ResponsiveContainer width="100%" height={260}>
               <PieChart>
                 <Pie data={allocationData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                  outerRadius={85} innerRadius={45} paddingAngle={2}>
+                  outerRadius={100} innerRadius={55} paddingAngle={3}>
                   {allocationData.map((entry, i) => (<Cell key={i} fill={entry.color} />))}
                 </Pie>
                 <Tooltip formatter={(value: number) => formatINR(value)} />
@@ -777,16 +854,16 @@ export default function SubscriberPortfolioPage() {
             </ResponsiveContainer>
             <div className="flex flex-wrap gap-1.5 mt-2">
               {allocationData.map((entry, i) => (
-                <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-200 bg-white">
+                <span key={i} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50/80">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
                   {entry.name}: {((entry.value / allocationData.reduce((s, e) => s + e.value, 0)) * 100).toFixed(0)}%
                 </span>
               ))}
             </div>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
-            <h3 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-              <PieChartIcon className="w-4 h-4 text-emerald-600" /> Sector Allocation
+          <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/80 dark:border-slate-700 shadow-sm p-6">
+            <h3 className="text-base font-semibold text-slate-800 mb-5 flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center"><PieChartIcon className="w-4 h-4 text-emerald-600" /></div> Sector Allocation
             </h3>
             {deepAnalysis?.equity?.sectorAllocation ? (() => {
               const saData = Object.entries(deepAnalysis.equity.sectorAllocation)
@@ -795,9 +872,9 @@ export default function SubscriberPortfolioPage() {
                 .sort((a: any, b: any) => b.value - a.value);
               return (
                 <div>
-                  <ResponsiveContainer width="100%" height={200}>
+                  <ResponsiveContainer width="100%" height={260}>
                     <PieChart>
-                      <Pie data={saData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={85} innerRadius={45} paddingAngle={2}>
+                      <Pie data={saData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} innerRadius={55} paddingAngle={3}>
                         {saData.map((e: any, i: number) => <Cell key={i} fill={e.color} />)}
                       </Pie>
                       <Tooltip formatter={(v: number) => v.toFixed(1) + "%"} />
@@ -805,7 +882,7 @@ export default function SubscriberPortfolioPage() {
                   </ResponsiveContainer>
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {saData.map((s: any, i: number) => (
-                      <span key={i} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border border-slate-200 bg-white">
+                      <span key={i} className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50/80">
                         <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
                         {s.name}: {s.value.toFixed(1)}%
                       </span>
@@ -830,7 +907,7 @@ export default function SubscriberPortfolioPage() {
       )}
 
       {/* Holdings Table */}
-      <div className="mb-6">
+      <div id="sec-holdings" className="mb-8 scroll-mt-4">
         <CollapsibleSection title="Holdings" count={holdings.length} icon={<Wallet className="w-4 h-4" />}
           expanded={expandedSections.holdings} onToggle={() => toggleSection("holdings")}>
           <div className="mb-4 relative">
@@ -863,31 +940,50 @@ export default function SubscriberPortfolioPage() {
                 </thead>
                 <tbody>
                   {sortedHoldings.map((h) => (
-                    <tr key={h.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                      <td className="py-3 px-3">
+                    <tr key={h.id} className="border-b border-slate-100/80 hover:bg-blue-50/30 transition-colors">
+                      <td className="py-4 px-4">
                         <div className="font-medium text-slate-900 max-w-[200px] truncate" title={h.name}>{h.name}</div>
                         {h.symbol && <div className="text-xs text-slate-400">{h.symbol}</div>}
                       </td>
-                      <td className="py-3 px-3">
+                      <td className="py-4 px-4">
                         <span className="inline-block text-xs font-medium px-2 py-0.5 rounded-full"
                           style={{ backgroundColor: (ASSET_COLORS[h.assetType] || "#94a3b8") + "18", color: ASSET_COLORS[h.assetType] || "#64748b" }}>
                           {ASSET_LABELS[h.assetType] || h.assetType}
                         </span>
                       </td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash","real_estate"].includes(h.assetType) ? "\u2014" : (h.quantity ?? "\u2014")}</td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash"].includes(h.assetType) ? (h.interestRate ? h.interestRate + "%" : "\u2014") : (h.avgBuyPrice != null ? `\u20B9${Number(h.avgBuyPrice).toLocaleString("en-IN")}` : "\u2014")}</td>
-                      <td className="py-3 px-3 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash","real_estate"].includes(h.assetType) ? "\u2014" : (h.currentPrice != null ? `\u20B9${Number(h.currentPrice).toLocaleString("en-IN")}` : "\u2014")}</td>
-                      <td className="py-3 px-3 font-medium text-slate-900 tabular-nums">{formatINR(h.currentValue ?? h.investedValue)}</td>
-                      <td className={`py-3 px-3 font-medium tabular-nums ${pnlColor(h.gainLoss)}`}>{formatINR(h.gainLoss)}</td>
-                      <td className={`py-3 px-3 font-medium tabular-nums ${pnlColor(h.gainLossPercent)}`}>{formatPercent(h.gainLossPercent)}</td>
-                      <td className="py-3 px-3 text-xs text-slate-500 max-w-[200px] truncate" title={assetDetails(h)}>{assetDetails(h)}</td>
+                      <td className="py-4 px-4 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash","real_estate"].includes(h.assetType) ? "\u2014" : (h.quantity ?? "\u2014")}</td>
+                      <td className="py-4 px-4 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash"].includes(h.assetType) ? (h.interestRate ? h.interestRate + "%" : "\u2014") : (h.avgBuyPrice != null ? `\u20B9${Number(h.avgBuyPrice).toLocaleString("en-IN")}` : "\u2014")}</td>
+                      <td className="py-4 px-4 text-slate-700 tabular-nums">{["fd","ppf","epf","nps","insurance","cash","real_estate"].includes(h.assetType) ? "\u2014" : (h.currentPrice != null ? `\u20B9${Number(h.currentPrice).toLocaleString("en-IN")}` : "\u2014")}</td>
+                      <td className="py-4 px-4 font-semibold text-slate-900 tabular-nums text-base">{formatINR(h.currentValue ?? h.investedValue)}</td>
+                      <td className={`py-4 px-4 font-semibold tabular-nums ${pnlColor(h.gainLoss)}`}>{formatINR(h.gainLoss)}</td>
+                      <td className={`py-4 px-4 font-semibold tabular-nums ${pnlColor(h.gainLossPercent)}`}>{formatPercent(h.gainLossPercent)}</td>
+                      <td className="py-4 px-4 text-xs text-slate-500 max-w-[260px]">
+                        {["gold", "real_estate"].includes(h.assetType) ? (
+                          editHolding?.id === h.id ? (
+                            <span className="flex items-center gap-1">
+                              <input type="number" autoFocus className="w-24 text-xs border rounded px-1.5 py-1" placeholder="New price" value={editPrice} onChange={(e) => setEditPrice(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && editPrice) updateHoldingMut.mutate({ id: h.id, currentPrice: Number(editPrice) }); if (e.key === "Escape") { setEditHolding(null); setEditPrice(""); } }} />
+                              <button className="text-xs text-blue-600 hover:text-blue-800 font-medium" onClick={() => { if (editPrice) updateHoldingMut.mutate({ id: h.id, currentPrice: Number(editPrice) }); }}>Save</button>
+                              <button className="text-xs text-slate-400 hover:text-slate-600" onClick={() => { setEditHolding(null); setEditPrice(""); }}>Cancel</button>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-2">
+                              <span className="truncate">{assetDetails(h)}</span>
+                              <button className="p-1 rounded-md bg-blue-50 hover:bg-blue-100 border border-blue-200 flex-shrink-0" title="Update current price" onClick={() => { setEditHolding(h); setEditPrice(String(h.currentPrice || "")); }}>
+                                <Pencil className="w-3 h-3 text-blue-600" />
+                              </button>
+                            </span>
+                          )
+                        ) : (
+                          <span className="truncate" title={assetDetails(h)}>{assetDetails(h)}</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-slate-200 bg-slate-50 font-semibold">
-                    <td className="py-3 px-3 text-slate-900" colSpan={5}>Total</td>
-                    <td className="py-3 px-3 text-slate-900 tabular-nums">{formatINR(totals.current)}</td>
+                    <td className="py-4 px-4 text-slate-900 text-base" colSpan={5}>Total</td>
+                    <td className="py-4 px-4 text-slate-900 tabular-nums text-base font-bold">{formatINR(totals.current)}</td>
                     <td className={`py-3 px-3 tabular-nums ${pnlColor(totals.pnl)}`}>{formatINR(totals.pnl)}</td>
                     <td className={`py-3 px-3 tabular-nums ${pnlColor(totals.pnlPct)}`}>{formatPercent(totals.pnlPct)}</td>
                     <td></td>
@@ -900,7 +996,7 @@ export default function SubscriberPortfolioPage() {
       </div>
 
       {/* Suggestions */}
-      <div className="mb-6">
+      <div id="sec-suggestions" className="mb-8 scroll-mt-4">
         <CollapsibleSection title="Suggestions" count={suggestions.length} icon={<Lightbulb className="w-4 h-4" />}
           expanded={expandedSections.suggestions} onToggle={() => toggleSection("suggestions")}>
           {suggestions.length === 0 ? (
@@ -910,15 +1006,15 @@ export default function SubscriberPortfolioPage() {
           ) : (
             <div className="space-y-3">
               {suggestions.map((s) => (
-                <div key={s.id} className={`rounded-lg border p-4 ${s.advisorApproved === true ? "bg-emerald-50 border-emerald-200" : s.advisorApproved === false ? "bg-red-50 border-red-200 opacity-60" : "bg-white border-slate-200"}`}>
+                <div key={s.id} className={`rounded-2xl border p-5 shadow-sm transition-shadow hover:shadow-md ${s.advisorApproved === true ? "bg-emerald-50/80 border-emerald-200" : s.advisorApproved === false ? "bg-red-50/80 border-red-200 opacity-60" : "bg-white border-slate-200/80"}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${PRIORITY_STYLES[s.priority] || PRIORITY_STYLES.medium}`}>{s.priority}</span>
                         <span className="text-xs text-slate-400 capitalize">{s.type.replace(/_/g, " ")}</span>
                       </div>
-                      <h4 className="font-medium text-slate-900 text-sm">{s.title}</h4>
-                      <p className="text-sm text-slate-600 mt-1">{s.description}</p>
+                      <h4 className="font-semibold text-slate-900 text-base leading-snug">{s.title}</h4>
+                      <p className="text-sm text-slate-600 mt-1.5 leading-relaxed">{s.description}</p>
                       {s.advisorNotes && <p className="text-xs text-slate-500 mt-1 italic">Note: {s.advisorNotes}</p>}
                       {s.investorResponse && (
                         <p className="text-xs mt-1">Investor: <span className={s.investorResponse === "accepted" ? "text-emerald-600 font-medium" : "text-red-600 font-medium"}>{s.investorResponse}</span></p>
@@ -947,7 +1043,7 @@ export default function SubscriberPortfolioPage() {
       </div>
 
       {/* Goals */}
-      <div className="mb-6">
+      <div id="sec-goals" className="mb-8 scroll-mt-4">
         <CollapsibleSection title="Financial Goals" count={goals.length} icon={<Target className="w-4 h-4" />}
           expanded={expandedSections.goals} onToggle={() => toggleSection("goals")}
           action={<button onClick={() => setShowAddGoalForm(true)} className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add Goal</button>}>
@@ -986,7 +1082,7 @@ export default function SubscriberPortfolioPage() {
                 const probColor = prob >= 75 ? "text-emerald-600" : prob >= 40 ? "text-amber-600" : "text-red-600";
                 const barColor = prob >= 75 ? "bg-emerald-500" : prob >= 40 ? "bg-amber-500" : "bg-red-500";
                 return (
-                  <div key={g.id} className="bg-white rounded-lg border border-slate-200 p-4">
+                  <div key={g.id} className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 hover:shadow-md transition-shadow">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
                         <span className="text-lg">{GOAL_TYPE_ICONS[g.goalType] || "\u{1F3AF}"}</span>
@@ -1023,7 +1119,7 @@ export default function SubscriberPortfolioPage() {
       </div>
 
       {/* Recommendations */}
-      <div className="mb-6">
+      <div id="sec-recommendations" className="mb-8 scroll-mt-4">
         <CollapsibleSection title="Recommendations" count={recommendations.length} icon={<Send className="w-4 h-4" />}
           expanded={expandedSections.recommendations} onToggle={() => toggleSection("recommendations")}>
           {showRecoForm && (
@@ -1108,22 +1204,26 @@ export default function SubscriberPortfolioPage() {
       </div>
 
       {/* Deep Analysis */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-            <Shield className="w-4 h-4 text-blue-600" /> Deep Analysis (AlphaLens Engine)
+      <div id="sec-analysis" className="bg-white rounded-2xl scroll-mt-4 border border-slate-200/80 shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between mb-5">
+          <h3 className="text-base font-semibold text-slate-800 flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center"><Shield className="w-4 h-4 text-blue-600" /></div> Deep Analysis <span className="text-xs font-normal text-slate-400 ml-1">AlphaLens Engine</span>
           </h3>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <button onClick={() => runDeepAnalysis()} disabled={!portfolioId || deepAnalysisMut.isPending}
-              className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
+              className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-colors disabled:opacity-50">
               <Shield className={`w-4 h-4 ${deepAnalysisMut.isPending ? "animate-spin" : ""}`} />
               {deepAnalysisMut.isPending ? "Analyzing..." : "Run Deep Analysis"}
             </button>
+            <button onClick={() => { setShowAddGoalForm(true); document.getElementById("sec-goals")?.scrollIntoView({ behavior: "smooth" }); }}
+              className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl bg-amber-500 text-white hover:bg-amber-600 transition-colors">
+              <Target className="w-4 h-4" /> Set Financial Goal
+            </button>
             <a href="https://stocks.alphamarket.co.in" target="_blank" rel="noreferrer"
-              className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 rounded-lg px-3 py-2">Stock Analyzer</a>
+              className="text-xs text-blue-600 hover:text-blue-700 border border-blue-200 rounded-xl px-3 py-2">Stock Analyzer</a>
             <a href="https://mf.alphamarket.co.in" target="_blank" rel="noreferrer"
-              className="text-xs text-violet-600 hover:text-violet-700 border border-violet-200 rounded-lg px-3 py-2">MF Analyzer</a>
-            <button onClick={() => { setShowPdfDialog(true); loadBranding(); }} disabled={!deepAnalysis || downloadingReport} className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-slate-900 transition-colors disabled:opacity-50"><Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Download PDF"}</button>
+              className="text-xs text-violet-600 hover:text-violet-700 border border-violet-200 rounded-xl px-3 py-2">MF Analyzer</a>
+            <button onClick={() => { setShowPdfDialog(true); loadBranding(); }} disabled={!deepAnalysis || downloadingReport} className="flex items-center gap-1.5 text-sm px-4 py-2 rounded-xl bg-slate-800 text-white hover:bg-slate-900 transition-colors disabled:opacity-50"><Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Download PDF"}</button>
           </div>
         </div>
         <DeepAnalysisPanel data={deepAnalysis} onUpdate={(d: any) => setDeepAnalysis(d)} />
@@ -1193,6 +1293,33 @@ export default function SubscriberPortfolioPage() {
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-none" />
                 <p className="text-xs text-slate-400 mt-1">Replaces the default disclaimer at the bottom of the report.</p>
               </div>
+
+              {/* Section Include/Exclude */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Include Sections</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    ["overview", "Portfolio Overview"],
+                    ["equity", "Stock Analysis"],
+                    ["quantamental", "Quantamental"],
+                    ["valueGrowth", "Value & Growth"],
+                    ["dividendTax", "Dividend & Tax"],
+                    ["mutualFunds", "Mutual Funds"],
+                    ["mfStress", "MF Stress Test"],
+                    ["mfHealth", "MF Health & Overlap"],
+                    ["otherAssets", "Other Assets"],
+                    ["investmentStyle", "Investment Style"],
+                    ["rebalancing", "Rebalancing"],
+                  ].map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2 text-sm text-slate-600 py-1 px-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                      <input type="checkbox" checked={pdfSections[key] !== false}
+                        onChange={(e) => setPdfSections((s) => ({ ...s, [key]: e.target.checked }))}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {/* Actions */}
@@ -1206,7 +1333,7 @@ export default function SubscriberPortfolioPage() {
                   className="px-4 py-2 text-sm text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-100">
                   Cancel
                 </button>
-                <button onClick={() => { saveBranding(); downloadReport(pdfBranding); }} disabled={downloadingReport}
+                <button onClick={() => { saveBranding(); downloadReport({ ...pdfBranding, sections: pdfSections }); }} disabled={downloadingReport}
                   className="flex items-center gap-1.5 px-4 py-2 text-sm bg-slate-800 text-white rounded-lg hover:bg-slate-900 disabled:opacity-50">
                   <Download className="w-4 h-4" />{downloadingReport ? "Generating..." : "Generate PDF"}
                 </button>
@@ -1339,9 +1466,9 @@ export default function SubscriberPortfolioPage() {
               {/* ── GOLD / REAL ESTATE / BOND / CRYPTO fields ── */}
               {(holdingForm.assetType === "gold" || holdingForm.assetType === "real_estate" || holdingForm.assetType === "bond" || holdingForm.assetType === "crypto") && (<>
                 <div className="grid grid-cols-3 gap-3">
-                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">{holdingForm.assetType === "real_estate" ? "Units / Sq ft" : "Quantity"}</label>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">{holdingForm.assetType === "real_estate" ? "Units / Sq ft" : holdingForm.assetType === "gold" ? "Quantity (grams)" : "Quantity"}</label>
                     <input type="number" step="0.001" value={holdingForm.quantity} onChange={(e) => setHoldingForm((f) => ({ ...f, quantity: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
-                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Price / Value *</label>
+                  <div><label className="text-xs font-medium text-slate-500 mb-1 block">{holdingForm.assetType === "gold" ? "Price per gram (\u20B9) *" : "Buy Price / Value *"}</label>
                     <input type="number" value={holdingForm.avgBuyPrice} onChange={(e) => setHoldingForm((f) => ({ ...f, avgBuyPrice: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
                   <div><label className="text-xs font-medium text-slate-500 mb-1 block">Buy Date</label>
                     <input type="date" value={holdingForm.buyDate} onChange={(e) => setHoldingForm((f) => ({ ...f, buyDate: e.target.value }))} className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2.5" /></div>
