@@ -1,4 +1,4 @@
-import { checkUsageLimit, checkDyorAccess, checkAnalyzerAccess, logToolUsage, getUsageStats, getUsageCount, getMonetizationConfig, clearConfigCache, getActiveSubscription, validateCoupon, useCoupon, incrementSubUsage } from "./usage-tracking";
+import { checkUsageLimit, checkDyorAccess, checkAnalyzerAccess, logToolUsage, getUsageStats, getUsageCount, getMonetizationConfig, clearConfigCache, getActiveSubscription, getAccessGrant, getAccessGrantForAnyTool, validateCoupon, useCoupon, incrementSubUsage } from "./usage-tracking";
 import { generateLinkingCode, getUserTelegramStatus, initTelegramBot } from "./telegram";
 import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
@@ -5893,6 +5893,57 @@ export async function registerRoutes(
   app.get("/api/admin/tool-subscriptions", requireAdmin, async (req: any, res: any) => {
     try {
       const result = await db.execute(sql`SELECT ts.*, u.username, u.email, u.role FROM tool_subscriptions ts JOIN users u ON u.id = ts.user_id ORDER BY ts.created_at DESC LIMIT 200`);
+      res.json((result as any).rows || []);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+
+  // ── Admin: User Access Grants ─────────────────────────────────
+  app.get("/api/admin/access-grants", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT ag.*, u.username, u.email, u.role, g.username AS granted_by_name
+        FROM user_access_grants ag JOIN users u ON u.id = ag.user_id LEFT JOIN users g ON g.id = ag.granted_by
+        ORDER BY ag.created_at DESC LIMIT 200`);
+      res.json((result as any).rows || []);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/admin/access-grants", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { userId, tool, grantType, extraAnalyses, validUntil, note } = req.body;
+      if (!userId || !tool || !grantType) return res.status(400).json({ error: "userId, tool, grantType required" });
+      await db.execute(sql`INSERT INTO user_access_grants (user_id, tool, grant_type, extra_analyses, valid_until, note, granted_by)
+        VALUES (${userId}, ${tool}, ${grantType}, ${extraAnalyses || null}, ${validUntil || null}, ${note || null}, ${req.session.userId})`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/admin/access-grants/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { isActive, validUntil, extraAnalyses, note } = req.body;
+      const id = parseInt(req.params.id);
+      if (isActive !== undefined) await db.execute(sql`UPDATE user_access_grants SET is_active = ${isActive} WHERE id = ${id}`);
+      if (validUntil !== undefined) await db.execute(sql`UPDATE user_access_grants SET valid_until = ${validUntil} WHERE id = ${id}`);
+      if (extraAnalyses !== undefined) await db.execute(sql`UPDATE user_access_grants SET extra_analyses = ${extraAnalyses} WHERE id = ${id}`);
+      if (note !== undefined) await db.execute(sql`UPDATE user_access_grants SET note = ${note} WHERE id = ${id}`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/admin/access-grants/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`DELETE FROM user_access_grants WHERE id = ${parseInt(req.params.id)}`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Admin: Search users (for grants UI) ───────────────────────
+  app.get("/api/admin/users-search", requireAdmin, async (req: any, res: any) => {
+    try {
+      const q = req.query.q || "";
+      const result = await db.execute(sql`SELECT id, username, email, role, is_approved, company_name FROM users
+        WHERE username ILIKE ${'%' + q + '%'} OR email ILIKE ${'%' + q + '%'} OR company_name ILIKE ${'%' + q + '%'}
+        ORDER BY created_at DESC LIMIT 20`);
       res.json((result as any).rows || []);
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });

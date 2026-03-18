@@ -455,6 +455,179 @@ function UsageStatsTab() {
   );
 }
 
+
+// ── Access Grants Tab ────────────────────────────────────────────
+function AccessGrantsTab() {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ tool: "dyor", grantType: "full", extraAnalyses: "", validUntil: "", note: "" });
+
+  const { data: grants = [], isLoading } = useQuery<any[]>({ queryKey: ["/api/admin/access-grants"] });
+
+  const searchUsers = async (q: string) => {
+    setSearch(q);
+    if (q.length < 2) { setSearchResults([]); return; }
+    try {
+      const res = await fetch("/api/admin/users-search?q=" + encodeURIComponent(q), { credentials: "include" });
+      const data = await res.json();
+      setSearchResults(data);
+    } catch { setSearchResults([]); }
+  };
+
+  const createMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedUser) throw new Error("Select a user first");
+      const payload = { userId: selectedUser.id, tool: form.tool, grantType: form.grantType, extraAnalyses: form.extraAnalyses ? parseInt(form.extraAnalyses) : null, validUntil: form.validUntil || null, note: form.note || null };
+      const res = await apiRequest("POST", "/api/admin/access-grants", payload);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/access-grants"] });
+      toast({ title: "Access granted to " + selectedUser?.username });
+      setShowForm(false); setSelectedUser(null); setSearch(""); setSearchResults([]);
+      setForm({ tool: "dyor", grantType: "full", extraAnalyses: "", validUntil: "", note: "" });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: number; isActive: boolean }) => {
+      const res = await apiRequest("PUT", "/api/admin/access-grants/" + id, { isActive });
+      return res.json();
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/admin/access-grants"] }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("DELETE", "/api/admin/access-grants/" + id);
+      return res.json();
+    },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/admin/access-grants"] }); toast({ title: "Grant deleted" }); },
+  });
+
+  const toolLabels: Record<string, string> = { dyor: "DYOR Research", stockMfBundle: "Stock & MF Bundle", portfolioTool: "Portfolio Tool", advisorPlatform: "Advisor Platform" };
+  const grantLabels: Record<string, string> = { full: "Full Access", extra_analyses: "Extra Analyses", time_limited: "Time Limited" };
+  const toolOptions = ["dyor", "stockMfBundle", "portfolioTool", "advisorPlatform"];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <p className="text-sm text-muted-foreground">Grant individual users full or partial tool access</p>
+        <Button onClick={() => setShowForm(!showForm)} size="sm"><Plus className="w-4 h-4 mr-2" /> New Grant</Button>
+      </div>
+
+      {showForm && (
+        <Card>
+          <CardContent className="pt-4 space-y-3">
+            <div>
+              <Label className="text-xs">Search User (by username or email)</Label>
+              <Input placeholder="Type to search..." value={search} onChange={(e) => searchUsers(e.target.value)} />
+              {searchResults.length > 0 && !selectedUser && (
+                <div className="border rounded mt-1 max-h-40 overflow-y-auto">
+                  {searchResults.map((u: any) => (
+                    <div key={u.id} className="px-3 py-2 hover:bg-muted cursor-pointer text-sm flex justify-between items-center" onClick={() => { setSelectedUser(u); setSearch(u.username + " (" + u.email + ")"); setSearchResults([]); }}>
+                      <span>{u.username} ({u.email})</span>
+                      <Badge variant="outline" className="text-[10px]">{u.role}{u.is_approved ? " ✓" : ""}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {selectedUser && (
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="default" className="text-xs">{selectedUser.username} ({selectedUser.email})</Badge>
+                  <Button variant="ghost" size="sm" className="h-5 px-1" onClick={() => { setSelectedUser(null); setSearch(""); }}>✕</Button>
+                </div>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              <div>
+                <Label className="text-xs">Tool</Label>
+                <Select value={form.tool} onValueChange={(v) => setForm({...form, tool: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {toolOptions.map((t) => <SelectItem key={t} value={t}>{toolLabels[t] || t}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs">Grant Type</Label>
+                <Select value={form.grantType} onValueChange={(v) => setForm({...form, grantType: v})}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full">Full Access (unlimited)</SelectItem>
+                    <SelectItem value="extra_analyses">Extra Analyses (custom quota)</SelectItem>
+                    <SelectItem value="time_limited">Time Limited (with expiry)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {form.grantType === "extra_analyses" && (
+                <div>
+                  <Label className="text-xs">Number of Analyses</Label>
+                  <Input type="number" placeholder="e.g. 10" value={form.extraAnalyses} onChange={(e) => setForm({...form, extraAnalyses: e.target.value})} />
+                </div>
+              )}
+              {(form.grantType === "time_limited" || form.grantType === "full") && (
+                <div>
+                  <Label className="text-xs">Valid Until (optional)</Label>
+                  <Input type="date" value={form.validUntil} onChange={(e) => setForm({...form, validUntil: e.target.value})} />
+                </div>
+              )}
+            </div>
+            <div>
+              <Label className="text-xs">Note (optional)</Label>
+              <Input placeholder="e.g. Beta tester, VIP client..." value={form.note} onChange={(e) => setForm({...form, note: e.target.value})} />
+            </div>
+            <Button onClick={() => createMutation.mutate()} disabled={!selectedUser || createMutation.isPending} size="sm">
+              {createMutation.isPending ? "Granting..." : "Grant Access"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {isLoading ? <p className="text-sm text-muted-foreground">Loading...</p> : grants.length === 0 ? <p className="text-sm text-muted-foreground">No access grants yet</p> : (
+        <div className="space-y-2">
+          {grants.map((g: any) => (
+            <Card key={g.id}>
+              <CardContent className="py-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Users className="w-4 h-4 text-muted-foreground" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-sm">{g.username}</span>
+                      <span className="text-xs text-muted-foreground">({g.email})</span>
+                      <Badge variant={g.is_active ? "default" : "secondary"} className="text-[10px]">{g.is_active ? "Active" : "Revoked"}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge variant="outline" className="text-[10px]">{toolLabels[g.tool] || g.tool}</Badge>
+                      <Badge variant="outline" className="text-[10px]">{grantLabels[g.grant_type] || g.grant_type}</Badge>
+                      {g.extra_analyses && <Badge variant="outline" className="text-[10px]">{g.extra_analyses} analyses</Badge>}
+                      {g.valid_until && <Badge variant="outline" className="text-[10px]">Until {new Date(g.valid_until).toLocaleDateString()}</Badge>}
+                      {g.note && <span className="text-[10px] text-muted-foreground italic">{g.note}</span>}
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">Granted by {g.granted_by_name || "—"} on {new Date(g.created_at).toLocaleDateString()}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => toggleMutation.mutate({ id: g.id, isActive: !g.is_active })}>
+                    {g.is_active ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { if (confirm("Delete this grant?")) deleteMutation.mutate(g.id); }}>
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main Component ───────────────────────────────────────────────
 export default function AdminMonetization() {
   const { toast } = useToast();
@@ -492,10 +665,12 @@ export default function AdminMonetization() {
           <TabsTrigger value="pricing"><IndianRupee className="w-4 h-4 mr-1" /> Pricing</TabsTrigger>
           <TabsTrigger value="coupons"><Tag className="w-4 h-4 mr-1" /> Coupons</TabsTrigger>
           <TabsTrigger value="usage"><BarChart3 className="w-4 h-4 mr-1" /> Usage Stats</TabsTrigger>
+          <TabsTrigger value="grants"><Users className="w-4 h-4 mr-1" /> Access Grants</TabsTrigger>
         </TabsList>
         <TabsContent value="pricing"><PricingTab config={config} setConfig={setConfig} hasChanges={hasChanges} setHasChanges={setHasChanges} saveMutation={saveMutation} /></TabsContent>
         <TabsContent value="coupons"><CouponsTab /></TabsContent>
         <TabsContent value="usage"><UsageStatsTab /></TabsContent>
+        <TabsContent value="grants"><AccessGrantsTab /></TabsContent>
       </Tabs>
     </div>
   );

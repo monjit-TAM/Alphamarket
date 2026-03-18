@@ -53,6 +53,23 @@ export async function getActiveSubscription(userId: string, tool: string): Promi
   return ((result as any).rows || [])[0] || null;
 }
 
+
+// ── Access grants (admin-managed) ─────────────────────────────────
+export async function getAccessGrant(userId: string, tool: string): Promise<any> {
+  const result = await db.execute(
+    sql`SELECT * FROM user_access_grants WHERE user_id = ${userId} AND tool = ${tool} AND is_active = true AND (valid_until IS NULL OR valid_until > NOW()) ORDER BY created_at DESC LIMIT 1`
+  );
+  return ((result as any).rows || [])[0] || null;
+}
+
+export async function getAccessGrantForAnyTool(userId: string, tools: string[]): Promise<any> {
+  for (const tool of tools) {
+    const grant = await getAccessGrant(userId, tool);
+    if (grant) return grant;
+  }
+  return null;
+}
+
 // ── Increment subscription usage ──────────────────────────────────
 export async function incrementSubUsage(subId: number): Promise<void> {
   await db.execute(sql`UPDATE tool_subscriptions SET analyses_used = analyses_used + 1 WHERE id = ${subId}`);
@@ -77,6 +94,19 @@ export function checkDyorAccess() {
       // Approved advisors get free access
       if (user.role === "advisor" && user.is_approved && dyorConfig.freeForApprovedAdvisors !== false) {
         return next();
+      }
+
+      // Check admin access grant
+      const grant = await getAccessGrant(req.session.userId, "dyor");
+      if (grant) {
+        if (grant.grant_type === "full") return next();
+        // extra_analyses grant: check usage count
+        if (grant.grant_type === "extra_analyses" && grant.extra_analyses) {
+          const used = await getUsageCount(req.session.userId, "dyor", "month");
+          if (used < grant.extra_analyses) return next();
+        }
+        // time-limited: already filtered by valid_until in query
+        if (grant.grant_type === "time_limited") return next();
       }
 
       // Check active subscription
@@ -126,6 +156,17 @@ export function checkAnalyzerAccess(analyzerType: string) {
 
       const config = await getMonetizationConfig();
       const bundleConfig = config.stockMfBundle || {};
+
+      // Check admin access grant
+      const grant = await getAccessGrant(req.session.userId, "stockMfBundle");
+      if (grant) {
+        if (grant.grant_type === "full") return next();
+        if (grant.grant_type === "extra_analyses" && grant.extra_analyses) {
+          const used = await getUsageCount(req.session.userId, analyzerType, "month");
+          if (used < grant.extra_analyses) return next();
+        }
+        if (grant.grant_type === "time_limited") return next();
+      }
 
       // Check active bundle subscription
       const sub = await getActiveSubscription(req.session.userId, "stockMfBundle");
