@@ -1,3 +1,4 @@
+import { checkUsageLimit, checkDyorAccess, checkAnalyzerAccess, logToolUsage, getUsageStats, getUsageCount, getMonetizationConfig, clearConfigCache, getActiveSubscription, validateCoupon, useCoupon, incrementSubUsage } from "./usage-tracking";
 import { generateLinkingCode, getUserTelegramStatus, initTelegramBot } from "./telegram";
 import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
@@ -4085,6 +4086,7 @@ export async function registerRoutes(
       await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
         VALUES ('monetization_config', ${jsonStr}, NOW())
         ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      clearConfigCache();
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -5594,6 +5596,306 @@ export async function registerRoutes(
   app.use("/uploads", (await import("express")).static("/var/www/alphamarket/uploads"));
 
 
+
+
+  // ── Usage Tracking: Check remaining quota ──────────────────────
+  app.get("/api/usage/check/:tool", requireAuth, async (req: any, res: any) => {
+    try {
+      const tool = req.params.tool;
+      const config = await getMonetizationConfig();
+      const toolConfig = config[tool];
+      if (!toolConfig) return res.status(404).json({ error: "Unknown tool" });
+
+      const period = toolConfig.freeTierPeriod || "month";
+      const used = await getUsageCount(req.session.userId, tool, period);
+      const limit = toolConfig.freeTierLimit || 999999;
+
+      res.json({
+        tool: tool,
+        label: toolConfig.label || tool,
+        used: used,
+        limit: limit,
+        remaining: Math.max(0, limit - used),
+        period: period,
+        allowed: used < limit,
+        proPrice: toolConfig.proPrice,
+        proPeriod: toolConfig.proPeriod || "month",
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Usage Tracking: Log usage from frontend (DYOR etc) ────────
+  app.post("/api/usage/log", requireAuth, async (req: any, res: any) => {
+    try {
+      const { tool, endpoint, metadata } = req.body;
+      if (!tool) return res.status(400).json({ error: "tool is required" });
+
+      const config = await getMonetizationConfig();
+      const toolConfig = config[tool];
+      if (!toolConfig || !toolConfig.enabled) return res.status(403).json({ error: "Tool disabled" });
+
+      const period = toolConfig.freeTierPeriod || "month";
+      const used = await getUsageCount(req.session.userId, tool, period);
+      const limit = toolConfig.freeTierLimit || 999999;
+
+      if (used >= limit) {
+        return res.status(429).json({
+          error: "Usage limit reached",
+          tool: toolConfig.label || tool,
+          used: used,
+          limit: limit,
+          period: period,
+          upgrade: {
+            message: "You have used all " + limit + " free " + (toolConfig.label || tool) + " analyses this " + period + ". Upgrade to Pro for unlimited access.",
+            proPrice: toolConfig.proPrice,
+            proPeriod: toolConfig.proPeriod || "month",
+          },
+        });
+      }
+
+      await logToolUsage(req.session.userId, tool, endpoint || null, metadata || {});
+      res.json({ success: true, used: used + 1, limit: limit, remaining: Math.max(0, limit - used - 1) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Admin: Usage analytics dashboard ──────────────────────────
+  app.get("/api/admin/usage-stats", requireAdmin, async (req: any, res: any) => {
+    try {
+      const days = parseInt(req.query.days) || 30;
+      const stats = await getUsageStats(days);
+      res.json(stats);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Tool Subscription: Create Cashfree order ───────────────────
+  app.post("/api/tool-subscribe", requireAuth, async (req: any, res: any) => {
+    try {
+      const { tool, couponCode } = req.body;
+      if (!tool) return res.status(400).json({ error: "tool is required" });
+
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const config = await getMonetizationConfig();
+      let amount = 0;
+      let analysesIncluded: number | null = null;
+      let toolConfig: any = null;
+
+      if (tool === "dyor") {
+        toolConfig = config.dyor || {};
+        amount = toolConfig.monthlyPrice || 4999;
+      } else if (tool === "stockMfBundle") {
+        toolConfig = config.stockMfBundle || {};
+        amount = toolConfig.monthlyPrice || 999;
+        analysesIncluded = toolConfig.includedAnalyses || 3;
+      } else {
+        return res.status(400).json({ error: "Unknown tool: " + tool });
+      }
+
+      let discountAmount = 0;
+      if (couponCode) {
+        const couponResult = await validateCoupon(couponCode, tool, amount);
+        if (!couponResult.valid) return res.status(400).json({ error: couponResult.error });
+        discountAmount = couponResult.discount;
+      }
+
+      const finalAmount = Math.max(amount - discountAmount, 1);
+      const orderId = "TOOL_" + tool.toUpperCase() + "_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      const verifyToken = generateVerifyToken(orderId, user.id);
+      const baseUrl = req.protocol + "://" + req.get("host");
+      const returnUrl = baseUrl + "/payment-callback?order_id=" + orderId + "&vt=" + verifyToken + "&type=tool";
+
+      const cfOrder = await createCashfreeOrder({
+        orderId,
+        amount: finalAmount,
+        customerName: user.companyName || user.username,
+        customerEmail: user.email,
+        customerPhone: user.phone || "9999999999",
+        customerId: user.id,
+        returnUrl,
+      });
+
+      // Store pending subscription
+      const expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+      await db.execute(sql`INSERT INTO tool_subscriptions (user_id, tool, plan_type, status, amount, analyses_included, payment_order_id, coupon_code, discount_amount, expires_at)
+        VALUES (${user.id}, ${tool}, 'monthly', 'pending', ${finalAmount}, ${analysesIncluded}, ${orderId}, ${couponCode || null}, ${discountAmount}, ${expiresAt.toISOString()})`);
+
+      if (couponCode) await useCoupon(couponCode);
+
+      res.json({
+        orderId,
+        paymentSessionId: cfOrder.payment_session_id,
+        cfOrderId: cfOrder.cf_order_id,
+        amount: finalAmount,
+        originalAmount: amount,
+        discount: discountAmount,
+        couponCode: couponCode || null,
+        verifyToken,
+      });
+    } catch (err: any) {
+      console.error("[ToolSubscribe] Error:", err?.response?.data || err.message);
+      res.status(500).json({ error: err?.response?.data?.message || err.message });
+    }
+  });
+
+  // ── Tool Subscription: Verify payment & activate ──────────────
+  app.post("/api/tool-subscribe/verify", requireAuth, async (req: any, res: any) => {
+    try {
+      const { orderId } = req.body;
+      if (!orderId) return res.status(400).json({ error: "orderId required" });
+
+      const cfOrder = await fetchCashfreeOrder(orderId);
+      const status = cfOrder.order_status;
+
+      if (status === "PAID") {
+        await db.execute(sql`UPDATE tool_subscriptions SET status = 'active' WHERE payment_order_id = ${orderId} AND status = 'pending'`);
+        const sub = await db.execute(sql`SELECT * FROM tool_subscriptions WHERE payment_order_id = ${orderId}`);
+        const row = ((sub as any).rows || [])[0];
+        res.json({ success: true, status: "active", subscription: row });
+      } else {
+        await db.execute(sql`UPDATE tool_subscriptions SET status = ${status.toLowerCase()} WHERE payment_order_id = ${orderId} AND status = 'pending'`);
+        res.json({ success: false, status: status });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Tool Subscription: Pay for additional analysis (overage) ──
+  app.post("/api/tool-subscribe/overage", requireAuth, async (req: any, res: any) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(401).json({ error: "User not found" });
+
+      const config = await getMonetizationConfig();
+      const bundleConfig = config.stockMfBundle || {};
+      const amount = bundleConfig.additionalAnalysisPrice || 499;
+
+      const orderId = "OVERAGE_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      const verifyToken = generateVerifyToken(orderId, user.id);
+      const baseUrl = req.protocol + "://" + req.get("host");
+      const returnUrl = baseUrl + "/payment-callback?order_id=" + orderId + "&vt=" + verifyToken + "&type=overage";
+
+      const cfOrder = await createCashfreeOrder({
+        orderId,
+        amount,
+        customerName: user.companyName || user.username,
+        customerEmail: user.email,
+        customerPhone: user.phone || "9999999999",
+        customerId: user.id,
+        returnUrl,
+      });
+
+      res.json({
+        orderId,
+        paymentSessionId: cfOrder.payment_session_id,
+        cfOrderId: cfOrder.cf_order_id,
+        amount,
+        verifyToken,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Tool Subscription: Verify overage & increment quota ───────
+  app.post("/api/tool-subscribe/overage/verify", requireAuth, async (req: any, res: any) => {
+    try {
+      const { orderId } = req.body;
+      if (!orderId) return res.status(400).json({ error: "orderId required" });
+
+      const cfOrder = await fetchCashfreeOrder(orderId);
+      if (cfOrder.order_status === "PAID") {
+        const sub = await getActiveSubscription(req.session.userId!, "stockMfBundle");
+        if (sub) {
+          await db.execute(sql`UPDATE tool_subscriptions SET analyses_included = analyses_included + 1 WHERE id = ${sub.id}`);
+        }
+        res.json({ success: true, message: "Additional analysis unlocked" });
+      } else {
+        res.json({ success: false, status: cfOrder.order_status });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── My subscriptions ──────────────────────────────────────────
+  app.get("/api/my-subscriptions", requireAuth, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT * FROM tool_subscriptions WHERE user_id = ${req.session.userId} ORDER BY created_at DESC`);
+      res.json((result as any).rows || []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Coupon: Validate (public, for checkout) ───────────────────
+  app.post("/api/coupon/validate", requireAuth, async (req: any, res: any) => {
+    try {
+      const { code, tool, amount } = req.body;
+      if (!code || !tool || !amount) return res.status(400).json({ error: "code, tool, amount required" });
+      const result = await validateCoupon(code, tool, amount);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── Admin: CRUD coupon codes ──────────────────────────────────
+  app.get("/api/admin/coupons", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT * FROM coupon_codes ORDER BY created_at DESC`);
+      res.json((result as any).rows || []);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.post("/api/admin/coupons", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { code, description, discountType, discountValue, applicableTools, maxUses, minAmount, maxDiscount, validFrom, validUntil } = req.body;
+      if (!code || !discountValue) return res.status(400).json({ error: "code and discountValue required" });
+      const toolsArr = applicableTools && applicableTools.length > 0 ? applicableTools : [];
+      const toolsLiteral = "{" + toolsArr.join(",") + "}";
+      await db.execute(sql`INSERT INTO coupon_codes (code, description, discount_type, discount_value, applicable_tools, max_uses, min_amount, max_discount, valid_from, valid_until)
+        VALUES (${code.toUpperCase()}, ${description || null}, ${discountType || "percentage"}, ${discountValue}, ${toolsLiteral}::text[], ${maxUses || null}, ${minAmount || 0}, ${maxDiscount || null}, ${validFrom || new Date().toISOString()}, ${validUntil || null})`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.put("/api/admin/coupons/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { isActive, maxUses, validUntil, discountValue, maxDiscount } = req.body;
+      const id = parseInt(req.params.id);
+      if (isActive !== undefined) await db.execute(sql`UPDATE coupon_codes SET is_active = ${isActive} WHERE id = ${id}`);
+      if (maxUses !== undefined) await db.execute(sql`UPDATE coupon_codes SET max_uses = ${maxUses} WHERE id = ${id}`);
+      if (validUntil !== undefined) await db.execute(sql`UPDATE coupon_codes SET valid_until = ${validUntil} WHERE id = ${id}`);
+      if (discountValue !== undefined) await db.execute(sql`UPDATE coupon_codes SET discount_value = ${discountValue} WHERE id = ${id}`);
+      if (maxDiscount !== undefined) await db.execute(sql`UPDATE coupon_codes SET max_discount = ${maxDiscount} WHERE id = ${id}`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  app.delete("/api/admin/coupons/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      await db.execute(sql`DELETE FROM coupon_codes WHERE id = ${parseInt(req.params.id)}`);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // ── Admin: View all tool subscriptions ────────────────────────
+  app.get("/api/admin/tool-subscriptions", requireAdmin, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT ts.*, u.username, u.email, u.role FROM tool_subscriptions ts JOIN users u ON u.id = ts.user_id ORDER BY ts.created_at DESC LIMIT 200`);
+      res.json((result as any).rows || []);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
 
   return httpServer;
 }

@@ -324,7 +324,7 @@ function resolveExchangeAndSegment(
     "DIXON TECHNOLOGIES LTD": "DIXON", "DIXON TECHNOLOGIES": "DIXON",
     "ASTRAL LIMITED": "ASTRAL", "ASTRAL LTD": "ASTRAL",
     "CENTRAL DEPO SER (I) LTD": "CDSL", "CENTRAL DEPOSITORY SERVICES": "CDSL", "CENTRAL DEPO SER": "CDSL",
-    "GVT&D": "GVTD",
+    "GVT&D": "GVT&D",
   };
 
   // Try exact match first
@@ -382,7 +382,7 @@ export async function getLiveQuote(
   try {
     const accessToken = await getAccessToken();
     const { exchange, segment, tradingSymbol } = resolveExchangeAndSegment(symbol, strategyType);
-    const url = `${GROWW_API_BASE}/live-data/quote?exchange=${exchange}&segment=${segment}&trading_symbol=${tradingSymbol}`;
+    const url = `${GROWW_API_BASE}/live-data/quote?exchange=${exchange}&segment=${segment}&trading_symbol=${encodeURIComponent(tradingSymbol)}`;
 
     const response = await fetch(url, { headers: getHeaders(accessToken) });
     if (!response.ok) {
