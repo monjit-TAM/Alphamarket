@@ -288,26 +288,34 @@ export default function DyorPage() {
         )}
 
         {/* Main Tabs — matches testalpha.in sections */}
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <div className="overflow-x-auto mb-4">
-            <TabsList className="inline-flex min-w-max">
-              <TabsTrigger value="screener"><Zap className="h-3.5 w-3.5 mr-1" />Screener</TabsTrigger>
-              <TabsTrigger value="backtest"><FlaskConical className="h-3.5 w-3.5 mr-1" />Backtest</TabsTrigger>
-              <TabsTrigger value="charts"><LineChart className="h-3.5 w-3.5 mr-1" />Charts</TabsTrigger>
-              <TabsTrigger value="options"><Layers className="h-3.5 w-3.5 mr-1" />Options</TabsTrigger>
-              <TabsTrigger value="paper"><Target className="h-3.5 w-3.5 mr-1" />Paper Trades</TabsTrigger>
-              <TabsTrigger value="forward"><GitBranch className="h-3.5 w-3.5 mr-1" />Forward Test</TabsTrigger>
-              <TabsTrigger value="portfolio"><Briefcase className="h-3.5 w-3.5 mr-1" />Model Port.</TabsTrigger>
-              <TabsTrigger value="watchlist"><Star className="h-3.5 w-3.5 mr-1" />Watchlist</TabsTrigger>
-              <TabsTrigger value="sectors"><BarChart3 className="h-3.5 w-3.5 mr-1" />Sectors</TabsTrigger>
-              <TabsTrigger value="alerts"><Bell className="h-3.5 w-3.5 mr-1" />Alerts</TabsTrigger>
-              <TabsTrigger value="morning"><Activity className="h-3.5 w-3.5 mr-1" />Morning Brief</TabsTrigger>
-              <TabsTrigger value="patterns"><Eye className="h-3.5 w-3.5 mr-1" />Patterns</TabsTrigger>
-              <TabsTrigger value="heatmap"><BarChart3 className="h-3.5 w-3.5 mr-1" />Heatmap</TabsTrigger>
-              <TabsTrigger value="dcf"><TrendingUp className="h-3.5 w-3.5 mr-1" />DCF Calc</TabsTrigger>
-              <TabsTrigger value="dividends"><ArrowUpDown className="h-3.5 w-3.5 mr-1" />Dividends</TabsTrigger>
-            </TabsList>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex gap-4">
+          {/* Left Sidebar Navigation */}
+          <div className="w-48 shrink-0">
+            <div className="sticky top-4 bg-card border rounded-lg p-2 space-y-0.5">
+              <div className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider">Research</div>
+              <TabsTrigger value="screener" className="w-full justify-start px-3 py-2 text-sm"><Zap className="h-3.5 w-3.5 mr-2" />Screener</TabsTrigger>
+              <TabsTrigger value="backtest" className="w-full justify-start px-3 py-2 text-sm"><FlaskConical className="h-3.5 w-3.5 mr-2" />Backtest</TabsTrigger>
+              <TabsTrigger value="charts" className="w-full justify-start px-3 py-2 text-sm"><LineChart className="h-3.5 w-3.5 mr-2" />Charts</TabsTrigger>
+              <TabsTrigger value="options" className="w-full justify-start px-3 py-2 text-sm"><Layers className="h-3.5 w-3.5 mr-2" />Options</TabsTrigger>
+              <div className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider mt-2">Trading</div>
+              <TabsTrigger value="paper" className="w-full justify-start px-3 py-2 text-sm"><Target className="h-3.5 w-3.5 mr-2" />Paper Trades</TabsTrigger>
+              <TabsTrigger value="forward" className="w-full justify-start px-3 py-2 text-sm"><GitBranch className="h-3.5 w-3.5 mr-2" />Forward Test</TabsTrigger>
+              <TabsTrigger value="portfolio" className="w-full justify-start px-3 py-2 text-sm"><Briefcase className="h-3.5 w-3.5 mr-2" />Model Port.</TabsTrigger>
+              <TabsTrigger value="watchlist" className="w-full justify-start px-3 py-2 text-sm"><Star className="h-3.5 w-3.5 mr-2" />Watchlist</TabsTrigger>
+              <div className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider mt-2">Market Intel</div>
+              <TabsTrigger value="morning" className="w-full justify-start px-3 py-2 text-sm"><Activity className="h-3.5 w-3.5 mr-2" />Morning Brief</TabsTrigger>
+              <TabsTrigger value="patterns" className="w-full justify-start px-3 py-2 text-sm"><Eye className="h-3.5 w-3.5 mr-2" />Patterns</TabsTrigger>
+              <TabsTrigger value="heatmap" className="w-full justify-start px-3 py-2 text-sm"><BarChart3 className="h-3.5 w-3.5 mr-2" />Heatmap</TabsTrigger>
+              <TabsTrigger value="sectors" className="w-full justify-start px-3 py-2 text-sm"><BarChart3 className="h-3.5 w-3.5 mr-2" />Sectors</TabsTrigger>
+              <div className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider mt-2">Valuation</div>
+              <TabsTrigger value="dcf" className="w-full justify-start px-3 py-2 text-sm"><TrendingUp className="h-3.5 w-3.5 mr-2" />DCF Calc</TabsTrigger>
+              <TabsTrigger value="dividends" className="w-full justify-start px-3 py-2 text-sm"><ArrowUpDown className="h-3.5 w-3.5 mr-2" />Dividends</TabsTrigger>
+              <div className="px-3 py-1.5 text-xs font-bold text-muted-foreground uppercase tracking-wider mt-2">Alerts</div>
+              <TabsTrigger value="alerts" className="w-full justify-start px-3 py-2 text-sm"><Bell className="h-3.5 w-3.5 mr-2" />Alerts</TabsTrigger>
+            </div>
           </div>
+          {/* Main Content Area */}
+          <div className="flex-1 min-w-0">
 
           {/* ═══ SCREENER ═══ */}
           <TabsContent value="screener">
@@ -894,6 +902,7 @@ export default function DyorPage() {
               </CardContent>
             </Card>
           </TabsContent>
+          </div>
         </Tabs>
       </div>
       <Footer />
