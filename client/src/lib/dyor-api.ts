@@ -51,4 +51,9 @@ export const dyorApi = {
   createAlert: (params: any) => dyorFetch('/alerts/create', { method: 'POST', body: JSON.stringify(params) }),
   toggleAlert: (id: number) => dyorFetch(`/alerts/${id}/toggle`, { method: 'POST' }),
   indicators: (params: any) => dyorFetch('/indicators', { method: 'POST', body: JSON.stringify(params) }),
+  morningBrief: () => dyorFetch('/morning-brief'),
+  patterns: (symbol: string) => dyorFetch(`/patterns/${symbol}`),
+  sectorHeatmap: () => dyorFetch('/sector-heatmap'),
+  dcf: (symbol: string, params?: any) => dyorFetch(`/dcf/${symbol}${params ? '?' + new URLSearchParams(params).toString() : ''}`),
+  dividends: () => dyorFetch('/dividends'),
 };

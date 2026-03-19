@@ -42,6 +42,8 @@ export default function DyorPage() {
   const [alertPrice, setAlertPrice] = useState("");
   const [alertCondition, setAlertCondition] = useState("above");
   const qc = useQueryClient();
+  const [patternSymbol, setPatternSymbol] = useState("RELIANCE");
+  const [dcfSymbol, setDcfSymbol] = useState("TCS");
 
   // ── Search ──
   const { data: searchResults } = useQuery({
@@ -154,6 +156,31 @@ export default function DyorPage() {
     queryKey: ["dyor", "alerts"],
     queryFn: () => dyorApi.alerts(),
     enabled: activeTab === "alerts",
+  });
+  const { data: morningData, isLoading: loadingMorning } = useQuery({
+    queryKey: ["dyor", "morning-brief"],
+    queryFn: () => dyorApi.morningBrief(),
+    enabled: activeTab === "morning",
+  });
+  const { data: patternData, isLoading: loadingPatterns } = useQuery({
+    queryKey: ["dyor", "patterns", patternSymbol],
+    queryFn: () => dyorApi.patterns(patternSymbol),
+    enabled: activeTab === "patterns" && !!patternSymbol,
+  });
+  const { data: heatmapData, isLoading: loadingHeatmap } = useQuery({
+    queryKey: ["dyor", "heatmap"],
+    queryFn: () => dyorApi.sectorHeatmap(),
+    enabled: activeTab === "heatmap",
+  });
+  const { data: dcfData, isLoading: loadingDcf } = useQuery({
+    queryKey: ["dyor", "dcf", dcfSymbol],
+    queryFn: () => dyorApi.dcf(dcfSymbol),
+    enabled: activeTab === "dcf" && !!dcfSymbol,
+  });
+  const { data: dividendData, isLoading: loadingDividends } = useQuery({
+    queryKey: ["dyor", "dividends"],
+    queryFn: () => dyorApi.dividends(),
+    enabled: activeTab === "dividends",
   });
   const createAlert = useMutation({
     mutationFn: () => dyorApi.createAlert({ symbol: alertSymbol, target_price: parseFloat(alertPrice), condition: alertCondition }),
@@ -274,6 +301,11 @@ export default function DyorPage() {
               <TabsTrigger value="watchlist"><Star className="h-3.5 w-3.5 mr-1" />Watchlist</TabsTrigger>
               <TabsTrigger value="sectors"><BarChart3 className="h-3.5 w-3.5 mr-1" />Sectors</TabsTrigger>
               <TabsTrigger value="alerts"><Bell className="h-3.5 w-3.5 mr-1" />Alerts</TabsTrigger>
+              <TabsTrigger value="morning"><Activity className="h-3.5 w-3.5 mr-1" />Morning Brief</TabsTrigger>
+              <TabsTrigger value="patterns"><Eye className="h-3.5 w-3.5 mr-1" />Patterns</TabsTrigger>
+              <TabsTrigger value="heatmap"><BarChart3 className="h-3.5 w-3.5 mr-1" />Heatmap</TabsTrigger>
+              <TabsTrigger value="dcf"><TrendingUp className="h-3.5 w-3.5 mr-1" />DCF Calc</TabsTrigger>
+              <TabsTrigger value="dividends"><ArrowUpDown className="h-3.5 w-3.5 mr-1" />Dividends</TabsTrigger>
             </TabsList>
           </div>
 
@@ -651,6 +683,214 @@ export default function DyorPage() {
                     </div>
                   ))}</div>
                 ) : <p className="text-gray-500 text-center py-8">No alerts set. Create one above.</p>}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══ MORNING BRIEF ═══ */}
+          <TabsContent value="morning">
+            <Card>
+              <CardHeader><CardTitle>Morning Brief</CardTitle><CardDescription>Pre-market analysis with global cues, India indices, sector pulse & sentiment</CardDescription></CardHeader>
+              <CardContent>
+                {loadingMorning ? <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div> : morningData ? (
+                  <div className="space-y-6">
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {Object.entries(morningData.global_cues || {}).map(([k, v]: any) => (
+                        <div key={k} className="p-3 rounded-lg border bg-card">
+                          <div className="text-xs text-muted-foreground">{v.name}</div>
+                          <div className="text-lg font-bold">{typeof v.price === 'number' ? v.price.toLocaleString() : v.price}</div>
+                          <Badge variant={v.change_pct >= 0 ? "default" : "destructive"} className="text-xs">{v.change_pct >= 0 ? "+" : ""}{v.change_pct}%</Badge>
+                        </div>
+                      ))}
+                    </div>
+                    {morningData.india && <div className="grid grid-cols-2 gap-3">
+                      {Object.entries(morningData.india).map(([k, v]: any) => (
+                        <div key={k} className="p-3 rounded-lg border bg-card">
+                          <div className="text-xs text-muted-foreground">{v.name}</div>
+                          <div className="text-lg font-bold">{v.close?.toLocaleString()}</div>
+                          <div className="text-xs">H: {v.high?.toLocaleString()} L: {v.low?.toLocaleString()}</div>
+                          <Badge variant={v.change_pct >= 0 ? "default" : "destructive"} className="text-xs">{v.change_pct >= 0 ? "+" : ""}{v.change_pct}%</Badge>
+                        </div>
+                      ))}
+                    </div>}
+                    {morningData.sentiment && (
+                      <div className="p-4 rounded-lg border bg-card">
+                        <div className="text-sm font-semibold mb-2">Market Sentiment: <Badge variant={morningData.sentiment.mood?.includes("BULL") ? "default" : morningData.sentiment.mood?.includes("BEAR") ? "destructive" : "secondary"}>{morningData.sentiment.mood}</Badge> (Score: {morningData.sentiment.score})</div>
+                        <div className="text-xs text-muted-foreground">{morningData.sentiment.signals?.join(" • ")}</div>
+                      </div>
+                    )}
+                    {morningData.sector_pulse && <div className="grid grid-cols-2 gap-3">
+                      <div><div className="text-sm font-semibold text-green-500 mb-2">Top Gaining Sectors</div>{morningData.sector_pulse.gainers?.map((s: any) => <div key={s.sector} className="flex justify-between text-sm py-1"><span>{s.sector}</span><Badge variant="default">+{s.change_pct}%</Badge></div>)}</div>
+                      <div><div className="text-sm font-semibold text-red-500 mb-2">Top Losing Sectors</div>{morningData.sector_pulse.losers?.map((s: any) => <div key={s.sector} className="flex justify-between text-sm py-1"><span>{s.sector}</span><Badge variant="destructive">{s.change_pct}%</Badge></div>)}</div>
+                    </div>}
+                  </div>
+                ) : <p className="text-gray-500 text-center py-8">No data available</p>}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══ PATTERNS ═══ */}
+          <TabsContent value="patterns">
+            <Card>
+              <CardHeader><CardTitle>Pattern Scanner</CardTitle><CardDescription>Technical indicators, chart patterns & composite score</CardDescription></CardHeader>
+              <CardContent>
+                <div className="flex gap-2 mb-4">
+                  <Input value={patternSymbol} onChange={e => setPatternSymbol(e.target.value.toUpperCase())} placeholder="Enter symbol e.g. RELIANCE" className="max-w-xs" />
+                  <Button onClick={() => qc.invalidateQueries({ queryKey: ["dyor", "patterns", patternSymbol] })}>Scan</Button>
+                </div>
+                {loadingPatterns ? <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div> : patternData ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 p-4 rounded-lg border bg-card">
+                      <div><div className="text-2xl font-bold">{patternData.symbol}</div><div className="text-sm text-muted-foreground">{patternData.name} • {patternData.sector}</div></div>
+                      <div className="ml-auto text-right">
+                        <div className="text-xl font-bold">Rs.{patternData.price?.toLocaleString()}</div>
+                        <Badge variant={patternData.change_pct >= 0 ? "default" : "destructive"}>{patternData.change_pct >= 0 ? "+" : ""}{patternData.change_pct}%</Badge>
+                      </div>
+                      <div className="text-center px-4">
+                        <div className={`text-3xl font-bold ${patternData.score > 0 ? "text-green-500" : patternData.score < 0 ? "text-red-500" : "text-gray-500"}`}>{patternData.score > 0 ? "+" : ""}{patternData.score}</div>
+                        <Badge variant={patternData.verdict?.includes("BULL") ? "default" : patternData.verdict?.includes("BEAR") ? "destructive" : "secondary"}>{patternData.verdict}</Badge>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">RSI</span> <span className="font-mono font-bold">{patternData.indicators?.rsi}</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">MACD</span> <span className="font-mono font-bold">{patternData.indicators?.macd}</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">ADX</span> <span className="font-mono font-bold">{patternData.indicators?.adx}</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">Vol Ratio</span> <span className="font-mono font-bold">{patternData.indicators?.volume_ratio}x</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">SMA20</span> <span className="font-mono">{patternData.indicators?.sma20}</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">SMA50</span> <span className="font-mono">{patternData.indicators?.sma50}</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">BB Width</span> <span className="font-mono">{patternData.indicators?.bb_width}</span></div>
+                      <div className="p-2 rounded border"><span className="text-muted-foreground">Stoch K/D</span> <span className="font-mono">{patternData.indicators?.stoch_k}/{patternData.indicators?.stoch_d}</span></div>
+                    </div>
+                    {patternData.signals?.length > 0 && <div>
+                      <div className="text-sm font-semibold mb-2">Signals ({patternData.bullish_signals} bullish, {patternData.bearish_signals} bearish)</div>
+                      <div className="flex flex-wrap gap-1">{patternData.signals.map((s: any, i: number) => <Badge key={i} variant={s.signal === "BULLISH" ? "default" : s.signal === "BEARISH" ? "destructive" : "secondary"} className="text-xs">{s.name}</Badge>)}</div>
+                    </div>}
+                    {patternData.patterns?.length > 0 && <div>
+                      <div className="text-sm font-semibold mb-2">Chart Patterns Detected</div>
+                      {patternData.patterns.map((p: any, i: number) => (
+                        <div key={i} className="p-3 rounded border mb-2">
+                          <div className="flex items-center gap-2"><Badge variant={p.type === "BULLISH" ? "default" : p.type === "BEARISH" ? "destructive" : "secondary"}>{p.type}</Badge><span className="font-semibold">{p.pattern}</span>{p.stage && <Badge variant="outline">{p.stage}</Badge>}{p.reliability && <span className="text-xs text-muted-foreground">({p.reliability})</span>}</div>
+                          <div className="text-sm text-muted-foreground mt-1">{p.description}</div>
+                        </div>
+                      ))}
+                    </div>}
+                    {patternData.levels && <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-sm">
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">S2</div><div className="font-mono text-red-500">{patternData.levels.s2}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">S1</div><div className="font-mono text-red-400">{patternData.levels.s1}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">Pivot</div><div className="font-mono">{patternData.levels.pivot}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">R1</div><div className="font-mono text-green-400">{patternData.levels.r1}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">R2</div><div className="font-mono text-green-500">{patternData.levels.r2}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">52W</div><div className="font-mono text-xs">{patternData.levels.from_high}% / +{patternData.levels.from_low}%</div></div>
+                    </div>}
+                    {patternData.narrative && <div className="p-3 rounded-lg border bg-muted/50 text-sm">{patternData.narrative}</div>}
+                  </div>
+                ) : <p className="text-gray-500 text-center py-8">Enter a symbol and click Scan</p>}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══ HEATMAP ═══ */}
+          <TabsContent value="heatmap">
+            <Card>
+              <CardHeader><CardTitle>Sector Heatmap</CardTitle><CardDescription>Sector-wise performance with top movers</CardDescription></CardHeader>
+              <CardContent>
+                {loadingHeatmap ? <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div> : heatmapData?.sectors?.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {heatmapData.sectors.map((s: any) => (
+                      <div key={s.sector} className={`p-3 rounded-lg border ${s.change_pct >= 0 ? "bg-green-500/10 border-green-500/30" : "bg-red-500/10 border-red-500/30"}`}>
+                        <div className="font-semibold text-sm">{s.sector}</div>
+                        <div className={`text-xl font-bold ${s.change_pct >= 0 ? "text-green-500" : "text-red-500"}`}>{s.change_pct >= 0 ? "+" : ""}{s.change_pct}%</div>
+                        <div className="text-xs text-muted-foreground">{s.stock_count} stocks</div>
+                        {s.top_stocks?.map((st: any) => <div key={st.symbol} className="flex justify-between text-xs mt-1"><span>{st.symbol}</span><span className={st.change >= 0 ? "text-green-500" : "text-red-500"}>{st.change >= 0 ? "+" : ""}{st.change}%</span></div>)}
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-gray-500 text-center py-8">No heatmap data available</p>}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══ DCF CALCULATOR ═══ */}
+          <TabsContent value="dcf">
+            <Card>
+              <CardHeader><CardTitle>DCF Intrinsic Value Calculator</CardTitle><CardDescription>EPS-based DCF, FCF-based DCF & Graham Number</CardDescription></CardHeader>
+              <CardContent>
+                <div className="flex gap-2 mb-4">
+                  <Input value={dcfSymbol} onChange={e => setDcfSymbol(e.target.value.toUpperCase())} placeholder="Enter symbol e.g. TCS" className="max-w-xs" />
+                  <Button onClick={() => qc.invalidateQueries({ queryKey: ["dyor", "dcf", dcfSymbol] })}>Calculate</Button>
+                </div>
+                {loadingDcf ? <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div> : dcfData ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-4 p-4 rounded-lg border bg-card">
+                      <div><div className="text-2xl font-bold">{dcfData.symbol}</div><div className="text-sm text-muted-foreground">{dcfData.company} • {dcfData.sector}</div></div>
+                      <div className="ml-auto text-right">
+                        <div className="text-sm text-muted-foreground">Current Price</div>
+                        <div className="text-xl font-bold">Rs.{dcfData.price?.toLocaleString()}</div>
+                      </div>
+                      <div className="text-center px-4 border-l">
+                        <div className="text-sm text-muted-foreground">Fair Value</div>
+                        <div className="text-xl font-bold text-blue-500">Rs.{dcfData.avg_intrinsic?.toLocaleString()}</div>
+                      </div>
+                      <div className="text-center px-4 border-l">
+                        <Badge className="text-lg px-3 py-1" variant={dcfData.verdict === "UNDERVALUED" ? "default" : dcfData.verdict === "OVERVALUED" ? "destructive" : "secondary"}>{dcfData.verdict}</Badge>
+                        <div className="text-xs mt-1">Margin: {dcfData.margin_of_safety}%</div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="p-3 rounded border"><div className="text-xs text-muted-foreground">EPS DCF Value</div><div className="text-lg font-bold">Rs.{dcfData.eps_dcf?.intrinsic_value?.toLocaleString()}</div></div>
+                      <div className="p-3 rounded border"><div className="text-xs text-muted-foreground">FCF DCF Value</div><div className="text-lg font-bold">Rs.{dcfData.fcf_dcf?.intrinsic_value ? dcfData.fcf_dcf.intrinsic_value.toLocaleString() : "N/A"}</div></div>
+                      <div className="p-3 rounded border"><div className="text-xs text-muted-foreground">Graham Number</div><div className="text-lg font-bold">Rs.{dcfData.graham_number?.toLocaleString()}</div></div>
+                      <div className="p-3 rounded border"><div className="text-xs text-muted-foreground">Margin of Safety</div><div className={`text-lg font-bold ${dcfData.margin_of_safety > 0 ? "text-green-500" : "text-red-500"}`}>{dcfData.margin_of_safety}%</div></div>
+                    </div>
+                    <div className="grid grid-cols-3 md:grid-cols-6 gap-2 text-sm">
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">EPS</div><div className="font-mono">{dcfData.eps}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">P/E</div><div className="font-mono">{dcfData.pe}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">Book Value</div><div className="font-mono">{dcfData.book_value}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">ROE</div><div className="font-mono">{dcfData.roe}%</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">FCF/Share</div><div className="font-mono">{dcfData.fcf_per_share}</div></div>
+                      <div className="p-2 rounded border text-center"><div className="text-xs text-muted-foreground">Growth Rate</div><div className="font-mono">{dcfData.assumptions?.growth_rate}%</div></div>
+                    </div>
+                  </div>
+                ) : <p className="text-gray-500 text-center py-8">Enter a symbol and click Calculate</p>}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ═══ DIVIDENDS ═══ */}
+          <TabsContent value="dividends">
+            <Card>
+              <CardHeader><CardTitle>Dividend Tracker</CardTitle><CardDescription>Top dividend-paying stocks sorted by yield</CardDescription></CardHeader>
+              <CardContent>
+                {loadingDividends ? <div className="flex justify-center py-12"><Loader2 className="h-8 w-8 animate-spin" /></div> : dividendData?.by_yield?.length > 0 ? (
+                  <div>
+                    {dividendData.upcoming_ex_dates?.length > 0 && (
+                      <div className="mb-4 p-3 rounded-lg border border-yellow-500/30 bg-yellow-500/10">
+                        <div className="text-sm font-semibold mb-1">Upcoming Ex-Dividend Dates</div>
+                        <div className="flex flex-wrap gap-2">{dividendData.upcoming_ex_dates.map((d: any) => <Badge key={d.symbol} variant="outline">{d.symbol}: {d.ex_dividend_date} ({d.dividend_yield}%)</Badge>)}</div>
+                      </div>
+                    )}
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead><tr className="border-b text-left text-muted-foreground">
+                          <th className="py-2 pr-3">Symbol</th><th className="pr-3">Price</th><th className="pr-3">Yield %</th><th className="pr-3">Div Rate</th><th className="pr-3">Payout %</th><th className="pr-3">P/E</th><th className="pr-3">Sector</th><th>Ex-Date</th>
+                        </tr></thead>
+                        <tbody>{dividendData.by_yield.map((d: any) => (
+                          <tr key={d.symbol} className="border-b hover:bg-muted/50">
+                            <td className="py-2 pr-3 font-semibold">{d.symbol}</td>
+                            <td className="pr-3">Rs.{d.price?.toLocaleString()}</td>
+                            <td className="pr-3 font-bold text-green-500">{d.dividend_yield}%</td>
+                            <td className="pr-3">Rs.{d.dividend_rate}</td>
+                            <td className="pr-3">{d.payout_ratio}%</td>
+                            <td className="pr-3">{d.pe}</td>
+                            <td className="pr-3 text-xs">{d.sector}</td>
+                            <td className="text-xs">{d.ex_dividend_date || "—"}{d.upcoming && <Badge variant="outline" className="ml-1 text-xs">Upcoming</Badge>}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-2">{dividendData.count} stocks • Data as of {dividendData.date}</div>
+                  </div>
+                ) : <p className="text-gray-500 text-center py-8">No dividend data available</p>}
               </CardContent>
             </Card>
           </TabsContent>
