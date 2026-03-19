@@ -5,6 +5,30 @@ import { eq } from "drizzle-orm";
 
 const GROWW_API_BASE = "https://api.groww.in/v1";
 
+// ══ Alpha Data Service (centralized data layer) ══
+const DATA_SERVICE_URL = "http://127.0.0.1:5004";
+async function dataServiceQuote(symbol: string): Promise<any | null> {
+  try {
+    const res = await fetch(`${DATA_SERVICE_URL}/data/equity/quote/${encodeURIComponent(symbol)}`);
+    if (res.ok) return await res.json();
+  } catch { /* data service unavailable, fall through to Groww */ }
+  return null;
+}
+async function dataServiceBulkQuotes(symbols: string[]): Promise<Record<string, any>> {
+  try {
+    const res = await fetch(`${DATA_SERVICE_URL}/data/equity/quotes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ symbols }),
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return data.quotes || {};
+    }
+  } catch { /* fall through */ }
+  return {};
+}
+
 interface GrowwQuote {
   last_price: number;
   day_change: number;
@@ -377,6 +401,20 @@ export async function getLiveQuote(
   const cached = priceCache.get(cacheKey);
   if (cached && cached.expiry > Date.now()) {
     return cached.data;
+  }
+
+  // Try Alpha Data Service first (for simple equity quotes without strategy)
+  if (!strategyType || strategyType === "CASH") {
+    const dsQuote = await dataServiceQuote(symbol);
+    if (dsQuote && dsQuote.price) {
+      const livePrice: LivePrice = {
+        symbol, exchange: "NSE", ltp: dsQuote.price, change: dsQuote.change || 0,
+        changePercent: dsQuote.change_pct || 0, high: 0, low: 0, open: 0,
+        close: dsQuote.price - (dsQuote.change || 0), timestamp: Date.now(),
+      };
+      priceCache.set(cacheKey, { data: livePrice, expiry: Date.now() + CACHE_TTL });
+      return livePrice;
+    }
   }
 
   try {
