@@ -8782,5 +8782,80 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
             "s1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(h.iloc[-1]), 2)},
         "chart": chart_data_list, "as_of": date.today().isoformat(), "data_points": len(df),
     }
+    # Patterns, signals, narrative
+    try:
+        signals_list = []
+        patterns_list = []
+        if rsi > 50: signals_list.append(f"RSI Bullish ({rsi})")
+        else: signals_list.append(f"RSI Bearish ({rsi})")
+        if macd > macd_signal: signals_list.append("MACD above signal line")
+        else: signals_list.append("MACD below signal line")
+        if above_200: signals_list.append("Trading above 200 DMA")
+        else: signals_list.append("Trading below 200 DMA")
+        if above_50: signals_list.append("Above 50 DMA")
+        else: signals_list.append("Below 50 DMA")
+        if supertrend_bullish: signals_list.append("Above Supertrend support")
+        else: signals_list.append("Below Supertrend resistance")
+        if vol_ratio > 1.5: signals_list.append(f"High volume ({vol_ratio}x avg)")
+        if adx_val > 25: signals_list.append(f"Strong trend (ADX {adx_val})")
+        elif adx_val < 20: signals_list.append(f"Weak trend (ADX {adx_val})")
+        if len(c) >= 60:
+            lows_60 = l.iloc[-60:]
+            min1_idx = lows_60.iloc[:30].idxmin(); min2_idx = lows_60.iloc[30:].idxmin()
+            min1 = float(lows_60.loc[min1_idx]); min2 = float(lows_60.loc[min2_idx])
+            neckline = float(h.iloc[-60:].loc[min1_idx:min2_idx].max()) if min1_idx < min2_idx else 0
+            if min1 > 0 and abs(min1 - min2) / min1 < 0.03 and neckline > 0:
+                target = round(neckline + (neckline - min(min1, min2)), 1)
+                patterns_list.append({"name": "Double Bottom (W)", "status": "FORMING" if price < neckline else "CONFIRMED", "reliability": "high", "pivot": round(neckline, 0), "target": target, "description": f"Bottoms at Rs.{round(min1)}/{round(min2)}. Neckline Rs.{round(neckline)}. Target: Rs.{target}"})
+            highs_60 = h.iloc[-60:]; peak = float(highs_60.max())
+            left_s = float(highs_60.iloc[:20].max()); right_s = float(highs_60.iloc[-20:].max())
+            if peak > left_s and peak > right_s and abs(left_s - right_s) / left_s < 0.05:
+                hs_neck = float(l.iloc[-60:].min()); hs_tgt = round(hs_neck - (peak - hs_neck), 1)
+                patterns_list.append({"name": "Head & Shoulders", "status": "FORMING", "reliability": "high", "pivot": round(hs_neck, 0), "target": hs_tgt, "description": f"Head Rs.{round(peak)}, shoulders Rs.{round(left_s)}/{round(right_s)}. Target: Rs.{hs_tgt}"})
+            if price >= high_52w * 0.95:
+                patterns_list.append({"name": "Near 52-Week High", "status": "", "reliability": "moderate", "pivot": high_52w, "target": 0, "description": f"{round((price/high_52w-1)*100,1)}% from 52W high"})
+            if price <= low_52w * 1.05:
+                patterns_list.append({"name": "Near 52-Week Low", "status": "", "reliability": "moderate", "pivot": low_52w, "target": 0, "description": f"{round((price/low_52w-1)*100,1)}% from 52W low"})
+        narr = f"{sym} ({fund.get('name', sym)}) at Rs.{price:,.2f}, {'up' if (price-prev_close)>=0 else 'down'} {abs(round((price-prev_close)/prev_close*100,2))}%. "
+        narr += f"{'Above' if above_200 else 'Below'} 200 DMA (Rs.{sma200:,.0f}). {'Above' if above_50 else 'Below'} 50 DMA. "
+        narr += f"RSI {rsi} ({'overbought' if rsi>70 else 'oversold' if rsi<30 else 'neutral'}). MACD {'positive' if macd_hist>0 else 'negative'}. ADX {adx_val} ({'trending' if adx_val>25 else 'range-bound'}). "
+        narr += f"{'BULLISH' if bullish_count>=4 else 'BEARISH' if bearish_count>=4 else 'NEUTRAL'} outlook — {bullish_count} bull vs {bearish_count} bear signals."
+        for pt in patterns_list:
+            narr += f" {pt['name']}: {pt['description']}"
+        result["patterns"] = {"verdict": trend, "score": int(bullish_count/(bullish_count+bearish_count)*100) if (bullish_count+bearish_count)>0 else 50, "bullish_signals": bullish_count, "bearish_signals": bearish_count, "signals": signals_list, "patterns": patterns_list, "narrative": narr}
+    except Exception as _pe:
+        result["patterns"] = {"signals": [], "patterns": [], "narrative": "", "error": str(_pe)}
+
+    # Assessment
+    pe_v = sf(fund.get("pe_trailing"), 0); pb_v = sf(fund.get("pb"), 0)
+    roe_v = fix_pct(fund.get("roe")); de_v = sf(fund.get("debt_equity"), 0)
+    rev_g = fix_pct(fund.get("revenue_growth")); earn_g = fix_pct(fund.get("earnings_growth")); pm_v = fix_pct(fund.get("profit_margin"))
+    vs = 0
+    if pe_v and 0 < pe_v < 15: vs += 30
+    elif pe_v and 15 <= pe_v < 25: vs += 15
+    if pb_v and pb_v < 2: vs += 25
+    elif pb_v and pb_v < 4: vs += 10
+    if fix_pct(fund.get("dividend_yield")) > 2: vs += 20
+    if de_v and de_v < 50: vs += 15
+    if pm_v and pm_v > 15: vs += 10
+    gs = 0
+    if rev_g and rev_g > 15: gs += 30
+    elif rev_g and rev_g > 5: gs += 15
+    if earn_g and earn_g > 20: gs += 30
+    elif earn_g and earn_g > 5: gs += 15
+    if roe_v and roe_v > 15: gs += 20
+    if rs_score > 60: gs += 20
+    qs = 0
+    if roe_v and roe_v > 15: qs += 25
+    if pm_v and pm_v > 15: qs += 20
+    if de_v and de_v < 30: qs += 20
+    if fix_pct(fund.get("operating_margin")) > 15: qs += 15
+    if vol_ratio < 2: qs += 10
+    if adx_val > 20: qs += 10
+    result["assessment"] = {"value_score": min(100,vs), "growth_score": min(100,gs), "quality_score": min(100,qs),
+        "value_verdict": "STRONG VALUE" if vs>=70 else "VALUE" if vs>=40 else "FAIR" if vs>=20 else "EXPENSIVE",
+        "growth_verdict": "HIGH GROWTH" if gs>=70 else "GROWTH" if gs>=40 else "MODERATE" if gs>=20 else "SLOW",
+        "quality_verdict": "HIGH QUALITY" if qs>=70 else "QUALITY" if qs>=40 else "AVERAGE" if qs>=20 else "WEAK"}
+
     if redis_client: await redis_client.setex(cache_key, 900, json.dumps(result))
     return result
