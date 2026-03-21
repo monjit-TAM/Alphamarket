@@ -2448,6 +2448,54 @@ for _s in NIFTY_UNIVERSE:
         _clean.append(_s)
 NIFTY_UNIVERSE = _clean
 
+# Cap segment classification by index membership
+NIFTY50_SYMBOLS = {
+    "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","WIPRO","BAJFINANCE","SUNPHARMA",
+    "TATAMOTORS","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
+    "POWERGRID","NTPC","COALINDIA","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","CIPLA",
+    "DRREDDY","DIVISLAB","APOLLOHOSP","BAJAJFINSV","BRITANNIA","EICHERMOT","SBILIFE",
+    "HDFCLIFE","INDUSINDBK","ULTRACEMCO","GRASIM","TECHM","ASIANPAINT","HEROMOTOCO",
+    "BPCL","IOC","TATACONSUM","PIDILITIND","HAVELLS","IRCTC","DMART","ZOMATO",
+    "SBIN","LT","BHARTIARTL","ITC","KOTAKBANK","M&M","ADANIPORTS","SHRIRAMFIN"
+}
+NIFTY_NEXT50_SYMBOLS = {
+    "ABB","ADANIGREEN","AMBUJACEM","BANKBARODA","BEL","BERGEPAINT","BOSCHLTD",
+    "CANBK","CHOLAFIN","COLPAL","CONCOR","DABUR","DLF","GAIL","GODREJCP",
+    "HAL","HINDPETRO","ICICIPRULI","IDEA","IGL","INDHOTEL","INDUSTOWER",
+    "JSWENERGY","JUBLFOOD","LICI","LUPIN","MARICO","MCDOWELL-N","MOTHERSON",
+    "MUTHOOTFIN","NAUKRI","NHPC","OBEROIRLTY","OFSS","PAYTM","PFC","PIIND",
+    "PNB","POLYCAB","RECLTD","SAIL","SIEMENS","SRF","TORNTPHARM","TRENT",
+    "UNIONBANK","UNITDSPR","VEDL","YESBANK","ZYDUSLIFE"
+}
+LARGE_CAP_SYMBOLS = NIFTY50_SYMBOLS | NIFTY_NEXT50_SYMBOLS
+MIDCAP_SYMBOLS = {
+    "AARTIIND","ACC","AIAENG","AJANTPHARM","ALKEM","ANGELONE","APLAPOLLO",
+    "ASHOKLEY","ASTRAL","ATUL","AUBANK","AUROPHARMA","BALKRISIND","BANDHANBNK",
+    "BATAINDIA","BHARATFORG","BHEL","BIOCON","BLUEDART","BSE","CANFINHOME",
+    "CARBORUNIV","CASTROLIND","CEATLTD","CENTRALBK","CGPOWER","CHAMBLFERT",
+    "CLEAN","COFORGE","CRISIL","CROMPTON","CUB","CUMMINSIND","CYIENT",
+    "DALBHARAT","DEEPAKNTR","DELTACORP","DEVYANI","DIXON","EIDPARRY","EMAMILTD",
+    "ENDURANCE","ESCORTS","EXIDEIND","FACT","FEDERALBNK","FINCABLES","FLUOROCHEM",
+    "FORTIS","GLENMARK","GMRINFRA","GNFC","GODREJIND","GODREJPROP","GRANULES",
+    "GRAPHITE","GRINDWELL","GUJGASLTD","HDFCAMC","IIFL","IPCALAB","IRB","IRFC",
+    "ISEC","JKCEMENT","JSWINFRA","KALYANKJIL","KANSAINER","KEI","KPITTECH",
+    "KRBL","L&TFH","LAURUSLABS","LICHSGFIN","LINDEINDIA","LLOYDSME","LODHA",
+    "LTTS","M&MFIN","MANAPPURAM","MANKIND","MFSL","NAUKRI","NAVINFLUOR",
+    "PERSISTENT","PETRONET","PHOENIXLTD","POLYMED","POONAWALLA","PRESTIGE",
+    "PRINCEPIPE","PVRINOX","RADICO","RAIN","RALLIS","RAMCOCEM","RBLBANK",
+    "ROUTE","SAFARI","SCHAEFFLER","SHYAMMETL","SJVN","SKFINDIA","SONACOMS",
+    "STARHEALTH","SUMICHEM","SUNTV","SUPREMEIND","SYNGENE","TANLA","TATACHEM",
+    "TATACOMM","TATAINVEST","TATAPOWER","TATATECH","TEAMLEASE","TIINDIA",
+    "TORNTPOWER","TRIDENT","TTML","TVSHLTD","UBL","UFLEX","UJJIVANSFB",
+    "USHAMART","UTIAMC","VGUARD","VINATIORGA","VOLTAS","WELCORP","WHIRLPOOL",
+    "WONDERLA","ZEEL","ZENSARTECH"
+}
+
+def get_cap_segment(symbol):
+    if symbol in LARGE_CAP_SYMBOLS: return "large"
+    if symbol in MIDCAP_SYMBOLS: return "mid"
+    return "small"
+
 SECTOR_MAP = {
     # Energy / Oil & Gas
     "RELIANCE":"Energy","ONGC":"Energy","COALINDIA":"Energy","BPCL":"Energy","IOC":"Energy",
@@ -3637,10 +3685,10 @@ async def batch_download_yf(symbols_ns: list, start: str, end: str, batch_size: 
 
 @app.get("/api/screener", tags=["Stock Screener"], summary="Run stock screener",
     description="Screen 843 NSE stocks using 34+ quantitative strategies. Filter by sector, industry, basic industry, and price range. Results are cached for 15 minutes.\n\n**Available strategies:** momentum, top_losers, volume_breakout, new_high, mean_reversion, rsi_oversold, rsi_overbought, macd_crossover, bollinger_squeeze, supertrend_buy, breakout_52w, relative_strength, golden_cross, death_cross, adx_strong_trend, high_tight_flag, inside_day, gap_up, darvas_box, turtle_breakout, ichimoku_bullish, elder_ray, williams_r, ema_ribbon, pivot_breakout, dividend_yield, low_pe, high_roe, growth_momentum, safe_haven, minervini_template, rvol_surge, sector_rotation, vwap_reclaim.")
-async def screener(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", user=Depends(get_current_user)):
+async def screener(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = "", user=Depends(get_current_user)):
     from datetime import date, timedelta
 
-    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}"
+    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
     if redis_client:
         cached = await redis_client.get(cache_key)
         if cached:
@@ -3917,6 +3965,14 @@ async def screener(strategy: str = "momentum", min_price: float = 50, max_price:
     else:
         stocks = sorted(stocks, key=lambda x: x["change_pct"], reverse=True)
 
+    # Add cap_segment to each stock
+    for s in stocks:
+        if "cap_segment" not in s:
+            s["cap_segment"] = get_cap_segment(s["symbol"])
+    # Apply cap_segment filter
+    if cap_segment:
+        cs = cap_segment.lower()
+        stocks = [s for s in stocks if get_cap_segment(s["symbol"]) == cs]
     result = {"stocks": stocks[:50], "count": len(stocks), "strategy": strategy, "as_of": end, "universe_size": len(NIFTY_UNIVERSE), "scanned": len(symbols_to_scan)}
     if redis_client:
         await redis_client.setex(cache_key, 900, json.dumps(result))  # 15 min cache for large universe
@@ -8565,4 +8621,166 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
     }
     if redis_client:
         await redis_client.setex(cache_key, 900, json.dumps(result))
+    return result
+
+
+# ==============================================================================
+# ALPHAVIEW - Comprehensive Stock Profile
+# ==============================================================================
+
+@app.get("/api/alphaview/{symbol}", tags=["Stock Data"], summary="AlphaView - Complete stock profile",
+    description="Comprehensive single-page stock analysis combining price chart data, technical indicators, fundamental data, pattern detection, ratings, relative strength vs NIFTY, and sector context.")
+async def alphaview(symbol: str, user=Depends(get_current_user)):
+    from datetime import date, timedelta
+    import ta as _ta
+    sym = symbol.upper()
+    cache_key = f"alphaview:{sym}:{date.today().isoformat()}"
+    if redis_client:
+        cached = await redis_client.get(cache_key)
+        if cached: return json.loads(cached)
+
+    start_1y = (date.today() - timedelta(days=400)).isoformat()
+    end = date.today().isoformat()
+    _rows = await ds_ohlcv(sym, "1y")
+    if not _rows: raise HTTPException(404, f"No data for {sym}")
+    df = pd.DataFrame(_rows)
+    df.columns = [col.lower() for col in df.columns]
+    for dc in ["date","datetime","timestamp"]:
+        if dc in df.columns:
+            df[dc] = pd.to_datetime(df[dc])
+            df = df.set_index(dc)
+            break
+    df.index.name = "date"
+    keep = [col for col in ["open","high","low","close","volume"] if col in df.columns]
+    df = df[keep].astype({col: float for col in keep}).dropna().sort_index()
+    if len(df) < 30: raise HTTPException(404, f"Insufficient data for {sym}")
+
+    c = df["close"]; h = df["high"]; l = df["low"]; v = df["volume"]
+    price = float(c.iloc[-1])
+    prev_close = float(c.iloc[-2]) if len(c) > 1 else price
+    fund = await ds_fundamentals(sym) or {}
+
+    def sf(val, default=None):
+        if val is None: return default
+        try:
+            fv = float(val)
+            return default if (np.isnan(fv) or np.isinf(fv)) else fv
+        except: return default
+
+    def fix_pct(val):
+        v2 = sf(val, 0)
+        if v2 and abs(v2) > 100: return round(v2 / 100, 2)
+        return round(v2, 2) if v2 else 0
+
+    sma20 = float(c.rolling(20).mean().iloc[-1]) if len(c) >= 20 else price
+    sma50 = float(c.rolling(50).mean().iloc[-1]) if len(c) >= 50 else price
+    sma200 = float(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else price
+    ema9 = float(c.ewm(span=9).mean().iloc[-1])
+    ema21 = float(c.ewm(span=21).mean().iloc[-1])
+    above_20 = price > sma20; above_50 = price > sma50; above_200 = price > sma200
+
+    delta = c.diff()
+    gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
+    rs_val = float(gain.iloc[-1] / loss.iloc[-1]) if sf(loss.iloc[-1]) != 0 else 0
+    rsi = round(100 - 100 / (1 + rs_val), 1) if rs_val else 50
+
+    ema12 = c.ewm(span=12).mean(); ema26 = c.ewm(span=26).mean()
+    macd_line = ema12 - ema26; signal_line = macd_line.ewm(span=9).mean()
+    macd = round(float(macd_line.iloc[-1]), 2)
+    macd_signal = round(float(signal_line.iloc[-1]), 2)
+    macd_hist = round(macd - macd_signal, 2)
+
+    bb_mid = c.rolling(20).mean(); bb_std = c.rolling(20).std()
+    bb_upper = round(float((bb_mid + 2 * bb_std).iloc[-1]), 2) if len(c) >= 20 else 0
+    bb_lower = round(float((bb_mid - 2 * bb_std).iloc[-1]), 2) if len(c) >= 20 else 0
+
+    vol_avg20 = float(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else float(v.mean())
+    vol_ratio = round(float(v.iloc[-1]) / vol_avg20, 2) if vol_avg20 > 0 else 1
+
+    adx_val = 0
+    if len(df) >= 30:
+        try:
+            adx_i = _ta.trend.ADXIndicator(h, l, c, window=14)
+            adx_val = round(float(adx_i.adx().iloc[-1]), 1)
+        except: pass
+
+    atr = _ta.volatility.AverageTrueRange(h, l, c, window=10).average_true_range()
+    st_upper = round(float((h.rolling(10).mean() + 3 * atr).iloc[-1]), 2) if len(c) >= 10 else 0
+    st_lower = round(float((l.rolling(10).mean() - 3 * atr).iloc[-1]), 2) if len(c) >= 10 else 0
+    supertrend_bullish = price > st_lower
+
+    low14 = l.rolling(14).min(); high14 = h.rolling(14).max()
+    stoch_k = round(float(((c - low14) / (high14 - low14) * 100).iloc[-1]), 1) if len(c) >= 14 else 50
+    stoch_d = round(float(((c - low14) / (high14 - low14) * 100).rolling(3).mean().iloc[-1]), 1) if len(c) >= 14 else 50
+
+    stock_ret_1m = round((float(c.iloc[-1]) / float(c.iloc[-22]) - 1) * 100, 1) if len(c) > 22 else 0
+    stock_ret_3m = round((float(c.iloc[-1]) / float(c.iloc[-66]) - 1) * 100, 1) if len(c) > 66 else 0
+    stock_ret_6m = round((float(c.iloc[-1]) / float(c.iloc[-132]) - 1) * 100, 1) if len(c) > 132 else 0
+    stock_ret_1y = round((float(c.iloc[-1]) / float(c.iloc[0]) - 1) * 100, 1) if len(c) > 200 else 0
+    rs_1m = rs_3m = rs_6m = rs_1y = stock_ret_1m; rs_3m = stock_ret_3m; rs_6m = stock_ret_6m; rs_1y = stock_ret_1y
+
+    eps_growth = sf(fund.get("earnings_growth") or fund.get("earningsGrowth"), 0)
+    if eps_growth and abs(eps_growth) < 1: eps_growth = eps_growth * 100
+    eps_strength = min(99, max(1, int(50 + eps_growth * 1.5))) if eps_growth else 50
+    rs_score = min(99, max(1, int(50 + rs_3m * 2 + rs_1m)))
+    up_days = int((delta.iloc[-20:] > 0).sum()) if len(delta) >= 20 else 10
+    vol_acc = min(99, max(1, int(up_days * 5 + vol_ratio * 10)))
+    bullish_count = sum([above_20, above_50, above_200, rsi > 50, macd > macd_signal, supertrend_bullish, adx_val > 20])
+    composite = min(99, max(1, int(eps_strength * 0.3 + rs_score * 0.3 + vol_acc * 0.2 + (rsi / 100 * 99) * 0.2)))
+    bearish_count = sum([not above_20, not above_50, not above_200, rsi < 50, macd < macd_signal, not supertrend_bullish])
+    if bullish_count >= 5: trend = "STRONG BULLISH"
+    elif bullish_count >= 4: trend = "BULLISH"
+    elif bearish_count >= 5: trend = "BEARISH"
+    elif bearish_count >= 4: trend = "STRONG BEARISH"
+    else: trend = "NEUTRAL"
+
+    high_52w = round(float(h.max()), 2); low_52w = round(float(l.min()), 2)
+    off_high = round((price / high_52w - 1) * 100, 1) if high_52w > 0 else 0
+    off_low = round((price / low_52w - 1) * 100, 1) if low_52w > 0 else 0
+
+    chart_data_list = []
+    for idx, row in df.tail(250).iterrows():
+        ts = int(idx.timestamp()) if hasattr(idx, "timestamp") else 0
+        chart_data_list.append({"time": ts, "open": round(float(row["open"]), 2), "high": round(float(row["high"]), 2), "low": round(float(row["low"]), 2), "close": round(float(row["close"]), 2), "volume": int(row["volume"])})
+
+    cap = get_cap_segment(sym)
+    sector = fund.get("sector") or SECTOR_MAP.get(sym, "Other")
+
+    result = {
+        "symbol": sym, "name": fund.get("name") or sym, "sector": sector,
+        "industry": fund.get("industry") or INDUSTRY_MAP.get(sym, ""), "cap_segment": cap,
+        "summary": {"price": price, "prev_close": prev_close, "change": round(price - prev_close, 2),
+            "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
+            "high_52w": high_52w, "low_52w": low_52w, "off_high_pct": off_high, "off_low_pct": off_low,
+            "market_cap": sf(fund.get("market_cap")), "market_cap_cr": round(sf(fund.get("market_cap"), 0) / 10000000, 0),
+            "shares_outstanding": sf(fund.get("shares_outstanding")), "avg_volume": int(vol_avg20),
+            "volume": int(v.iloc[-1]), "volume_ratio": vol_ratio, "beta": sf(fund.get("beta"), 0)},
+        "ratings": {"composite": composite, "eps_strength": eps_strength, "rs_rating": rs_score,
+            "vol_accumulation": vol_acc, "trend_score": int(bullish_count / 7 * 99), "trend": trend},
+        "moving_averages": {"sma20": round(sma20, 2), "sma50": round(sma50, 2), "sma200": round(sma200, 2),
+            "ema9": round(ema9, 2), "ema21": round(ema21, 2), "above_20dma": above_20, "above_50dma": above_50,
+            "above_200dma": above_200, "price_vs_200dma_pct": round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0},
+        "technicals": {"rsi": rsi, "macd": macd, "macd_signal": macd_signal, "macd_histogram": macd_hist,
+            "bb_upper": bb_upper, "bb_lower": bb_lower, "bb_width": round((bb_upper - bb_lower) / price * 100, 1) if price > 0 else 0,
+            "adx": adx_val, "stoch_k": stoch_k, "stoch_d": stoch_d, "supertrend_bullish": supertrend_bullish,
+            "supertrend_upper": st_upper, "supertrend_lower": st_lower, "volume_ratio": vol_ratio,
+            "atr": round(float(atr.iloc[-1]), 2) if len(atr) > 0 else 0},
+        "relative_strength": {"rs_1m": stock_ret_1m, "rs_3m": stock_ret_3m, "rs_6m": stock_ret_6m, "rs_1y": stock_ret_1y,
+            "stock_return": {"1m": stock_ret_1m, "3m": stock_ret_3m, "6m": stock_ret_6m, "1y": stock_ret_1y},
+            "outperforming_1m": stock_ret_1m > 0, "outperforming_3m": stock_ret_3m > 0},
+        "fundamentals": {"eps": sf(fund.get("eps")), "pe_trailing": sf(fund.get("pe_trailing")),
+            "pe_forward": sf(fund.get("pe_forward")), "pb": sf(fund.get("pb")),
+            "roe": fix_pct(fund.get("roe")), "roce": fix_pct(fund.get("roce")),
+            "debt_equity": sf(fund.get("debt_equity")), "dividend_yield": fix_pct(fund.get("dividend_yield")),
+            "book_value": sf(fund.get("book_value")), "revenue": sf(fund.get("revenue")),
+            "revenue_growth": fix_pct(fund.get("revenue_growth")), "earnings_growth": fix_pct(fund.get("earnings_growth")),
+            "profit_margin": fix_pct(fund.get("profit_margin")), "operating_margin": fix_pct(fund.get("operating_margin")),
+            "promoter_holding": sf(fund.get("promoter_holding"))},
+        "levels": {"pivot": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3, 2),
+            "r1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(l.iloc[-1]), 2),
+            "s1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(h.iloc[-1]), 2)},
+        "chart": chart_data_list, "as_of": date.today().isoformat(), "data_points": len(df),
+    }
+    if redis_client: await redis_client.setex(cache_key, 900, json.dumps(result))
     return result
