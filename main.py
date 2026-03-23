@@ -43,6 +43,8 @@ API_TAGS = [
     {"name": "Alerts & Notifications", "description": "Price alerts, strategy signal alerts, and in-app notification management"},
     {"name": "Dashboard", "description": "Aggregated strategy performance dashboard across screener, backtest, and forward test engines"},
     {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
+    {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
+    {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
 ]
 
 # ══ Alpha Data Service (centralized data layer on port 5004) ══
@@ -7800,7 +7802,8 @@ async def deactivate_user(user_id: int, user=Depends(get_admin_user)):
         await conn.execute("UPDATE users SET is_active=false WHERE id=$1", user_id)
         return {"message": "User deactivated"}
 
-@app.get("/api/morning-brief")
+@app.get("/api/morning-brief", tags=["Market Intelligence"], summary="Pre-market morning brief",
+    description="Global cues (S&P 500, Dow, NASDAQ, Crude, Gold, USD/INR), India indices (NIFTY 50, BANK NIFTY), sector pulse (top 3 gainers/losers), screener picks (momentum, oversold, breakout), and composite sentiment score. Cached 15 min.")
 async def morning_brief(user=Depends(get_current_user)):
     """Pre-market morning brief with global cues (S&P 500, Dow, NASDAQ, Crude, Gold, USD/INR), India indices (NIFTY 50, BANK NIFTY), sector pulse (top 3 gainers/losers), screener picks (momentum, oversold, breakout), and composite sentiment score. Cached in Redis for 15 minutes. Screener picks may be empty when market is closed."""
     import yfinance as yf  # kept: global tickers (^GSPC, CL=F etc) not in data service
@@ -8024,7 +8027,8 @@ async def compare_stocks(symbols: str, user=Depends(get_current_user)):
 # SECTOR HEATMAP
 # ==============================================================================
 
-@app.get("/api/sector-heatmap")
+@app.get("/api/sector-heatmap", tags=["Market Intelligence"], summary="Sector heatmap",
+    description="Sector-wise performance heatmap showing 1-day returns for all 49 sectors. Cached 15 min.")
 async def sector_heatmap(user=Depends(get_current_user)):
     """Sector rotation heatmap via data service. Cached 15 minutes."""
     # yfinance replaced by data service
@@ -8067,7 +8071,8 @@ async def sector_heatmap(user=Depends(get_current_user)):
 # DCF / INTRINSIC VALUE CALCULATOR
 # ==============================================================================
 
-@app.get("/api/dcf/{symbol}")
+@app.get("/api/dcf/{symbol}", tags=["Market Intelligence"], summary="DCF intrinsic value calculator",
+    description="Three-method valuation: EPS-based DCF, FCF-based DCF, and Graham Number. Returns intrinsic values, average fair value, margin of safety %, and verdict. Set growth_rate=0 for auto-detect.")
 async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: float = 12, terminal_growth: float = 3, years: int = 10, user=Depends(get_current_user)):
     """DCF intrinsic value calculator. Three methods: EPS-based DCF, FCF-based DCF, and Graham Number. Set growth_rate=0 for auto-detect from earnings history. Returns intrinsic values, average fair value, margin of safety %, and verdict (UNDERVALUED / FAIRLY VALUED / OVERVALUED)."""
     import math
@@ -8147,7 +8152,8 @@ async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: flo
 # DIVIDEND TRACKER
 # ==============================================================================
 
-@app.get("/api/dividends")
+@app.get("/api/dividends", tags=["Market Intelligence"], summary="Top dividend stocks",
+    description="30 major Indian stocks sorted by dividend yield. Returns yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached 1 hour.")
 async def dividend_tracker(user=Depends(get_current_user)):
     """Dividend tracker for 30 major Indian stocks sorted by yield. Returns dividend yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached in Redis for 1 hour."""
     import yfinance as yf  # kept: needs detailed dividend info (exDividendDate, dividendRate)
@@ -8208,7 +8214,8 @@ async def dividend_tracker(user=Depends(get_current_user)):
     return result
 
 
-@app.get("/api/patterns/{symbol}")
+@app.get("/api/patterns/{symbol}", tags=["Market Intelligence"], summary="Technical pattern scanner",
+    description="Analyses 11 technical indicators and detects 8 chart patterns (Double Bottom/Top, Cup & Handle, H&S, Triangles, Wedges). Returns composite score (-100 to +100), pattern stages, targets, and narrative.")
 async def detect_patterns(symbol: str, user=Depends(get_current_user)):
     """Technical pattern scanner. Analyses 11 indicators (SMA, EMA, RSI, MACD, Bollinger, Stochastic, Volume, Supertrend, ADX, Williams %R, CCI, OBV) and detects 8 chart patterns (Double Bottom/Top, Cup & Handle, Head & Shoulders, Ascending/Descending Triangle, Falling/Rising Wedge). Returns composite score (-100 to +100), pattern stages, targets, and auto-generated narrative."""
     # import yfinance as yf  # moved to fallback block
@@ -8628,7 +8635,7 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
 # ALPHAVIEW - Comprehensive Stock Profile
 # ==============================================================================
 
-@app.get("/api/alphaview/{symbol}", tags=["Stock Data"], summary="AlphaView - Complete stock profile",
+@app.get("/api/alphaview/{symbol}", tags=["AlphaView"], summary="AlphaView — Complete stock profile",
     description="Comprehensive single-page stock analysis combining price chart data, technical indicators, fundamental data, pattern detection, ratings, relative strength vs NIFTY, and sector context.")
 async def alphaview(symbol: str, user=Depends(get_current_user)):
     """AlphaView: Complete stock profile — fundamentals + technicals + ratings + patterns in one view."""
