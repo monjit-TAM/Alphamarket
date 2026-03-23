@@ -9837,6 +9837,42 @@ async function loadAlphaView(sym){
     renderAV(d);
   }catch(e){document.getElementById('av-status').textContent='Error: '+e.message;document.getElementById('av-status').style.color='var(--red)';toast(e.message,'er');}
 }
+function showVGQInfo(type){
+  var info={
+    ALPHA:'<b>Alpha Score</b> — AlphaMarket\'s proprietary composite rating (0-99)<br><br>Blends 5 dimensions:<br><b>Momentum</b> 25% + <b>Fundamentals</b> 25% + <b>Accumulation</b> 20% + <b>Trend</b> 15% + <b>Sentiment</b> 15%<br><br>\u{1f7e2} 70+ = Strong &nbsp; \u{1f7e1} 40-69 = Neutral &nbsp; \u{1f534} &lt;40 = Weak',
+    MOMENTUM:'<b>Momentum Rating (0-99)</b><br><br>Measures price momentum strength:<br><br><b>RS vs NIFTY (1m+3m):</b> 30%<br>Outperformance relative to index<br><br><b>Price Position (vs 200 DMA):</b> 20%<br>Distance above/below long-term average<br><br><b>RSI Zone:</b> 20%<br>50-70 optimal, extremes penalized<br><br><b>MACD Histogram:</b> 15%<br>Positive = accelerating momentum<br><br><b>EMA Cross (9/21):</b> 15%<br>EMA9 &gt; EMA21 = bullish',
+    FUNDAMENTALS_R:'<b>Fundamentals Rating (0-99)</b><br><br>Financial health &amp; growth:<br><br><b>Earnings Growth:</b> 25%<br>YoY earnings acceleration<br><br><b>ROE:</b> 25%<br>Return on equity — profitability efficiency<br><br><b>Profit Margin:</b> 20%<br>Net margin strength<br><br><b>Debt Health:</b> 15%<br>Lower D/E = higher score (inverted)<br><br><b>Revenue Growth:</b> 15%<br>Top-line growth rate',
+    ACCUMULATION:'<b>Accumulation Rating (0-99)</b><br><br>Smart money activity signals:<br><br><b>Up-Day Volume Ratio:</b> 40%<br>Days with positive close in last 20 sessions<br><br><b>Volume Ratio:</b> 30%<br>Today\'s volume vs 20-day average<br><br><b>OBV Trend:</b> 30%<br>On-Balance Volume direction — rising OBV = accumulation, falling = distribution',
+    TREND_R:'<b>Trend Rating (0-99)</b><br><br>Technical alignment strength:<br><br><b>SMA Alignment:</b> 30%<br>20 &gt; 50 &gt; 200 = perfect uptrend (99)<br><br><b>ADX Strength:</b> 25%<br>Higher ADX = stronger trend<br><br><b>Supertrend:</b> 20%<br>Bullish/Bearish signal<br><br><b>Stochastic Position:</b> 15%<br>K-line positioning<br><br><b>Bollinger Width:</b> 10%<br>Tighter bands = breakout potential',
+    SENTIMENT:'<b>Sentiment Rating (0-99)</b><br><br>News &amp; events pulse:<br><br>Scans recent news headlines for:<br><br><b>Positive signals (+):</b> upgrades, profit growth, buybacks, FII/DII buying, acquisitions, bonus, dividend, partnerships<br><br><b>Negative signals (-):</b> downgrades, fraud, governance issues, CEO exit, SEBI action, defaults, FII/DII selling, layoffs<br><br><b>High-impact events</b> weighted 3x<br><b>Recent news</b> (\u22643 days) weighted 3x<br><br>50 = Neutral &nbsp; &gt;50 = Positive &nbsp; &lt;50 = Negative<br><br><i>Phase 2: FII/DII activity, bulk deals, insider trading data</i>',
+    VALUE:'<b>Value Score (0-100)</b><br><br>'+
+      '<b>P/E &lt; 15:</b> +20 pts<br><b>P/E 15-25:</b> +10 pts<br>'+
+      '<b>P/B &lt; 2:</b> +15 pts<br><b>P/B 2-4:</b> +8 pts<br>'+
+      '<b>Div Yield &gt; 2%:</b> +15 pts<br><b>Div Yield 1-2%:</b> +8 pts<br>'+
+      '<b>D/E &lt; 50:</b> +15 pts<br><b>D/E &lt; 100:</b> +5 pts<br>'+
+      '<b>Margin &gt; 15%:</b> +15 pts<br><b>Margin 8-15%:</b> +8 pts<br><br>'+
+      '<b>70+</b> = Deep Value &nbsp; <b>40-69</b> = Fairly Priced &nbsp; <b>&lt;40</b> = Expensive',
+    GROWTH:'<b>Growth Score (0-100)</b><br><br>'+
+      '<b>Rev Growth &gt; 15%:</b> +20 pts<br><b>Rev Growth 5-15%:</b> +10 pts<br>'+
+      '<b>Earn Growth &gt; 20%:</b> +20 pts<br><b>Earn Growth 5-20%:</b> +10 pts<br>'+
+      '<b>ROE &gt; 15%:</b> +20 pts<br><b>ROE &gt; 10%:</b> +10 pts<br>'+
+      '<b>RS 1m &gt; 40:</b> +20 pts<br><b>RS 1m &gt; 0:</b> +10 pts<br><br>'+
+      '<b>70+</b> = High Growth &nbsp; <b>40-69</b> = Moderate &nbsp; <b>&lt;40</b> = Low Growth',
+    QUALITY:'<b>Quality Score (0-100)</b><br><br>'+
+      '<b>ROE &gt; 15%:</b> +20 pts<br><b>ROE 10-15%:</b> +10 pts<br>'+
+      '<b>Margin &gt; 15%:</b> +15 pts<br><b>Margin 8-15%:</b> +8 pts<br>'+
+      '<b>D/E &lt; 30:</b> +15 pts<br><b>D/E &lt; 80:</b> +10 pts<br>'+
+      '<b>Op Margin &gt; 15%:</b> +15 pts<br><b>Op Margin 8-15%:</b> +8 pts<br>'+
+      '<b>Volatility &lt; 25%:</b> +10 pts<br><b>ADX &gt; 25:</b> +5 pts<br><br>'+
+      '<b>70+</b> = High Quality &nbsp; <b>40-69</b> = Average &nbsp; <b>&lt;40</b> = Low Quality'
+  };
+  var existing=document.getElementById('vgq-popup');
+  if(existing){existing.remove();if(existing.dataset.type===type)return;}
+  var d=document.createElement('div');d.id='vgq-popup';d.dataset.type=type;
+  d.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:20px;max-width:340px;width:90%;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.3);font-size:12px;color:var(--text1);line-height:1.7';
+  d.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:14px;font-weight:700;color:var(--accent)">'+type+' SCORE</span><span onclick="document.getElementById('vgq-popup').remove()" style="cursor:pointer;font-size:18px;color:var(--text2)">&times;</span></div>'+info[type];
+  document.body.appendChild(d);
+}
 function renderAV(d){
   var s=d.summary,r=d.ratings,ma=d.moving_averages,t=d.technicals,rs=d.relative_strength,f=d.fundamentals,lv=d.levels,p=d.patterns||{},a=d.assessment||{};
   var chgC=s.change>=0?'var(--green)':'var(--red)';
@@ -9859,10 +9895,21 @@ function renderAV(d){
   h+='<div id="av-chart-wrap" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px"><div id="av-chart" style="width:100%;height:280px"></div></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
   h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px">';
-  h+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:700;color:var(--accent)">ALPHA RATINGS</div><div style="font-size:13px;font-weight:800;color:'+trendC+'">'+r.trend+'</div></div>';
-  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px">';
-  h+=rBar('Composite',r.composite,rC(r.composite));h+=rBar('EPS Strength',r.eps_strength,rC(r.eps_strength));
-  h+=rBar('RS Rating',r.rs_rating,rC(r.rs_rating));h+=rBar('Vol Accum',r.vol_accumulation,rC(r.vol_accumulation));
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><div style="font-size:13px;font-weight:700;color:var(--accent)">ALPHA RATINGS</div><div style="font-size:13px;font-weight:800;color:'+trendC+'">'+r.trend+'</div></div>';
+  var aS=r.alpha_score||0,aSc=rC(aS);
+  h+='<div style="text-align:center;margin-bottom:12px;padding:8px;background:linear-gradient(135deg,rgba(99,102,241,0.1),rgba(59,130,246,0.1));border-radius:8px">';
+  h+='<div style="font-size:10px;color:var(--text2);letter-spacing:1px">ALPHA SCORE <span onclick="showVGQInfo(\'ALPHA\')" style="cursor:pointer;color:var(--accent)">\u24d8</span></div>';
+  h+='<div style="font-size:36px;font-weight:900;color:'+aSc+';line-height:1.1">'+aS+'</div>';
+  h+='<div style="font-size:10px;color:'+aSc+'">'+(aS>=70?'STRONG':aS>=40?'NEUTRAL':'WEAK')+'</div></div>';
+  h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
+  var _ri=[{n:"Momentum",k:"momentum",i:"\u26A1",t:"MOMENTUM"},{n:"Fundamentals",k:"fundamentals",i:"\u{1F4CA}",t:"FUNDAMENTALS_R"},{n:"Accumulation",k:"accumulation",i:"\u{1F3E6}",t:"ACCUMULATION"},{n:"Trend",k:"trend_rating",i:"\u{1F4C8}",t:"TREND_R"},{n:"Sentiment",k:"sentiment",i:"\u{1F4F0}",t:"SENTIMENT"}];
+  _ri.forEach(function(item){
+    var val=r[item.k]||0,clr=rC(val);
+    h+='<div style="background:var(--bg1);border-radius:6px;padding:8px;display:flex;align-items:center;gap:8px">';
+    h+='<div style="font-size:20px;width:28px;text-align:center">'+item.i+'</div>';
+    h+='<div style="flex:1"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px"><span style="font-size:11px;color:var(--text2)">'+item.n+' <span onclick="showVGQInfo(\''+item.t+'\')" style="cursor:pointer;color:var(--accent);font-size:10px">\u24d8</span></span><span style="font-size:14px;font-weight:800;color:'+clr+'">'+val+'</span></div>';
+    h+='<div style="height:4px;background:var(--border);border-radius:2px"><div style="height:100%;width:'+val+'%;background:'+clr+';border-radius:2px"></div></div></div></div>';
+  });
   h+='</div></div>';
   if(a.value_score!==undefined){
     var vc=a.value_score>=70?'var(--green)':a.value_score>=40?'#d97706':'var(--red)';
@@ -9871,9 +9918,9 @@ function renderAV(d){
     h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;justify-content:center">';
     h+='<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px">ASSESSMENT</div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">';
-    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">VALUE</div><div style="font-size:20px;font-weight:800;color:'+vc+'">'+a.value_score+'</div><div style="font-size:11px;font-weight:600;color:'+vc+'">'+a.value_verdict+'</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">GROWTH</div><div style="font-size:20px;font-weight:800;color:'+gc+'">'+a.growth_score+'</div><div style="font-size:11px;font-weight:600;color:'+gc+'">'+a.growth_verdict+'</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">QUALITY</div><div style="font-size:20px;font-weight:800;color:'+qc+'">'+a.quality_score+'</div><div style="font-size:11px;font-weight:600;color:'+qc+'">'+a.quality_verdict+'</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">VALUE <span onclick="showVGQInfo(\'VALUE\')" style="cursor:pointer;color:var(--accent);font-size:12px">\u24d8</span></div><div style="font-size:20px;font-weight:800;color:'+vc+'">'+a.value_score+'</div><div style="font-size:11px;font-weight:600;color:'+vc+'">'+a.value_verdict+'</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">GROWTH <span onclick="showVGQInfo(\'GROWTH\')" style="cursor:pointer;color:var(--accent);font-size:12px">\u24d8</span></div><div style="font-size:20px;font-weight:800;color:'+gc+'">'+a.growth_score+'</div><div style="font-size:11px;font-weight:600;color:'+gc+'">'+a.growth_verdict+'</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">QUALITY <span onclick="showVGQInfo(\'QUALITY\')" style="cursor:pointer;color:var(--accent);font-size:12px">\u24d8</span></div><div style="font-size:20px;font-weight:800;color:'+qc+'">'+a.quality_score+'</div><div style="font-size:11px;font-weight:600;color:'+qc+'">'+a.quality_verdict+'</div></div>';
     h+='</div></div>';
   }
   h+='</div>';
