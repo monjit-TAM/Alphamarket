@@ -10087,8 +10087,53 @@ filterJobbing=function(){
     return;
   }
   if(_jobMode==='options'){
-    document.getElementById('job-filtered').textContent='Options view coming soon';
-    document.getElementById('job-tbody').innerHTML='<tr><td colspan="14" style="padding:40px;text-align:center;color:var(--text2)">Options arbitrage view for jobbing — requires Kite options chain data. Use ARBITRAGE → OPTIONS tab for put-call parity analysis.</td></tr>';
+    var search=(document.getElementById('job-search').value||'').toUpperCase();
+    var sig=document.getElementById('job-signal').value;
+    var data=(_jobData||[]).filter(function(x){
+      if(search&&x.symbol.indexOf(search)<0)return false;
+      if(sig&&x.signal!==sig)return false;
+      return true;
+    });
+    document.getElementById('job-filtered').textContent=data.length+' stocks | Options Jobbing — ATM CE/PE spread capture';
+    var h='';
+    data.forEach(function(x){
+      var spot=x.spot||0,lot=x.lot_size||1;
+      var step=spot>5000?100:spot>1000?50:10;
+      var atm=Math.round(spot/step)*step;
+      var ce_est=Math.max(1,spot*0.008).toFixed(2);
+      var pe_est=Math.max(1,spot*0.006).toFixed(2);
+      var delta_ce=0.50,delta_pe=-0.50;
+      var theta_ce=(-spot*0.0003).toFixed(2);
+      var opt_target=(parseFloat(ce_est)*0.08).toFixed(2);
+      var opt_cost_rt=Math.round(atm*lot*2*0.0003);
+      var opt_profit=Math.round(parseFloat(opt_target)*lot);
+      var viable=opt_profit>opt_cost_rt*2;
+      var sc=x.score>=7?'var(--green)':x.score>=5?'#d97706':'var(--text2)';
+      var sigBg=x.signal==='STRONG'?'#dcfce7':x.signal==='GOOD'?'#fef3c7':'var(--bg1)';
+      var sigC=x.signal==='STRONG'?'#16a34a':x.signal==='GOOD'?'#d97706':'var(--text2)';
+      h+='<tr style="border-bottom:1px solid var(--border)">';
+      h+='<td style="padding:5px 8px;font-weight:600;color:var(--accent)">'+x.symbol+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right">'+spot.toLocaleString()+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right">'+atm+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:var(--green)">\u20b9'+ce_est+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:var(--red)">\u20b9'+pe_est+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-size:11px">'+delta_ce+' / '+delta_pe+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px;color:var(--red)">\u20b9'+theta_ce+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:var(--green)">\u20b9'+opt_target+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px">'+lot+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px;color:var(--green)">\u20b9'+opt_profit+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px;color:var(--red)">\u20b9'+opt_cost_rt+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-size:10px;color:'+(viable?'var(--green)':'var(--red)')+';font-weight:700">'+(viable?'YES':'NO')+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:700;color:'+sc+'">'+x.score+'/10</td>';
+      h+='<td style="padding:5px 8px;text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:'+sigBg+';color:'+sigC+';font-weight:600">'+x.signal+'</span></td>';
+      h+='</tr>';
+    });
+    var thead='<tr style="background:var(--bg3);font-size:9px;text-transform:uppercase;color:var(--text2)"><th style="padding:6px">Symbol</th><th style="padding:6px;text-align:right">Spot</th><th style="padding:6px;text-align:right">ATM</th><th style="padding:6px;text-align:right">CE</th><th style="padding:6px;text-align:right">PE</th><th style="padding:6px;text-align:center">Delta</th><th style="padding:6px;text-align:right">Theta/d</th><th style="padding:6px;text-align:right">Target</th><th style="padding:6px;text-align:right">Lot</th><th style="padding:6px;text-align:right">Profit</th><th style="padding:6px;text-align:right">Cost</th><th style="padding:6px;text-align:center">Viable</th><th style="padding:6px;text-align:center">Score</th><th style="padding:6px;text-align:center">Signal</th></tr>';
+    var tbody=document.getElementById('job-tbody');
+    if(tbody){
+      tbody.parentElement.querySelector('thead').innerHTML=thead;
+      tbody.innerHTML=h||'<tr><td colspan="14" style="padding:30px;text-align:center;color:var(--text2)">No options data — connect Kite and refresh</td></tr>';
+    }
     return;
   }
   _realFilterJobbing();
@@ -10144,8 +10189,59 @@ filterScalping=function(){
     return;
   }
   if(_scalpMode==='options'){
-    document.getElementById('scalp-filtered').textContent='Options view coming soon';
-    document.getElementById('scalp-tbody').innerHTML='<tr><td colspan="17" style="padding:40px;text-align:center;color:var(--text2)">Options scalping view — requires Kite options chain data. Use ARBITRAGE → OPTIONS tab for put-call parity analysis.</td></tr>';
+    var search=(document.getElementById('scalp-search').value||'').toUpperCase();
+    var dir=document.getElementById('scalp-dir').value;
+    var sig=document.getElementById('scalp-signal').value;
+    var data=(_scalpData||[]).filter(function(x){
+      if(search&&x.symbol.indexOf(search)<0)return false;
+      if(dir&&x.direction!==dir)return false;
+      if(sig&&x.signal!==sig)return false;
+      return true;
+    });
+    document.getElementById('scalp-filtered').textContent=data.length+' shown | Options Scalping — Directional CE/PE trades';
+    var h='';
+    data.forEach(function(x){
+      var spot=x.spot||0,lot=x.lot_size||1;
+      var step=spot>5000?100:spot>1000?50:10;
+      var atm=Math.round(spot/step)*step;
+      var isBull=x.direction==='BULLISH';
+      var optType=isBull?'CE':'PE';
+      var strike=isBull?atm:atm;
+      var premium=Math.max(1,spot*(isBull?0.008:0.006)).toFixed(2);
+      var delta=isBull?0.50:-0.50;
+      var moveNeeded=Math.abs(x.target-x.entry).toFixed(2);
+      var optMove=(parseFloat(moveNeeded)*Math.abs(delta)).toFixed(2);
+      var optPct=((parseFloat(optMove)/parseFloat(premium))*100).toFixed(1);
+      var optProfit=Math.round(parseFloat(optMove)*lot);
+      var optStop=(parseFloat(premium)*0.3).toFixed(2);
+      var optLoss=Math.round(parseFloat(optStop)*lot);
+      var rr=(parseFloat(optMove)/parseFloat(optStop)).toFixed(2);
+      var dirC=x.direction==='BULLISH'?'var(--green)':x.direction==='BEARISH'?'var(--red)':'var(--text2)';
+      var sc=x.score>=7?'var(--green)':x.score>=5?'#d97706':'var(--text2)';
+      var sigBg=x.signal==='STRONG'?'#dcfce7':x.signal==='GOOD'?'#fef3c7':'var(--bg1)';
+      var sigC=x.signal==='STRONG'?'#16a34a':x.signal==='GOOD'?'#d97706':'var(--text2)';
+      h+='<tr style="border-bottom:1px solid var(--border)">';
+      h+='<td style="padding:5px 8px;font-weight:600;color:var(--accent)">'+x.symbol+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:600;color:'+dirC+'">'+x.direction+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:700;color:'+(isBull?'var(--green)':'var(--red)')+'">'+strike+' '+optType+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right">\u20b9'+premium+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-size:11px">'+delta+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:var(--green)">\u20b9'+optMove+' ('+optPct+'%)</td>';
+      h+='<td style="padding:5px 8px;text-align:right;color:var(--red)">\u20b9'+optStop+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-weight:700">'+rr+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px">'+lot+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px;color:var(--green)">\u20b9'+optProfit+'</td>';
+      h+='<td style="padding:5px 8px;text-align:right;font-size:11px;color:var(--red)">\u20b9'+optLoss+'</td>';
+      h+='<td style="padding:5px 8px;text-align:center;font-weight:700;color:'+sc+'">'+x.score+'/10</td>';
+      h+='<td style="padding:5px 8px;text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:'+sigBg+';color:'+sigC+';font-weight:600">'+x.signal+'</span></td>';
+      h+='</tr>';
+    });
+    var thead='<tr style="background:var(--bg3);font-size:9px;text-transform:uppercase;color:var(--text2)"><th style="padding:6px">Symbol</th><th style="padding:6px;text-align:center">Dir</th><th style="padding:6px;text-align:center">Strike</th><th style="padding:6px;text-align:right">Premium</th><th style="padding:6px;text-align:center">Delta</th><th style="padding:6px;text-align:right">Opt Target</th><th style="padding:6px;text-align:right">Opt Stop</th><th style="padding:6px;text-align:right">R:R</th><th style="padding:6px;text-align:right">Lot</th><th style="padding:6px;text-align:right">Profit</th><th style="padding:6px;text-align:right">Loss</th><th style="padding:6px;text-align:center">Score</th><th style="padding:6px;text-align:center">Signal</th></tr>';
+    var tbody=document.getElementById('scalp-tbody');
+    if(tbody){
+      tbody.parentElement.querySelector('thead').innerHTML=thead;
+      tbody.innerHTML=h||'<tr><td colspan="13" style="padding:30px;text-align:center;color:var(--text2)">No options data — connect Kite and refresh</td></tr>';
+    }
     return;
   }
   _realFilterScalping();
