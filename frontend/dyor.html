@@ -2957,6 +2957,15 @@ tr:last-child td{border-bottom:none}
             <span onclick="document.getElementById('guide-watchlist').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Watchlist</span>
             <span onclick="document.getElementById('guide-advisory').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Advisory</span>
             <span onclick="document.getElementById('guide-alerts').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Alerts</span>
+            <span onclick="document.getElementById('guide-alphaview').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer;color:#f59e0b">AlphaView</span>
+            <span onclick="document.getElementById('guide-arbitrage').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Arbitrage</span>
+            <span onclick="document.getElementById('guide-jobbing').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Jobbing</span>
+            <span onclick="document.getElementById('guide-scalping').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Scalping</span>
+            <span onclick="document.getElementById('guide-brief').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Morning Brief</span>
+            <span onclick="document.getElementById('guide-patterns').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Patterns</span>
+            <span onclick="document.getElementById('guide-heatmap').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Heatmap</span>
+            <span onclick="document.getElementById('guide-dcf').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">DCF Calc</span>
+            <span onclick="document.getElementById('guide-dividends').scrollIntoView({behavior:'smooth'})" style="font-size:11px;padding:4px 12px;border-radius:20px;background:rgba(255,255,255,0.2);cursor:pointer">Dividends</span>
           </div>
         </div>
 
@@ -3321,7 +3330,277 @@ tr:last-child td{border-bottom:none}
           </div>
         </div>
 
-        <!-- ── TYPICAL WORKFLOWS ── -->
+        <!-- ── ALPHAVIEW ── -->
+        <div class="card" id="guide-alphaview" style="margin-bottom:20px;border-color:#f59e0b">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #f59e0b">
+            <span style="font-size:28px">🎯</span>
+            <div><div style="font-size:18px;font-weight:800;color:#f59e0b">ALPHAVIEW</div>
+            <div style="font-size:12px;color:var(--text3)">One-stop comprehensive stock analysis — the most powerful page on the platform</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            AlphaView is your complete stock research dashboard. Enter any NSE stock symbol, click ANALYZE, and get a full-page analysis combining price charts, proprietary ratings, technicals, fundamentals, patterns, relative strength, assessment scores, and AI-generated narrative — all in one screen.
+          </div>
+          <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use — Step by Step</div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:12px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>1.</b> Go to <b>ALPHAVIEW</b> tab (first item in sidebar)<br>
+              <b>2.</b> Type stock symbol (e.g., RELIANCE, TCS, HDFCBANK) in the input box<br>
+              <b>3.</b> Click <b>ANALYZE</b> or press Enter<br>
+              <b>4.</b> Review the complete analysis that loads below
+            </div>
+          </div>
+          <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📊 What You See — Section by Section</div>
+          <div style="display:grid;gap:10px">
+            <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+              <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:5px">Price Chart (Candlestick)</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.65">Interactive 1-year candlestick chart with SMA 20 (blue), SMA 50 (orange), and SMA 200 (red) overlays. Hover over candles to see exact OHLCV values. This shows the stock's price trend visually — look for price above/below the moving averages for trend direction.</div>
+            </div>
+            <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+              <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:5px">⚡ Alpha Ratings (Proprietary, 0-99)</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.65">AlphaMarket's proprietary 5-dimension scoring system. The <b>Alpha Score</b> is the large number at top — a composite of:<br>
+              • <b>Momentum (25%)</b> — RS vs NIFTY, price position, RSI, MACD, EMA cross<br>
+              • <b>Fundamentals (25%)</b> — earnings growth, ROE, margins, debt, revenue growth<br>
+              • <b>Accumulation (20%)</b> — up-day volume, volume ratio, OBV trend<br>
+              • <b>Trend (15%)</b> — SMA alignment, ADX, Supertrend, Stochastic, BB width<br>
+              • <b>Sentiment (15%)</b> — news headline analysis with keyword scoring<br>
+              Click the <b>ⓘ</b> icon next to any rating to see exact calculation breakdown. <b>70+ = Strong, 40-69 = Neutral, &lt;40 = Weak.</b></div>
+            </div>
+            <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+              <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:5px">Assessment (Value / Growth / Quality)</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.65">Three independent fundamental scores (0-100) rating the stock on Value (P/E, P/B, Div Yield, D/E), Growth (revenue/earnings growth, ROE, RS), and Quality (ROE, margins, low debt, ADX). Click <b>ⓘ</b> for exact scoring rules. The verdict below each score tells you what it means in plain English.</div>
+            </div>
+            <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+              <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:5px">Technicals + Fundamentals Tables</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.65"><b>Technicals:</b> RSI, MACD, ADX, Stochastic, Supertrend, Volume Ratio, ATR — each with value and BULL/BEAR signal tag.<br><b>Fundamentals:</b> EPS, P/E, P/B, ROE, D/E, margins, promoter holding — key financial metrics at a glance.</div>
+            </div>
+            <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+              <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:5px">Patterns & Signals</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.65">Automatically detected chart patterns (Double Bottom, Head & Shoulders, RSI Divergence, etc.) with pattern type, status, and target price. The narrative below provides an AI-generated summary of the overall technical outlook.</div>
+            </div>
+            <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+              <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:5px">RS vs NIFTY + Pivot Levels</div>
+              <div style="font-size:12px;color:var(--text2);line-height:1.65"><b>Relative Strength:</b> Shows how the stock performs vs NIFTY over 1m, 3m, 6m, 1y. Positive = outperforming. Look for consistently positive RS across timeframes.<br><b>Pivot Levels:</b> S2/S1/Pivot/R1/R2 — potential support and resistance zones for trading.</div>
+            </div>
+          </div>
+          <div style="margin-top:12px;padding:12px;border-radius:6px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+            <b>💡 Example Workflow:</b> Search RELIANCE → Check Alpha Score (57 = Neutral) → See Momentum is 59 (decent) but SMA alignment shows 1 (bearish) → Assessment shows Value:60, Growth:35, Quality:30 → Patterns show Double Bottom forming → <b>Conclusion:</b> Stock has value characteristics but trend is weak. Wait for SMA alignment to improve before entry. Set alert at R1 pivot level.
+          </div>
+        </div>
+
+        <!-- ── ARBITRAGE ── -->
+        <div class="card" id="guide-arbitrage" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">⚖️</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">ARBITRAGE</div>
+            <div style="font-size:12px;color:var(--text3)">Cash-Futures spread trading — low-risk market-neutral opportunities</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            The Arbitrage scanner identifies price differences between a stock's cash (spot) and futures price. When futures trade at a premium to spot, you can lock in a near risk-free return by buying cash and selling futures simultaneously.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>How to Use:</b><br>
+              <b>1.</b> Ensure <b>Kite (Zerodha)</b> is connected via Settings → Kite Login<br>
+              <b>2.</b> Go to <b>ARBITRAGE</b> tab — scanner runs automatically<br>
+              <b>3.</b> Stocks are sorted by <b>Annualized Return %</b> (highest first)<br>
+              <b>4.</b> Look for stocks with <b>Annualized > 8%</b> and signal "STRONG" or "GOOD"<br>
+              <b>5.</b> Check <b>Net Return</b> (after costs) — must be higher than FD rate (~7%) to be worthwhile<br>
+              <b>6.</b> <b>AVOID</b> stocks with negative basis (backwardation) — you'd lock in a loss<br><br>
+              <b>Reading the Table:</b><br>
+              • <b>Basis:</b> Futures Price − Spot Price (positive = contango = opportunity)<br>
+              • <b>Basis %:</b> Basis as percentage of spot price<br>
+              • <b>Annualized:</b> Basis % projected to a full year<br>
+              • <b>Net Return:</b> Annualized return after all transaction costs<br>
+              • <b>Signal:</b> STRONG (>12%), GOOD (>8%), FAIR (>5%), AVOID (<-2%)
+            </div>
+          </div>
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+            <b>💡 Example:</b> RELIANCE Spot ₹1,413, Futures ₹1,421. Basis = ₹8 (0.57%). 25 days to expiry. Annualized = 8.3%. Lot size 250. You buy 250 shares in cash (₹3.53L) and sell 1 lot futures. At expiry, both converge. Gross profit: ₹2,000. After costs (~₹350): <b>Net ₹1,650</b>.
+          </div>
+        </div>
+
+        <!-- ── JOBBING ── -->
+        <div class="card" id="guide-jobbing" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">🔄</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">JOBBING</div>
+            <div style="font-size:12px;color:var(--text3)">High-frequency bid-ask spread trading — many small trades per day</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            Jobbing (also called market making) involves making 20-50 small trades per day, profiting from the bid-ask spread. The scanner scores F&O stocks on spread tightness, volatility, price level, and day range to identify the best candidates.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>How to Read the Scanner:</b><br>
+              • <b>Score (0-10):</b> Higher = better candidate. 7+ = STRONG, 5+ = GOOD<br>
+              • <b>Spread %:</b> Cash-futures spread. Tighter (<0.05%) = lower cost per trade<br>
+              • <b>Day Range %:</b> Intraday volatility. Sweet spot: 0.5%-2.0%<br>
+              • <b>Cost/Trade:</b> Total round-trip cost (brokerage + STT + charges)<br>
+              • <b>Target Profit/Lot:</b> Expected profit per trade at 0.05% target move<br>
+              • <b>Breakeven Move:</b> Minimum price move needed to cover costs<br><br>
+              <b>Key Rule:</b> Only trade stocks where cost per trade < 50% of target profit. If costs eat more than half your target, it's not viable.<br><br>
+              <b>Best Windows:</b> 09:15-10:00 (opening volatility) and 14:30-15:15 (closing rebalancing). Avoid 12:00-14:00 (low volume lunch period).
+            </div>
+          </div>
+          <div style="padding:10px;border-radius:6px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+            <b>⚠️ Warning:</b> Jobbing requires very fast execution, discipline, and experience. Transaction costs can quickly accumulate. Always paper trade for at least 2-4 weeks before attempting real jobbing. Use the <b>Calculator</b> tab to verify your expected daily P&L is positive after all costs.
+          </div>
+        </div>
+
+        <!-- ── SCALPING ── -->
+        <div class="card" id="guide-scalping" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">⚡</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">SCALPING</div>
+            <div style="font-size:12px;color:var(--text3)">Directional momentum trades — 5-10 trades per day targeting 0.3%-1% moves</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            Unlike jobbing (non-directional), scalping takes a directional bet — BULLISH or BEARISH — based on VWAP deviation, day change momentum, and price pattern. Fewer trades but larger profit per trade.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>How to Read the Scanner:</b><br>
+              • <b>Direction:</b> BULLISH (green), BEARISH (red), NEUTRAL (grey) — determined by day change + VWAP deviation<br>
+              • <b>VWAP Dev:</b> How far price is from VWAP. Positive = above VWAP (bullish). Negative = below (bearish)<br>
+              • <b>Pattern:</b> NEAR HIGH, NEAR LOW, MID RANGE — where price sits in today's range<br>
+              • <b>Entry/Target/Stop:</b> Pre-calculated levels. Bullish: target +0.5%, stop -0.3%. Bearish: reversed<br>
+              • <b>R:R Ratio:</b> Reward-to-Risk. Above 1.5:1 is good. This means you make 1.5× what you risk<br>
+              • <b>Pivot Levels:</b> S2/S1/Pivot/R1/R2 — additional reference for support/resistance<br><br>
+              <b>How to Trade:</b><br>
+              <b>1.</b> Filter for STRONG signal (score ≥ 7) in your preferred direction<br>
+              <b>2.</b> Confirm VWAP deviation aligns with direction (>0.5% for conviction)<br>
+              <b>3.</b> Enter at Entry price, set Stop and Target as shown<br>
+              <b>4.</b> Exit at target or stop — no exceptions. Discipline is everything in scalping.
+            </div>
+          </div>
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+            <b>💡 Example:</b> HDFCBANK showing BULLISH, Score 7.5, VWAP Dev +0.8%, Day Change +1.2%. Entry ₹1,655, Target ₹1,663 (+0.5%), Stop ₹1,650 (-0.3%). Lot 550. Potential profit: ₹4,400. Potential loss: ₹2,750. R:R = 1.6:1. Net after costs: ~₹4,305 win / ₹2,845 loss.
+          </div>
+        </div>
+
+        <!-- ── MORNING BRIEF ── -->
+        <div class="card" id="guide-brief" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">🌅</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">MORNING BRIEF</div>
+            <div style="font-size:12px;color:var(--text3)">Pre-market overview — global cues, India indices, sector pulse, screener picks</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            Start every trading day here. The Morning Brief aggregates overnight global market data, India index performance, sector gainers/losers, and strategy-based stock picks into one pre-market report. Refreshes every 15 minutes.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>Sections:</b><br>
+              • <b>Global Cues:</b> S&P 500, Dow Jones, NASDAQ, Crude Oil, Gold, USD/INR — previous day close and % change<br>
+              • <b>India Indices:</b> NIFTY 50, BANK NIFTY — close, high/low, % change<br>
+              • <b>Sector Pulse:</b> Top 3 gaining sectors and top 3 losing sectors<br>
+              • <b>Screener Picks:</b> Stocks flagged by Momentum, Oversold Recovery, and Breakout strategies<br>
+              • <b>Composite Sentiment:</b> Overall market mood (-100 to +100). Positive = bullish bias for the day<br><br>
+              <b>How to Use:</b> Check global cues first — if US markets were strongly down, expect a gap-down open. Look at sector pulse to see where money is flowing. Use screener picks as your watchlist for the day.
+            </div>
+          </div>
+        </div>
+
+        <!-- ── PATTERNS ── -->
+        <div class="card" id="guide-patterns" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">🔍</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">PATTERN SCANNER</div>
+            <div style="font-size:12px;color:var(--text3)">11 indicators + 8 chart patterns with auto-generated narrative</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            Enter any stock symbol to get a deep technical scan. The scanner analyses 11 technical indicators and looks for 8 classic chart patterns, then produces a composite score (-100 to +100) and an AI-written narrative explaining the outlook.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>Indicators Scanned:</b> SMA 20/50/200, EMA 12/26, RSI, MACD, Bollinger Bands, Stochastic, ADX, Supertrend, Volume, Williams %R, OBV<br><br>
+              <b>Patterns Detected:</b> Double Bottom/Top, Cup & Handle, Head & Shoulders, Ascending/Descending Triangle, Falling/Rising Wedge, Golden/Death Cross, RSI Divergence, MACD Crossover, Bollinger Squeeze<br><br>
+              <b>Composite Score:</b> +60 to +100 = STRONG BULLISH, +20 to +59 = MILDLY BULLISH, -19 to +19 = NEUTRAL, -59 to -20 = MILDLY BEARISH, -100 to -60 = STRONG BEARISH<br><br>
+              <b>How to Use:</b> Enter symbol → Review signals (each tagged BULLISH/BEARISH with strength) → Check detected patterns → Read the narrative for plain-English outlook → Use composite score for quick decision. Combine with AlphaView for full picture.
+            </div>
+          </div>
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+            <b>💡 Example:</b> INFY scan shows Score +42 (MILDLY BULLISH). 6 bullish signals (Price above 200 DMA, RSI at 58, MACD above signal, Supertrend bullish) vs 3 bearish (Stochastic overbought, near upper BB). Pattern detected: Ascending Triangle (bullish, reliability: moderate). Narrative: "INFY shows moderate bullish momentum with price consolidating in an ascending triangle pattern..."
+          </div>
+        </div>
+
+        <!-- ── HEATMAP ── -->
+        <div class="card" id="guide-heatmap" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">🗺️</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">SECTOR HEATMAP</div>
+            <div style="font-size:12px;color:var(--text3)">Sector-wise performance visualization across all 49 sectors</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            A colour-coded grid showing 1-day returns for all 49 sectors. Deep green = strong gains, deep red = heavy losses. Instantly see where money is flowing in the market and which sectors to focus on.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>How to Use:</b><br>
+              • Scan for <b>dark green sectors</b> — these have strong buying interest today<br>
+              • Watch for <b>sector rotation</b> — if IT was green last week but red today, money may be rotating to Banking<br>
+              • Click a sector to see its constituent stocks<br>
+              • Use this alongside the Dashboard's RRG chart for a complete sector rotation view<br><br>
+              <b>Pro Tip:</b> Check the heatmap at market open (9:30 AM) and again at 2:00 PM. Sectors that stay green all day have genuine institutional buying, not just opening gaps.
+            </div>
+          </div>
+        </div>
+
+        <!-- ── DCF CALC ── -->
+        <div class="card" id="guide-dcf" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">🧮</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">DCF CALCULATOR</div>
+            <div style="font-size:12px;color:var(--text3)">Discounted Cash Flow intrinsic value estimator — 3 valuation methods</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            Estimate a stock's fair (intrinsic) value using three independent methods: EPS-based DCF, Free Cash Flow DCF, and Graham Number. Compare against the current market price to determine if a stock is undervalued, fairly valued, or overvalued.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>How to Use:</b><br>
+              <b>1.</b> Enter stock symbol → Click Calculate<br>
+              <b>2.</b> Default assumptions auto-populate (Growth: auto-detected from earnings, Discount: 12%, Terminal: 3%, Years: 10)<br>
+              <b>3.</b> Adjust assumptions if needed — higher growth rate = higher intrinsic value<br>
+              <b>4.</b> Review three valuations: EPS DCF, FCF DCF, Graham Number<br>
+              <b>5.</b> Check <b>Margin of Safety %</b> — positive means stock is below fair value<br>
+              <b>6.</b> <b>Verdict:</b> UNDERVALUED (margin > 15%), FAIRLY VALUED (margin > -10%), OVERVALUED (margin ≤ -10%)<br><br>
+              <b>Key Assumptions:</b><br>
+              • <b>Growth Rate:</b> Annual earnings growth expected for next 10 years (auto-detected, 5%-25%)<br>
+              • <b>Discount Rate:</b> 12% (India's cost of equity — the minimum return you'd accept)<br>
+              • <b>Terminal Growth:</b> 3% (long-term GDP growth — what happens after year 10)
+            </div>
+          </div>
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+            <b>💡 Example:</b> RELIANCE: EPS ₹61.49, auto-detected growth 10%. EPS DCF intrinsic value: ₹1,800. FCF DCF: ₹1,650. Graham Number: ₹1,720. Average: ₹1,723. Current price: ₹1,413. Margin of Safety: +18%. <b>Verdict: UNDERVALUED.</b> This suggests RELIANCE may be trading below its fair value — but always verify assumptions and do additional research before acting.
+          </div>
+        </div>
+
+        <!-- ── DIVIDENDS ── -->
+        <div class="card" id="guide-dividends" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
+            <span style="font-size:28px">💰</span>
+            <div><div style="font-size:18px;font-weight:800;color:var(--accent)">DIVIDENDS</div>
+            <div style="font-size:12px;color:var(--text3)">Top dividend-paying stocks sorted by yield</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            A curated list of 30 major Indian dividend-paying stocks sorted by dividend yield. Perfect for income-focused investors looking for regular cash flow from their portfolios.
+          </div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+            <div style="font-size:12px;color:var(--text2);line-height:1.8">
+              <b>Columns Explained:</b><br>
+              • <b>Dividend Yield %:</b> Annual dividend / current price × 100. Higher = more income per rupee invested<br>
+              • <b>Dividend Rate:</b> Actual annual dividend per share in ₹<br>
+              • <b>Payout Ratio:</b> What % of profits the company pays as dividends. 30-60% is healthy. >80% may be unsustainable<br>
+              • <b>P/E:</b> Price-to-Earnings ratio — valuation check<br>
+              • <b>Market Cap:</b> Company size<br>
+              • <b>Sector:</b> Which industry<br><br>
+              <b>How to Use:</b> Sort by yield to find highest-paying stocks. Cross-check payout ratio — very high payouts (>80%) may signal the company is paying more than it can sustain. Look for moderate yield (2-5%) with stable payout ratios (30-60%) — these are sustainable dividend payers.
+            </div>
+          </div>
+        </div>
+
+                <!-- ── TYPICAL WORKFLOWS ── -->
         <div class="card" style="margin-bottom:20px;border-color:rgba(232,66,21,0.3)">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
             <span style="font-size:28px">🚀</span>
