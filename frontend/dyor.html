@@ -3547,7 +3547,7 @@ function boot(){
   document.getElementById('app').style.display='flex';
   document.getElementById('uname').textContent=me.name;
   if(me.is_admin)document.getElementById('anav').style.display='block';
-  nav('alphaview',document.querySelector('.nbtn'));checkConsent();
+  nav('alphaview',document.querySelector('.nbtn'));setTimeout(function(){fetch('/dyor/api/consent/check',{credentials:'include'}).then(function(r){return r.json()}).then(function(d){if(d&&!d.accepted)document.getElementById('consent-overlay').style.display='block'}).catch(function(){})},500);
   // Request browser notification permission
   if('Notification' in window && Notification.permission==='default'){
     Notification.requestPermission();
@@ -7924,68 +7924,6 @@ const w=window.open('','_blank');w.document.write(`<!DOCTYPE html><html><head><t
     @media print{body{margin:0;padding:10px}@page{margin:12mm}}
   </style></head><body>${c}
 
-<div id="consent-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:99999;overflow-y:auto;padding:20px">
-<div style="max-width:800px;margin:20px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:30px">
-<div style="text-align:center;margin-bottom:20px">
-<div style="font-size:28px;font-weight:900;color:var(--accent,#3b82f6)">PLATFORM DISCLAIMER & TERMS</div>
-<div style="font-size:12px;color:var(--text2,#94a3b8);margin-top:4px">Version 2.0 | Please read carefully before proceeding</div>
-</div>
-<div style="font-size:13px;line-height:1.8;color:var(--text2,#94a3b8);max-height:55vh;overflow-y:auto;padding:16px;background:var(--bg,#0a0e17);border-radius:8px;border:1px solid var(--border,#2a3450)">
-<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin-bottom:12px">WHAT THIS PLATFORM DOES</p>
-<p>AlphaMarket provides <b>analytical tools, data visualization, stock screening, backtesting, and research utilities</b> for the Indian equity and derivatives markets. The platform uses quantitative models and technical/fundamental analysis to generate scores, ratings, signals, and insights.</p>
-<p style="margin-top:12px">Key features include: AlphaView (proprietary stock ratings), Stock Screener (40+ strategies), Backtesting Engine, Forward Testing, Options Lab, Pattern Scanner, DCF Calculator, F&O Scanners (Arbitrage, Jobbing, Scalping), Model Portfolios, Sector Analysis, and AI-powered research assistant (Ariv).</p>
-
-<p style="color:#ef4444;font-weight:700;font-size:15px;margin:20px 0 12px">WHAT THIS PLATFORM CANNOT DO & LIMITATIONS</p>
-<p><b>1. NOT Investment Advice:</b> Nothing on this platform constitutes personalized investment advice, a recommendation to buy/sell any security, or a solicitation of any transaction. All outputs — including Alpha Ratings, Assessment Scores, BUY/SELL signals, pattern detections, DCF valuations, and screener results — are <b>analytical outputs of quantitative models</b>, NOT personal recommendations.</p>
-<p><b>2. NOT a Guarantee of Returns:</b> Past performance shown in backtests, historical ratings, and pattern detection does NOT guarantee future results. Markets are inherently unpredictable. Strategies that performed well historically may fail in future market conditions.</p>
-<p><b>3. Model Limitations:</b> All scoring models (Alpha Ratings, Assessment Scores, Pattern Scanner, Sentiment Analysis) are <b>quantitative approximations</b>. They CANNOT capture qualitative factors such as management quality, corporate governance nuances, regulatory changes, geopolitical events, insider information, or sudden market shocks.</p>
-<p><b>4. Sentiment Analysis Limitations:</b> The Sentiment Rating uses keyword-based analysis of news headlines, NOT AI-powered natural language understanding. It may misinterpret sarcasm, context, nuanced language, or miss important developments not covered in headlines.</p>
-<p><b>5. Data May Be Delayed or Inaccurate:</b> While we strive for accuracy, data is sourced from third-party providers and may contain errors, delays, gaps, or stale information. Users MUST verify critical data from primary exchange sources (NSE/BSE) before making any trading or investment decisions.</p>
-<p><b>6. F&O Risk:</b> Futures and Options trading involves <b>substantial risk of loss</b> and is NOT suitable for all investors. Leverage amplifies both gains AND losses. Options can expire worthless (100% loss). The F&O scanner projections (daily P&L, win rates) are THEORETICAL and assume ideal execution conditions.</p>
-<p><b>7. No Liability:</b> AlphaMarket, its founders, employees, and affiliates shall NOT be liable for any losses, damages, or costs incurred as a result of using this platform or acting on any information provided herein.</p>
-
-<p style="color:#f59e0b;font-weight:700;font-size:15px;margin:20px 0 12px">USER OBLIGATIONS & DUE DILIGENCE</p>
-<p><b>1.</b> You are SOLELY responsible for your investment and trading decisions. Do NOT treat any signal, score, or rating on this platform as a direct buy/sell instruction.</p>
-<p><b>2.</b> Always perform your own <b>independent due diligence</b> — read company annual reports, check regulatory filings, verify data from primary sources, and consider your personal financial situation, risk tolerance, and investment objectives.</p>
-<p><b>3.</b> Consult a <b>SEBI-registered Investment Advisor (RIA)</b> or qualified financial professional before making investment decisions, especially for F&O trading.</p>
-<p><b>4.</b> Never invest or trade with money you cannot afford to lose.</p>
-<p><b>5.</b> The methodology document describing all calculations and rationale is available upon request to the platform administrator.</p>
-
-<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin:20px 0 12px">REGULATORY COMPLIANCE</p>
-<p>This platform is operated in compliance with SEBI (Research Analysts) Regulations, 2014 and SEBI (Investment Advisers) Regulations, 2013. Complete methodology disclosure is maintained and available for regulatory review.</p>
-</div>
-
-<div style="margin-top:20px;padding:16px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px">
-<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-<input type="checkbox" id="consent-check" style="margin-top:3px;width:18px;height:18px;accent-color:#3b82f6">
-<span style="font-size:13px;color:var(--text1,#e2e8f0)">I have read, understood, and agree to the above terms. I understand that this platform provides analytical tools only and does NOT provide investment advice. I will perform my own due diligence before making any investment or trading decisions.</span>
-</label>
-</div>
-
-<div style="display:flex;gap:12px;margin-top:16px;justify-content:center">
-<button id="consent-accept-btn" disabled onclick="acceptConsent()" style="padding:12px 40px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:not-allowed;opacity:0.5">I ACCEPT & CONTINUE</button>
-<button onclick="window.location.href='/'" style="padding:12px 24px;background:transparent;color:var(--text2,#94a3b8);border:1px solid var(--border,#2a3450);border-radius:8px;font-size:13px;cursor:pointer">DECLINE & EXIT</button>
-</div>
-<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--text3,#64748b)">Your acceptance will be recorded with timestamp and IP address for regulatory compliance.</div>
-</div>
-</div>
-<script>
-document.getElementById('consent-check').addEventListener('change',function(){
-  var btn=document.getElementById('consent-accept-btn');
-  btn.disabled=!this.checked;btn.style.opacity=this.checked?'1':'0.5';btn.style.cursor=this.checked?'pointer':'not-allowed';
-});
-function checkConsent(){
-  fetch('/dyor/api/consent/check',{credentials:'include'}).then(r=>r.json()).then(d=>{
-    if(!d.accepted)document.getElementById('consent-overlay').style.display='block';
-  }).catch(()=>{});
-}
-function acceptConsent(){
-  fetch('/dyor/api/consent/accept',{method:'POST',credentials:'include'}).then(r=>r.json()).then(d=>{
-    if(d.status==='accepted')document.getElementById('consent-overlay').style.display='none';
-  });
-}
-</script>
-
 </body></html>`);
 w.document.close();
 setTimeout(()=>w.print(),500);
@@ -10113,62 +10051,31 @@ document.addEventListener('DOMContentLoaded',function(){var i=document.getElemen
 <div style="max-width:800px;margin:20px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:30px">
 <div style="text-align:center;margin-bottom:20px">
 <div style="font-size:28px;font-weight:900;color:var(--accent,#3b82f6)">PLATFORM DISCLAIMER & TERMS</div>
-<div style="font-size:12px;color:var(--text2,#94a3b8);margin-top:4px">Version 2.0 | Please read carefully before proceeding</div>
+<div style="font-size:12px;color:var(--text2,#94a3b8);margin-top:4px">Version 2.0 | Please read carefully</div>
 </div>
 <div style="font-size:13px;line-height:1.8;color:var(--text2,#94a3b8);max-height:55vh;overflow-y:auto;padding:16px;background:var(--bg,#0a0e17);border-radius:8px;border:1px solid var(--border,#2a3450)">
 <p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin-bottom:12px">WHAT THIS PLATFORM DOES</p>
-<p>AlphaMarket provides <b>analytical tools, data visualization, stock screening, backtesting, and research utilities</b> for the Indian equity and derivatives markets. The platform uses quantitative models and technical/fundamental analysis to generate scores, ratings, signals, and insights.</p>
-<p style="margin-top:12px">Key features include: AlphaView (proprietary stock ratings), Stock Screener (40+ strategies), Backtesting Engine, Forward Testing, Options Lab, Pattern Scanner, DCF Calculator, F&O Scanners (Arbitrage, Jobbing, Scalping), Model Portfolios, Sector Analysis, and AI-powered research assistant (Ariv).</p>
-
-<p style="color:#ef4444;font-weight:700;font-size:15px;margin:20px 0 12px">WHAT THIS PLATFORM CANNOT DO & LIMITATIONS</p>
-<p><b>1. NOT Investment Advice:</b> Nothing on this platform constitutes personalized investment advice, a recommendation to buy/sell any security, or a solicitation of any transaction. All outputs — including Alpha Ratings, Assessment Scores, BUY/SELL signals, pattern detections, DCF valuations, and screener results — are <b>analytical outputs of quantitative models</b>, NOT personal recommendations.</p>
-<p><b>2. NOT a Guarantee of Returns:</b> Past performance shown in backtests, historical ratings, and pattern detection does NOT guarantee future results. Markets are inherently unpredictable. Strategies that performed well historically may fail in future market conditions.</p>
-<p><b>3. Model Limitations:</b> All scoring models (Alpha Ratings, Assessment Scores, Pattern Scanner, Sentiment Analysis) are <b>quantitative approximations</b>. They CANNOT capture qualitative factors such as management quality, corporate governance nuances, regulatory changes, geopolitical events, insider information, or sudden market shocks.</p>
-<p><b>4. Sentiment Analysis Limitations:</b> The Sentiment Rating uses keyword-based analysis of news headlines, NOT AI-powered natural language understanding. It may misinterpret sarcasm, context, nuanced language, or miss important developments not covered in headlines.</p>
-<p><b>5. Data May Be Delayed or Inaccurate:</b> While we strive for accuracy, data is sourced from third-party providers and may contain errors, delays, gaps, or stale information. Users MUST verify critical data from primary exchange sources (NSE/BSE) before making any trading or investment decisions.</p>
-<p><b>6. F&O Risk:</b> Futures and Options trading involves <b>substantial risk of loss</b> and is NOT suitable for all investors. Leverage amplifies both gains AND losses. Options can expire worthless (100% loss). The F&O scanner projections (daily P&L, win rates) are THEORETICAL and assume ideal execution conditions.</p>
-<p><b>7. No Liability:</b> AlphaMarket, its founders, employees, and affiliates shall NOT be liable for any losses, damages, or costs incurred as a result of using this platform or acting on any information provided herein.</p>
-
-<p style="color:#f59e0b;font-weight:700;font-size:15px;margin:20px 0 12px">USER OBLIGATIONS & DUE DILIGENCE</p>
-<p><b>1.</b> You are SOLELY responsible for your investment and trading decisions. Do NOT treat any signal, score, or rating on this platform as a direct buy/sell instruction.</p>
-<p><b>2.</b> Always perform your own <b>independent due diligence</b> — read company annual reports, check regulatory filings, verify data from primary sources, and consider your personal financial situation, risk tolerance, and investment objectives.</p>
-<p><b>3.</b> Consult a <b>SEBI-registered Investment Advisor (RIA)</b> or qualified financial professional before making investment decisions, especially for F&O trading.</p>
-<p><b>4.</b> Never invest or trade with money you cannot afford to lose.</p>
-<p><b>5.</b> The methodology document describing all calculations and rationale is available upon request to the platform administrator.</p>
-
-<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin:20px 0 12px">REGULATORY COMPLIANCE</p>
-<p>This platform is operated in compliance with SEBI (Research Analysts) Regulations, 2014 and SEBI (Investment Advisers) Regulations, 2013. Complete methodology disclosure is maintained and available for regulatory review.</p>
+<p>AlphaMarket provides analytical tools, data visualization, stock screening, backtesting, and research utilities for the Indian equity and derivatives markets.</p>
+<p style="color:#ef4444;font-weight:700;font-size:15px;margin:20px 0 12px">LIMITATIONS</p>
+<p>1. NOT Investment Advice. All outputs are analytical, NOT recommendations.<br>2. No guarantee of returns. Past performance does NOT predict future results.<br>3. Models cannot capture management quality, governance, or geopolitical events.<br>4. Data may be delayed or inaccurate. Verify from primary sources.<br>5. F&O involves substantial risk. Options can expire worthless.<br>6. No liability for any losses incurred.</p>
+<p style="color:#f59e0b;font-weight:700;font-size:15px;margin:20px 0 12px">YOUR OBLIGATIONS</p>
+<p>You are solely responsible for decisions. Perform due diligence. Consult a SEBI-registered advisor. Never invest money you cannot afford to lose.</p>
+<p style="color:var(--accent,#3b82f6);font-weight:700;font-size:15px;margin:20px 0 12px">METHODOLOGY DISCLOSURE</p>
+<p>AlphaMarket maintains a comprehensive <b>Methodology & Disclosure Document</b> that explains in detail how every calculation, rating, score, signal, and metric on this platform is computed — including Alpha Ratings, Assessment Scores, Screener Strategies, Backtesting, DCF Valuation, Pattern Detection, F&O Scanners, and all other features.</p>
+<p style="margin-top:8px"><b>You are required to understand the methodology</b> behind the calculations used on this platform before relying on any output for decision-making. The methodology document is available upon request to the administrator.</p>
+<p style="margin-top:8px"><a href="/dyor/api/methodology" target="_blank" style="color:#3b82f6;text-decoration:underline;font-weight:700">View Full Methodology Document</a> <span style="font-size:11px;color:var(--text3,#64748b)">(Admin access or approved request required)</span></p>
 </div>
-
 <div style="margin-top:20px;padding:16px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px">
 <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
-<input type="checkbox" id="consent-check" style="margin-top:3px;width:18px;height:18px;accent-color:#3b82f6">
-<span style="font-size:13px;color:var(--text1,#e2e8f0)">I have read, understood, and agree to the above terms. I understand that this platform provides analytical tools only and does NOT provide investment advice. I will perform my own due diligence before making any investment or trading decisions.</span>
+<input type="checkbox" id="consent-cb" style="margin-top:3px;width:18px;height:18px;accent-color:#3b82f6" onchange="var b=document.getElementById('consent-btn');b.disabled=!this.checked;b.style.opacity=this.checked?'1':'0.5';b.style.cursor=this.checked?'pointer':'not-allowed';">
+<span style="font-size:13px;color:var(--text1,#e2e8f0)">I have read and understood the platform disclaimer and methodology disclosure. I acknowledge that all outputs are analytical tools only, NOT investment advice. I agree to perform my own due diligence and understand the calculation methodology before acting on any information from this platform.</span>
 </label>
 </div>
-
 <div style="display:flex;gap:12px;margin-top:16px;justify-content:center">
-<button id="consent-accept-btn" disabled onclick="acceptConsent()" style="padding:12px 40px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:not-allowed;opacity:0.5">I ACCEPT & CONTINUE</button>
-<button onclick="window.location.href='/'" style="padding:12px 24px;background:transparent;color:var(--text2,#94a3b8);border:1px solid var(--border,#2a3450);border-radius:8px;font-size:13px;cursor:pointer">DECLINE & EXIT</button>
-</div>
-<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--text3,#64748b)">Your acceptance will be recorded with timestamp and IP address for regulatory compliance.</div>
+<button id="consent-btn" disabled onclick="(function(){fetch('/dyor/api/consent/accept',{method:'POST',credentials:'include'}).then(function(r){return r.json()}).then(function(d){if(d.status==='accepted')document.getElementById('consent-overlay').style.display='none'})})()" style="padding:12px 40px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:not-allowed;opacity:0.5">I ACCEPT</button>
+<button onclick="window.location.href='/'" style="padding:12px 24px;background:transparent;color:var(--text2,#94a3b8);border:1px solid var(--border,#2a3450);border-radius:8px;font-size:13px;cursor:pointer">DECLINE</button>
 </div>
 </div>
-<script>
-document.getElementById('consent-check').addEventListener('change',function(){
-  var btn=document.getElementById('consent-accept-btn');
-  btn.disabled=!this.checked;btn.style.opacity=this.checked?'1':'0.5';btn.style.cursor=this.checked?'pointer':'not-allowed';
-});
-function checkConsent(){
-  fetch('/dyor/api/consent/check',{credentials:'include'}).then(r=>r.json()).then(d=>{
-    if(!d.accepted)document.getElementById('consent-overlay').style.display='block';
-  }).catch(()=>{});
-}
-function acceptConsent(){
-  fetch('/dyor/api/consent/accept',{method:'POST',credentials:'include'}).then(r=>r.json()).then(d=>{
-    if(d.status==='accepted')document.getElementById('consent-overlay').style.display='none';
-  });
-}
-</script>
+</div>
 
 </body></html>
