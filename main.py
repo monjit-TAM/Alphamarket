@@ -8782,19 +8782,163 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         nifty_ret_1m = nifty_ret_3m = nifty_ret_6m = nifty_ret_1y = 0
         rs_1m = rs_3m = rs_6m = rs_1y = 0
 
-    # ── 6. Rating Scores (0-99 scale like O'Neil) ──
-    eps_val = sf(fund.get("eps") or fund.get("trailingEps"), 0)
-    eps_growth = sf(fund.get("earnings_growth") or fund.get("earningsGrowth"), 0)
-    if eps_growth and abs(eps_growth) < 1:
-        eps_growth = eps_growth * 100
-    eps_strength = min(99, max(1, int(50 + eps_growth * 1.5))) if eps_growth else 50
+    # ── 6. Alpha Ratings (AlphaMarket Proprietary, 0-99) ──
 
-    rs_score = min(99, max(1, int(50 + rs_3m * 2 + rs_1m)))
+    # --- 6a. MOMENTUM (price momentum + relative strength) ---
+    # RS component: outperformance vs NIFTY (30%)
+    rs_component = min(99, max(1, int(50 + rs_3m * 1.5 + rs_1m * 0.8)))
+    # Price position: distance from 200 DMA (20%)
+    pct_200dma = round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0
+    pos_component = min(99, max(1, int(50 + pct_200dma * 1.5)))
+    # RSI zone mapping (20%) — 30-70 is healthy, extremes penalized
+    if rsi >= 50 and rsi <= 70: rsi_component = int(50 + (rsi - 50) * 2.4)
+    elif rsi > 70: rsi_component = int(98 - (rsi - 70) * 1.5)  # overbought drag
+    elif rsi >= 30: rsi_component = int(rsi * 1.0 + 20)
+    else: rsi_component = int(rsi * 0.8)
+    rsi_component = min(99, max(1, rsi_component))
+    # MACD histogram direction (15%)
+    macd_component = min(99, max(1, int(50 + macd_hist * 8)))
+    # EMA cross (15%) — EMA9 vs EMA21
+    ema_spread = round((ema9 / ema21 - 1) * 100, 2) if ema21 > 0 else 0
+    ema_component = min(99, max(1, int(50 + ema_spread * 10)))
 
+    momentum_rating = min(99, max(1, int(
+        rs_component * 0.30 + pos_component * 0.20 + rsi_component * 0.20 +
+        macd_component * 0.15 + ema_component * 0.15
+    )))
+
+    # --- 6b. FUNDAMENTALS (financial health + growth) ---
+    eps_growth_val = sf(fund.get("earnings_growth") or fund.get("earningsGrowth"), 0)
+    if eps_growth_val and abs(eps_growth_val) < 1:
+        eps_growth_val = eps_growth_val * 100
+    rev_growth_val = sf(fund.get("revenue_growth") or fund.get("revenueGrowth"), 0)
+    if rev_growth_val and abs(rev_growth_val) < 1:
+        rev_growth_val = rev_growth_val * 100
+    roe_val = sf(fund.get("roe") or fund.get("returnOnEquity"), 0)
+    if roe_val and abs(roe_val) < 1:
+        roe_val = roe_val * 100
+    margin_val = sf(fund.get("profit_margin") or fund.get("profitMargins"), 0)
+    if margin_val and abs(margin_val) < 1:
+        margin_val = margin_val * 100
+    de_val = sf(fund.get("debt_equity") or fund.get("debtToEquity"), 0)
+
+    # Earnings growth (25%) — higher is better, cap at 50%
+    earn_comp = min(99, max(1, int(50 + min(eps_growth_val, 50) * 0.9))) if eps_growth_val else 40
+    # ROE (25%) — above 15% is great
+    roe_comp = min(99, max(1, int(roe_val * 3.5))) if roe_val > 0 else 25
+    # Profit margin (20%) — above 15% is strong
+    margin_comp = min(99, max(1, int(margin_val * 3.5))) if margin_val > 0 else 25
+    # D/E health (15%) — lower is better, inverted scoring
+    if de_val is not None and de_val >= 0:
+        de_comp = min(99, max(1, int(99 - min(de_val, 200) * 0.45)))
+    else:
+        de_comp = 50
+    # Revenue growth (15%)
+    rev_comp = min(99, max(1, int(50 + min(rev_growth_val, 50) * 0.9))) if rev_growth_val else 40
+
+    fundamentals_rating = min(99, max(1, int(
+        earn_comp * 0.25 + roe_comp * 0.25 + margin_comp * 0.20 +
+        de_comp * 0.15 + rev_comp * 0.15
+    )))
+
+    # --- 6c. ACCUMULATION (institutional activity signals) ---
     up_days = int((delta.iloc[-20:] > 0).sum()) if len(delta) >= 20 else 10
-    vol_acc = min(99, max(1, int(up_days * 5 + vol_ratio * 10)))
+    down_days = 20 - up_days
+    # Up-day vs down-day ratio (40%)
+    ud_ratio_comp = min(99, max(1, int(up_days / 20 * 99)))
+    # Volume ratio (30%) — current vs average
+    vr_comp = min(99, max(1, int(min(vol_ratio, 3.0) * 33)))
+    # OBV trend (30%) — is OBV rising over 20 days?
+    try:
+        obv = (v * delta.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))).cumsum()
+        obv_20ago = float(obv.iloc[-21]) if len(obv) > 20 else float(obv.iloc[0])
+        obv_now = float(obv.iloc[-1])
+        obv_change = (obv_now - obv_20ago) / abs(obv_20ago) * 100 if obv_20ago != 0 else 0
+        obv_comp = min(99, max(1, int(50 + obv_change * 0.5)))
+    except:
+        obv_comp = 50
 
-    composite = min(99, max(1, int(eps_strength * 0.3 + rs_score * 0.3 + vol_acc * 0.2 + (rsi / 100 * 99) * 0.2)))
+    accumulation_rating = min(99, max(1, int(
+        ud_ratio_comp * 0.40 + vr_comp * 0.30 + obv_comp * 0.30
+    )))
+
+    # --- 6d. TREND (technical alignment) ---
+    # SMA alignment (30%) — 20>50>200 = perfect bull, reverse = perfect bear
+    sma_align = 0
+    if sma20 > sma50 > sma200: sma_align = 99
+    elif sma20 > sma50: sma_align = 75
+    elif sma50 > sma200: sma_align = 55
+    elif sma20 < sma50 < sma200: sma_align = 1
+    elif sma20 < sma50: sma_align = 25
+    else: sma_align = 50
+    # ADX strength (25%)
+    adx_comp = min(99, max(1, int(adx_val * 3))) if adx_val else 30
+    # Supertrend (20%)
+    st_comp = 80 if supertrend_bullish else 20
+    # Stochastic position (15%)
+    stoch_comp = min(99, max(1, int(stoch_k)))
+    # BB width — tighter bands = breakout potential (10%)
+    bb_w = (bb_upper - bb_lower) / price * 100 if price > 0 and bb_upper > 0 else 5
+    bb_comp = min(99, max(1, int(99 - min(bb_w, 15) * 5)))  # tighter = higher
+
+    trend_rating = min(99, max(1, int(
+        sma_align * 0.30 + adx_comp * 0.25 + st_comp * 0.20 +
+        stoch_comp * 0.15 + bb_comp * 0.10
+    )))
+
+    # --- 6e. SENTIMENT (news & events pulse via yfinance) ---
+    sentiment_rating = 50  # neutral default
+    try:
+        import yfinance as _yf_news
+        tk_news = _yf_news.Ticker(f"{sym}.NS")
+        news_items = getattr(tk_news, "news", []) or []
+        if news_items:
+            from datetime import datetime as _dt_news
+            pos_kw = ["upgrade","bullish","growth","profit","beat","expansion","dividend","buyback",
+                       "partnership","acquisition","deal","record","outperform","buy","strong",
+                       "rally","surge","breakout","approve","launch","fii buying","dii buying","bonus"]
+            neg_kw = ["downgrade","bearish","loss","fraud","governance","resign","exit","probe",
+                       "sebi","default","debt","sell","cut","slash","miss","warning","decline",
+                       "fii selling","dii selling","ban","penalty","scam","investigation","layoff"]
+            high_pos = ["acquisition","buyback","bonus","merger","record profit","fii buying"]
+            high_neg = ["fraud","scam","ceo exit","ceo resign","sebi ban","default","governance"]
+            score_sum = 0
+            count = 0
+            now_ts = __import__("time").time()
+            for item in news_items[:10]:
+                title = (item.get("title") or "").lower()
+                pub_ts = item.get("providerPublishTime") or item.get("published", 0)
+                if isinstance(pub_ts, str):
+                    try: pub_ts = _dt_news.fromisoformat(pub_ts.replace("Z","+00:00")).timestamp()
+                    except: pub_ts = 0
+                age_days = (now_ts - pub_ts) / 86400 if pub_ts else 7
+                recency_w = 3.0 if age_days <= 3 else (1.5 if age_days <= 7 else 1.0)
+                s = 0
+                for kw in high_pos:
+                    if kw in title: s += 3
+                for kw in high_neg:
+                    if kw in title: s -= 3
+                for kw in pos_kw:
+                    if kw in title: s += 1
+                for kw in neg_kw:
+                    if kw in title: s -= 1
+                score_sum += s * recency_w
+                count += 1
+            if count > 0:
+                avg = score_sum / count
+                sentiment_rating = min(99, max(1, int(50 + avg * 8)))
+    except:
+        sentiment_rating = 50
+
+    # --- ALPHA SCORE (composite) ---
+    alpha_score = min(99, max(1, int(
+        momentum_rating * 0.25 + fundamentals_rating * 0.25 +
+        accumulation_rating * 0.20 + trend_rating * 0.15 +
+        sentiment_rating * 0.15
+    )))
+
+    # Keep backward compat vars
+    eps_growth = eps_growth_val
 
     sector = fund.get("sector") or SECTOR_MAP.get(sym, "Other")
 
@@ -8855,12 +8999,17 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         },
 
         "ratings": {
-            "composite": composite,
-            "eps_strength": eps_strength,
-            "rs_rating": rs_score,
-            "vol_accumulation": vol_acc,
-            "trend_score": int(bullish_count / 7 * 99),
+            "alpha_score": alpha_score,
+            "momentum": momentum_rating,
+            "fundamentals": fundamentals_rating,
+            "accumulation": accumulation_rating,
+            "trend_rating": trend_rating,
+            "sentiment": sentiment_rating,
             "trend": trend,
+            "momentum_detail": {"rs": rs_component, "position": pos_component, "rsi": rsi_component, "macd": macd_component, "ema": ema_component},
+            "fundamentals_detail": {"earnings": earn_comp, "roe": roe_comp, "margin": margin_comp, "debt": de_comp, "revenue": rev_comp},
+            "accumulation_detail": {"up_days": ud_ratio_comp, "vol_ratio": vr_comp, "obv": obv_comp},
+            "trend_detail": {"sma_align": sma_align, "adx": adx_comp, "supertrend": st_comp, "stochastic": stoch_comp, "bb": bb_comp},
         },
 
         "moving_averages": {
@@ -9086,8 +9235,8 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     elif earn_g and earn_g > 5: growth_score += 15
     if roe_val and roe_val > 15: growth_score += 20
     elif roe_val and roe_val > 10: growth_score += 10
-    if rs_score > 60: growth_score += 20
-    elif rs_score > 40: growth_score += 10
+    if rs_component > 60: growth_score += 20
+    elif rs_component > 40: growth_score += 10
 
     # Quality score
     quality_score = 0
