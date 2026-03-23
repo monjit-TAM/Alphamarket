@@ -45,10 +45,43 @@ API_TAGS = [
     {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
 ]
 
+# ══ Alpha Data Service (centralized data layer on port 5004) ══
+DATA_SERVICE_URL = "http://127.0.0.1:5004"
+import httpx as _httpx
+
+async def ds_quote(symbol: str) -> dict:
+    """Get equity quote from data service (cached, Groww->Yahoo fallback)"""
+    try:
+        async with _httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"{DATA_SERVICE_URL}/data/equity/quote/{symbol}")
+            if r.status_code == 200: return r.json()
+    except: pass
+    return {}
+
+async def ds_fundamentals(symbol: str) -> dict:
+    """Get fundamentals from data service (cached 1 week)"""
+    try:
+        async with _httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(f"{DATA_SERVICE_URL}/data/equity/fundamentals/{symbol}")
+            if r.status_code == 200: return r.json()
+    except: pass
+    return {}
+
+async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
+    """Get OHLCV history from data service (cached 1 day)"""
+    try:
+        async with _httpx.AsyncClient(timeout=20) as c:
+            r = await c.get(f"{DATA_SERVICE_URL}/data/equity/ohlcv/{symbol}?period={period}")
+            if r.status_code == 200: return r.json().get("data", [])
+    except: pass
+    return []
+
 from routers.arbitrage import router as arbitrage_router
 from routers.trading_tools import router as trading_router
+from routers.options_backtest import router as options_bt_router
 
 app = FastAPI(
+    root_path="/dyor",
     title="AlphaLab API",
     description="""
 ## AlphaLab — Quantitative Research & Advisory Platform for Indian Markets
@@ -95,8 +128,19 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 )
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+# Force OpenAPI 3.0.3 for Swagger UI compatibility
+def custom_openapi():
+    if app.openapi_schema: return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    schema = get_openapi(title=app.title, version=app.version, description=app.description, routes=app.routes, tags=app.openapi_tags, contact=app.contact, license_info=app.license_info)
+    schema["openapi"] = "3.0.3"
+    app.openapi_schema = schema
+    return schema
+app.openapi = custom_openapi
+
 app.include_router(arbitrage_router)
 app.include_router(trading_router)
+app.include_router(options_bt_router)
 
 # DYOR Auth Bridge — validate AlphaMarket session cookies
 from middleware.alphamarket_auth import AlphaMarketAuthMiddleware
@@ -527,33 +571,41 @@ async def fetch_groww_candles(symbol: str, from_date: str, to_date: str, interva
             return df
 
     try:
-        import yfinance as yf
-
-        # NSE symbols need .NS suffix for Yahoo Finance
-        yf_symbol = f"{symbol.upper()}.NS"
-
-        # Map interval
+        # Try data service first
         interval_map = {"1day": "1d", "1week": "1wk", "1month": "1mo", "60minute": "60m", "15minute": "15m", "5minute": "5m"}
-        yf_interval = interval_map.get(interval, "1d")
-
-        ticker = yf.Ticker(yf_symbol)
-        df = ticker.history(start=from_date, end=to_date, interval=yf_interval)
+        _ds_rows = await ds_ohlcv(symbol, interval_map.get(interval, "1d"))
+        if _ds_rows:
+            df = pd.DataFrame(_ds_rows)
+            df.columns = [c.lower() for c in df.columns]
+            for dc in ["date", "datetime", "timestamp"]:
+                if dc in df.columns:
+                    df[dc] = pd.to_datetime(df[dc])
+                    df = df.set_index(dc)
+                    break
+            df.index.name = "date"
+            keep = [c for c in ["open","high","low","close","volume"] if c in df.columns]
+            df = df[keep].astype({c: float for c in keep}).dropna().sort_index()
+        else:
+            df = pd.DataFrame()
 
         if df.empty:
-            # Try without .NS (for indices like NIFTY)
-            ticker = yf.Ticker(f"^NSEI" if symbol.upper() in ["NIFTY","NIFTY50"] else yf_symbol)
+            # Fallback to yfinance
+            import yfinance as yf
+            yf_symbol = f"{symbol.upper()}.NS"
+            yf_interval = interval_map.get(interval, "1d")
+            ticker = yf.Ticker(yf_symbol)
             df = ticker.history(start=from_date, end=to_date, interval=yf_interval)
+            if df.empty:
+                ticker = yf.Ticker(f"^NSEI" if symbol.upper() in ["NIFTY","NIFTY50"] else yf_symbol)
+                df = ticker.history(start=from_date, end=to_date, interval=yf_interval)
+            if not df.empty:
+                df = df[["Open","High","Low","Close","Volume"]].copy()
+                df.columns = ["open","high","low","close","volume"]
+                df.index.name = "date"
+                df = df.sort_index().astype({"open":float,"high":float,"low":float,"close":float,"volume":float}).dropna()
 
         if df.empty:
             raise HTTPException(status_code=400, detail=f"No data found for {symbol}. Check symbol name (e.g. RELIANCE, TCS, HDFCBANK)")
-
-        # Standardize columns
-        df = df[["Open", "High", "Low", "Close", "Volume"]].copy()
-        df.columns = ["open", "high", "low", "close", "volume"]
-        df.index.name = "date"
-        df = df.sort_index()
-        df = df.astype({"open": float, "high": float, "low": float, "close": float, "volume": float})
-        df = df.dropna()
 
         # Cache it
         cache_data = df.reset_index().to_json(orient="records", date_format="iso")
@@ -676,9 +728,30 @@ def compute_supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3
 # ── Strategy Engine ───────────────────────────────────────────────────────────
 
 def fetch_fundamentals_sync(symbol: str) -> dict:
-    """Fetch fundamental data from yfinance (sync, for use in backtest)."""
-    import yfinance as yf
+    """Fetch fundamental data via data service with yfinance fallback."""
+    import asyncio as _a
     try:
+        try:
+            loop = _a.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    info = pool.submit(lambda: _a.run(ds_fundamentals(symbol))).result(timeout=10)
+            else:
+                info = _a.run(ds_fundamentals(symbol))
+            if info and info.get("symbol"):
+                return {
+                    "pe_trailing": info.get("pe_trailing"), "pe_forward": info.get("pe_forward"),
+                    "pb": info.get("pb"), "dividend_yield": info.get("dividend_yield", 0),
+                    "roe": info.get("roe", 0), "debt_equity": info.get("debt_equity", 0),
+                    "profit_margin": info.get("profit_margin", 0), "operating_margin": info.get("operating_margin", 0),
+                    "eps": info.get("eps"), "revenue": info.get("revenue"),
+                    "revenue_growth": info.get("revenue_growth"), "earnings_growth": info.get("earnings_growth"),
+                    "market_cap": info.get("market_cap"), "book_value": info.get("book_value"),
+                }
+        except: pass
+        # Fallback to yfinance
+        import yfinance as yf
         ticker = yf.Ticker(f"{symbol.upper()}.NS")
         info = ticker.info or {}
         def sf(key, default=None):
@@ -1774,7 +1847,6 @@ STRATEGY_MAP = {
 
 async def generate_forward_signals(fwd_test: dict) -> list:
     """Run strategy on current data for all symbols — generate BUY/SELL/HOLD signals."""
-    import yfinance as yf
     from datetime import date, timedelta
 
     strategy = fwd_test["strategy"]
@@ -1790,26 +1862,10 @@ async def generate_forward_signals(fwd_test: dict) -> list:
     signals = []
     loop = asyncio.get_event_loop()
 
-    # Batch download all symbols
+    # Batch download via data service (with yfinance fallback)
     yf_symbols = [f"{s}.NS" for s in symbols]
-    batch_size = 40
-    all_data = {}
-    for i in range(0, len(yf_symbols), batch_size):
-        batch = yf_symbols[i:i+batch_size]
-        try:
-            raw = await loop.run_in_executor(None, lambda b=batch: yf.download(
-                tickers=b, start=start, end=end, interval="1d", auto_adjust=True, progress=False, threads=True
-            ))
-            single = len(batch) == 1
-            for yfs in batch:
-                try:
-                    df = yf_extract_ticker(raw, yfs, single_mode=single)
-                    if not df.empty and len(df) >= 30:
-                        all_data[yfs] = df
-                except:
-                    continue
-        except:
-            continue
+    all_data = await batch_download_yf(yf_symbols, start, end, batch_size=40)
+    all_data = {k: v for k, v in all_data.items() if not v.empty and len(v) >= 30}
 
     for sym in symbols:
         yf_sym = f"{sym}.NS"
@@ -1986,7 +2042,6 @@ async def execute_forward_signals(fwd_test_id: int, signals: list):
 
 async def update_forward_positions(fwd_test_id: int):
     """Refresh current prices, check stop-loss and target for open positions."""
-    import yfinance as yf
     async with db_pool.acquire() as conn:
         positions = await conn.fetch(
             "SELECT * FROM forward_test_positions WHERE fwd_test_id=$1 AND status='open'", fwd_test_id
@@ -2000,13 +2055,14 @@ async def update_forward_positions(fwd_test_id: int):
         loop = asyncio.get_event_loop()
 
         syms = [f"{p['symbol']}.NS" for p in positions]
-        try:
-            raw = await loop.run_in_executor(None, lambda: yf.download(
-                tickers=syms, period="2d", interval="1d", auto_adjust=True, progress=False, threads=True
-            ))
-        except:
+        from datetime import date, timedelta
+        _start = (date.today() - timedelta(days=5)).isoformat()
+        _end = date.today().isoformat()
+        all_data = await batch_download_yf(syms, _start, _end, batch_size=50)
+        if not all_data:
             return
 
+        raw = None  # not used directly
         single = len(syms) == 1
         for pos in positions:
             try:
@@ -2391,6 +2447,54 @@ for _s in NIFTY_UNIVERSE:
         _seen.add(_s)
         _clean.append(_s)
 NIFTY_UNIVERSE = _clean
+
+# Cap segment classification by index membership
+NIFTY50_SYMBOLS = {
+    "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","WIPRO","BAJFINANCE","SUNPHARMA",
+    "TATAMOTORS","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
+    "POWERGRID","NTPC","COALINDIA","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","CIPLA",
+    "DRREDDY","DIVISLAB","APOLLOHOSP","BAJAJFINSV","BRITANNIA","EICHERMOT","SBILIFE",
+    "HDFCLIFE","INDUSINDBK","ULTRACEMCO","GRASIM","TECHM","ASIANPAINT","HEROMOTOCO",
+    "BPCL","IOC","TATACONSUM","PIDILITIND","HAVELLS","IRCTC","DMART","ZOMATO",
+    "SBIN","LT","BHARTIARTL","ITC","KOTAKBANK","M&M","ADANIPORTS","SHRIRAMFIN"
+}
+NIFTY_NEXT50_SYMBOLS = {
+    "ABB","ADANIGREEN","AMBUJACEM","BANKBARODA","BEL","BERGEPAINT","BOSCHLTD",
+    "CANBK","CHOLAFIN","COLPAL","CONCOR","DABUR","DLF","GAIL","GODREJCP",
+    "HAL","HINDPETRO","ICICIPRULI","IDEA","IGL","INDHOTEL","INDUSTOWER",
+    "JSWENERGY","JUBLFOOD","LICI","LUPIN","MARICO","MCDOWELL-N","MOTHERSON",
+    "MUTHOOTFIN","NAUKRI","NHPC","OBEROIRLTY","OFSS","PAYTM","PFC","PIIND",
+    "PNB","POLYCAB","RECLTD","SAIL","SIEMENS","SRF","TORNTPHARM","TRENT",
+    "UNIONBANK","UNITDSPR","VEDL","YESBANK","ZYDUSLIFE"
+}
+LARGE_CAP_SYMBOLS = NIFTY50_SYMBOLS | NIFTY_NEXT50_SYMBOLS
+MIDCAP_SYMBOLS = {
+    "AARTIIND","ACC","AIAENG","AJANTPHARM","ALKEM","ANGELONE","APLAPOLLO",
+    "ASHOKLEY","ASTRAL","ATUL","AUBANK","AUROPHARMA","BALKRISIND","BANDHANBNK",
+    "BATAINDIA","BHARATFORG","BHEL","BIOCON","BLUEDART","BSE","CANFINHOME",
+    "CARBORUNIV","CASTROLIND","CEATLTD","CENTRALBK","CGPOWER","CHAMBLFERT",
+    "CLEAN","COFORGE","CRISIL","CROMPTON","CUB","CUMMINSIND","CYIENT",
+    "DALBHARAT","DEEPAKNTR","DELTACORP","DEVYANI","DIXON","EIDPARRY","EMAMILTD",
+    "ENDURANCE","ESCORTS","EXIDEIND","FACT","FEDERALBNK","FINCABLES","FLUOROCHEM",
+    "FORTIS","GLENMARK","GMRINFRA","GNFC","GODREJIND","GODREJPROP","GRANULES",
+    "GRAPHITE","GRINDWELL","GUJGASLTD","HDFCAMC","IIFL","IPCALAB","IRB","IRFC",
+    "ISEC","JKCEMENT","JSWINFRA","KALYANKJIL","KANSAINER","KEI","KPITTECH",
+    "KRBL","L&TFH","LAURUSLABS","LICHSGFIN","LINDEINDIA","LLOYDSME","LODHA",
+    "LTTS","M&MFIN","MANAPPURAM","MANKIND","MFSL","NAUKRI","NAVINFLUOR",
+    "PERSISTENT","PETRONET","PHOENIXLTD","POLYMED","POONAWALLA","PRESTIGE",
+    "PRINCEPIPE","PVRINOX","RADICO","RAIN","RALLIS","RAMCOCEM","RBLBANK",
+    "ROUTE","SAFARI","SCHAEFFLER","SHYAMMETL","SJVN","SKFINDIA","SONACOMS",
+    "STARHEALTH","SUMICHEM","SUNTV","SUPREMEIND","SYNGENE","TANLA","TATACHEM",
+    "TATACOMM","TATAINVEST","TATAPOWER","TATATECH","TEAMLEASE","TIINDIA",
+    "TORNTPOWER","TRIDENT","TTML","TVSHLTD","UBL","UFLEX","UJJIVANSFB",
+    "USHAMART","UTIAMC","VGUARD","VINATIORGA","VOLTAS","WELCORP","WHIRLPOOL",
+    "WONDERLA","ZEEL","ZENSARTECH"
+}
+
+def get_cap_segment(symbol):
+    if symbol in LARGE_CAP_SYMBOLS: return "large"
+    if symbol in MIDCAP_SYMBOLS: return "mid"
+    return "small"
 
 SECTOR_MAP = {
     # Energy / Oil & Gas
@@ -3516,7 +3620,36 @@ def yf_extract_ticker(raw, yf_sym, single_mode=False):
             return pd.DataFrame()
 
 async def batch_download_yf(symbols_ns: list, start: str, end: str, batch_size: int = 50) -> dict:
-    """Download yfinance data in batches to avoid timeouts. Returns dict of {yf_sym: DataFrame}."""
+    """Download data via data service with yfinance fallback. Returns dict of {yf_sym: DataFrame}."""
+    # Try data service first
+    try:
+        # Parallel fetch via data service (batched for efficiency)
+        ds_result = {}
+        async def _fetch_one(sym_ns):
+            sym = sym_ns.replace(".NS","").replace(".BO","").upper()
+            rows = await ds_ohlcv(sym, "1y")
+            if rows:
+                df = pd.DataFrame(rows)
+                df.columns = [c.lower() for c in df.columns]
+                for dc in ["date","datetime","timestamp"]:
+                    if dc in df.columns:
+                        df[dc] = pd.to_datetime(df[dc])
+                        df = df.set_index(dc)
+                        break
+                df.index.name = "date"
+                keep = [c for c in ["open","high","low","close","volume"] if c in df.columns]
+                df = df[keep].astype({c: float for c in keep}).dropna().sort_index()
+                if not df.empty:
+                    df.columns = [c.capitalize() for c in df.columns]
+                    ds_result[sym_ns] = df
+        # Process in parallel batches of 20
+        for i in range(0, len(symbols_ns), 20):
+            batch = symbols_ns[i:i+20]
+            await asyncio.gather(*[_fetch_one(s) for s in batch], return_exceptions=True)
+        if ds_result:
+            return ds_result
+    except Exception as e:
+        print(f"[DataService] batch failed, falling back to yfinance: {e}")
     import yfinance as yf
 
     loop = asyncio.get_event_loop()
@@ -3552,10 +3685,10 @@ async def batch_download_yf(symbols_ns: list, start: str, end: str, batch_size: 
 
 @app.get("/api/screener", tags=["Stock Screener"], summary="Run stock screener",
     description="Screen 843 NSE stocks using 34+ quantitative strategies. Filter by sector, industry, basic industry, and price range. Results are cached for 15 minutes.\n\n**Available strategies:** momentum, top_losers, volume_breakout, new_high, mean_reversion, rsi_oversold, rsi_overbought, macd_crossover, bollinger_squeeze, supertrend_buy, breakout_52w, relative_strength, golden_cross, death_cross, adx_strong_trend, high_tight_flag, inside_day, gap_up, darvas_box, turtle_breakout, ichimoku_bullish, elder_ray, williams_r, ema_ribbon, pivot_breakout, dividend_yield, low_pe, high_roe, growth_momentum, safe_haven, minervini_template, rvol_surge, sector_rotation, vwap_reclaim.")
-async def screener(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", user=Depends(get_current_user)):
+async def screener(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = "", user=Depends(get_current_user)):
     from datetime import date, timedelta
 
-    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}"
+    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
     if redis_client:
         cached = await redis_client.get(cache_key)
         if cached:
@@ -3739,16 +3872,16 @@ async def screener(strategy: str = "momentum", min_price: float = 50, max_price:
     # ── Fetch fundamentals for fundamental strategies (only when needed) ───
     FUNDAMENTAL_STRATEGIES = {"dividend_yield", "low_pe", "high_roe", "growth_momentum", "safe_haven"}
     if strategy in FUNDAMENTAL_STRATEGIES and stocks:
-        import yfinance as yf
-        # Batch fetch for top 80 stocks by initial filter
         batch = stocks[:80]
         for s in batch:
             try:
-                t = yf.Ticker(f"{s['symbol']}.NS")
-                info = t.info
-                s["pe_ratio"] = sf(info.get("trailingPE", info.get("forwardPE", 0)))
-                s["roe"] = sf(info.get("returnOnEquity", 0)) * 100 if sf(info.get("returnOnEquity", 0)) < 1 else sf(info.get("returnOnEquity", 0))
-                s["dividend_yield"] = sf(info.get("dividendYield", 0)) * 100 if sf(info.get("dividendYield", 0)) < 1 else sf(info.get("dividendYield", 0))
+                fdata = await ds_fundamentals(s["symbol"])
+                if fdata:
+                    s["pe_ratio"] = sf(fdata.get("pe_trailing") or fdata.get("pe_forward", 0))
+                    _roe = sf(fdata.get("roe", 0))
+                    s["roe"] = _roe * 100 if _roe and _roe < 1 else (_roe or 0)
+                    _dy = sf(fdata.get("dividend_yield", 0))
+                    s["dividend_yield"] = _dy * 100 if _dy and _dy < 1 else (_dy or 0)
             except:
                 pass
 
@@ -3832,6 +3965,14 @@ async def screener(strategy: str = "momentum", min_price: float = 50, max_price:
     else:
         stocks = sorted(stocks, key=lambda x: x["change_pct"], reverse=True)
 
+    # Add cap_segment to each stock
+    for s in stocks:
+        if "cap_segment" not in s:
+            s["cap_segment"] = get_cap_segment(s["symbol"])
+    # Apply cap_segment filter
+    if cap_segment:
+        cs = cap_segment.lower()
+        stocks = [s for s in stocks if get_cap_segment(s["symbol"]) == cs]
     result = {"stocks": stocks[:50], "count": len(stocks), "strategy": strategy, "as_of": end, "universe_size": len(NIFTY_UNIVERSE), "scanned": len(symbols_to_scan)}
     if redis_client:
         await redis_client.setex(cache_key, 900, json.dumps(result))  # 15 min cache for large universe
@@ -3867,8 +4008,7 @@ async def remove_from_watchlist(symbol: str, user=Depends(get_current_user)):
 @app.get("/api/watchlist/prices", tags=["Watchlist"], summary="Get watchlist prices",
     description="Get current prices, day change, and percentage change for all stocks in the user's watchlist.")
 async def watchlist_prices(user=Depends(get_current_user)):
-    """Fetch live prices for all watchlist symbols via yfinance"""
-    import yfinance as yf
+    """Fetch live prices for all watchlist symbols via data service"""
     from datetime import date, timedelta
 
     async with db_pool.acquire() as conn:
@@ -3884,28 +4024,26 @@ async def watchlist_prices(user=Depends(get_current_user)):
         if cached:
             return json.loads(cached)
 
-    yf_symbols = [f"{s}.NS" for s in symbols]
-    start = (date.today() - timedelta(days=7)).isoformat()
-    end = date.today().isoformat()
-
     try:
-        loop = asyncio.get_event_loop()
-        if len(yf_symbols) == 1:
-            raw = await loop.run_in_executor(None, lambda: yf.download(
-                tickers=yf_symbols[0], start=start, end=end,
-                interval="1d", auto_adjust=True, progress=False
-            ))
-            single_mode = True
-        else:
-            raw = await loop.run_in_executor(None, lambda: yf.download(
-                tickers=" ".join(yf_symbols), start=start, end=end,
-                interval="1d", group_by="ticker", auto_adjust=True, progress=False, threads=True
-            ))
-            single_mode = False
+        quotes = await ds_bulk_quotes(symbols)
+        prices = []
+        for q in quotes:
+            sym = q.get("symbol", "")
+            prices.append({
+                "symbol": sym,
+                "price": round(q.get("price", 0), 2),
+                "change": round(q.get("change", 0), 2),
+                "change_pct": round(q.get("change_pct", 0), 2),
+            })
+        result = {"prices": prices, "as_of": date.today().isoformat()}
+        if redis_client:
+            cache_key2 = f"wl_prices:{','.join(sorted(symbols))}"
+            await redis_client.set(cache_key2, json.dumps(result), ex=60)
+        return result
     except Exception as e:
         return {"prices": [], "error": str(e)}
 
-    prices = []
+    prices = []  # fallback path
     for sym in symbols:
         try:
             yf_sym = f"{sym}.NS"
@@ -3953,8 +4091,7 @@ async def watchlist_prices(user=Depends(get_current_user)):
 @app.get("/api/stock/fundamentals/{symbol}", tags=["Stock Data"], summary="Get stock fundamentals",
     description="Get fundamental data for a stock — market cap, P/E, P/B, ROE, ROCE, debt-to-equity, dividend yield, revenue, profit margins, promoter holding, 52-week high/low, and more.")
 async def stock_fundamentals(symbol: str, user=Depends(get_current_user)):
-    """Fetch fundamental data for a stock from yfinance .info"""
-    import yfinance as yf
+    """Fetch fundamental data for a stock via data service"""
 
     cache_key = f"fundamentals:{symbol.upper()}"
     if redis_client:
@@ -3963,10 +4100,41 @@ async def stock_fundamentals(symbol: str, user=Depends(get_current_user)):
             return json.loads(cached)
 
     try:
-        yf_sym = f"{symbol.upper()}.NS"
-        loop = asyncio.get_event_loop()
-        ticker = yf.Ticker(yf_sym)
-        info = await loop.run_in_executor(None, lambda: ticker.info)
+        info_raw = await ds_fundamentals(symbol)
+        if info_raw and info_raw.get("symbol"):
+            info = {
+                "longName": info_raw.get("name", symbol.upper()),
+                "sector": info_raw.get("sector", ""),
+                "industry": info_raw.get("industry", ""),
+                "marketCap": info_raw.get("market_cap"),
+                "trailingPE": info_raw.get("pe_trailing"),
+                "forwardPE": info_raw.get("pe_forward"),
+                "priceToBook": info_raw.get("pb"),
+                "returnOnEquity": info_raw.get("roe"),
+                "returnOnAssets": None,
+                "debtToEquity": info_raw.get("debt_equity"),
+                "dividendYield": info_raw.get("dividend_yield"),
+                "trailingEps": info_raw.get("eps"),
+                "revenue": info_raw.get("revenue"),
+                "profitMargins": info_raw.get("profit_margin"),
+                "operatingMargins": info_raw.get("operating_margin"),
+                "revenueGrowth": info_raw.get("revenue_growth"),
+                "earningsGrowth": info_raw.get("earnings_growth"),
+                "freeCashflow": info_raw.get("free_cashflow"),
+                "bookValue": info_raw.get("book_value"),
+                "currentPrice": info_raw.get("price"),
+                "beta": info_raw.get("beta"),
+                "fiftyTwoWeekHigh": info_raw.get("high_52w"),
+                "fiftyTwoWeekLow": info_raw.get("low_52w"),
+                "averageVolume": info_raw.get("avg_volume"),
+                "sharesOutstanding": info_raw.get("shares_outstanding"),
+            }
+        else:
+            import yfinance as yf
+            yf_sym = f"{symbol.upper()}.NS"
+            loop = asyncio.get_event_loop()
+            ticker = yf.Ticker(yf_sym)
+            info = await loop.run_in_executor(None, lambda: ticker.info)
 
         def safe(key, default=None):
             v = info.get(key, default)
@@ -4600,7 +4768,7 @@ STRATEGY_CATEGORIES = {
     description="Fetch the options chain for a stock or index. Returns all available strikes with call/put prices, OI, volume, IV, and Greeks (Delta, Gamma, Theta, Vega). Supports NIFTY, BANKNIFTY, FINNIFTY, and all F&O stocks. Falls back to Black-Scholes synthetic pricing when live data is unavailable.")
 async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_user)):
     """Fetch options chain — tries Groww API first, falls back to Black-Scholes synthetic."""
-    import yfinance as yf
+    import yfinance as yf  # kept: Black-Scholes fallback needs index hist vol
     from datetime import datetime, timedelta, date
     import random, calendar, urllib.request, urllib.error
 
@@ -5902,27 +6070,19 @@ async def create_advisory_report(req: dict, user=Depends(get_current_user)):
 @app.get("/api/symbols/price/{symbol}", tags=["Stock Data"], summary="Get current stock price",
     description="Get the current/latest price for a single stock symbol.")
 async def get_symbol_price(symbol: str, user=Depends(get_current_user)):
-    """Get current price of a symbol."""
-    import yfinance as yf
-    loop = asyncio.get_event_loop()
+    """Get current price of a symbol via data service."""
     try:
-        ticker = await loop.run_in_executor(None, lambda: yf.Ticker(f"{symbol.upper()}.NS"))
-        hist = await loop.run_in_executor(None, lambda: ticker.history(period="5d"))
-        if hist.empty:
-            return {"symbol": symbol.upper(), "price": 0}
-        price = float(hist["Close"].iloc[-1])
-        prev = float(hist["Close"].iloc[-2]) if len(hist) > 1 else price
-        change = round((price - prev) / prev * 100, 2) if prev > 0 else 0
-        return {"symbol": symbol.upper(), "price": round(price, 2), "change_pct": change}
-    except:
-        return {"symbol": symbol.upper(), "price": 0}
+        q = await ds_quote(symbol)
+        if q and q.get("price"):
+            return {"symbol": symbol.upper(), "price": round(q["price"], 2), "change_pct": round(q.get("change_pct", 0), 2)}
+    except: pass
+    return {"symbol": symbol.upper(), "price": 0}
 
 
 @app.post("/api/advisory/recommend", tags=["Advisory & Reports"], summary="Create stock recommendation",
     description="Create a BUY/SELL/HOLD recommendation for a stock with entry price, target, stop-loss, timeframe, and rationale. Timestamped for SEBI compliance.")
 async def add_recommendation(req: dict, user=Depends(get_current_user)):
     """Add a stock recommendation with auto-generated rationale."""
-    import yfinance as yf
 
     symbol = req.get("symbol", "").upper()
     call_type = req.get("call_type", "BUY").upper()
@@ -5945,8 +6105,17 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
     tech_data = {}
     fund_data = {}
     try:
-        ticker = await loop.run_in_executor(None, lambda: yf.Ticker(f"{symbol}.NS"))
-        hist = await loop.run_in_executor(None, lambda: ticker.history(period="1y"))
+        _rows = await ds_ohlcv(symbol, "1y")
+        if _rows:
+            hist = pd.DataFrame(_rows)
+            hist.columns = [c.lower() for c in hist.columns]
+            for dc in ["date","datetime","timestamp"]:
+                if dc in hist.columns:
+                    hist[dc] = pd.to_datetime(hist[dc])
+                    hist = hist.set_index(dc)
+                    break
+        else:
+            hist = pd.DataFrame()
         if not hist.empty:
             c = hist["Close"]
             price = float(c.iloc[-1])
@@ -6269,7 +6438,6 @@ async def list_basic_industries(sector: str = "", industry: str = "", user=Depen
     description="Get sector rotation data showing relative performance of all sectors vs Nifty 50 benchmark. Returns RS-Ratio and RS-Momentum for heatmap visualization.")
 async def sector_rotation(user=Depends(get_current_user)):
     """Calculate sector performance over multiple timeframes for rotation analysis."""
-    import yfinance as yf
     from datetime import date, timedelta
 
     cache_key = "sector_rotation_v2"
@@ -6347,7 +6515,7 @@ async def sector_rrg(weeks: int = 12, user=Depends(get_current_user)):
     Y-axis: RS-Momentum (rate of change of RS-Ratio, centered at 100)
     Quadrants: Leading(TR), Weakening(BR), Lagging(BL), Improving(TL)
     """
-    import yfinance as yf
+    import yfinance as yf  # kept: ^NSEI benchmark index not in data service
     from datetime import date, timedelta
 
     weeks = min(max(weeks, 4), 26)  # Clamp 4-26 weeks
@@ -6515,7 +6683,6 @@ async def sector_rrg(weeks: int = 12, user=Depends(get_current_user)):
     description="Get OHLCV candlestick data for a stock with pre-computed technical indicators (SMA 20/50/200, EMA 9/21, RSI, MACD, Bollinger Bands, Supertrend, volume). Supports periods: 1m, 3m, 6m, 1y, 2y, 3y, 5y.")
 async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user=Depends(get_current_user)):
     """Return OHLCV + indicators for TradingView Lightweight Charts."""
-    import yfinance as yf
     from datetime import date, timedelta
 
     cache_key = f"chart:{symbol.upper()}:{period}:{interval}"
@@ -6528,13 +6695,26 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
     days = period_days.get(period, 365)
     start = (date.today() - timedelta(days=days + 50)).isoformat()
     end = date.today().isoformat()
-    yf_sym = f"{symbol.upper()}.NS"
-
-    loop = asyncio.get_event_loop()
-    raw = await loop.run_in_executor(None, lambda: yf.download(
-        tickers=yf_sym, start=start, end=end, interval=interval, auto_adjust=True, progress=False
-    ))
-    df = yf_extract_ticker(raw, yf_sym, single_mode=True)
+    _ds_rows = await ds_ohlcv(symbol, interval)
+    if _ds_rows:
+        df = pd.DataFrame(_ds_rows)
+        df.columns = [c.lower() for c in df.columns]
+        for dc in ["date","datetime","timestamp"]:
+            if dc in df.columns:
+                df[dc] = pd.to_datetime(df[dc])
+                df = df.set_index(dc)
+                break
+        df.index.name = "date"
+        keep = [c for c in ["open","high","low","close","volume"] if c in df.columns]
+        df = df[keep].astype({c: float for c in keep}).dropna().sort_index()
+    else:
+        import yfinance as yf
+        yf_sym = f"{symbol.upper()}.NS"
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(None, lambda: yf.download(
+            tickers=yf_sym, start=start, end=end, interval=interval, auto_adjust=True, progress=False
+        ))
+        df = yf_extract_ticker(raw, yf_sym, single_mode=True)
     if df.empty:
         raise HTTPException(status_code=404, detail=f"No data for {symbol}")
 
@@ -6795,7 +6975,6 @@ MODEL_PORTFOLIO_TEMPLATES = {
 
 async def build_model_portfolio(portfolio_id: int, user_id: int):
     """Build portfolio: run screener → apply strategy filter → rank → allocate weights → deploy to paper trades."""
-    import yfinance as yf
     from datetime import date, timedelta
 
     async with db_pool.acquire() as conn:
@@ -6844,23 +7023,8 @@ async def build_model_portfolio(portfolio_id: int, user_id: int):
 
             # Batch download
             yf_syms = [f"{s}.NS" for s in symbols_to_scan]
-            all_data = {}
-            for i in range(0, len(yf_syms), 40):
-                batch = yf_syms[i:i+40]
-                try:
-                    raw = await loop.run_in_executor(None, lambda b=batch: yf.download(
-                        tickers=b, start=start_date, end=end_date, interval="1d", auto_adjust=True, progress=False, threads=True
-                    ))
-                    single = len(batch) == 1
-                    for yfs in batch:
-                        try:
-                            df = yf_extract_ticker(raw, yfs, single_mode=single)
-                            if not df.empty and len(df) >= 30:
-                                all_data[yfs] = df
-                        except:
-                            continue
-                except:
-                    continue
+            all_data = await batch_download_yf(yf_syms, start_date, end_date, batch_size=40)
+            all_data = {k: v for k, v in all_data.items() if not v.empty and len(v) >= 30}
 
             for sym in symbols_to_scan:
                 yf_sym = f"{sym}.NS"
@@ -7199,15 +7363,12 @@ async def add_stock_to_portfolio(pid: int, req: Request, user=Depends(get_curren
         )
         if existing: raise HTTPException(status_code=400, detail=f"{symbol} already in portfolio")
 
-        # Get current price via yfinance
+        # Get current price via data service
         price = 0
         try:
-            import yfinance as yf
-            sym_yf = symbol + ".NS"
-            tk = yf.Ticker(sym_yf)
-            hist = tk.history(period="5d")
-            if not hist.empty:
-                price = round(float(hist["Close"].iloc[-1]), 2)
+            _q = await ds_quote(symbol)
+            if _q and _q.get("price"):
+                price = round(_q["price"], 2)
         except: pass
         if not price or price <= 0: raise HTTPException(status_code=400, detail=f"Cannot get price for {symbol}")
 
@@ -7358,7 +7519,6 @@ async def _check_all_alerts():
         if not alerts:
             return
         print(f"[ALERTS] Checking {len(alerts)} active alerts...")
-        import yfinance as yf
         from datetime import date
 
         for alert in alerts:
@@ -7373,10 +7533,9 @@ async def _check_all_alerts():
                 if atype == "price_above" and alert["symbol"]:
                     target = float(conditions.get("price", 0))
                     if target > 0:
-                        tk = yf.Ticker(alert["symbol"] + ".NS")
-                        hist = tk.history(period="2d")
-                        if not hist.empty:
-                            price = float(hist["Close"].iloc[-1])
+                        _aq = await ds_quote(alert["symbol"])
+                        if _aq and _aq.get("price"):
+                            price = float(_aq["price"])
                             if price >= target:
                                 fired = True
                                 msg = f"🔔 {alert['symbol']} crossed above ₹{target:.2f} — now at ₹{price:.2f}"
@@ -7384,10 +7543,9 @@ async def _check_all_alerts():
                 elif atype == "price_below" and alert["symbol"]:
                     target = float(conditions.get("price", 0))
                     if target > 0:
-                        tk = yf.Ticker(alert["symbol"] + ".NS")
-                        hist = tk.history(period="2d")
-                        if not hist.empty:
-                            price = float(hist["Close"].iloc[-1])
+                        _aq = await ds_quote(alert["symbol"])
+                        if _aq and _aq.get("price"):
+                            price = float(_aq["price"])
                             if price <= target:
                                 fired = True
                                 msg = f"🔔 {alert['symbol']} dropped below ₹{target:.2f} — now at ₹{price:.2f}"
@@ -7470,10 +7628,9 @@ async def _check_all_alerts():
                         "SELECT * FROM advisory_recommendations WHERE id=$1", alert["entity_id"]
                     )
                     if rec and rec["target_price"]:
-                        tk = yf.Ticker(rec["symbol"] + ".NS")
-                        hist = tk.history(period="2d")
-                        if not hist.empty:
-                            price = float(hist["Close"].iloc[-1])
+                        _aq = await ds_quote(rec["symbol"])
+                        if _aq and _aq.get("price"):
+                            price = float(_aq["price"])
                             if rec["call_type"] == "BUY" and price >= rec["target_price"]:
                                 fired = True
                                 msg = f"🎯 Advisory: {rec['symbol']} hit target ₹{rec['target_price']:.2f} — now at ₹{price:.2f}"
@@ -7486,10 +7643,9 @@ async def _check_all_alerts():
                         "SELECT * FROM advisory_recommendations WHERE id=$1", alert["entity_id"]
                     )
                     if rec and rec["stop_loss"]:
-                        tk = yf.Ticker(rec["symbol"] + ".NS")
-                        hist = tk.history(period="2d")
-                        if not hist.empty:
-                            price = float(hist["Close"].iloc[-1])
+                        _aq = await ds_quote(rec["symbol"])
+                        if _aq and _aq.get("price"):
+                            price = float(_aq["price"])
                             if rec["call_type"] == "BUY" and price <= rec["stop_loss"]:
                                 fired = True
                                 msg = f"⛔ Advisory: {rec['symbol']} hit stop loss ₹{rec['stop_loss']:.2f} — now at ₹{price:.2f}"
@@ -7643,3 +7799,1309 @@ async def deactivate_user(user_id: int, user=Depends(get_admin_user)):
     async with db_pool.acquire() as conn:
         await conn.execute("UPDATE users SET is_active=false WHERE id=$1", user_id)
         return {"message": "User deactivated"}
+
+@app.get("/api/morning-brief")
+async def morning_brief(user=Depends(get_current_user)):
+    """Pre-market morning brief with global cues (S&P 500, Dow, NASDAQ, Crude, Gold, USD/INR), India indices (NIFTY 50, BANK NIFTY), sector pulse (top 3 gainers/losers), screener picks (momentum, oversold, breakout), and composite sentiment score. Cached in Redis for 15 minutes. Screener picks may be empty when market is closed."""
+    import yfinance as yf  # kept: global tickers (^GSPC, CL=F etc) not in data service
+    from datetime import date as _date
+    cache_key = "morning_brief:" + _date.today().isoformat()
+    if redis_client:
+        cached = await redis_client.get(cache_key)
+        if cached: return json.loads(cached)
+    loop = asyncio.get_event_loop()
+    global_tickers = {
+        "sp500": {"sym": "^GSPC", "name": "S&P 500"},
+        "dow": {"sym": "^DJI", "name": "Dow Jones"},
+        "nasdaq": {"sym": "^IXIC", "name": "NASDAQ"},
+        "crude": {"sym": "CL=F", "name": "Crude Oil (WTI)"},
+        "gold": {"sym": "GC=F", "name": "Gold"},
+        "usdinr": {"sym": "USDINR=X", "name": "USD/INR"},
+    }
+    global_cues = {}
+    for key, info in global_tickers.items():
+        try:
+            tk = await loop.run_in_executor(None, lambda s=info["sym"]: yf.Ticker(s).history(period="5d"))
+            if not tk.empty and len(tk) >= 2:
+                last = round(float(tk["Close"].iloc[-1]), 2)
+                prev = round(float(tk["Close"].iloc[-2]), 2)
+                chg = round((last - prev) / prev * 100, 2) if prev else 0
+                global_cues[key] = {"name": info["name"], "price": last, "prev": prev, "change_pct": chg}
+        except: pass
+    india = {}
+    for key, sym, name in [("nifty","^NSEI","NIFTY 50"),("banknifty","^NSEBANK","BANK NIFTY")]:
+        try:
+            tk = await loop.run_in_executor(None, lambda s=sym: yf.Ticker(s).history(period="5d"))
+            if not tk.empty and len(tk) >= 2:
+                last = round(float(tk["Close"].iloc[-1]), 2)
+                prev = round(float(tk["Close"].iloc[-2]), 2)
+                high = round(float(tk["High"].iloc[-1]), 2)
+                low = round(float(tk["Low"].iloc[-1]), 2)
+                chg = round((last - prev) / prev * 100, 2) if prev else 0
+                india[key] = {"name": name, "close": last, "prev": prev, "high": high, "low": low, "change_pct": chg}
+        except: pass
+    sector_pulse = {"gainers": [], "losers": []}
+    try:
+        sector_perf = []
+        sample_sectors = {}
+        for sym, sec in SECTOR_MAP.items():
+            if sec and sec != "Others":
+                sample_sectors.setdefault(sec, []).append(sym)
+        for sec, syms in list(sample_sectors.items())[:15]:
+            changes = []
+            for s in syms[:3]:
+                try:
+                    tk = await loop.run_in_executor(None, lambda s=s: yf.Ticker(s+".NS").history(period="2d"))
+                    if not tk.empty and len(tk) >= 2:
+                        c = float(tk["Close"].iloc[-1])
+                        p = float(tk["Close"].iloc[-2])
+                        changes.append((c - p) / p * 100 if p else 0)
+                except: pass
+            if changes:
+                avg = round(sum(changes) / len(changes), 2)
+                sector_perf.append({"sector": sec, "change_pct": avg})
+        sector_perf.sort(key=lambda x: x["change_pct"], reverse=True)
+        sector_pulse["gainers"] = sector_perf[:3]
+        sector_pulse["losers"] = sector_perf[-3:]
+    except: pass
+    top_picks = {"momentum": [], "oversold": [], "breakout": []}
+    for strat in ["momentum", "oversold", "breakout"]:
+        try:
+            ck = f"screener:{strat}:50:10000:"
+            if redis_client:
+                cv = await redis_client.get(ck)
+                if cv:
+                    results = json.loads(cv)
+                    top_picks[strat] = results[:5] if isinstance(results, list) else []
+        except: pass
+    us_avg = 0
+    us_count = 0
+    for k in ["sp500", "dow", "nasdaq"]:
+        if k in global_cues:
+            us_avg += global_cues[k]["change_pct"]
+            us_count += 1
+    us_avg = us_avg / us_count if us_count else 0
+    crude_chg = global_cues.get("crude", {}).get("change_pct", 0)
+    nifty_chg = india.get("nifty", {}).get("change_pct", 0)
+    sentiment_score = 0
+    signals = []
+    if us_avg > 0.5: sentiment_score += 2; signals.append("US markets positive")
+    elif us_avg < -0.5: sentiment_score -= 2; signals.append("US markets negative")
+    else: signals.append("US markets flat")
+    if crude_chg > 2: sentiment_score -= 1; signals.append("Crude up sharply (negative for India)")
+    elif crude_chg < -2: sentiment_score += 1; signals.append("Crude down (positive for India)")
+    if nifty_chg > 0.5: sentiment_score += 1; signals.append("NIFTY closed positive")
+    elif nifty_chg < -0.5: sentiment_score -= 1; signals.append("NIFTY closed negative")
+    gold_chg = global_cues.get("gold", {}).get("change_pct", 0)
+    if gold_chg > 1: signals.append("Gold rallying (risk-off sentiment)")
+    if sentiment_score >= 2: mood = "BULLISH"
+    elif sentiment_score >= 1: mood = "MILDLY BULLISH"
+    elif sentiment_score <= -2: mood = "BEARISH"
+    elif sentiment_score <= -1: mood = "MILDLY BEARISH"
+    else: mood = "NEUTRAL"
+    sentiment = {"mood": mood, "score": sentiment_score, "signals": signals}
+    import math
+    def _sanitize(obj):
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj): return 0
+            return obj
+        if isinstance(obj, dict): return {k: _sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, list): return [_sanitize(v) for v in obj]
+        return obj
+
+    result = _sanitize({
+        "date": _date.today().isoformat(),
+        "generated_at": datetime.now().strftime("%I:%M %p"),
+        "global_cues": global_cues,
+        "india": india,
+        "sector_pulse": sector_pulse,
+        "top_picks": top_picks,
+        "sentiment": sentiment,
+    })
+    if redis_client:
+        await redis_client.setex(cache_key, 900, json.dumps(result))
+    return result
+
+
+# ==============================================================================
+# STOCK COMPARISON TOOL
+# ==============================================================================
+
+@app.get("/api/compare")
+async def compare_stocks(symbols: str, user=Depends(get_current_user)):
+    """Multi-stock comparison. Pass comma-separated NSE symbols (e.g., symbols=TCS,INFY,WIPRO). Returns price, P/E, P/B, ROE, market cap, sector, and other fundamentals side-by-side. Frontend panel not yet built — API only."""
+    # yfinance replaced by data service
+    from datetime import date as _date
+    sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:5]
+    if len(sym_list) < 2:
+        raise HTTPException(400, "Need at least 2 symbols separated by commas")
+    loop = asyncio.get_event_loop()
+    results = []
+    for sym in sym_list:
+        cache_key = f"compare:{sym}:{_date.today().isoformat()}"
+        cached = None
+        if redis_client:
+            cached = await redis_client.get(cache_key)
+        if cached:
+            results.append(json.loads(cached))
+            continue
+        try:
+            info_raw = await ds_fundamentals(sym)
+            info = {
+                "shortName": (info_raw or {}).get("name", sym),
+                "sector": (info_raw or {}).get("sector", ""),
+                "industry": (info_raw or {}).get("industry", ""),
+                "currentPrice": (info_raw or {}).get("price", 0),
+                "marketCap": (info_raw or {}).get("market_cap", 0),
+                "trailingPE": (info_raw or {}).get("pe_trailing", 0),
+                "forwardPE": (info_raw or {}).get("pe_forward", 0),
+                "priceToBook": (info_raw or {}).get("pb", 0),
+                "returnOnEquity": (info_raw or {}).get("roe", 0),
+                "debtToEquity": (info_raw or {}).get("debt_equity", 0),
+                "dividendYield": (info_raw or {}).get("dividend_yield", 0),
+                "trailingEps": (info_raw or {}).get("eps", 0),
+                "revenueGrowth": (info_raw or {}).get("revenue_growth", 0),
+                "earningsGrowth": (info_raw or {}).get("earnings_growth", 0),
+                "bookValue": (info_raw or {}).get("book_value", 0),
+                "beta": (info_raw or {}).get("beta", 0),
+                "fiftyTwoWeekHigh": (info_raw or {}).get("high_52w", 0),
+                "fiftyTwoWeekLow": (info_raw or {}).get("low_52w", 0),
+                "profitMargins": (info_raw or {}).get("profit_margin", 0),
+                "operatingMargins": (info_raw or {}).get("operating_margin", 0),
+            }
+            from datetime import date as _d2, timedelta as _td2
+            hist = await ds_ohlcv(sym, "1y")
+            if hist:
+                import pandas as _pd2
+                hist = _pd2.DataFrame(hist)
+                hist.columns = [c.lower() for c in hist.columns]
+                for dc in ["date","datetime","timestamp"]:
+                    if dc in hist.columns:
+                        hist[dc] = _pd2.to_datetime(hist[dc])
+                        hist = hist.set_index(dc)
+                        break
+            else:
+                hist = pd.DataFrame()
+            perf_1m = perf_3m = perf_6m = perf_1y = 0
+            if not hist.empty and len(hist) > 20:
+                cur = float(hist["Close"].iloc[-1])
+                if len(hist) > 21: perf_1m = round((cur / float(hist["Close"].iloc[-22]) - 1) * 100, 1)
+                if len(hist) > 63: perf_3m = round((cur / float(hist["Close"].iloc[-64]) - 1) * 100, 1)
+                if len(hist) > 126: perf_6m = round((cur / float(hist["Close"].iloc[-127]) - 1) * 100, 1)
+                if len(hist) > 240: perf_1y = round((cur / float(hist["Close"].iloc[0]) - 1) * 100, 1)
+            data = {
+                "symbol": sym,
+                "name": info.get("shortName", sym),
+                "sector": info.get("sector", ""),
+                "industry": info.get("industry", ""),
+                "price": info.get("currentPrice", 0),
+                "market_cap": info.get("marketCap", 0),
+                "pe": round(info.get("trailingPE", 0) or 0, 1),
+                "forward_pe": round(info.get("forwardPE", 0) or 0, 1),
+                "pb": round(info.get("priceToBook", 0) or 0, 1),
+                "roe": round((info.get("returnOnEquity", 0) or 0) * 100, 1),
+                "debt_equity": round(info.get("debtToEquity", 0) or 0, 1),
+                "div_yield": round((info.get("dividendYield", 0) or 0) * 100 if info.get("dividendYield",0) and info.get("dividendYield",0) < 1 else (info.get("dividendYield",0) or 0), 2),
+                "eps": round(info.get("trailingEps", 0) or 0, 1),
+                "revenue_growth": round((info.get("revenueGrowth", 0) or 0) * 100, 1),
+                "earnings_growth": round((info.get("earningsGrowth", 0) or 0) * 100, 1),
+                "beta": round(info.get("beta", 0) or 0, 2),
+                "high_52w": info.get("fiftyTwoWeekHigh", 0),
+                "low_52w": info.get("fiftyTwoWeekLow", 0),
+                "book_value": round(info.get("bookValue", 0) or 0, 1),
+                "free_cashflow": info.get("freeCashflow", 0),
+                "perf_1m": perf_1m, "perf_3m": perf_3m, "perf_6m": perf_6m, "perf_1y": perf_1y,
+            }
+            results.append(data)
+            if redis_client:
+                await redis_client.setex(cache_key, 3600, json.dumps(data))
+        except Exception as e:
+            results.append({"symbol": sym, "error": str(e)})
+    return {"stocks": results, "count": len(results)}
+
+
+# ==============================================================================
+# SECTOR HEATMAP
+# ==============================================================================
+
+@app.get("/api/sector-heatmap")
+async def sector_heatmap(user=Depends(get_current_user)):
+    """Sector rotation heatmap via data service. Cached 15 minutes."""
+    # yfinance replaced by data service
+    from datetime import date as _date
+    cache_key = "sector_heatmap:" + _date.today().isoformat()
+    if redis_client:
+        cached = await redis_client.get(cache_key)
+        if cached: return json.loads(cached)
+    loop = asyncio.get_event_loop()
+    sector_data = {}
+    sample = {}
+    for sym, sec in SECTOR_MAP.items():
+        if sec and sec != "Others":
+            sample.setdefault(sec, []).append(sym)
+    heatmap = []
+    for sec, syms in list(sample.items())[:20]:
+        changes = []
+        stocks_detail = []
+        for s in syms[:5]:
+            try:
+                _sq = await ds_quote(s)
+                if _sq and _sq.get("price"):
+                    cur = float(_sq["price"])
+                    prev = cur - float(_sq.get("change", 0))
+                    chg = round((cur - prev) / prev * 100, 2) if prev else 0
+                    changes.append(chg)
+                    stocks_detail.append({"symbol": s, "price": round(cur, 2), "change": chg})
+            except: pass
+        if changes:
+            avg = round(sum(changes) / len(changes), 2)
+            heatmap.append({"sector": sec, "change_pct": avg, "stock_count": len(SECTOR_SYMBOLS.get(sec, [])), "top_stocks": sorted(stocks_detail, key=lambda x: x["change"], reverse=True)[:3]})
+    heatmap.sort(key=lambda x: x["change_pct"], reverse=True)
+    result = {"date": _date.today().isoformat(), "sectors": heatmap}
+    if redis_client:
+        await redis_client.setex(cache_key, 900, json.dumps(result))
+    return result
+
+
+# ==============================================================================
+# DCF / INTRINSIC VALUE CALCULATOR
+# ==============================================================================
+
+@app.get("/api/dcf/{symbol}")
+async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: float = 12, terminal_growth: float = 3, years: int = 10, user=Depends(get_current_user)):
+    """DCF intrinsic value calculator. Three methods: EPS-based DCF, FCF-based DCF, and Graham Number. Set growth_rate=0 for auto-detect from earnings history. Returns intrinsic values, average fair value, margin of safety %, and verdict (UNDERVALUED / FAIRLY VALUED / OVERVALUED)."""
+    import math
+    sym = symbol.upper()
+    try:
+        info = await ds_fundamentals(sym)
+        if not info or not info.get("symbol"):
+            raise Exception("empty")
+    except:
+        try:
+            import yfinance as yf
+            loop = asyncio.get_event_loop()
+            tk = await loop.run_in_executor(None, lambda: yf.Ticker(sym+".NS"))
+            info = await loop.run_in_executor(None, lambda: tk.info)
+        except:
+            raise HTTPException(404, f"Could not fetch data for {sym}")
+    eps = info.get("eps") or info.get("trailingEps", 0) or 0
+    price = info.get("price") or info.get("currentPrice", 0) or 0
+    pe = info.get("pe_trailing") or info.get("trailingPE", 0) or 0
+    fcf = info.get("free_cashflow") or info.get("freeCashflow", 0) or 0
+    shares = info.get("shares_outstanding") or info.get("sharesOutstanding", 0) or 0
+    rev_growth = (info.get("revenueGrowth", 0) or 0) * 100
+    earn_growth = (info.get("earningsGrowth", 0) or 0) * 100
+    bv = info.get("bookValue", 0) or 0
+    roe = (info.get("returnOnEquity", 0) or 0) * 100
+    if growth_rate == 0:
+        growth_rate = max(5, min(25, earn_growth if earn_growth > 0 else rev_growth))
+    dr = discount_rate / 100
+    tg = terminal_growth / 100
+    gr = growth_rate / 100
+    # EPS-based DCF
+    eps_projections = []
+    pv_sum = 0
+    for y in range(1, years + 1):
+        proj_eps = eps * ((1 + gr) ** y)
+        pv = proj_eps / ((1 + dr) ** y)
+        pv_sum += pv
+        eps_projections.append({"year": y, "eps": round(proj_eps, 2), "pv": round(pv, 2)})
+    terminal_eps = eps * ((1 + gr) ** years) * (1 + tg)
+    terminal_value = terminal_eps / (dr - tg) if dr > tg else 0
+    pv_terminal = terminal_value / ((1 + dr) ** years)
+    intrinsic_eps = round(pv_sum + pv_terminal, 2)
+    # FCF-based DCF
+    intrinsic_fcf = 0
+    fcf_per_share = round(fcf / shares, 2) if shares else 0
+    if fcf_per_share > 0:
+        fcf_pv = 0
+        for y in range(1, years + 1):
+            proj = fcf_per_share * ((1 + gr) ** y)
+            fcf_pv += proj / ((1 + dr) ** y)
+        t_fcf = fcf_per_share * ((1 + gr) ** years) * (1 + tg)
+        tv_fcf = t_fcf / (dr - tg) if dr > tg else 0
+        pv_tv = tv_fcf / ((1 + dr) ** years)
+        intrinsic_fcf = round(fcf_pv + pv_tv, 2)
+    # Graham Number
+    graham = round(math.sqrt(22.5 * max(0, eps) * max(0, bv)), 2) if eps > 0 and bv > 0 else 0
+    # Margin of safety
+    avg_intrinsic = round((intrinsic_eps + (intrinsic_fcf if intrinsic_fcf > 0 else intrinsic_eps)) / 2, 2)
+    margin = round((avg_intrinsic - price) / avg_intrinsic * 100, 1) if avg_intrinsic > 0 else 0
+    verdict = "UNDERVALUED" if margin > 15 else ("FAIRLY VALUED" if margin > -10 else "OVERVALUED")
+    return {
+        "symbol": sym, "price": price, "eps": eps, "pe": round(pe, 1),
+        "book_value": bv, "roe": round(roe, 1),
+        "fcf_per_share": fcf_per_share,
+        "assumptions": {"growth_rate": growth_rate, "discount_rate": discount_rate, "terminal_growth": terminal_growth, "years": years},
+        "eps_dcf": {"intrinsic_value": intrinsic_eps, "projections": eps_projections, "terminal_value": round(pv_terminal, 2)},
+        "fcf_dcf": {"intrinsic_value": intrinsic_fcf},
+        "graham_number": graham,
+        "avg_intrinsic": avg_intrinsic,
+        "margin_of_safety": margin,
+        "verdict": verdict,
+        "company": info.get("shortName", sym), "sector": info.get("sector", ""),
+    }
+
+
+# ==============================================================================
+# DIVIDEND TRACKER
+# ==============================================================================
+
+@app.get("/api/dividends")
+async def dividend_tracker(user=Depends(get_current_user)):
+    """Dividend tracker for 30 major Indian stocks sorted by yield. Returns dividend yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached in Redis for 1 hour."""
+    import yfinance as yf  # kept: needs detailed dividend info (exDividendDate, dividendRate)
+    from datetime import date as _date, datetime as _dt
+    cache_key = "dividends:" + _date.today().isoformat()
+    if redis_client:
+        cached = await redis_client.get(cache_key)
+        if cached: return json.loads(cached)
+    loop = asyncio.get_event_loop()
+    top_div = ["COALINDIA","VEDL","IOC","HINDPETRO","BPCL","ONGC","NTPC","POWERGRID","GAIL","RECLTD",
+               "PFC","NHPC","SAIL","NMDC","HDFCBANK","ICICIBANK","SBIN","ITC","TCS","INFY",
+               "WIPRO","BAJAJ-AUTO","HEROMOTOCO","MARUTI","TATAMOTORS","RELIANCE","LT","TITAN","HINDALCO","TATASTEEL"]
+    dividends = []
+    for sym in top_div:
+        try:
+            tk = await loop.run_in_executor(None, lambda s=sym: yf.Ticker(s+".NS"))
+            info = await loop.run_in_executor(None, lambda t=tk: t.info)
+            price = info.get("currentPrice", 0) or 0
+            div_rate = info.get("dividendRate", 0) or 0
+            div_yield = info.get("dividendYield", 0) or 0
+            if div_yield and div_yield < 1:
+                div_yield = div_yield * 100
+            ex_date = info.get("exDividendDate", 0)
+            ex_str = ""
+            upcoming = False
+            if ex_date and ex_date > 0:
+                try:
+                    ex_dt = _dt.fromtimestamp(ex_date)
+                    ex_str = ex_dt.strftime("%Y-%m-%d")
+                    upcoming = ex_dt.date() >= _date.today()
+                except: pass
+            payout = info.get("payoutRatio", 0) or 0
+            if price > 0 and div_rate > 0:
+                dividends.append({
+                    "symbol": sym,
+                    "name": info.get("shortName", sym),
+                    "sector": info.get("sector", ""),
+                    "price": round(price, 2),
+                    "dividend_rate": round(div_rate, 2),
+                    "dividend_yield": round(div_yield, 2),
+                    "ex_dividend_date": ex_str,
+                    "upcoming": upcoming,
+                    "payout_ratio": round(payout * 100, 1) if payout < 1 else round(payout, 1),
+                    "pe": round(info.get("trailingPE", 0) or 0, 1),
+                    "market_cap": info.get("marketCap", 0),
+                })
+        except: pass
+    dividends.sort(key=lambda x: x["dividend_yield"], reverse=True)
+    upcoming = [d for d in dividends if d["upcoming"]]
+    result = {
+        "date": _date.today().isoformat(),
+        "by_yield": dividends,
+        "upcoming_ex_dates": upcoming,
+        "count": len(dividends),
+    }
+    if redis_client:
+        await redis_client.setex(cache_key, 3600, json.dumps(result))
+    return result
+
+
+@app.get("/api/patterns/{symbol}")
+async def detect_patterns(symbol: str, user=Depends(get_current_user)):
+    """Technical pattern scanner. Analyses 11 indicators (SMA, EMA, RSI, MACD, Bollinger, Stochastic, Volume, Supertrend, ADX, Williams %R, CCI, OBV) and detects 8 chart patterns (Double Bottom/Top, Cup & Handle, Head & Shoulders, Ascending/Descending Triangle, Falling/Rising Wedge). Returns composite score (-100 to +100), pattern stages, targets, and auto-generated narrative."""
+    # import yfinance as yf  # moved to fallback block
+    import ta
+    from datetime import date as _date
+    sym = symbol.upper()
+    cache_key = f"patterns:{sym}:{_date.today().isoformat()}"
+    if redis_client:
+        cached = await redis_client.get(cache_key)
+        if cached: return json.loads(cached)
+    try:
+        info = await ds_fundamentals(sym) or {}
+        _rows = await ds_ohlcv(sym, "1y")
+        if _rows:
+            hist = pd.DataFrame(_rows)
+            hist.columns = [c.lower() for c in hist.columns]
+            for dc in ["date","datetime","timestamp"]:
+                if dc in hist.columns:
+                    hist[dc] = pd.to_datetime(hist[dc])
+                    hist = hist.set_index(dc)
+                    break
+        else:
+            hist = pd.DataFrame()
+        if hist.empty:
+            raise Exception("empty")
+    except:
+        try:
+            import yfinance as yf
+            loop = asyncio.get_event_loop()
+            tk = await loop.run_in_executor(None, lambda: yf.Ticker(sym+".NS"))
+            info = await loop.run_in_executor(None, lambda: tk.info) or {}
+            hist = await loop.run_in_executor(None, lambda: tk.history(period="1y"))
+            if not hist.empty:
+                hist.columns = [c.lower() for c in hist.columns]
+        except:
+            raise HTTPException(404, f"No data for {sym}")
+    if hist.empty or len(hist) < 50:
+        raise HTTPException(404, f"Insufficient data for {sym}")
+    c_price = float(hist["Close"].iloc[-1])
+    h, l, cl, vol = hist["High"], hist["Low"], hist["Close"], hist["Volume"]
+    signals = []
+    patterns = []
+    # Moving Averages
+    sma20 = float(cl.rolling(20).mean().iloc[-1])
+    sma50 = float(cl.rolling(50).mean().iloc[-1])
+    sma200 = float(cl.rolling(200).mean().iloc[-1]) if len(cl) >= 200 else 0
+    ema12 = float(cl.ewm(span=12).mean().iloc[-1])
+    ema26 = float(cl.ewm(span=26).mean().iloc[-1])
+    if c_price > sma20 > sma50: signals.append({"signal":"BULLISH","name":"Price above SMA 20 & 50","strength":"strong"})
+    elif c_price < sma20 < sma50: signals.append({"signal":"BEARISH","name":"Price below SMA 20 & 50","strength":"strong"})
+    if sma200 > 0:
+        if c_price > sma200: signals.append({"signal":"BULLISH","name":"Trading above 200 DMA","strength":"moderate"})
+        else: signals.append({"signal":"BEARISH","name":"Trading below 200 DMA","strength":"moderate"})
+    # Golden/Death Cross
+    sma50_prev = float(cl.rolling(50).mean().iloc[-5])
+    sma200_prev = float(cl.rolling(200).mean().iloc[-5]) if len(cl) >= 200 else 0
+    if sma200 > 0:
+        if sma50 > sma200 and sma50_prev <= sma200_prev:
+            patterns.append({"pattern":"Golden Cross","type":"BULLISH","description":"50 DMA crossed above 200 DMA","reliability":"high"})
+        elif sma50 < sma200 and sma50_prev >= sma200_prev:
+            patterns.append({"pattern":"Death Cross","type":"BEARISH","description":"50 DMA crossed below 200 DMA","reliability":"high"})
+    # RSI
+    rsi = float(ta.momentum.RSIIndicator(cl, window=14).rsi().iloc[-1])
+    rsi_prev = float(ta.momentum.RSIIndicator(cl, window=14).rsi().iloc[-2])
+    if rsi < 30: signals.append({"signal":"BULLISH","name":f"RSI Oversold ({rsi:.1f})","strength":"strong"})
+    elif rsi > 70: signals.append({"signal":"BEARISH","name":f"RSI Overbought ({rsi:.1f})","strength":"strong"})
+    elif rsi > 50: signals.append({"signal":"BULLISH","name":f"RSI Bullish ({rsi:.1f})","strength":"weak"})
+    else: signals.append({"signal":"BEARISH","name":f"RSI Bearish ({rsi:.1f})","strength":"weak"})
+    # RSI Divergence
+    price_higher = c_price > float(cl.iloc[-10])
+    rsi_lower = rsi < float(ta.momentum.RSIIndicator(cl, window=14).rsi().iloc[-10])
+    if price_higher and rsi_lower:
+        patterns.append({"pattern":"Bearish RSI Divergence","type":"BEARISH","description":"Price making higher highs but RSI making lower highs","reliability":"moderate"})
+    price_lower = c_price < float(cl.iloc[-10])
+    rsi_higher = rsi > float(ta.momentum.RSIIndicator(cl, window=14).rsi().iloc[-10])
+    if price_lower and rsi_higher:
+        patterns.append({"pattern":"Bullish RSI Divergence","type":"BULLISH","description":"Price making lower lows but RSI making higher lows","reliability":"moderate"})
+    # MACD
+    macd_line = float(ta.trend.MACD(cl).macd().iloc[-1])
+    macd_signal = float(ta.trend.MACD(cl).macd_signal().iloc[-1])
+    macd_hist = float(ta.trend.MACD(cl).macd_diff().iloc[-1])
+    macd_hist_prev = float(ta.trend.MACD(cl).macd_diff().iloc[-2])
+    if macd_line > macd_signal: signals.append({"signal":"BULLISH","name":"MACD above signal line","strength":"moderate"})
+    else: signals.append({"signal":"BEARISH","name":"MACD below signal line","strength":"moderate"})
+    if macd_hist > 0 and macd_hist_prev <= 0:
+        patterns.append({"pattern":"MACD Bullish Crossover","type":"BULLISH","description":"MACD histogram turned positive","reliability":"moderate"})
+    elif macd_hist < 0 and macd_hist_prev >= 0:
+        patterns.append({"pattern":"MACD Bearish Crossover","type":"BEARISH","description":"MACD histogram turned negative","reliability":"moderate"})
+    # Bollinger Bands
+    bb = ta.volatility.BollingerBands(cl, window=20, window_dev=2)
+    bb_upper = float(bb.bollinger_hband().iloc[-1])
+    bb_lower = float(bb.bollinger_lband().iloc[-1])
+    bb_mid = float(bb.bollinger_mavg().iloc[-1])
+    bb_width = (bb_upper - bb_lower) / bb_mid * 100
+    bb_width_prev = float((bb.bollinger_hband().iloc[-20] - bb.bollinger_lband().iloc[-20]) / bb.bollinger_mavg().iloc[-20] * 100)
+    if c_price >= bb_upper: signals.append({"signal":"BEARISH","name":"Price at upper Bollinger Band","strength":"moderate"})
+    elif c_price <= bb_lower: signals.append({"signal":"BULLISH","name":"Price at lower Bollinger Band","strength":"moderate"})
+    if bb_width < bb_width_prev * 0.6:
+        patterns.append({"pattern":"Bollinger Squeeze","type":"NEUTRAL","description":"Bands contracting - breakout imminent","reliability":"moderate"})
+    # Volume Analysis
+    avg_vol = float(vol.rolling(20).mean().iloc[-1])
+    cur_vol = float(vol.iloc[-1])
+    vol_ratio = round(cur_vol / avg_vol, 1) if avg_vol > 0 else 1
+    if vol_ratio > 2: signals.append({"signal":"BULLISH" if c_price > float(cl.iloc[-2]) else "BEARISH","name":f"Volume spike ({vol_ratio}x avg)","strength":"strong"})
+    # Supertrend
+    atr = ta.volatility.AverageTrueRange(h, l, cl, window=10).average_true_range()
+    st_upper = float((h.rolling(10).mean().iloc[-1] + l.rolling(10).mean().iloc[-1])/2 + 3*atr.iloc[-1])
+    st_lower = float((h.rolling(10).mean().iloc[-1] + l.rolling(10).mean().iloc[-1])/2 - 3*atr.iloc[-1])
+    if c_price > st_lower: signals.append({"signal":"BULLISH","name":"Above Supertrend support","strength":"moderate"})
+    else: signals.append({"signal":"BEARISH","name":"Below Supertrend resistance","strength":"moderate"})
+    # Support/Resistance from pivots
+    pivot = (float(h.iloc[-1]) + float(l.iloc[-1]) + c_price) / 3
+    r1 = 2*pivot - float(l.iloc[-1])
+    s1 = 2*pivot - float(h.iloc[-1])
+    r2 = pivot + (float(h.iloc[-1]) - float(l.iloc[-1]))
+    s2 = pivot - (float(h.iloc[-1]) - float(l.iloc[-1]))
+    # 52-week position
+    high_52w = info.get("fiftyTwoWeekHigh",0) or 0
+    low_52w = info.get("fiftyTwoWeekLow",0) or 0
+    from_high = round((c_price - high_52w)/high_52w*100,1) if high_52w else 0
+    from_low = round((c_price - low_52w)/low_52w*100,1) if low_52w else 0
+    if from_high > -5:
+        patterns.append({"pattern":"Near 52-Week High","type":"BULLISH","description":f"{from_high}% from 52W high - strength","reliability":"moderate"})
+    if from_low < 10:
+        patterns.append({"pattern":"Near 52-Week Low","type":"BEARISH","description":f"{from_low}% from 52W low - weakness","reliability":"moderate"})
+    # Stochastic
+    stoch = ta.momentum.StochasticOscillator(h, l, cl, window=14, smooth_window=3)
+    stoch_k = float(stoch.stoch().iloc[-1])
+    stoch_d = float(stoch.stoch_signal().iloc[-1])
+    if stoch_k < 20 and stoch_k > stoch_d:
+        patterns.append({"pattern":"Stochastic Bullish Cross in Oversold","type":"BULLISH","description":"K crossed above D below 20","reliability":"high"})
+    elif stoch_k > 80 and stoch_k < stoch_d:
+        patterns.append({"pattern":"Stochastic Bearish Cross in Overbought","type":"BEARISH","description":"K crossed below D above 80","reliability":"high"})
+    # ADX Trend Strength
+    adx = float(ta.trend.ADXIndicator(h, l, cl, window=14).adx().iloc[-1])
+    if adx > 25: signals.append({"signal":"NEUTRAL","name":f"Strong trend (ADX {adx:.0f})","strength":"info"})
+    elif adx < 20: signals.append({"signal":"NEUTRAL","name":f"Weak/No trend (ADX {adx:.0f})","strength":"info"})
+    # ══════════ CHART PATTERN DETECTION ══════════
+    # Use last 60-120 days of data for pattern detection
+    closes = [float(x) for x in cl.iloc[-120:]]
+    highs = [float(x) for x in h.iloc[-120:]]
+    lows = [float(x) for x in l.iloc[-120:]]
+    n = len(closes)
+
+    # Helper: find local peaks and troughs
+    def find_peaks(data, order=5):
+        peaks = []
+        for i in range(order, len(data)-order):
+            if all(data[i] >= data[i-j] for j in range(1,order+1)) and all(data[i] >= data[i+j] for j in range(1,order+1)):
+                peaks.append((i, data[i]))
+        return peaks
+
+    def find_troughs(data, order=5):
+        troughs = []
+        for i in range(order, len(data)-order):
+            if all(data[i] <= data[i-j] for j in range(1,order+1)) and all(data[i] <= data[i+j] for j in range(1,order+1)):
+                troughs.append((i, data[i]))
+        return troughs
+
+    peaks = find_peaks(closes, 5)
+    troughs = find_troughs(closes, 5)
+
+    # ── Double Bottom ──
+    if len(troughs) >= 2:
+        t1, t2 = troughs[-2], troughs[-1]
+        if abs(t1[1] - t2[1]) / t1[1] < 0.03:  # Within 3%
+            # Find peak between troughs (neckline)
+            mid_peaks = [p for p in peaks if t1[0] < p[0] < t2[0]]
+            if mid_peaks:
+                neckline = mid_peaks[0][1]
+                target = neckline + (neckline - min(t1[1], t2[1]))
+                if c_price < neckline:
+                    stage = "FORMING"
+                    pct_to_pivot = round((neckline - c_price) / c_price * 100, 1)
+                    desc = f"Two bottoms at Rs.{t1[1]:,.0f} and Rs.{t2[1]:,.0f}. Neckline at Rs.{neckline:,.0f} ({pct_to_pivot}% above CMP). Breakout above neckline confirms pattern. Target: Rs.{target:,.0f}"
+                elif c_price > neckline and c_price < target:
+                    stage = "BREAKOUT"
+                    pct_to_target = round((target - c_price) / c_price * 100, 1)
+                    desc = f"Broke above neckline Rs.{neckline:,.0f}. Target Rs.{target:,.0f} ({pct_to_target}% upside remaining)"
+                else:
+                    stage = "COMPLETED"
+                    desc = f"Pattern completed. Bottoms at Rs.{t1[1]:,.0f}/{t2[1]:,.0f}, neckline Rs.{neckline:,.0f}"
+                patterns.append({"pattern": "Double Bottom (W)", "type": "BULLISH", "description": desc, "reliability": "high", "stage": stage, "neckline": round(neckline,2), "target": round(target,2)})
+
+    # ── Double Top ──
+    if len(peaks) >= 2:
+        p1, p2 = peaks[-2], peaks[-1]
+        if abs(p1[1] - p2[1]) / p1[1] < 0.03:
+            mid_troughs = [t for t in troughs if p1[0] < t[0] < p2[0]]
+            if mid_troughs:
+                neckline = mid_troughs[0][1]
+                target = neckline - (max(p1[1], p2[1]) - neckline)
+                if c_price > neckline:
+                    stage = "FORMING"
+                    pct_to_pivot = round((c_price - neckline) / c_price * 100, 1)
+                    desc = f"Two tops at Rs.{p1[1]:,.0f} and Rs.{p2[1]:,.0f}. Neckline at Rs.{neckline:,.0f} ({pct_to_pivot}% below CMP). Breakdown below neckline confirms. Target: Rs.{target:,.0f}"
+                elif c_price < neckline and c_price > target:
+                    stage = "BREAKDOWN"
+                    desc = f"Broke below neckline Rs.{neckline:,.0f}. Target Rs.{target:,.0f}"
+                else:
+                    stage = "COMPLETED"
+                    desc = f"Pattern completed. Tops at Rs.{p1[1]:,.0f}/{p2[1]:,.0f}"
+                patterns.append({"pattern": "Double Top (M)", "type": "BEARISH", "description": desc, "reliability": "high", "stage": stage, "neckline": round(neckline,2), "target": round(target,2)})
+
+    # ── Cup & Handle ──
+    if len(troughs) >= 1 and len(peaks) >= 2 and n > 40:
+        left_peak = None
+        cup_bottom = None
+        right_peak = None
+        for p in peaks:
+            if p[0] < n * 0.3:
+                left_peak = p
+        if left_peak:
+            cup_troughs = [t for t in troughs if t[0] > left_peak[0] and t[0] < n * 0.7]
+            if cup_troughs:
+                cup_bottom = min(cup_troughs, key=lambda x: x[1])
+                right_peaks = [p for p in peaks if p[0] > cup_bottom[0]]
+                if right_peaks:
+                    right_peak = right_peaks[0]
+        if left_peak and cup_bottom and right_peak:
+            if abs(left_peak[1] - right_peak[1]) / left_peak[1] < 0.05:
+                cup_depth = round((left_peak[1] - cup_bottom[1]) / left_peak[1] * 100, 1)
+                if 10 < cup_depth < 35:
+                    rim = max(left_peak[1], right_peak[1])
+                    target = rim + (rim - cup_bottom[1])
+                    if c_price < rim:
+                        stage = "HANDLE FORMING"
+                        pct_to_pivot = round((rim - c_price) / c_price * 100, 1)
+                        desc = f"Cup depth {cup_depth}%. Rim/pivot at Rs.{rim:,.0f} ({pct_to_pivot}% above CMP). Cup bottom Rs.{cup_bottom[1]:,.0f}. Breakout target: Rs.{target:,.0f}"
+                    elif c_price >= rim:
+                        stage = "BREAKOUT"
+                        desc = f"Broke above rim at Rs.{rim:,.0f}. Target Rs.{target:,.0f}. Cup depth was {cup_depth}%"
+                    patterns.append({"pattern": "Cup & Handle", "type": "BULLISH", "description": desc, "reliability": "high", "stage": stage, "neckline": round(rim,2), "target": round(target,2)})
+
+    # ── Head & Shoulders ──
+    if len(peaks) >= 3:
+        last3 = peaks[-3:]
+        head = max(last3, key=lambda x: x[1])
+        shoulders = [p for p in last3 if p != head]
+        if len(shoulders) == 2:
+            if abs(shoulders[0][1] - shoulders[1][1]) / shoulders[0][1] < 0.05:
+                if head[1] > shoulders[0][1] * 1.03:
+                    relevant_troughs = [t for t in troughs if shoulders[0][0] < t[0] < shoulders[1][0]]
+                    if relevant_troughs:
+                        neckline = min(t[1] for t in relevant_troughs)
+                        target = neckline - (head[1] - neckline)
+                        if c_price > neckline:
+                            stage = "FORMING"
+                            desc = f"Head at Rs.{head[1]:,.0f}, shoulders at Rs.{shoulders[0][1]:,.0f}/{shoulders[1][1]:,.0f}. Neckline Rs.{neckline:,.0f}. Breakdown target: Rs.{target:,.0f}"
+                        else:
+                            stage = "BREAKDOWN"
+                            desc = f"Broke neckline Rs.{neckline:,.0f}. Target Rs.{target:,.0f}"
+                        patterns.append({"pattern": "Head & Shoulders", "type": "BEARISH", "description": desc, "reliability": "high", "stage": stage, "neckline": round(neckline,2), "target": round(target,2)})
+
+    # ── Ascending Triangle ──
+    if len(peaks) >= 2 and len(troughs) >= 2:
+        recent_peaks = peaks[-3:]
+        recent_troughs = troughs[-3:]
+        peak_vals = [p[1] for p in recent_peaks]
+        trough_vals = [t[1] for t in recent_troughs]
+        flat_top = max(peak_vals) - min(peak_vals) < max(peak_vals) * 0.02
+        rising_bottom = all(trough_vals[i] < trough_vals[i+1] for i in range(len(trough_vals)-1)) if len(trough_vals) > 1 else False
+        if flat_top and rising_bottom:
+            resistance = max(peak_vals)
+            pct_to_breakout = round((resistance - c_price) / c_price * 100, 1)
+            if c_price < resistance:
+                stage = "FORMING"
+                desc = f"Flat resistance at Rs.{resistance:,.0f} ({pct_to_breakout}% above) with rising support. Bullish breakout expected."
+            else:
+                stage = "BREAKOUT"
+                desc = f"Broke above Rs.{resistance:,.0f} resistance. Ascending triangle confirmed."
+            patterns.append({"pattern": "Ascending Triangle", "type": "BULLISH", "description": desc, "reliability": "moderate", "stage": stage, "neckline": round(resistance,2)})
+
+    # ── Descending Triangle ──
+        flat_bottom = max(trough_vals) - min(trough_vals) < max(trough_vals) * 0.02 if trough_vals else False
+        falling_top = all(peak_vals[i] > peak_vals[i+1] for i in range(len(peak_vals)-1)) if len(peak_vals) > 1 else False
+        if flat_bottom and falling_top:
+            support = min(trough_vals)
+            pct_to_break = round((c_price - support) / c_price * 100, 1)
+            if c_price > support:
+                stage = "FORMING"
+                desc = f"Flat support at Rs.{support:,.0f} ({pct_to_break}% below) with falling resistance. Bearish breakdown expected."
+            else:
+                stage = "BREAKDOWN"
+                desc = f"Broke below Rs.{support:,.0f} support. Descending triangle confirmed."
+            patterns.append({"pattern": "Descending Triangle", "type": "BEARISH", "description": desc, "reliability": "moderate", "stage": stage, "neckline": round(support,2)})
+
+    # ── Falling Wedge (Bullish) ──
+    if len(peaks) >= 2 and len(troughs) >= 2:
+        if all(peak_vals[i] > peak_vals[i+1] for i in range(len(peak_vals)-1)) and all(trough_vals[i] > trough_vals[i+1] for i in range(len(trough_vals)-1)):
+            if (peak_vals[0] - peak_vals[-1]) > (trough_vals[0] - trough_vals[-1]):
+                patterns.append({"pattern": "Falling Wedge", "type": "BULLISH", "description": "Both highs and lows falling but converging. Bullish reversal pattern. Watch for upside breakout.", "reliability": "moderate", "stage": "FORMING"})
+
+    # ── Rising Wedge (Bearish) ──
+        if all(peak_vals[i] < peak_vals[i+1] for i in range(len(peak_vals)-1)) and all(trough_vals[i] < trough_vals[i+1] for i in range(len(trough_vals)-1)):
+            if (trough_vals[-1] - trough_vals[0]) > (peak_vals[-1] - peak_vals[0]):
+                patterns.append({"pattern": "Rising Wedge", "type": "BEARISH", "description": "Both highs and lows rising but converging. Bearish reversal pattern. Watch for downside breakdown.", "reliability": "moderate", "stage": "FORMING"})
+
+    # Update bull/bear counts after new pattern signals
+    bull = sum(1 for s in signals if s["signal"]=="BULLISH")
+    bear = sum(1 for s in signals if s["signal"]=="BEARISH")
+    total = bull + bear
+    score = round((bull - bear) / total * 100) if total > 0 else 0
+
+    # Overall Score
+    bull = sum(1 for s in signals if s["signal"]=="BULLISH")
+    bear = sum(1 for s in signals if s["signal"]=="BEARISH")
+    total = bull + bear
+    score = round((bull - bear) / total * 100) if total > 0 else 0
+    if score > 30: verdict = "BULLISH"
+    elif score > 10: verdict = "MILDLY BULLISH"
+    elif score < -30: verdict = "BEARISH"
+    elif score < -10: verdict = "MILDLY BEARISH"
+    else: verdict = "NEUTRAL"
+    # Williams %R
+    wr = float(ta.momentum.WilliamsRIndicator(h, l, cl, lbp=14).williams_r().iloc[-1])
+    if wr > -20: signals.append({"signal":"BEARISH","name":f"Williams %R Overbought ({wr:.0f})","strength":"moderate"})
+    elif wr < -80: signals.append({"signal":"BULLISH","name":f"Williams %R Oversold ({wr:.0f})","strength":"moderate"})
+    # CCI
+    cci = float(ta.trend.CCIIndicator(h, l, cl, window=20).cci().iloc[-1])
+    if cci > 100: signals.append({"signal":"BEARISH","name":f"CCI Overbought ({cci:.0f})","strength":"weak"})
+    elif cci < -100: signals.append({"signal":"BULLISH","name":f"CCI Oversold ({cci:.0f})","strength":"weak"})
+    # OBV trend
+    obv = ta.volume.OnBalanceVolumeIndicator(cl, vol).on_balance_volume()
+    obv_sma = obv.rolling(20).mean()
+    if float(obv.iloc[-1]) > float(obv_sma.iloc[-1]):
+        signals.append({"signal":"BULLISH","name":"OBV above 20-day avg (accumulation)","strength":"moderate"})
+    else:
+        signals.append({"signal":"BEARISH","name":"OBV below 20-day avg (distribution)","strength":"moderate"})
+    # EMA crossover
+    if ema12 > ema26: signals.append({"signal":"BULLISH","name":"EMA 12 above EMA 26","strength":"moderate"})
+    else: signals.append({"signal":"BEARISH","name":"EMA 12 below EMA 26","strength":"moderate"})
+    # Day change
+    day_chg = round((c_price / float(cl.iloc[-2]) - 1) * 100, 2)
+    # Build narrative
+    narrative_parts = []
+    narrative_parts.append(f"{info.get('shortName',sym)} ({sym}) is currently trading at Rs.{c_price:,.2f}, {('up' if day_chg>=0 else 'down')} {abs(day_chg)}% in the latest session.")
+    if sma200 > 0:
+        if c_price > sma200:
+            narrative_parts.append(f"The stock is trading above its 200-day moving average (Rs.{sma200:,.0f}), which is a long-term bullish structure.")
+        else:
+            narrative_parts.append(f"The stock is trading below its 200-day moving average (Rs.{sma200:,.0f}), indicating a long-term bearish structure.")
+    if c_price > sma50:
+        narrative_parts.append(f"It remains above the 50 DMA (Rs.{sma50:,.0f}), showing medium-term strength.")
+    else:
+        narrative_parts.append(f"It has slipped below the 50 DMA (Rs.{sma50:,.0f}), showing medium-term weakness.")
+    if rsi < 30:
+        narrative_parts.append(f"RSI at {rsi:.1f} is in deeply oversold territory, historically a zone where mean-reversion bounces tend to occur. This could present a buying opportunity for contrarian traders.")
+    elif rsi > 70:
+        narrative_parts.append(f"RSI at {rsi:.1f} is in overbought territory, suggesting the rally may be overextended. Profit-booking or a pullback is likely in the near term.")
+    elif rsi > 55:
+        narrative_parts.append(f"RSI at {rsi:.1f} shows bullish momentum without being overextended.")
+    elif rsi < 45:
+        narrative_parts.append(f"RSI at {rsi:.1f} leans bearish, indicating sellers are in control.")
+    else:
+        narrative_parts.append(f"RSI at {rsi:.1f} is neutral, offering no strong directional signal.")
+    if macd_hist > 0:
+        narrative_parts.append("MACD histogram is positive, confirming upward momentum.")
+    else:
+        narrative_parts.append("MACD histogram is negative, confirming downward momentum.")
+    if vol_ratio > 1.5:
+        narrative_parts.append(f"Volume is {vol_ratio}x the 20-day average, indicating strong institutional participation in today's move.")
+    elif vol_ratio < 0.7:
+        narrative_parts.append(f"Volume is weak at {vol_ratio}x average, suggesting the current move lacks conviction.")
+    if adx > 25:
+        narrative_parts.append(f"ADX at {adx:.0f} confirms a strong trend is in place. Trend-following strategies are appropriate.")
+    else:
+        narrative_parts.append(f"ADX at {adx:.0f} indicates a weak or range-bound market. Mean-reversion strategies may work better than trend-following.")
+    for p in patterns:
+        if p["reliability"] == "high":
+            narrative_parts.append(f"IMPORTANT: {p['pattern']} detected -- {p['description']}. This is a high-reliability pattern.")
+    # Prediction
+    if score > 30:
+        outlook = f"OUTLOOK: The weight of technical evidence is bullish. {sym} shows {bull} bullish signals against {bear} bearish. Near-term upside target is R1 at Rs.{r1:,.0f}, with support at S1 Rs.{s1:,.0f}. A break above Rs.{sma50:,.0f} (50 DMA) would strengthen the bullish case."
+    elif score > 10:
+        outlook = f"OUTLOOK: Mildly bullish with {bull} bullish vs {bear} bearish signals. The stock may see gradual upside towards R1 (Rs.{r1:,.0f}) but conviction is moderate. Watch for RSI to sustain above 50 and volume pickup for confirmation."
+    elif score < -30:
+        outlook = f"OUTLOOK: Technical signals are bearish with {bear} bearish vs {bull} bullish readings. Downside risk to S1 at Rs.{s1:,.0f} and potentially S2 at Rs.{s2:,.0f}. A recovery above 50 DMA (Rs.{sma50:,.0f}) would be the first sign of reversal."
+    elif score < -10:
+        outlook = f"OUTLOOK: Mildly bearish. The stock faces resistance at Rs.{r1:,.0f} and may drift lower towards S1 (Rs.{s1:,.0f}). Traders should wait for a clear reversal signal before entering longs."
+    else:
+        outlook = f"OUTLOOK: Neutral/consolidation phase. The stock is range-bound between S1 (Rs.{s1:,.0f}) and R1 (Rs.{r1:,.0f}). Wait for a decisive break in either direction before taking a position. Bollinger Band width at {bb_width:.1f}% {'suggests a squeeze is building' if bb_width < 10 else 'shows normal volatility'}."
+    narrative_parts.append(outlook)
+    # Add chart pattern narratives
+    chart_patterns = [p for p in patterns if "stage" in p]
+    if chart_patterns:
+        narrative_parts.append("CHART PATTERNS:")
+        for cp in chart_patterns:
+            narrative_parts.append(f"{cp['pattern']} ({cp['stage']}): {cp['description']}")
+    narrative = " ".join(narrative_parts)
+
+    result = {
+        "symbol": sym, "name": info.get("shortName",sym), "sector": info.get("sector",""),
+        "price": round(c_price,2), "change_pct": round((c_price/float(cl.iloc[-2])-1)*100,2),
+        "verdict": verdict, "score": score,
+        "bullish_signals": bull, "bearish_signals": bear,
+        "indicators": {
+            "sma20": round(sma20,2), "sma50": round(sma50,2), "sma200": round(sma200,2),
+            "rsi": round(rsi,1), "macd": round(macd_hist,2),
+            "bb_upper": round(bb_upper,2), "bb_lower": round(bb_lower,2), "bb_width": round(bb_width,1),
+            "volume_ratio": vol_ratio, "adx": round(adx,1),
+            "stoch_k": round(stoch_k,1), "stoch_d": round(stoch_d,1),
+        },
+        "levels": {"pivot": round(pivot,2),"r1": round(r1,2),"r2": round(r2,2),"s1": round(s1,2),"s2": round(s2,2),
+                   "high_52w": high_52w,"low_52w": low_52w,"from_high": from_high,"from_low": from_low},
+        "signals": signals,
+        "patterns": patterns,
+        "narrative": narrative,
+        "extra_indicators": {"williams_r": round(wr,1), "cci": round(cci,1), "ema12": round(ema12,2), "ema26": round(ema26,2)},
+    }
+    if redis_client:
+        await redis_client.setex(cache_key, 900, json.dumps(result))
+    return result
+
+
+# ==============================================================================
+# ALPHAVIEW - Comprehensive Stock Profile
+# ==============================================================================
+
+@app.get("/api/alphaview/{symbol}", tags=["Stock Data"], summary="AlphaView - Complete stock profile",
+    description="Comprehensive single-page stock analysis combining price chart data, technical indicators, fundamental data, pattern detection, ratings, relative strength vs NIFTY, and sector context.")
+async def alphaview(symbol: str, user=Depends(get_current_user)):
+    """AlphaView: Complete stock profile — fundamentals + technicals + ratings + patterns in one view."""
+    from datetime import date, timedelta
+    import ta as _ta
+    sym = symbol.upper()
+
+    cache_key = f"alphaview:{sym}:{date.today().isoformat()}"
+    if redis_client:
+        cached = await redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+
+    # ── 1. OHLCV Data (1 year) ──
+    _rows = await ds_ohlcv(sym, "1y")
+    if not _rows:
+        raise HTTPException(404, f"No data for {sym}")
+    df = pd.DataFrame(_rows)
+    df.columns = [col.lower() for col in df.columns]
+    for dc in ["date", "datetime", "timestamp"]:
+        if dc in df.columns:
+            df[dc] = pd.to_datetime(df[dc])
+            df = df.set_index(dc)
+            break
+    df.index.name = "date"
+    keep = [col for col in ["open", "high", "low", "close", "volume"] if col in df.columns]
+    df = df[keep].astype({col: float for col in keep}).dropna().sort_index()
+    if len(df) < 30:
+        raise HTTPException(404, f"Insufficient data for {sym} ({len(df)} days)")
+
+    c = df["close"].astype(float)
+    h = df["high"].astype(float)
+    l = df["low"].astype(float)
+    v = df["volume"].astype(float)
+    price = float(c.iloc[-1])
+    prev_close = float(c.iloc[-2]) if len(c) > 1 else price
+
+    # ── 2. Fundamentals ──
+    fund = await ds_fundamentals(sym)
+    if not fund:
+        fund = {}
+
+    def sf(val, default=None):
+        if val is None:
+            return default
+        try:
+            fv = float(val)
+            return default if (np.isnan(fv) or np.isinf(fv)) else fv
+        except:
+            return default
+
+    def fix_pct(val):
+        v2 = sf(val, 0)
+        if v2 and abs(v2) > 100:
+            return round(v2 / 100, 2)
+        return round(v2, 2) if v2 else 0
+
+    # ── 3. Moving Averages & Trend ──
+    sma20 = float(c.rolling(20).mean().iloc[-1]) if len(c) >= 20 else price
+    sma50 = float(c.rolling(50).mean().iloc[-1]) if len(c) >= 50 else price
+    sma200 = float(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else price
+    ema9 = float(c.ewm(span=9).mean().iloc[-1])
+    ema21 = float(c.ewm(span=21).mean().iloc[-1])
+    above_20 = price > sma20
+    above_50 = price > sma50
+    above_200 = price > sma200
+
+    # ── 4. Technical Indicators ──
+    delta = c.diff()
+    gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
+    rs_val = float(gain.iloc[-1] / loss.iloc[-1]) if sf(loss.iloc[-1]) != 0 else 0
+    rsi = round(100 - 100 / (1 + rs_val), 1) if rs_val else 50
+
+    ema12 = c.ewm(span=12).mean()
+    ema26 = c.ewm(span=26).mean()
+    macd_line = ema12 - ema26
+    signal_line = macd_line.ewm(span=9).mean()
+    macd = round(float(macd_line.iloc[-1]), 2)
+    macd_signal = round(float(signal_line.iloc[-1]), 2)
+    macd_hist = round(macd - macd_signal, 2)
+
+    bb_mid = c.rolling(20).mean()
+    bb_std = c.rolling(20).std()
+    bb_upper = round(float((bb_mid + 2 * bb_std).iloc[-1]), 2) if len(c) >= 20 else 0
+    bb_lower = round(float((bb_mid - 2 * bb_std).iloc[-1]), 2) if len(c) >= 20 else 0
+
+    vol_avg20 = float(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else float(v.mean())
+    vol_ratio = round(float(v.iloc[-1]) / vol_avg20, 2) if vol_avg20 > 0 else 1
+
+    # ADX
+    adx_val = 0
+    if len(df) >= 30:
+        try:
+            adx_i = _ta.trend.ADXIndicator(h, l, c, window=14)
+            adx_val = round(float(adx_i.adx().iloc[-1]), 1)
+        except:
+            pass
+
+    # Supertrend (simple approximation)
+    atr = _ta.volatility.AverageTrueRange(h, l, c, window=10).average_true_range()
+    st_upper = round(float((h.rolling(10).mean() + 3 * atr).iloc[-1]), 2) if len(c) >= 10 else 0
+    st_lower = round(float((l.rolling(10).mean() - 3 * atr).iloc[-1]), 2) if len(c) >= 10 else 0
+    supertrend_bullish = price > st_lower
+
+    # Stochastic
+    low14 = l.rolling(14).min()
+    high14 = h.rolling(14).max()
+    stoch_k = round(float(((c - low14) / (high14 - low14) * 100).iloc[-1]), 1) if len(c) >= 14 else 50
+    stoch_d = round(float(((c - low14) / (high14 - low14) * 100).rolling(3).mean().iloc[-1]), 1) if len(c) >= 14 else 50
+
+    # ── 5. Relative Strength vs NIFTY ──
+    try:
+        _nifty_rows = await ds_ohlcv("NIFTY", "1y")
+        if not _nifty_rows:
+            _nifty_rows = await ds_ohlcv("^NSEI", "1y")
+        if _nifty_rows:
+            nifty_df = pd.DataFrame(_nifty_rows)
+            nifty_df.columns = [col.lower() for col in nifty_df.columns]
+            for dc in ["date", "datetime", "timestamp"]:
+                if dc in nifty_df.columns:
+                    nifty_df[dc] = pd.to_datetime(nifty_df[dc])
+                    nifty_df = nifty_df.set_index(dc)
+                    break
+            nc = nifty_df["close"].astype(float)
+            stock_ret_1m = round((float(c.iloc[-1]) / float(c.iloc[-22]) - 1) * 100, 1) if len(c) > 22 else 0
+            stock_ret_3m = round((float(c.iloc[-1]) / float(c.iloc[-66]) - 1) * 100, 1) if len(c) > 66 else 0
+            stock_ret_6m = round((float(c.iloc[-1]) / float(c.iloc[-132]) - 1) * 100, 1) if len(c) > 132 else 0
+            stock_ret_1y = round((float(c.iloc[-1]) / float(c.iloc[0]) - 1) * 100, 1) if len(c) > 200 else 0
+            nifty_ret_1m = round((float(nc.iloc[-1]) / float(nc.iloc[-22]) - 1) * 100, 1) if len(nc) > 22 else 0
+            nifty_ret_3m = round((float(nc.iloc[-1]) / float(nc.iloc[-66]) - 1) * 100, 1) if len(nc) > 66 else 0
+            nifty_ret_6m = round((float(nc.iloc[-1]) / float(nc.iloc[-132]) - 1) * 100, 1) if len(nc) > 132 else 0
+            nifty_ret_1y = round((float(nc.iloc[-1]) / float(nc.iloc[0]) - 1) * 100, 1) if len(nc) > 200 else 0
+            rs_1m = round(stock_ret_1m - nifty_ret_1m, 1)
+            rs_3m = round(stock_ret_3m - nifty_ret_3m, 1)
+            rs_6m = round(stock_ret_6m - nifty_ret_6m, 1)
+            rs_1y = round(stock_ret_1y - nifty_ret_1y, 1)
+        else:
+            stock_ret_1m = stock_ret_3m = stock_ret_6m = stock_ret_1y = 0
+            nifty_ret_1m = nifty_ret_3m = nifty_ret_6m = nifty_ret_1y = 0
+            rs_1m = rs_3m = rs_6m = rs_1y = 0
+    except:
+        stock_ret_1m = stock_ret_3m = stock_ret_6m = stock_ret_1y = 0
+        nifty_ret_1m = nifty_ret_3m = nifty_ret_6m = nifty_ret_1y = 0
+        rs_1m = rs_3m = rs_6m = rs_1y = 0
+
+    # ── 6. Rating Scores (0-99 scale like O'Neil) ──
+    eps_val = sf(fund.get("eps") or fund.get("trailingEps"), 0)
+    eps_growth = sf(fund.get("earnings_growth") or fund.get("earningsGrowth"), 0)
+    if eps_growth and abs(eps_growth) < 1:
+        eps_growth = eps_growth * 100
+    eps_strength = min(99, max(1, int(50 + eps_growth * 1.5))) if eps_growth else 50
+
+    rs_score = min(99, max(1, int(50 + rs_3m * 2 + rs_1m)))
+
+    up_days = int((delta.iloc[-20:] > 0).sum()) if len(delta) >= 20 else 10
+    vol_acc = min(99, max(1, int(up_days * 5 + vol_ratio * 10)))
+
+    composite = min(99, max(1, int(eps_strength * 0.3 + rs_score * 0.3 + vol_acc * 0.2 + (rsi / 100 * 99) * 0.2)))
+
+    sector = fund.get("sector") or SECTOR_MAP.get(sym, "Other")
+
+    # ── 7. 52-week stats ──
+    high_52w = round(float(h.max()), 2)
+    low_52w = round(float(l.min()), 2)
+    off_high = round((price / high_52w - 1) * 100, 1) if high_52w > 0 else 0
+    off_low = round((price / low_52w - 1) * 100, 1) if low_52w > 0 else 0
+
+    # ── 8. Price Data for Chart (last 250 days) ──
+    chart_data_list = []
+    for idx, row in df.tail(250).iterrows():
+        ts = int(idx.timestamp()) if hasattr(idx, "timestamp") else 0
+        chart_data_list.append({
+            "time": ts,
+            "open": round(float(row["open"]), 2),
+            "high": round(float(row["high"]), 2),
+            "low": round(float(row["low"]), 2),
+            "close": round(float(row["close"]), 2),
+            "volume": int(row["volume"]),
+        })
+
+    # ── 9. Cap Segment ──
+    cap = get_cap_segment(sym)
+
+    # ── 10. Trend Assessment ──
+    bullish_count = sum([above_20, above_50, above_200, rsi > 50, macd > macd_signal, supertrend_bullish, adx_val > 20])
+    bearish_count = sum([not above_20, not above_50, not above_200, rsi < 50, macd < macd_signal, not supertrend_bullish])
+    if bullish_count >= 5: trend = "STRONG BULLISH"
+    elif bullish_count >= 4: trend = "BULLISH"
+    elif bearish_count >= 5: trend = "BEARISH"
+    elif bearish_count >= 4: trend = "STRONG BEARISH"
+    else: trend = "NEUTRAL"
+
+    result = {
+        "symbol": sym,
+        "name": fund.get("name") or fund.get("longName") or sym,
+        "sector": sector,
+        "industry": fund.get("industry") or INDUSTRY_MAP.get(sym, "\u2014"),
+        "cap_segment": cap,
+
+        "summary": {
+            "price": price,
+            "prev_close": prev_close,
+            "change": round(price - prev_close, 2),
+            "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
+            "high_52w": high_52w,
+            "low_52w": low_52w,
+            "off_high_pct": off_high,
+            "off_low_pct": off_low,
+            "market_cap": sf(fund.get("market_cap") or fund.get("marketCap")),
+            "market_cap_cr": round(sf(fund.get("market_cap") or fund.get("marketCap"), 0) / 10000000, 0),
+            "shares_outstanding": sf(fund.get("shares_outstanding") or fund.get("sharesOutstanding")),
+            "avg_volume": int(vol_avg20),
+            "volume": int(v.iloc[-1]),
+            "volume_ratio": vol_ratio,
+            "beta": sf(fund.get("beta"), 0),
+        },
+
+        "ratings": {
+            "composite": composite,
+            "eps_strength": eps_strength,
+            "rs_rating": rs_score,
+            "vol_accumulation": vol_acc,
+            "trend_score": int(bullish_count / 7 * 99),
+            "trend": trend,
+        },
+
+        "moving_averages": {
+            "sma20": round(sma20, 2), "sma50": round(sma50, 2), "sma200": round(sma200, 2),
+            "ema9": round(ema9, 2), "ema21": round(ema21, 2),
+            "above_20dma": above_20, "above_50dma": above_50, "above_200dma": above_200,
+            "price_vs_200dma_pct": round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0,
+        },
+
+        "technicals": {
+            "rsi": rsi,
+            "macd": macd, "macd_signal": macd_signal, "macd_histogram": macd_hist,
+            "bb_upper": bb_upper, "bb_lower": bb_lower,
+            "bb_width": round((bb_upper - bb_lower) / price * 100, 1) if price > 0 else 0,
+            "adx": adx_val,
+            "stoch_k": stoch_k, "stoch_d": stoch_d,
+            "supertrend_bullish": supertrend_bullish,
+            "supertrend_upper": st_upper, "supertrend_lower": st_lower,
+            "volume_ratio": vol_ratio,
+            "atr": round(float(atr.iloc[-1]), 2) if len(atr) > 0 else 0,
+        },
+
+        "relative_strength": {
+            "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y,
+            "stock_return": {"1m": stock_ret_1m, "3m": stock_ret_3m, "6m": stock_ret_6m, "1y": stock_ret_1y},
+            "nifty_return": {"1m": nifty_ret_1m, "3m": nifty_ret_3m, "6m": nifty_ret_6m, "1y": nifty_ret_1y},
+            "outperforming_1m": rs_1m > 0,
+            "outperforming_3m": rs_3m > 0,
+        },
+
+        "fundamentals": {
+            "eps": sf(fund.get("eps") or fund.get("trailingEps")),
+            "pe_trailing": sf(fund.get("pe_trailing") or fund.get("trailingPE")),
+            "pe_forward": sf(fund.get("pe_forward") or fund.get("forwardPE")),
+            "pb": sf(fund.get("pb") or fund.get("priceToBook")),
+            "roe": fix_pct(fund.get("roe") or fund.get("returnOnEquity")),
+            "roce": fix_pct(fund.get("roce")),
+            "debt_equity": sf(fund.get("debt_equity") or fund.get("debtToEquity")),
+            "dividend_yield": fix_pct(fund.get("dividend_yield") or fund.get("dividendYield")),
+            "dividend_rate": sf(fund.get("dividend_rate") or fund.get("dividendRate")),
+            "book_value": sf(fund.get("book_value") or fund.get("bookValue")),
+            "revenue": sf(fund.get("revenue")),
+            "revenue_growth": fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth")),
+            "earnings_growth": fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth")),
+            "profit_margin": fix_pct(fund.get("profit_margin") or fund.get("profitMargins")),
+            "operating_margin": fix_pct(fund.get("operating_margin") or fund.get("operatingMargins")),
+            "promoter_holding": sf(fund.get("promoter_holding")),
+        },
+
+        "levels": {
+            "pivot": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3, 2),
+            "r1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(l.iloc[-1]), 2),
+            "r2": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 + float(h.iloc[-1]) - float(l.iloc[-1]), 2),
+            "s1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(h.iloc[-1]), 2),
+            "s2": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 - float(h.iloc[-1]) + float(l.iloc[-1]), 2),
+        },
+
+        "chart": chart_data_list,
+        "as_of": date.today().isoformat(),
+        "data_points": len(df),
+    }
+
+    # ── 11. Patterns Data ──
+    patterns_data = {}
+    try:
+        import ta as _ta2
+        signals_list = []
+        patterns_list = []
+        narrative_parts = []
+
+        # Pattern signals from indicators
+        if rsi > 50: signals_list.append(f"RSI Bullish ({rsi})")
+        elif rsi < 50: signals_list.append(f"RSI Bearish ({rsi})")
+        if rsi > 70: signals_list.append(f"RSI Overbought ({rsi})")
+        if rsi < 30: signals_list.append(f"RSI Oversold ({rsi})")
+        if macd > macd_signal: signals_list.append("MACD above signal line")
+        else: signals_list.append("MACD below signal line")
+        if above_200: signals_list.append("Trading above 200 DMA")
+        else: signals_list.append("Trading below 200 DMA")
+        if above_50: signals_list.append("Above 50 DMA")
+        else: signals_list.append("Below 50 DMA")
+        if supertrend_bullish: signals_list.append("Above Supertrend support")
+        else: signals_list.append("Below Supertrend resistance")
+        if vol_ratio > 1.5: signals_list.append(f"High volume ({vol_ratio}x avg)")
+        if adx_val > 25: signals_list.append(f"Strong trend (ADX {adx_val})")
+        elif adx_val < 20: signals_list.append(f"Weak trend (ADX {adx_val})")
+
+        # Williams %R
+        wr = -100 * (float(h.rolling(14).max().iloc[-1]) - price) / (float(h.rolling(14).max().iloc[-1]) - float(l.rolling(14).min().iloc[-1])) if len(c) >= 14 else -50
+        wr = round(wr, 1)
+        if wr > -20: signals_list.append(f"Williams %R Overbought ({wr})")
+        elif wr < -80: signals_list.append(f"Williams %R Oversold ({wr})")
+
+        # OBV trend
+        obv = (v * c.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))).cumsum()
+        obv_sma = obv.rolling(20).mean()
+        if len(obv) >= 20 and float(obv.iloc[-1]) > float(obv_sma.iloc[-1]):
+            signals_list.append("OBV above 20-day avg (accumulation)")
+        elif len(obv) >= 20:
+            signals_list.append("OBV below 20-day avg (distribution)")
+
+        # EMA cross
+        if ema9 > ema21: signals_list.append("EMA 9 above EMA 21")
+        else: signals_list.append("EMA 12 below EMA 26")
+
+        # Chart patterns detection
+        if len(c) >= 60:
+            # Double Bottom
+            lows_60 = l.iloc[-60:]
+            min1_idx = lows_60.iloc[:30].idxmin()
+            min2_idx = lows_60.iloc[30:].idxmin()
+            min1 = float(lows_60.loc[min1_idx])
+            min2 = float(lows_60.loc[min2_idx])
+            neckline = float(h.iloc[-60:].loc[min1_idx:min2_idx].max()) if min1_idx < min2_idx else 0
+            if min1 > 0 and abs(min1 - min2) / min1 < 0.03 and neckline > 0:
+                pct_above = round((neckline / price - 1) * 100, 1)
+                target = round(neckline + (neckline - min((min1, min2))), 1)
+                patterns_list.append({
+                    "name": "Double Bottom (W)", "status": "FORMING" if price < neckline else "CONFIRMED",
+                    "reliability": "high", "pivot": round(neckline, 0),
+                    "target": target,
+                    "description": f"Two bottoms at Rs.{round(min1)} and Rs.{round(min2)}. Neckline at Rs.{round(neckline)} ({pct_above}% above CMP). Breakout above neckline confirms pattern. Target: Rs.{target}"
+                })
+
+            # Head & Shoulders
+            highs_60 = h.iloc[-60:]
+            peak_idx = highs_60.idxmax()
+            peak = float(highs_60.loc[peak_idx])
+            left_shoulder = float(highs_60.iloc[:20].max())
+            right_shoulder = float(highs_60.iloc[-20:].max())
+            if peak > left_shoulder and peak > right_shoulder and left_shoulder > 0:
+                pct_diff = abs(left_shoulder - right_shoulder) / left_shoulder
+                if pct_diff < 0.05:
+                    hs_neckline = float(l.iloc[-60:].min())
+                    hs_target = round(hs_neckline - (peak - hs_neckline), 1)
+                    patterns_list.append({
+                        "name": "Head & Shoulders", "status": "FORMING",
+                        "reliability": "high", "pivot": round(hs_neckline, 0),
+                        "target": hs_target,
+                        "description": f"Head at Rs.{round(peak)}, shoulders at Rs.{round(left_shoulder)}/{round(right_shoulder)}. Neckline Rs.{round(hs_neckline)}. Breakdown target: Rs.{hs_target}"
+                    })
+
+            # Near 52-week high/low
+            if price >= high_52w * 0.95:
+                patterns_list.append({"name": "Near 52-Week High", "status": "", "reliability": "moderate", "pivot": high_52w, "target": 0,
+                    "description": f"{round((price/high_52w-1)*100, 1)}% from 52W high - strength"})
+            if price <= low_52w * 1.05:
+                patterns_list.append({"name": "Near 52-Week Low", "status": "", "reliability": "moderate", "pivot": low_52w, "target": 0,
+                    "description": f"{round((price/low_52w-1)*100, 1)}% from 52W low - weakness"})
+
+            # RSI divergence
+            rsi_series = []
+            for i in range(max(0, len(c)-30), len(c)):
+                _g = delta.iloc[max(0,i-14):i].clip(lower=0).ewm(span=14, adjust=False).mean()
+                _l2 = (-delta.iloc[max(0,i-14):i].clip(upper=0)).ewm(span=14, adjust=False).mean()
+                if len(_l2) > 0 and float(_l2.iloc[-1]) != 0:
+                    rsi_series.append(100 - 100 / (1 + float(_g.iloc[-1]) / float(_l2.iloc[-1])))
+            if len(rsi_series) >= 10:
+                price_lower = float(c.iloc[-1]) < float(c.iloc[-10])
+                rsi_higher = rsi_series[-1] > rsi_series[-10] if len(rsi_series) > 10 else False
+                if price_lower and rsi_higher:
+                    patterns_list.append({"name": "Bullish RSI Divergence", "status": "", "reliability": "moderate", "pivot": 0, "target": 0,
+                        "description": "Price making lower lows but RSI making higher lows"})
+
+        # Build narrative
+        narrative_parts.append(f"{sym} ({fund.get('name', sym)}) is currently trading at Rs.{price:,.2f}, {'up' if (price - prev_close)>=0 else 'down'} {abs(round((price - prev_close)/prev_close*100,2))}% in the latest session.")
+        if above_200: narrative_parts.append(f"The stock is trading above its 200-day moving average (Rs.{sma200:,.0f}), indicating a long-term bullish structure.")
+        else: narrative_parts.append(f"The stock is trading below its 200-day moving average (Rs.{sma200:,.0f}), indicating a long-term bearish structure.")
+        if above_50: narrative_parts.append(f"It remains above the 50 DMA (Rs.{sma50:,.0f}), showing medium-term strength.")
+        else: narrative_parts.append(f"It has slipped below the 50 DMA (Rs.{sma50:,.0f}), showing medium-term weakness.")
+        narrative_parts.append(f"RSI at {rsi} is {'overbought' if rsi>70 else 'oversold' if rsi<30 else 'neutral'}, offering {'no strong' if 40<rsi<60 else 'a'} directional signal.")
+        if macd_hist > 0: narrative_parts.append("MACD histogram is positive, confirming upward momentum.")
+        else: narrative_parts.append("MACD histogram is negative, suggesting downward pressure.")
+        if adx_val > 25: narrative_parts.append(f"ADX at {adx_val} indicates a strong trending market.")
+        else: narrative_parts.append(f"ADX at {adx_val} indicates a weak or range-bound market. Mean-reversion strategies may work better than trend-following.")
+        for pat in patterns_list:
+            if pat["name"] and pat["description"]:
+                narrative_parts.append(f"IMPORTANT: {pat['name']} detected \u2014 {pat['description']}")
+        narrative_parts.append(f"OUTLOOK: The weight of technical evidence is {'bullish' if bullish_count >= 4 else 'bearish' if bearish_count >= 4 else 'mixed/neutral'}.")
+        narrative_parts.append(f"{sym} shows {bullish_count} bullish signals against {bearish_count} bearish.")
+        narrative_parts.append(f"Near-term upside target is R1 at Rs.{round((float(h.iloc[-1])+float(l.iloc[-1])+price)/3*2-float(l.iloc[-1]),0):,.0f}, with support at S1 Rs.{round((float(h.iloc[-1])+float(l.iloc[-1])+price)/3*2-float(h.iloc[-1]),0):,.0f}.")
+
+        patterns_data = {
+            "verdict": "BULLISH" if bullish_count >= 4 else "BEARISH" if bearish_count >= 4 else "NEUTRAL",
+            "score": int((bullish_count / max(bullish_count + bearish_count, 1)) * 100),
+            "bullish_signals": bullish_count,
+            "bearish_signals": bearish_count,
+            "signals": signals_list,
+            "patterns": patterns_list,
+            "narrative": " ".join(narrative_parts),
+            "williams_r": wr,
+        }
+    except Exception as _pe:
+        patterns_data = {"error": str(_pe), "signals": [], "patterns": [], "narrative": ""}
+
+    result["patterns"] = patterns_data
+
+    # ── 12. Quantamental Assessment ──
+    pe = sf(fund.get("pe_trailing") or fund.get("trailingPE"), 0)
+    pb_val = sf(fund.get("pb") or fund.get("priceToBook"), 0)
+    roe_val = fix_pct(fund.get("roe") or fund.get("returnOnEquity"))
+    de = sf(fund.get("debt_equity") or fund.get("debtToEquity"), 0)
+    rev_g = fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth"))
+    earn_g = fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth"))
+    pm = fix_pct(fund.get("profit_margin") or fund.get("profitMargins"))
+
+    # Value score
+    value_score = 0
+    if pe and 0 < pe < 15: value_score += 30
+    elif pe and 15 <= pe < 25: value_score += 15
+    if pb_val and pb_val < 2: value_score += 25
+    elif pb_val and pb_val < 4: value_score += 10
+    if fix_pct(fund.get("dividend_yield") or fund.get("dividendYield")) > 2: value_score += 20
+    if de and de < 50: value_score += 15
+    elif de and de < 100: value_score += 5
+    if pm and pm > 15: value_score += 10
+
+    # Growth score
+    growth_score = 0
+    if rev_g and rev_g > 15: growth_score += 30
+    elif rev_g and rev_g > 5: growth_score += 15
+    if earn_g and earn_g > 20: growth_score += 30
+    elif earn_g and earn_g > 5: growth_score += 15
+    if roe_val and roe_val > 15: growth_score += 20
+    elif roe_val and roe_val > 10: growth_score += 10
+    if rs_score > 60: growth_score += 20
+    elif rs_score > 40: growth_score += 10
+
+    # Quality score
+    quality_score = 0
+    if roe_val and roe_val > 15: quality_score += 25
+    if pm and pm > 15: quality_score += 20
+    if de and de < 30: quality_score += 20
+    elif de and de < 80: quality_score += 10
+    if fix_pct(fund.get("operating_margin") or fund.get("operatingMargins")) > 15: quality_score += 15
+    if vol_ratio < 2: quality_score += 10
+    if adx_val > 20: quality_score += 10
+
+    result["assessment"] = {
+        "value_score": min(100, value_score),
+        "growth_score": min(100, growth_score),
+        "quality_score": min(100, quality_score),
+        "value_verdict": "STRONG VALUE" if value_score >= 70 else "VALUE" if value_score >= 40 else "FAIRLY PRICED" if value_score >= 20 else "EXPENSIVE",
+        "growth_verdict": "HIGH GROWTH" if growth_score >= 70 else "GROWTH" if growth_score >= 40 else "MODERATE" if growth_score >= 20 else "SLOW",
+        "quality_verdict": "HIGH QUALITY" if quality_score >= 70 else "QUALITY" if quality_score >= 40 else "AVERAGE" if quality_score >= 20 else "WEAK",
+    }
+
+    if redis_client:
+        await redis_client.setex(cache_key, 900, json.dumps(result))
+
+    return result
