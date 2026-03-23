@@ -9837,6 +9837,36 @@ async function loadAlphaView(sym){
     renderAV(d);
   }catch(e){document.getElementById('av-status').textContent='Error: '+e.message;document.getElementById('av-status').style.color='var(--red)';toast(e.message,'er');}
 }
+function showVGQInfo(type){
+  var info={
+    VALUE:'<b>Value Score (0-100)</b><br><br>'+
+      '<b>P/E &lt; 15:</b> +20 pts<br><b>P/E 15-25:</b> +10 pts<br>'+
+      '<b>P/B &lt; 2:</b> +15 pts<br><b>P/B 2-4:</b> +8 pts<br>'+
+      '<b>Div Yield &gt; 2%:</b> +15 pts<br><b>Div Yield 1-2%:</b> +8 pts<br>'+
+      '<b>D/E &lt; 50:</b> +15 pts<br><b>D/E &lt; 100:</b> +5 pts<br>'+
+      '<b>Margin &gt; 15%:</b> +15 pts<br><b>Margin 8-15%:</b> +8 pts<br><br>'+
+      '<b>70+</b> = Deep Value &nbsp; <b>40-69</b> = Fairly Priced &nbsp; <b>&lt;40</b> = Expensive',
+    GROWTH:'<b>Growth Score (0-100)</b><br><br>'+
+      '<b>Rev Growth &gt; 15%:</b> +20 pts<br><b>Rev Growth 5-15%:</b> +10 pts<br>'+
+      '<b>Earn Growth &gt; 20%:</b> +20 pts<br><b>Earn Growth 5-20%:</b> +10 pts<br>'+
+      '<b>ROE &gt; 15%:</b> +20 pts<br><b>ROE &gt; 10%:</b> +10 pts<br>'+
+      '<b>RS 1m &gt; 40:</b> +20 pts<br><b>RS 1m &gt; 0:</b> +10 pts<br><br>'+
+      '<b>70+</b> = High Growth &nbsp; <b>40-69</b> = Moderate &nbsp; <b>&lt;40</b> = Low Growth',
+    QUALITY:'<b>Quality Score (0-100)</b><br><br>'+
+      '<b>ROE &gt; 15%:</b> +20 pts<br><b>ROE 10-15%:</b> +10 pts<br>'+
+      '<b>Margin &gt; 15%:</b> +15 pts<br><b>Margin 8-15%:</b> +8 pts<br>'+
+      '<b>D/E &lt; 30:</b> +15 pts<br><b>D/E &lt; 80:</b> +10 pts<br>'+
+      '<b>Op Margin &gt; 15%:</b> +15 pts<br><b>Op Margin 8-15%:</b> +8 pts<br>'+
+      '<b>Volatility &lt; 25%:</b> +10 pts<br><b>ADX &gt; 25:</b> +5 pts<br><br>'+
+      '<b>70+</b> = High Quality &nbsp; <b>40-69</b> = Average &nbsp; <b>&lt;40</b> = Low Quality'
+  };
+  var existing=document.getElementById('vgq-popup');
+  if(existing){existing.remove();if(existing.dataset.type===type)return;}
+  var d=document.createElement('div');d.id='vgq-popup';d.dataset.type=type;
+  d.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:20px;max-width:340px;width:90%;z-index:10000;box-shadow:0 8px 32px rgba(0,0,0,0.3);font-size:12px;color:var(--text1);line-height:1.7';
+  d.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-size:14px;font-weight:700;color:var(--accent)">'+type+' SCORE</span><span onclick="document.getElementById('vgq-popup').remove()" style="cursor:pointer;font-size:18px;color:var(--text2)">&times;</span></div>'+info[type];
+  document.body.appendChild(d);
+}
 function renderAV(d){
   var s=d.summary,r=d.ratings,ma=d.moving_averages,t=d.technicals,rs=d.relative_strength,f=d.fundamentals,lv=d.levels,p=d.patterns||{},a=d.assessment||{};
   var chgC=s.change>=0?'var(--green)':'var(--red)';
@@ -9871,9 +9901,9 @@ function renderAV(d){
     h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px;display:flex;flex-direction:column;justify-content:center">';
     h+='<div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:8px">ASSESSMENT</div>';
     h+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">';
-    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">VALUE</div><div style="font-size:20px;font-weight:800;color:'+vc+'">'+a.value_score+'</div><div style="font-size:11px;font-weight:600;color:'+vc+'">'+a.value_verdict+'</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">GROWTH</div><div style="font-size:20px;font-weight:800;color:'+gc+'">'+a.growth_score+'</div><div style="font-size:11px;font-weight:600;color:'+gc+'">'+a.growth_verdict+'</div></div>';
-    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">QUALITY</div><div style="font-size:20px;font-weight:800;color:'+qc+'">'+a.quality_score+'</div><div style="font-size:11px;font-weight:600;color:'+qc+'">'+a.quality_verdict+'</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">VALUE <span onclick="showVGQInfo(\'VALUE\')" style="cursor:pointer;color:var(--accent);font-size:12px">\u24d8</span></div><div style="font-size:20px;font-weight:800;color:'+vc+'">'+a.value_score+'</div><div style="font-size:11px;font-weight:600;color:'+vc+'">'+a.value_verdict+'</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">GROWTH <span onclick="showVGQInfo(\'GROWTH\')" style="cursor:pointer;color:var(--accent);font-size:12px">\u24d8</span></div><div style="font-size:20px;font-weight:800;color:'+gc+'">'+a.growth_score+'</div><div style="font-size:11px;font-weight:600;color:'+gc+'">'+a.growth_verdict+'</div></div>';
+    h+='<div style="text-align:center"><div style="font-size:10px;color:var(--text2)">QUALITY <span onclick="showVGQInfo(\'QUALITY\')" style="cursor:pointer;color:var(--accent);font-size:12px">\u24d8</span></div><div style="font-size:20px;font-weight:800;color:'+qc+'">'+a.quality_score+'</div><div style="font-size:11px;font-weight:600;color:'+qc+'">'+a.quality_verdict+'</div></div>';
     h+='</div></div>';
   }
   h+='</div>';
