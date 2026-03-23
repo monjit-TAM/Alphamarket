@@ -241,6 +241,24 @@ async def init_db():
             )
         """)
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_consents (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL,
+                consent_type VARCHAR(50) NOT NULL DEFAULT 'platform_disclaimer',
+                version VARCHAR(10) NOT NULL DEFAULT '2.0',
+                ip_address VARCHAR(50),
+                user_agent TEXT,
+                accepted_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(user_id, consent_type, version)
+            );
+            CREATE TABLE IF NOT EXISTS methodology_access_requests (
+                id SERIAL PRIMARY KEY,
+                user_id INT NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                requested_at TIMESTAMP DEFAULT NOW(),
+                reviewed_at TIMESTAMP,
+                reviewed_by INT
+            );
             CREATE TABLE IF NOT EXISTS paper_trades (
                 id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 symbol TEXT NOT NULL, trade_type TEXT NOT NULL, quantity INT NOT NULL,
@@ -1671,6 +1689,70 @@ async def login(req: LoginRequest):
         return {"token": create_token(user["id"], user["email"], user["is_admin"]),
                 "user": {"id": user["id"], "email": user["email"], "name": user["name"], "is_admin": user["is_admin"],
                          "user_type": user.get("user_type", "individual")}}
+
+@app.get("/api/consent/check", tags=["Authentication"], summary="Check if user has accepted disclaimer",
+    description="Returns whether the current user has accepted the platform disclaimer for the current version.")
+async def check_consent(request: Request, user=Depends(get_current_user)):
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, accepted_at FROM user_consents WHERE user_id=$1 AND consent_type='platform_disclaimer' AND version='2.0'",
+            user["id"])
+        return {"accepted": row is not None, "accepted_at": str(row["accepted_at"]) if row else None}
+
+@app.post("/api/consent/accept", tags=["Authentication"], summary="Accept platform disclaimer",
+    description="Record user's acceptance of the platform disclaimer. Stores IP, user agent, and timestamp for SEBI compliance.")
+async def accept_consent(request: Request, user=Depends(get_current_user)):
+    ip = request.client.host if request.client else "unknown"
+    ua = request.headers.get("user-agent", "unknown")[:500]
+    async with db_pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO user_consents (user_id, consent_type, version, ip_address, user_agent)
+            VALUES ($1, 'platform_disclaimer', '2.0', $2, $3)
+            ON CONFLICT (user_id, consent_type, version) DO NOTHING
+        """, user["id"], ip, ua)
+    return {"status": "accepted", "version": "2.0"}
+
+@app.get("/api/admin/consents", tags=["Admin"], summary="List all user consents",
+    description="Admin only. View all users who have accepted the platform disclaimer with timestamps and IP addresses.")
+async def list_consents(user=Depends(get_admin_user)):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT uc.*, u.username, u.email FROM user_consents uc
+            LEFT JOIN users u ON u.id = uc.user_id
+            ORDER BY uc.accepted_at DESC
+        """)
+        return {"consents": [dict(r) for r in rows], "total": len(rows)}
+
+@app.post("/api/methodology/request-access", tags=["Authentication"], summary="Request methodology document access",
+    description="Submit a request to view the full methodology document. Admin will review and grant access.")
+async def request_methodology_access(user=Depends(get_current_user)):
+    async with db_pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT * FROM methodology_access_requests WHERE user_id=$1 AND status='pending'", user["id"])
+        if existing:
+            return {"status": "already_pending", "requested_at": str(existing["requested_at"])}
+        await conn.execute(
+            "INSERT INTO methodology_access_requests (user_id) VALUES ($1)", user["id"])
+    return {"status": "requested"}
+
+@app.get("/api/admin/methodology-requests", tags=["Admin"], summary="List methodology access requests",
+    description="Admin only. View and manage pending methodology access requests.")
+async def list_methodology_requests(user=Depends(get_admin_user)):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT mar.*, u.username, u.email FROM methodology_access_requests mar
+            LEFT JOIN users u ON u.id = mar.user_id ORDER BY mar.requested_at DESC
+        """)
+        return {"requests": [dict(r) for r in rows], "total": len(rows)}
+
+@app.post("/api/admin/methodology-requests/{req_id}/approve", tags=["Admin"], summary="Approve methodology access",
+    description="Admin only. Approve a pending methodology access request.")
+async def approve_methodology_request(req_id: int, user=Depends(get_admin_user)):
+    async with db_pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE methodology_access_requests SET status='approved', reviewed_at=NOW(), reviewed_by=$1 WHERE id=$2",
+            user["id"], req_id)
+    return {"status": "approved"}
 
 @app.get("/api/auth/me", tags=["Authentication"], summary="Get current user profile",
     description="Returns the authenticated user's profile including email, name, user type, and admin status.")
