@@ -466,7 +466,8 @@ tr:last-child td{border-bottom:none}
     <div class="tlogo">ALPHALAB</div>
     <div class="tdiv"></div>
     <div class="tnav">
-      <button class="nbtn on" onclick="nav('dashboard',this)">DASHBOARD</button>
+      <button class="nbtn on" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700">ALPHAVIEW</button>
+      <button class="nbtn" onclick="nav('dashboard',this)">DASHBOARD</button>
       <button class="nbtn" onclick="nav('screener',this)">SCREENER</button>
       <button class="nbtn" onclick="nav('mtf',this)">MTF COMBINER</button>
       <button class="nbtn" onclick="nav('backtest',this)">BACKTEST</button>
@@ -483,7 +484,6 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('scalping',this)">SCALPING</button>
       <button class="nbtn" onclick="nav('morning_brief',this)" style="color:#e84215;font-weight:700">MORNING BRIEF</button>
       <button class="nbtn" onclick="nav('patterns',this)" style="color:#a855f7;font-weight:700">PATTERNS</button>
-      <button class="nbtn" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700">ALPHAVIEW</button>
       <button class="nbtn" onclick="nav('heatmap_tab',this)" style="color:#22c55e;font-weight:700">HEATMAP</button>
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
@@ -3547,7 +3547,7 @@ function boot(){
   document.getElementById('app').style.display='flex';
   document.getElementById('uname').textContent=me.name;
   if(me.is_admin)document.getElementById('anav').style.display='block';
-  nav('dashboard',document.querySelector('.nbtn'));
+  nav('alphaview',document.querySelector('.nbtn'));
   // Request browser notification permission
   if('Notification' in window && Notification.permission==='default'){
     Notification.requestPermission();
