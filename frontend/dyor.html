@@ -488,6 +488,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
+      <button class="nbtn" id="mnav" style="display:none;color:#3b82f6" onclick="nav('methodology',this)">METHODOLOGY</button>
       <button class="nbtn" id="anav" style="display:none" style="display:none" onclick="nav('admin',this)">ADMIN</button>
     </div>
     <div class="tright">
@@ -3546,7 +3547,7 @@ function boot(){
   document.getElementById('auth').style.display='none';
   document.getElementById('app').style.display='flex';
   document.getElementById('uname').textContent=me.name;
-  if(me.is_admin)document.getElementById('anav').style.display='block';document.getElementById('mnav').style.display='block';
+  if(me.is_admin){document.getElementById('anav').style.display='block';document.getElementById('mnav').style.display='block';}
   nav('alphaview',document.querySelector('.nbtn'));setTimeout(function(){fetch('/dyor/api/consent/check',{credentials:'include'}).then(function(r){return r.json()}).then(function(d){if(d&&!d.accepted)document.getElementById('consent-overlay').style.display='block'}).catch(function(){})},500);
   // Request browser notification permission
   if('Notification' in window && Notification.permission==='default'){
