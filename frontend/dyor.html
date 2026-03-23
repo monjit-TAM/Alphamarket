@@ -466,7 +466,8 @@ tr:last-child td{border-bottom:none}
     <div class="tlogo">ALPHALAB</div>
     <div class="tdiv"></div>
     <div class="tnav">
-      <button class="nbtn on" onclick="nav('dashboard',this)">DASHBOARD</button>
+      <button class="nbtn on" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700">ALPHAVIEW</button>
+      <button class="nbtn" onclick="nav('dashboard',this)">DASHBOARD</button>
       <button class="nbtn" onclick="nav('screener',this)">SCREENER</button>
       <button class="nbtn" onclick="nav('mtf',this)">MTF COMBINER</button>
       <button class="nbtn" onclick="nav('backtest',this)">BACKTEST</button>
@@ -483,7 +484,6 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('scalping',this)">SCALPING</button>
       <button class="nbtn" onclick="nav('morning_brief',this)" style="color:#e84215;font-weight:700">MORNING BRIEF</button>
       <button class="nbtn" onclick="nav('patterns',this)" style="color:#a855f7;font-weight:700">PATTERNS</button>
-      <button class="nbtn" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700">ALPHAVIEW</button>
       <button class="nbtn" onclick="nav('heatmap_tab',this)" style="color:#22c55e;font-weight:700">HEATMAP</button>
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
@@ -3547,7 +3547,7 @@ function boot(){
   document.getElementById('app').style.display='flex';
   document.getElementById('uname').textContent=me.name;
   if(me.is_admin)document.getElementById('anav').style.display='block';
-  nav('dashboard',document.querySelector('.nbtn'));
+  nav('alphaview',document.querySelector('.nbtn'));checkConsent();
   // Request browser notification permission
   if('Notification' in window && Notification.permission==='default'){
     Notification.requestPermission();
@@ -7923,6 +7923,69 @@ function printMorningBrief(){const c=document.getElementById('mb-content').inner
 const w=window.open('','_blank');w.document.write(`<!DOCTYPE html><html><head><title>${fn||'AlphaLab'} - ${t}</title><style>body{font-family:-apple-system,sans-serif;max-width:900px;margin:20px auto;padding:20px;color:#1a1a2e;font-size:15px;line-height:1.6}table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5;font-weight:700;font-size:13px}.up{color:#00c853}.dn{color:#ef5350}.badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:700}.badge.buy{background:rgba(0,200,83,0.15);color:#00c853}.badge.sell{background:rgba(239,83,80,0.15);color:#ef5350}
     @media print{body{margin:0;padding:10px}@page{margin:12mm}}
   </style></head><body>${c}
+
+<div id="consent-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:99999;overflow-y:auto;padding:20px">
+<div style="max-width:800px;margin:20px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:30px">
+<div style="text-align:center;margin-bottom:20px">
+<div style="font-size:28px;font-weight:900;color:var(--accent,#3b82f6)">PLATFORM DISCLAIMER & TERMS</div>
+<div style="font-size:12px;color:var(--text2,#94a3b8);margin-top:4px">Version 2.0 | Please read carefully before proceeding</div>
+</div>
+<div style="font-size:13px;line-height:1.8;color:var(--text2,#94a3b8);max-height:55vh;overflow-y:auto;padding:16px;background:var(--bg,#0a0e17);border-radius:8px;border:1px solid var(--border,#2a3450)">
+<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin-bottom:12px">WHAT THIS PLATFORM DOES</p>
+<p>AlphaMarket provides <b>analytical tools, data visualization, stock screening, backtesting, and research utilities</b> for the Indian equity and derivatives markets. The platform uses quantitative models and technical/fundamental analysis to generate scores, ratings, signals, and insights.</p>
+<p style="margin-top:12px">Key features include: AlphaView (proprietary stock ratings), Stock Screener (40+ strategies), Backtesting Engine, Forward Testing, Options Lab, Pattern Scanner, DCF Calculator, F&O Scanners (Arbitrage, Jobbing, Scalping), Model Portfolios, Sector Analysis, and AI-powered research assistant (Ariv).</p>
+
+<p style="color:#ef4444;font-weight:700;font-size:15px;margin:20px 0 12px">WHAT THIS PLATFORM CANNOT DO & LIMITATIONS</p>
+<p><b>1. NOT Investment Advice:</b> Nothing on this platform constitutes personalized investment advice, a recommendation to buy/sell any security, or a solicitation of any transaction. All outputs — including Alpha Ratings, Assessment Scores, BUY/SELL signals, pattern detections, DCF valuations, and screener results — are <b>analytical outputs of quantitative models</b>, NOT personal recommendations.</p>
+<p><b>2. NOT a Guarantee of Returns:</b> Past performance shown in backtests, historical ratings, and pattern detection does NOT guarantee future results. Markets are inherently unpredictable. Strategies that performed well historically may fail in future market conditions.</p>
+<p><b>3. Model Limitations:</b> All scoring models (Alpha Ratings, Assessment Scores, Pattern Scanner, Sentiment Analysis) are <b>quantitative approximations</b>. They CANNOT capture qualitative factors such as management quality, corporate governance nuances, regulatory changes, geopolitical events, insider information, or sudden market shocks.</p>
+<p><b>4. Sentiment Analysis Limitations:</b> The Sentiment Rating uses keyword-based analysis of news headlines, NOT AI-powered natural language understanding. It may misinterpret sarcasm, context, nuanced language, or miss important developments not covered in headlines.</p>
+<p><b>5. Data May Be Delayed or Inaccurate:</b> While we strive for accuracy, data is sourced from third-party providers and may contain errors, delays, gaps, or stale information. Users MUST verify critical data from primary exchange sources (NSE/BSE) before making any trading or investment decisions.</p>
+<p><b>6. F&O Risk:</b> Futures and Options trading involves <b>substantial risk of loss</b> and is NOT suitable for all investors. Leverage amplifies both gains AND losses. Options can expire worthless (100% loss). The F&O scanner projections (daily P&L, win rates) are THEORETICAL and assume ideal execution conditions.</p>
+<p><b>7. No Liability:</b> AlphaMarket, its founders, employees, and affiliates shall NOT be liable for any losses, damages, or costs incurred as a result of using this platform or acting on any information provided herein.</p>
+
+<p style="color:#f59e0b;font-weight:700;font-size:15px;margin:20px 0 12px">USER OBLIGATIONS & DUE DILIGENCE</p>
+<p><b>1.</b> You are SOLELY responsible for your investment and trading decisions. Do NOT treat any signal, score, or rating on this platform as a direct buy/sell instruction.</p>
+<p><b>2.</b> Always perform your own <b>independent due diligence</b> — read company annual reports, check regulatory filings, verify data from primary sources, and consider your personal financial situation, risk tolerance, and investment objectives.</p>
+<p><b>3.</b> Consult a <b>SEBI-registered Investment Advisor (RIA)</b> or qualified financial professional before making investment decisions, especially for F&O trading.</p>
+<p><b>4.</b> Never invest or trade with money you cannot afford to lose.</p>
+<p><b>5.</b> The methodology document describing all calculations and rationale is available upon request to the platform administrator.</p>
+
+<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin:20px 0 12px">REGULATORY COMPLIANCE</p>
+<p>This platform is operated in compliance with SEBI (Research Analysts) Regulations, 2014 and SEBI (Investment Advisers) Regulations, 2013. Complete methodology disclosure is maintained and available for regulatory review.</p>
+</div>
+
+<div style="margin-top:20px;padding:16px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px">
+<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+<input type="checkbox" id="consent-check" style="margin-top:3px;width:18px;height:18px;accent-color:#3b82f6">
+<span style="font-size:13px;color:var(--text1,#e2e8f0)">I have read, understood, and agree to the above terms. I understand that this platform provides analytical tools only and does NOT provide investment advice. I will perform my own due diligence before making any investment or trading decisions.</span>
+</label>
+</div>
+
+<div style="display:flex;gap:12px;margin-top:16px;justify-content:center">
+<button id="consent-accept-btn" disabled onclick="acceptConsent()" style="padding:12px 40px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:not-allowed;opacity:0.5">I ACCEPT & CONTINUE</button>
+<button onclick="window.location.href='/'" style="padding:12px 24px;background:transparent;color:var(--text2,#94a3b8);border:1px solid var(--border,#2a3450);border-radius:8px;font-size:13px;cursor:pointer">DECLINE & EXIT</button>
+</div>
+<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--text3,#64748b)">Your acceptance will be recorded with timestamp and IP address for regulatory compliance.</div>
+</div>
+</div>
+<script>
+document.getElementById('consent-check').addEventListener('change',function(){
+  var btn=document.getElementById('consent-accept-btn');
+  btn.disabled=!this.checked;btn.style.opacity=this.checked?'1':'0.5';btn.style.cursor=this.checked?'pointer':'not-allowed';
+});
+function checkConsent(){
+  fetch('/dyor/api/consent/check',{credentials:'include'}).then(r=>r.json()).then(d=>{
+    if(!d.accepted)document.getElementById('consent-overlay').style.display='block';
+  }).catch(()=>{});
+}
+function acceptConsent(){
+  fetch('/dyor/api/consent/accept',{method:'POST',credentials:'include'}).then(r=>r.json()).then(d=>{
+    if(d.status==='accepted')document.getElementById('consent-overlay').style.display='none';
+  });
+}
+</script>
+
 </body></html>`);
 w.document.close();
 setTimeout(()=>w.print(),500);
@@ -8298,7 +8361,7 @@ function copyMorningBrief(){
       {keys:['thank','thanks','thank you','great','awesome','helpful','good','perfect'],r:`Happy to help! 😊 That's what I'm here for. Feel free to ask anything else — whether it's about a specific stock, strategy, or feature. I'm always around!`},
       {keys:['hi','hello','hey','yo','sup','good morning','good evening','good afternoon','namaste'],r:`Namaste! 🙏 I'm <b>Ariv</b>, your AlphaLab research assistant.\n\nI can help with:\n• <b>Stock & options queries</b> — what to buy, when to sell, put/call guidance\n• <b>Strategy selection</b> — the right approach for your market view\n• <b>Portfolio advice</b> — review holdings, diversification, rebalancing\n• <b>Platform features</b> — screener, backtest, options lab, and more\n\nWhat's on your mind today?`,chips:['What should I buy?','Options guidance','Review my portfolio','Getting started']},
       {keys:['alphaview','alpha view','stock profile','stock analysis','analyze stock','complete profile'],
-       r:`<b>AlphaView</b> is your one-stop stock analysis dashboard! 🎯\n\nIt shows everything in a single screen:\n• <b>Price Chart</b> with SMA 20/50/200 overlays\n• <b>Alpha Ratings</b> (0-99) — Composite, EPS Strength, RS Rating, Volume Accumulation\n• <b>Assessment</b> — Value, Growth & Quality scores\n• <b>Technicals</b> — RSI, MACD, ADX, Stochastic, Supertrend, ATR\n• <b>Fundamentals</b> — P/E, ROE, D/E, margins, promoter holding\n• <b>Patterns</b> — Double Bottom, Head & Shoulders, RSI Divergence\n• <b>RS vs NIFTY</b> — how the stock performs relative to the index\n• <b>Pivot Levels</b> — S2/S1/Pivot/R1/R2\n• <b>Technical Narrative</b> — AI-generated analysis summary\n\n<b>How to use:</b> Go to ALPHAVIEW tab → Enter symbol → Click ANALYZE`,chips:['Value score?','Alpha ratings?','What is RS Rating?','How to read patterns?']},
+       r:`<b>AlphaView</b> is your one-stop stock analysis dashboard! 🎯\n\nIt shows everything in a single screen:\n• <b>Price Chart</b> with SMA 20/50/200 overlays\n• <b>Alpha Ratings</b> (0-99) — Alpha Score, Momentum, Fundamentals, Accumulation, Trend, Sentiment\n• <b>Assessment</b> — Value, Growth & Quality scores\n• <b>Technicals</b> — RSI, MACD, ADX, Stochastic, Supertrend, ATR\n• <b>Fundamentals</b> — P/E, ROE, D/E, margins, promoter holding\n• <b>Patterns</b> — Double Bottom, Head & Shoulders, RSI Divergence\n• <b>RS vs NIFTY</b> — how the stock performs relative to the index\n• <b>Pivot Levels</b> — S2/S1/Pivot/R1/R2\n• <b>Technical Narrative</b> — AI-generated analysis summary\n\n<b>How to use:</b> Go to ALPHAVIEW tab → Enter symbol → Click ANALYZE`,chips:['Value score?','Alpha ratings?','What is RS Rating?','How to read patterns?']},
 
       {keys:['value score','value analysis','undervalued','expensive stock','is it cheap','pe ratio meaning','value investing'],
        r:`<b>Value Score (0-100)</b> measures how attractively priced a stock is:\n\n<b>Scoring Breakdown:</b>\n• P/E < 15: +30 pts | P/E 15-25: +15 pts\n• P/B < 2: +25 pts | P/B 2-4: +10 pts\n• Dividend Yield > 2%: +20 pts\n• Debt/Equity < 50: +15 pts | < 100: +5 pts\n• Profit Margin > 15%: +10 pts\n\n<b>Verdicts:</b>\n🟢 70+ = STRONG VALUE\n🟡 40-69 = VALUE\n🟠 20-39 = FAIRLY PRICED\n🔴 < 20 = EXPENSIVE\n\nA high value score suggests the stock is attractively priced relative to its fundamentals.`,chips:['Growth score?','Quality score?','Open AlphaView']},
@@ -8310,7 +8373,7 @@ function copyMorningBrief(){
        r:`<b>Quality Score (0-100)</b> measures business quality and stability:\n\n<b>Scoring Breakdown:</b>\n• ROE > 15%: +25 pts\n• Profit Margin > 15%: +20 pts\n• Debt/Equity < 30: +20 | < 80: +10\n• Operating Margin > 15%: +15 pts\n• Volume Ratio < 2: +10 pts (not erratic)\n• ADX > 20: +10 pts (clear trend)\n\n<b>Verdicts:</b>\n🟢 70+ = HIGH QUALITY\n🟡 40-69 = QUALITY\n🟠 20-39 = AVERAGE\n🔴 < 20 = WEAK\n\nHigh quality stocks have strong profitability, low debt, and consistent trends.`,chips:['Value score?','Growth score?','Open AlphaView']},
 
       {keys:['alpha ratings','composite rating','eps strength','rs rating','volume accumulation','alpha score'],
-       r:`<b>Alpha Ratings (0-99 scale)</b> are inspired by O'Neil's CANSLIM methodology:\n\n📊 <b>Composite</b> — Weighted blend of all ratings (30% EPS + 30% RS + 20% Vol + 20% RSI)\n\n💰 <b>EPS Strength</b> — Based on earnings growth rate. Higher = stronger earnings momentum\n\n📈 <b>RS Rating</b> — Relative Strength vs NIFTY. Measures how the stock outperforms the index over 1-3 months\n\n📦 <b>Vol Accumulation</b> — Tracks volume on up-days vs down-days. High = institutional buying\n\n<b>Reading the ratings:</b>\n🟢 70+ = Strong\n🟡 40-69 = Average\n🔴 < 40 = Weak\n\nA stock with all ratings above 70 is showing strong momentum across all dimensions.`,chips:['What is AlphaView?','Value score?','Patterns?']},
+       r:`<b>Alpha Ratings (0-99 scale)</b> are AlphaMarket\u2019s proprietary scoring system:\n\n\ud83c\udfaf <b>Alpha Score</b> \u2014 Composite: 25% Momentum + 25% Fundamentals + 20% Accumulation + 15% Trend + 15% Sentiment\n\n\u26a1 <b>Momentum</b> \u2014 RS vs NIFTY (30%), Price vs 200 DMA (20%), RSI zone (20%), MACD (15%), EMA cross (15%)\n\n\ud83d\udcca <b>Fundamentals</b> \u2014 Earnings growth (25%), ROE (25%), Profit margin (20%), Debt health (15%), Revenue growth (15%)\n\n\ud83c\udfe6 <b>Accumulation</b> \u2014 Up-day volume (40%), Volume ratio (30%), OBV trend (30%). High = institutional buying\n\n\ud83d\udcc8 <b>Trend</b> \u2014 SMA alignment (30%), ADX (25%), Supertrend (20%), Stochastic (15%), BB width (10%)\n\n\ud83d\udcf0 <b>Sentiment</b> \u2014 News headline analysis with keyword scoring. Recency weighted. 50 = neutral\n\n<b>Reading:</b>\n\ud83d\udfe2 70+ = Strong\n\ud83d\udfe1 40-69 = Neutral\n\ud83d\udd34 < 40 = Weak`,chips:['What is AlphaView?','Value score?','Patterns?']},
 
       {keys:['relative strength','rs vs nifty','outperforming','underperforming','nifty comparison','stock vs nifty','beat nifty','beat index'],
        r:`<b>Relative Strength (RS) vs NIFTY</b> shows how a stock performs compared to the NIFTY index:\n\n• <b>Positive RS</b> = stock is outperforming NIFTY 🟢\n• <b>Negative RS</b> = stock is underperforming NIFTY 🔴\n\nWe track RS across 4 timeframes: 1M, 3M, 6M, 1Y\n\n<b>Why it matters:</b>\nStocks with consistently positive RS tend to continue outperforming. Look for stocks where RS is positive across multiple timeframes — they show persistent relative strength.\n\n<b>RS Rating (0-99)</b> in Alpha Ratings uses this data: RS Rating = 50 + (3M RS × 2) + (1M RS)`,chips:['Alpha ratings?','How to use AlphaView?','Patterns?']},
@@ -10043,6 +10106,69 @@ function renderAV(d){
   }
 }
 document.addEventListener('DOMContentLoaded',function(){var i=document.getElementById('av-sym');if(i)i.addEventListener('keydown',function(e){if(e.key==='Enter')loadAlphaView();});});
+</script>
+
+
+<div id="consent-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:99999;overflow-y:auto;padding:20px">
+<div style="max-width:800px;margin:20px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:30px">
+<div style="text-align:center;margin-bottom:20px">
+<div style="font-size:28px;font-weight:900;color:var(--accent,#3b82f6)">PLATFORM DISCLAIMER & TERMS</div>
+<div style="font-size:12px;color:var(--text2,#94a3b8);margin-top:4px">Version 2.0 | Please read carefully before proceeding</div>
+</div>
+<div style="font-size:13px;line-height:1.8;color:var(--text2,#94a3b8);max-height:55vh;overflow-y:auto;padding:16px;background:var(--bg,#0a0e17);border-radius:8px;border:1px solid var(--border,#2a3450)">
+<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin-bottom:12px">WHAT THIS PLATFORM DOES</p>
+<p>AlphaMarket provides <b>analytical tools, data visualization, stock screening, backtesting, and research utilities</b> for the Indian equity and derivatives markets. The platform uses quantitative models and technical/fundamental analysis to generate scores, ratings, signals, and insights.</p>
+<p style="margin-top:12px">Key features include: AlphaView (proprietary stock ratings), Stock Screener (40+ strategies), Backtesting Engine, Forward Testing, Options Lab, Pattern Scanner, DCF Calculator, F&O Scanners (Arbitrage, Jobbing, Scalping), Model Portfolios, Sector Analysis, and AI-powered research assistant (Ariv).</p>
+
+<p style="color:#ef4444;font-weight:700;font-size:15px;margin:20px 0 12px">WHAT THIS PLATFORM CANNOT DO & LIMITATIONS</p>
+<p><b>1. NOT Investment Advice:</b> Nothing on this platform constitutes personalized investment advice, a recommendation to buy/sell any security, or a solicitation of any transaction. All outputs — including Alpha Ratings, Assessment Scores, BUY/SELL signals, pattern detections, DCF valuations, and screener results — are <b>analytical outputs of quantitative models</b>, NOT personal recommendations.</p>
+<p><b>2. NOT a Guarantee of Returns:</b> Past performance shown in backtests, historical ratings, and pattern detection does NOT guarantee future results. Markets are inherently unpredictable. Strategies that performed well historically may fail in future market conditions.</p>
+<p><b>3. Model Limitations:</b> All scoring models (Alpha Ratings, Assessment Scores, Pattern Scanner, Sentiment Analysis) are <b>quantitative approximations</b>. They CANNOT capture qualitative factors such as management quality, corporate governance nuances, regulatory changes, geopolitical events, insider information, or sudden market shocks.</p>
+<p><b>4. Sentiment Analysis Limitations:</b> The Sentiment Rating uses keyword-based analysis of news headlines, NOT AI-powered natural language understanding. It may misinterpret sarcasm, context, nuanced language, or miss important developments not covered in headlines.</p>
+<p><b>5. Data May Be Delayed or Inaccurate:</b> While we strive for accuracy, data is sourced from third-party providers and may contain errors, delays, gaps, or stale information. Users MUST verify critical data from primary exchange sources (NSE/BSE) before making any trading or investment decisions.</p>
+<p><b>6. F&O Risk:</b> Futures and Options trading involves <b>substantial risk of loss</b> and is NOT suitable for all investors. Leverage amplifies both gains AND losses. Options can expire worthless (100% loss). The F&O scanner projections (daily P&L, win rates) are THEORETICAL and assume ideal execution conditions.</p>
+<p><b>7. No Liability:</b> AlphaMarket, its founders, employees, and affiliates shall NOT be liable for any losses, damages, or costs incurred as a result of using this platform or acting on any information provided herein.</p>
+
+<p style="color:#f59e0b;font-weight:700;font-size:15px;margin:20px 0 12px">USER OBLIGATIONS & DUE DILIGENCE</p>
+<p><b>1.</b> You are SOLELY responsible for your investment and trading decisions. Do NOT treat any signal, score, or rating on this platform as a direct buy/sell instruction.</p>
+<p><b>2.</b> Always perform your own <b>independent due diligence</b> — read company annual reports, check regulatory filings, verify data from primary sources, and consider your personal financial situation, risk tolerance, and investment objectives.</p>
+<p><b>3.</b> Consult a <b>SEBI-registered Investment Advisor (RIA)</b> or qualified financial professional before making investment decisions, especially for F&O trading.</p>
+<p><b>4.</b> Never invest or trade with money you cannot afford to lose.</p>
+<p><b>5.</b> The methodology document describing all calculations and rationale is available upon request to the platform administrator.</p>
+
+<p style="color:var(--text1,#e2e8f0);font-weight:700;font-size:15px;margin:20px 0 12px">REGULATORY COMPLIANCE</p>
+<p>This platform is operated in compliance with SEBI (Research Analysts) Regulations, 2014 and SEBI (Investment Advisers) Regulations, 2013. Complete methodology disclosure is maintained and available for regulatory review.</p>
+</div>
+
+<div style="margin-top:20px;padding:16px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px">
+<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+<input type="checkbox" id="consent-check" style="margin-top:3px;width:18px;height:18px;accent-color:#3b82f6">
+<span style="font-size:13px;color:var(--text1,#e2e8f0)">I have read, understood, and agree to the above terms. I understand that this platform provides analytical tools only and does NOT provide investment advice. I will perform my own due diligence before making any investment or trading decisions.</span>
+</label>
+</div>
+
+<div style="display:flex;gap:12px;margin-top:16px;justify-content:center">
+<button id="consent-accept-btn" disabled onclick="acceptConsent()" style="padding:12px 40px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:not-allowed;opacity:0.5">I ACCEPT & CONTINUE</button>
+<button onclick="window.location.href='/'" style="padding:12px 24px;background:transparent;color:var(--text2,#94a3b8);border:1px solid var(--border,#2a3450);border-radius:8px;font-size:13px;cursor:pointer">DECLINE & EXIT</button>
+</div>
+<div style="text-align:center;margin-top:12px;font-size:11px;color:var(--text3,#64748b)">Your acceptance will be recorded with timestamp and IP address for regulatory compliance.</div>
+</div>
+</div>
+<script>
+document.getElementById('consent-check').addEventListener('change',function(){
+  var btn=document.getElementById('consent-accept-btn');
+  btn.disabled=!this.checked;btn.style.opacity=this.checked?'1':'0.5';btn.style.cursor=this.checked?'pointer':'not-allowed';
+});
+function checkConsent(){
+  fetch('/dyor/api/consent/check',{credentials:'include'}).then(r=>r.json()).then(d=>{
+    if(!d.accepted)document.getElementById('consent-overlay').style.display='block';
+  }).catch(()=>{});
+}
+function acceptConsent(){
+  fetch('/dyor/api/consent/accept',{method:'POST',credentials:'include'}).then(r=>r.json()).then(d=>{
+    if(d.status==='accepted')document.getElementById('consent-overlay').style.display='none';
+  });
+}
 </script>
 
 </body></html>
