@@ -1723,6 +1723,23 @@ async def list_consents(user=Depends(get_admin_user)):
         """)
         return {"consents": [dict(r) for r in rows], "total": len(rows)}
 
+@app.get("/api/methodology", tags=["Admin"], summary="View methodology document",
+    description="Serves the SEBI-compliant methodology document. Admin has full access. Users need approved request.")
+async def view_methodology(user=Depends(get_current_user)):
+    from fastapi.responses import HTMLResponse
+    is_admin = user.get("role") == "admin" or user.get("name") == "admin" or user.get("username") == "admin" or user.get("email") == "admin@alphamarket.com"
+    if not is_admin:
+        async with db_pool.acquire() as conn:
+            approved = await conn.fetchrow(
+                "SELECT * FROM methodology_access_requests WHERE user_id=$1 AND status='approved'", user["id"])
+            if not approved:
+                raise HTTPException(403, "Access denied. Please request access from the administrator.")
+    try:
+        with open("/var/www/methodology.html", "r") as f:
+            return HTMLResponse(content=f.read())
+    except:
+        raise HTTPException(404, "Methodology document not available")
+
 @app.post("/api/methodology/request-access", tags=["Authentication"], summary="Request methodology document access",
     description="Submit a request to view the full methodology document. Admin will review and grant access.")
 async def request_methodology_access(user=Depends(get_current_user)):
