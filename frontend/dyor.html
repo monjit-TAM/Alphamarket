@@ -488,6 +488,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
+      <button class="nbtn" id="mnav" style="display:none;color:#3b82f6" onclick="loadMethodology()">METHODOLOGY</button>
       <button class="nbtn" id="anav" style="display:none" style="display:none" onclick="nav('admin',this)">ADMIN</button>
     </div>
     <div class="tright">
@@ -3546,7 +3547,7 @@ function boot(){
   document.getElementById('auth').style.display='none';
   document.getElementById('app').style.display='flex';
   document.getElementById('uname').textContent=me.name;
-  if(me.is_admin)document.getElementById('anav').style.display='block';
+  if(me.is_admin){document.getElementById('anav').style.display='block';document.getElementById('mnav').style.display='block';}
   nav('alphaview',document.querySelector('.nbtn'));setTimeout(function(){fetch('/dyor/api/consent/check',{credentials:'include'}).then(function(r){return r.json()}).then(function(d){if(d&&!d.accepted)document.getElementById('consent-overlay').style.display='block'}).catch(function(){})},500);
   // Request browser notification permission
   if('Notification' in window && Notification.permission==='default'){
@@ -10063,7 +10064,7 @@ document.addEventListener('DOMContentLoaded',function(){var i=document.getElemen
 <p style="color:var(--accent,#3b82f6);font-weight:700;font-size:15px;margin:20px 0 12px">METHODOLOGY DISCLOSURE</p>
 <p>AlphaMarket maintains a comprehensive <b>Methodology & Disclosure Document</b> that explains in detail how every calculation, rating, score, signal, and metric on this platform is computed — including Alpha Ratings, Assessment Scores, Screener Strategies, Backtesting, DCF Valuation, Pattern Detection, F&O Scanners, and all other features.</p>
 <p style="margin-top:8px"><b>You are required to understand the methodology</b> behind the calculations used on this platform before relying on any output for decision-making. The methodology document is available upon request to the administrator.</p>
-<p style="margin-top:8px"><a href="/dyor/api/methodology" target="_blank" style="color:#3b82f6;text-decoration:underline;font-weight:700">View Full Methodology Document</a> <span style="font-size:11px;color:var(--text3,#64748b)">(Admin access or approved request required)</span></p>
+<p style="margin-top:8px"><a href="javascript:void(0)" onclick="loadMethodology()" style="color:#3b82f6;text-decoration:underline;font-weight:700">Read Full Methodology Document</a> <span style="font-size:11px;color:var(--text3,#64748b)">(Required reading before accepting)</span></p>
 </div>
 <div style="margin-top:20px;padding:16px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px">
 <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
@@ -10077,5 +10078,22 @@ document.addEventListener('DOMContentLoaded',function(){var i=document.getElemen
 </div>
 </div>
 </div>
+
+<script>
+function loadMethodology(){
+  fetch('/dyor/api/methodology',{credentials:'include'}).then(function(r){
+    if(!r.ok)throw new Error('Could not load');return r.text();
+  }).then(function(html){
+    var existing=document.getElementById('meth-overlay');if(existing)existing.remove();
+    var overlay=document.createElement('div');overlay.id='meth-overlay';
+    overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:99998;overflow-y:auto;padding:20px';
+    overlay.oncontextmenu=function(e){e.preventDefault();return false;};
+    overlay.oncopy=function(e){e.preventDefault();return false;};
+    overlay.onselectstart=function(e){e.preventDefault();return false;};
+    overlay.innerHTML='<div style="max-width:960px;margin:0 auto;position:relative;user-select:none;-webkit-user-select:none"><button onclick="document.getElementById(\'meth-overlay\').remove()" style="position:fixed;top:20px;right:30px;z-index:99999;background:#3b82f6;color:white;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer;font-size:14px">CLOSE</button><div style="user-select:none;-webkit-user-select:none">'+html+'</div></div>';
+    document.body.appendChild(overlay);
+  }).catch(function(e){alert('Could not load methodology document. Please try again.');});
+}
+</script>
 
 </body></html>
