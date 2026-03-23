@@ -3546,7 +3546,7 @@ function boot(){
   document.getElementById('auth').style.display='none';
   document.getElementById('app').style.display='flex';
   document.getElementById('uname').textContent=me.name;
-  if(me.is_admin)document.getElementById('anav').style.display='block';
+  if(me.is_admin)document.getElementById('anav').style.display='block';document.getElementById('mnav').style.display='block';
   nav('alphaview',document.querySelector('.nbtn'));setTimeout(function(){fetch('/dyor/api/consent/check',{credentials:'include'}).then(function(r){return r.json()}).then(function(d){if(d&&!d.accepted)document.getElementById('consent-overlay').style.display='block'}).catch(function(){})},500);
   // Request browser notification permission
   if('Notification' in window && Notification.permission==='default'){
