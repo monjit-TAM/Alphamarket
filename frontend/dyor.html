@@ -9839,6 +9839,7 @@ async function loadAlphaView(sym){
 }
 function showVGQInfo(type){
   var info={
+    RATINGS:'<b>Alpha Ratings (0-99 scale)</b><br><br>Inspired by O\'Neil\'s CANSLIM methodology:<br><br><b>Composite:</b> Weighted blend<br>30% EPS + 30% RS + 20% Vol + 20% RSI<br><br><b>EPS Strength:</b> Based on earnings growth rate. Higher = stronger earnings momentum<br><br><b>RS Rating:</b> Relative Strength vs NIFTY<br>50 + (3M RS x 2) + (1M RS)<br><br><b>Vol Accumulation:</b> Volume on up-days vs down-days. High = institutional buying<br><br><b>Reading:</b><br>\u{1f7e2} 70+ = Strong<br>\u{1f7e1} 40-69 = Average<br>\u{1f534} &lt; 40 = Weak',
     VALUE:'<b>Value Score (0-100)</b><br><br>'+
       '<b>P/E &lt; 15:</b> +20 pts<br><b>P/E 15-25:</b> +10 pts<br>'+
       '<b>P/B &lt; 2:</b> +15 pts<br><b>P/B 2-4:</b> +8 pts<br>'+
@@ -9889,7 +9890,7 @@ function renderAV(d){
   h+='<div id="av-chart-wrap" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px"><div id="av-chart" style="width:100%;height:280px"></div></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
   h+='<div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:10px">';
-  h+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:700;color:var(--accent)">ALPHA RATINGS</div><div style="font-size:13px;font-weight:800;color:'+trendC+'">'+r.trend+'</div></div>';
+  h+='<div style="display:flex;justify-content:space-between;margin-bottom:6px"><div style="font-size:13px;font-weight:700;color:var(--accent)">ALPHA RATINGS <span onclick="showVGQInfo(\'RATINGS\')" style="cursor:pointer;font-size:12px">\u24d8</span></div><div style="font-size:13px;font-weight:800;color:'+trendC+'">'+r.trend+'</div></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 12px">';
   h+=rBar('Composite',r.composite,rC(r.composite));h+=rBar('EPS Strength',r.eps_strength,rC(r.eps_strength));
   h+=rBar('RS Rating',r.rs_rating,rC(r.rs_rating));h+=rBar('Vol Accum',r.vol_accumulation,rC(r.vol_accumulation));
