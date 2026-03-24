@@ -233,7 +233,7 @@ async def init_db():
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS backtests (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 name TEXT NOT NULL, strategy TEXT NOT NULL, symbol TEXT NOT NULL,
                 from_date TEXT NOT NULL, to_date TEXT NOT NULL,
                 initial_capital FLOAT DEFAULT 100000, params JSONB DEFAULT '{}',
@@ -260,7 +260,7 @@ async def init_db():
                 reviewed_by INT
             );
             CREATE TABLE IF NOT EXISTS paper_trades (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 symbol TEXT NOT NULL, trade_type TEXT NOT NULL, quantity INT NOT NULL,
                 entry_price FLOAT NOT NULL, exit_price FLOAT, stop_loss FLOAT, target FLOAT,
                 status TEXT DEFAULT 'open', pnl FLOAT, created_at TIMESTAMP DEFAULT NOW(), closed_at TIMESTAMP
@@ -268,7 +268,7 @@ async def init_db():
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS watchlists (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 symbols TEXT[] DEFAULT '{}', updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
@@ -289,7 +289,7 @@ async def init_db():
         # Forward Testing tables
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS forward_tests (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 name TEXT NOT NULL, strategy TEXT NOT NULL, symbols TEXT[] NOT NULL,
                 params JSONB DEFAULT '{}', initial_capital FLOAT DEFAULT 100000,
                 current_capital FLOAT DEFAULT 100000, status TEXT DEFAULT 'active',
@@ -341,7 +341,7 @@ async def init_db():
         # Model Portfolios
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS model_portfolios (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 name TEXT NOT NULL, description TEXT DEFAULT '',
                 portfolio_type TEXT DEFAULT 'custom',
                 screener_strategy TEXT, backtest_strategy TEXT, forward_strategy TEXT,
@@ -378,7 +378,7 @@ async def init_db():
         # Advisory reports for SEBI-registered advisors
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS advisory_reports (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 title TEXT NOT NULL, report_type TEXT DEFAULT 'screener',
                 advisor_name TEXT DEFAULT '', ria_reg_no TEXT DEFAULT '',
                 disclaimer TEXT DEFAULT '',
@@ -389,7 +389,7 @@ async def init_db():
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS advisory_recommendations (
                 id SERIAL PRIMARY KEY, report_id INT REFERENCES advisory_reports(id) ON DELETE CASCADE,
-                user_id INT REFERENCES users(id),
+                user_id VARCHAR NOT NULL,
                 symbol TEXT NOT NULL, call_type TEXT NOT NULL,
                 entry_price FLOAT, target_price FLOAT, stop_loss FLOAT,
                 time_horizon TEXT DEFAULT 'short_term',
@@ -402,7 +402,7 @@ async def init_db():
         # ── Alerts & Notifications ──
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 name TEXT NOT NULL,
                 alert_type TEXT NOT NULL,
                 entity_type TEXT NOT NULL,
@@ -417,7 +417,7 @@ async def init_db():
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS notifications (
-                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
+                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 alert_id INT REFERENCES alerts(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
                 message TEXT NOT NULL,
@@ -6139,7 +6139,7 @@ def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str):
     story.append(Paragraph("<b>IMPORTANT DISCLAIMER</b>", styles['RLabel']))
     story.append(Paragraph(_sanitize_for_pdf(disclaimer), styles['RDisc']))
     story.append(Spacer(1, 6))
-    story.append(Paragraph(f"Report ID: {report.get('id','')} | Generated: {date_str} | AlphaLab - testalpha.in", styles['RDisc']))
+    story.append(Paragraph(f"Report ID: {report.get('id','')} | Generated: {date_str} | AlphaLab - alphamarket.co.in", styles['RDisc']))
 
     doc.build(story)
     return output_path
