@@ -4472,7 +4472,128 @@ export async function registerRoutes(
   });
 
 
-    // ─── Admin: Bank & Payment Management ────────────────────────
+    
+  // ─── External API: DYOR → AlphaMarket Bridge ────────────────────────
+  // API-key authenticated endpoints for cross-platform integration
+
+  const DYOR_API_KEY = "dyor_bridge_2026_alphamarket";
+
+  function requireDyorApiKey(req: any, res: any, next: any) {
+    const key = req.headers["x-dyor-api-key"] || req.query.api_key;
+    if (key !== DYOR_API_KEY) return res.status(401).json({ error: "Invalid API key" });
+    next();
+  }
+
+  // Get advisor's strategies (for DYOR strategy selector)
+  app.get("/api/external/advisor-strategies", requireDyorApiKey, async (req: any, res: any) => {
+    try {
+      const email = req.query.email;
+      if (!email) return res.status(400).json({ error: "email required" });
+      const userResult = await db.execute(sql`SELECT id, username, company_name FROM users WHERE email = ${email} AND role = 'advisor'`);
+      const user = ((userResult as any).rows || [])[0];
+      if (!user) return res.status(404).json({ error: "Advisor not found" });
+      const strats = await db.execute(sql`SELECT id, name, type, status, horizon FROM strategies WHERE advisor_id = ${user.id}`);
+      res.json({
+        advisor_id: user.id,
+        advisor_name: user.username || user.company_name,
+        strategies: ((strats as any).rows || []),
+      });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Publish a stock call from DYOR
+  app.post("/api/external/publish-call", requireDyorApiKey, async (req: any, res: any) => {
+    try {
+      const { advisor_email, strategy_id, stock_name, action, buy_range_start, buy_range_end,
+              target_price, stop_loss, rationale, profit_goal, publish_mode } = req.body;
+      if (!advisor_email || !strategy_id || !stock_name || !action) {
+        return res.status(400).json({ error: "advisor_email, strategy_id, stock_name, action required" });
+      }
+      // Verify advisor owns the strategy
+      const userResult = await db.execute(sql`SELECT id FROM users WHERE email = ${advisor_email} AND role = 'advisor'`);
+      const user = ((userResult as any).rows || [])[0];
+      if (!user) return res.status(404).json({ error: "Advisor not found" });
+      const stratResult = await db.execute(sql`SELECT id, advisor_id FROM strategies WHERE id = ${strategy_id}`);
+      const strat = ((stratResult as any).rows || [])[0];
+      if (!strat || strat.advisor_id !== user.id) return res.status(403).json({ error: "Strategy does not belong to this advisor" });
+
+      const mode = publish_mode || "live";
+      const isPublished = mode === "live";
+      const c = await storage.createCall({
+        strategyId: strategy_id,
+        stockName: stock_name,
+        action: action,
+        buyRangeStart: buy_range_start || null,
+        buyRangeEnd: buy_range_end || null,
+        targetPrice: target_price || null,
+        stopLoss: stop_loss || null,
+        rationale: rationale || "Published from DYOR Research Platform",
+        profitGoal: profit_goal || null,
+        publishMode: mode,
+        isPublished: isPublished,
+        source: "dyor",
+      });
+
+      if (isPublished) {
+        const strategy = await storage.getStrategy(strategy_id);
+        if (strategy) {
+          const subPayload = buildNewCallSubscriberNotification(c, strategy.name);
+          notifyStrategySubscribers(strategy_id, strategy.name, "new_call", subPayload);
+        }
+      }
+      res.json({ success: true, call_id: c.id, published: isPublished, source: "dyor" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Publish an F&O position from DYOR
+  app.post("/api/external/publish-position", requireDyorApiKey, async (req: any, res: any) => {
+    try {
+      const { advisor_email, strategy_id, symbol, segment, call_put, buy_sell,
+              entry_price, target, stop_loss, lots, expiry, strike_price,
+              rationale, publish_mode } = req.body;
+      if (!advisor_email || !strategy_id || !symbol || !segment) {
+        return res.status(400).json({ error: "advisor_email, strategy_id, symbol, segment required" });
+      }
+      const userResult = await db.execute(sql`SELECT id FROM users WHERE email = ${advisor_email} AND role = 'advisor'`);
+      const user = ((userResult as any).rows || [])[0];
+      if (!user) return res.status(404).json({ error: "Advisor not found" });
+      const stratResult = await db.execute(sql`SELECT id, advisor_id FROM strategies WHERE id = ${strategy_id}`);
+      const strat = ((stratResult as any).rows || [])[0];
+      if (!strat || strat.advisor_id !== user.id) return res.status(403).json({ error: "Strategy does not belong to this advisor" });
+
+      const mode = publish_mode || "live";
+      const isPublished = mode === "live" || mode === "watchlist";
+      const p = await storage.createPosition({
+        strategyId: strategy_id,
+        symbol: symbol,
+        segment: segment || "EQ",
+        callPut: call_put || null,
+        buySell: buy_sell || "BUY",
+        entryPrice: entry_price || null,
+        target: target || null,
+        stopLoss: stop_loss || null,
+        lots: lots || 1,
+        expiry: expiry || null,
+        strikePrice: strike_price || null,
+        rationale: rationale || "Published from DYOR Research Platform",
+        publishMode: mode,
+        isPublished: isPublished,
+        source: "dyor",
+      });
+
+      if (isPublished) {
+        const strategy = await storage.getStrategy(strategy_id);
+        if (strategy) {
+          const subPayload = buildNewPositionSubscriberNotification(p, strategy.name);
+          notifyStrategySubscribers(strategy_id, strategy.name, "new_position", subPayload);
+        }
+      }
+      res.json({ success: true, position_id: p.id, published: isPublished, source: "dyor" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+
+  // ─── Admin: Bank & Payment Management ────────────────────────
 
   // Admin: View advisor bank details
   app.get("/api/admin/advisor/:id/bank-details", requireAdmin, async (req: any, res: any) => {
