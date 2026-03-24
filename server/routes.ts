@@ -4303,7 +4303,176 @@ export async function registerRoutes(
   });
 
 
-  // ─── Admin: Bank & Payment Management ────────────────────────
+  // ─── Admin: Per-Advisor Breakup Dashboard ────────────────────────
+  app.get("/api/admin/advisor-breakup", requireAdmin, async (_req: any, res: any) => {
+    try {
+      // Get all advisors
+      const advisors = await db.execute(
+        sql`SELECT id, username, email, company_name, sebi_reg_number, is_approved, created_at, logo_url
+             FROM users WHERE role = 'advisor' ORDER BY created_at DESC`
+      );
+      const advisorRows = (advisors as any).rows || [];
+
+      const breakup = [];
+      for (const adv of advisorRows) {
+        // Strategies count & list
+        const strats = await db.execute(
+          sql`SELECT id, name, type, status, horizon FROM strategies WHERE advisor_id = ${adv.id}`
+        );
+        const stratRows = (strats as any).rows || [];
+
+        // Calls (stock recommendations) count & this month
+        const callStats = await db.execute(
+          sql`SELECT
+                COUNT(*) as total_calls,
+                COUNT(*) FILTER (WHERE c.status = 'Active') as active_calls,
+                COUNT(*) FILTER (WHERE c.status = 'Closed') as closed_calls,
+                COUNT(*) FILTER (WHERE c.created_at >= date_trunc('month', CURRENT_DATE)) as calls_this_month,
+                COUNT(*) FILTER (WHERE c.status = 'Closed' AND CAST(c.gain_percent AS numeric) > 0) as winning_calls,
+                COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.gain_percent IS NOT NULL) as settled_calls
+              FROM calls c JOIN strategies s ON s.id = c.strategy_id
+              WHERE s.advisor_id = ${adv.id}`
+        );
+        const cs = ((callStats as any).rows || [])[0] || {};
+
+        // Positions (F&O calls)
+        const posStats = await db.execute(
+          sql`SELECT
+                COUNT(*) as total_positions,
+                COUNT(*) FILTER (WHERE p.status = 'Active') as active_positions,
+                COUNT(*) FILTER (WHERE p.created_at >= date_trunc('month', CURRENT_DATE)) as positions_this_month
+              FROM positions p JOIN strategies s ON s.id = p.strategy_id
+              WHERE s.advisor_id = ${adv.id}`
+        );
+        const ps = ((posStats as any).rows || [])[0] || {};
+
+        // Subscriptions & subscribers
+        const subStats = await db.execute(
+          sql`SELECT
+                COUNT(*) as total_subs,
+                COUNT(*) FILTER (WHERE status = 'active') as active_subs
+              FROM subscriptions WHERE advisor_id = ${adv.id}`
+        );
+        const ss = ((subStats as any).rows || [])[0] || {};
+
+        // Revenue
+        const revStats = await db.execute(
+          sql`SELECT COALESCE(SUM(amount), 0) as total_revenue
+              FROM payments WHERE status = 'PAID'
+              AND subscription_id IN (SELECT id FROM subscriptions WHERE advisor_id = ${adv.id})`
+        );
+        const rv = ((revStats as any).rows || [])[0] || {};
+
+        // Advisor credits
+        const creditStats = await db.execute(
+          sql`SELECT
+                COALESCE(SUM(amount) FILTER (WHERE type = 'credit'), 0) as total_credits,
+                COALESCE(SUM(amount) FILTER (WHERE type = 'payout'), 0) as total_payouts
+              FROM advisor_payments WHERE advisor_id = ${adv.id}`
+        );
+        const cr = ((creditStats as any).rows || [])[0] || {};
+
+        // Portfolio AUM (from subscribers who shared portfolios)
+        const aumStats = await db.execute(
+          sql`SELECT
+                COUNT(DISTINCT cp.id) as portfolio_count,
+                COALESCE(SUM(CAST(ph.current_value AS numeric)), 0) as total_aum,
+                COUNT(DISTINCT CASE WHEN ph.asset_class = 'mutual_fund' OR ph.isin LIKE 'INF%' THEN cp.id END) as mf_portfolios,
+                COUNT(DISTINCT CASE WHEN ph.asset_class != 'mutual_fund' AND (ph.isin IS NULL OR ph.isin NOT LIKE 'INF%') THEN cp.id END) as stock_portfolios,
+                COALESCE(SUM(CAST(ph.current_value AS numeric)) FILTER (WHERE ph.asset_class = 'mutual_fund' OR ph.isin LIKE 'INF%'), 0) as mf_aum,
+                COALESCE(SUM(CAST(ph.current_value AS numeric)) FILTER (WHERE ph.asset_class != 'mutual_fund' AND (ph.isin IS NULL OR ph.isin NOT LIKE 'INF%')), 0) as stock_aum
+              FROM customer_portfolios cp
+              JOIN portfolio_holdings ph ON ph.portfolio_id = cp.id
+              WHERE cp.share_with_advisors = true
+              AND cp.user_id IN (SELECT user_id FROM subscriptions WHERE advisor_id = ${adv.id} AND status = 'active')`
+        );
+        const aum = ((aumStats as any).rows || [])[0] || {};
+
+        // Strategy type breakup
+        const stockStrategies = stratRows.filter((s: any) => s.type === 'Stock' || s.type === 'Equity').length;
+        const fnoStrategies = stratRows.filter((s: any) => ['Option', 'Future', 'CommodityFuture'].includes(s.type)).length;
+        const otherStrategies = stratRows.length - stockStrategies - fnoStrategies;
+
+        // Hit rate
+        const settledCount = Number(cs.settled_calls) || 0;
+        const winCount = Number(cs.winning_calls) || 0;
+        const hitRate = settledCount > 0 ? ((winCount / settledCount) * 100).toFixed(1) : "N/A";
+
+        breakup.push({
+          advisor_id: adv.id,
+          name: adv.username || adv.company_name || "Unknown",
+          email: adv.email,
+          company: adv.company_name || "",
+          sebi_reg: adv.sebi_reg_number || "",
+          is_approved: adv.is_approved,
+          joined: adv.created_at,
+          logo: adv.logo_url,
+
+          strategies: {
+            total: stratRows.length,
+            stock: stockStrategies,
+            fno: fnoStrategies,
+            other: otherStrategies,
+            list: stratRows.map((s: any) => ({ id: s.id, name: s.name, type: s.type, status: s.status })),
+          },
+
+          calls: {
+            total: Number(cs.total_calls) || 0,
+            active: Number(cs.active_calls) || 0,
+            closed: Number(cs.closed_calls) || 0,
+            this_month: Number(cs.calls_this_month) || 0,
+            hit_rate: hitRate,
+          },
+
+          positions: {
+            total: Number(ps.total_positions) || 0,
+            active: Number(ps.active_positions) || 0,
+            this_month: Number(ps.positions_this_month) || 0,
+          },
+
+          subscribers: {
+            total: Number(ss.total_subs) || 0,
+            active: Number(ss.active_subs) || 0,
+          },
+
+          revenue: {
+            total: Number(rv.total_revenue) || 0,
+            credits: Number(cr.total_credits) || 0,
+            payouts: Number(cr.total_payouts) || 0,
+          },
+
+          portfolios: {
+            total: Number(aum.portfolio_count) || 0,
+            stock_count: Number(aum.stock_portfolios) || 0,
+            mf_count: Number(aum.mf_portfolios) || 0,
+            total_aum: Number(aum.total_aum) || 0,
+            stock_aum: Number(aum.stock_aum) || 0,
+            mf_aum: Number(aum.mf_aum) || 0,
+          },
+        });
+      }
+
+      // Sort by total AUM descending
+      breakup.sort((a: any, b: any) => b.portfolios.total_aum - a.portfolios.total_aum);
+
+      res.json({
+        advisors: breakup,
+        total_advisors: breakup.length,
+        summary: {
+          total_strategies: breakup.reduce((s: number, a: any) => s + a.strategies.total, 0),
+          total_calls: breakup.reduce((s: number, a: any) => s + a.calls.total, 0),
+          total_aum: breakup.reduce((s: number, a: any) => s + a.portfolios.total_aum, 0),
+          total_revenue: breakup.reduce((s: number, a: any) => s + a.revenue.total, 0),
+          active_subscribers: breakup.reduce((s: number, a: any) => s + a.subscribers.active, 0),
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+    // ─── Admin: Bank & Payment Management ────────────────────────
 
   // Admin: View advisor bank details
   app.get("/api/admin/advisor/:id/bank-details", requireAdmin, async (req: any, res: any) => {

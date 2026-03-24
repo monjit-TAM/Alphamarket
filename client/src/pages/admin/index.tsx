@@ -12,18 +12,20 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Users, BarChart3, LayoutDashboard, LogOut, Settings, IndianRupee } from "lucide-react";
+import { Users, BarChart3, LayoutDashboard, LogOut, Settings, IndianRupee, PieChart } from "lucide-react";
 
 import AdminAdvisors from "./admin-advisors";
 import AdminStrategies from "./admin-strategies";
 import AdminSettings from "./admin-settings";
 import AdminHome from "./admin-home";
 import AdminMonetization from "./admin-monetization";
+import AdminAdvisorBreakup from "./admin-advisor-breakup";
 
 const sidebarItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/admin" },
   { title: "Advisors", icon: Users, path: "/admin/advisors" },
   { title: "Strategies", icon: BarChart3, path: "/admin/strategies" },
+  { title: "Advisor Breakup", icon: PieChart, path: "/admin/advisor-breakup" },
   { title: "Monetization", icon: IndianRupee, path: "/admin/monetization" },
   { title: "Settings", icon: Settings, path: "/admin/settings" },
 ];
@@ -58,6 +60,7 @@ export default function AdminDashboard() {
     if (location === "/admin/settings") return <AdminSettings />;
     if (location === "/admin/monetization") return <AdminMonetization />;
     if (location === "/admin/advisors") return <AdminAdvisors />;
+    if (location === "/admin/advisor-breakup") return <AdminAdvisorBreakup />;
     return <AdminHome />;
   };
 
