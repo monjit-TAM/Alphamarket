@@ -10317,6 +10317,7 @@ function renderAV(d){
   h+='<div><div style="font-size:18px;font-weight:800;color:var(--text1)">'+d.symbol+' <span style="font-weight:400;font-size:14px;color:var(--text2)">'+d.name+'</span></div>';
   h+='<div style="display:flex;gap:5px;margin-top:2px;align-items:center"><span style="font-size:10px;padding:2px 6px;border-radius:5px;background:'+capBg+';color:#fff;font-weight:600">'+capL+'</span><span style="font-size:11px;color:var(--text2)">'+d.sector+' \u2022 '+(d.industry||'')+'</span></div></div>';
   h+='<div style="text-align:right"><div style="font-size:24px;font-weight:800;color:var(--text1)">\u20b9'+s.price.toLocaleString()+'</div>';
+  h+='<button onclick="openPublish(\''+d.symbol+'\','+s.price+',\'AlphaView Analysis: Alpha Score '+r.alpha_score+', '+r.trend+'. V:'+a.value_score+' G:'+a.growth_score+' Q:'+a.quality_score+'\')" style="margin-top:4px;padding:4px 12px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">\u{1F4E4} PUBLISH TO ALPHAMARKET</button>';
   h+='<div style="font-size:14px;font-weight:700;color:'+chgC+'">'+(s.change>=0?'+':'')+s.change+' ('+s.change_pct+'%)<span style="font-size:11px;color:var(--text2);margin-left:6px">Vol:'+Number(s.volume).toLocaleString()+' | VR:'+s.volume_ratio+'x</span></div></div></div>';
   h+='<div id="av-chart-wrap" style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px;margin-bottom:8px"><div id="av-chart" style="width:100%;height:280px"></div></div>';
   h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">';
@@ -10517,6 +10518,113 @@ function loadMethodology(){
     overlay.innerHTML='<div style="max-width:960px;margin:0 auto;position:relative;user-select:none;-webkit-user-select:none"><button onclick="document.getElementById(\'meth-overlay\').remove()" style="position:fixed;top:20px;right:30px;z-index:99999;background:#3b82f6;color:white;border:none;border-radius:8px;padding:10px 20px;font-weight:700;cursor:pointer;font-size:14px">CLOSE</button><div style="user-select:none;-webkit-user-select:none">'+html+'</div></div>';
     document.body.appendChild(overlay);
   }).catch(function(e){alert('Could not load methodology document. Please try again.');});
+}
+</script>
+
+<div id="publish-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99997;overflow-y:auto;padding:20px">
+<div style="max-width:500px;margin:40px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:24px">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+<div style="font-size:18px;font-weight:800;color:var(--accent,#3b82f6)">Publish to AlphaMarket</div>
+<span onclick="document.getElementById('publish-modal').style.display='none'" style="cursor:pointer;font-size:20px;color:var(--text2)">&times;</span>
+</div>
+<div id="pub-loading" style="display:none;text-align:center;padding:20px;color:var(--text2)">Loading strategies...</div>
+<div id="pub-not-advisor" style="display:none;padding:16px;background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;font-size:13px;color:var(--text2)">
+You need an <b>Advisor account</b> on AlphaMarket to publish calls. <a href="https://alphamarket.co.in" target="_blank" style="color:var(--accent)">Register as Advisor</a>
+</div>
+<div id="pub-form" style="display:none">
+<div style="margin-bottom:12px">
+<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Strategy</label>
+<select id="pub-strategy" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></select>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Symbol</label>
+<input id="pub-symbol" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px" readonly></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Action</label>
+<select id="pub-action" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option>BUY</option><option>SELL</option><option>HOLD</option></select></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Entry Price</label>
+<input id="pub-entry" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Target Price</label>
+<input id="pub-target" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Stop Loss</label>
+<input id="pub-sl" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+</div>
+<div style="margin-bottom:12px">
+<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Rationale / Analysis</label>
+<textarea id="pub-rationale" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:12px;resize:vertical" placeholder="Generated from DYOR analysis..."></textarea>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Publish Mode</label>
+<select id="pub-mode" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option value="live">Live (notify subscribers)</option><option value="watchlist">Watchlist</option><option value="draft">Draft</option></select></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Type</label>
+<select id="pub-type" onchange="toggleFnoFields()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option value="stock">Stock (Equity)</option><option value="fno">F&O (Futures/Options)</option></select></div>
+</div>
+<div id="pub-fno-fields" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+<div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px">F&O Details</div>
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+<div><label style="font-size:10px;color:var(--text2)">Segment</label><select id="pub-segment" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"><option>FUT</option><option>CE</option><option>PE</option></select></div>
+<div><label style="font-size:10px;color:var(--text2)">Strike</label><input id="pub-strike" type="number" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"></div>
+<div><label style="font-size:10px;color:var(--text2)">Lots</label><input id="pub-lots" type="number" value="1" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"></div>
+</div>
+<div style="margin-top:8px"><label style="font-size:10px;color:var(--text2)">Expiry</label><input id="pub-expiry" type="date" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"></div>
+</div>
+<div id="pub-result" style="display:none;margin-bottom:12px;padding:10px;border-radius:6px;font-size:13px"></div>
+<button onclick="submitPublish()" style="width:100%;padding:12px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">PUBLISH TO ALPHAMARKET</button>
+</div>
+</div>
+</div>
+<script>
+var _pubStrategies=[];
+function toggleFnoFields(){document.getElementById('pub-fno-fields').style.display=document.getElementById('pub-type').value==='fno'?'block':'none';}
+function openPublish(symbol,price,rationale){
+  document.getElementById('publish-modal').style.display='block';
+  document.getElementById('pub-symbol').value=symbol||'';
+  document.getElementById('pub-entry').value=price||'';
+  document.getElementById('pub-rationale').value=rationale||'Published from DYOR AlphaView analysis';
+  document.getElementById('pub-result').style.display='none';
+  document.getElementById('pub-form').style.display='none';
+  document.getElementById('pub-not-advisor').style.display='none';
+  document.getElementById('pub-loading').style.display='block';
+  fetch('/dyor/api/bridge/strategies',{credentials:'include'}).then(r=>r.json()).then(d=>{
+    document.getElementById('pub-loading').style.display='none';
+    if(d.error==='not_advisor'){document.getElementById('pub-not-advisor').style.display='block';return;}
+    if(d.error){document.getElementById('pub-not-advisor').innerHTML='<b>Error:</b> '+d.message;document.getElementById('pub-not-advisor').style.display='block';return;}
+    _pubStrategies=d.strategies||[];
+    var sel=document.getElementById('pub-strategy');
+    sel.innerHTML=_pubStrategies.map(s=>'<option value="'+s.id+'">'+s.name+' ('+s.type+')</option>').join('');
+    document.getElementById('pub-form').style.display='block';
+  }).catch(()=>{document.getElementById('pub-loading').style.display='none';document.getElementById('pub-not-advisor').innerHTML='<b>Could not connect to AlphaMarket.</b>';document.getElementById('pub-not-advisor').style.display='block';});
+}
+function submitPublish(){
+  var isF=document.getElementById('pub-type').value==='fno';
+  var url=isF?'/dyor/api/bridge/publish-position':'/dyor/api/bridge/publish-call';
+  var body={strategy_id:document.getElementById('pub-strategy').value,publish_mode:document.getElementById('pub-mode').value,rationale:document.getElementById('pub-rationale').value};
+  if(isF){
+    body.symbol=document.getElementById('pub-symbol').value;
+    body.segment=document.getElementById('pub-segment').value;
+    body.buy_sell=document.getElementById('pub-action').value;
+    body.entry_price=parseFloat(document.getElementById('pub-entry').value)||null;
+    body.target=parseFloat(document.getElementById('pub-target').value)||null;
+    body.stop_loss=parseFloat(document.getElementById('pub-sl').value)||null;
+    body.strike_price=parseFloat(document.getElementById('pub-strike').value)||null;
+    body.lots=parseInt(document.getElementById('pub-lots').value)||1;
+    body.expiry=document.getElementById('pub-expiry').value||null;
+    body.call_put=document.getElementById('pub-segment').value==='FUT'?null:document.getElementById('pub-segment').value;
+  }else{
+    body.stock_name=document.getElementById('pub-symbol').value;
+    body.action=document.getElementById('pub-action').value;
+    body.buy_range_start=parseFloat(document.getElementById('pub-entry').value)||null;
+    body.buy_range_end=parseFloat(document.getElementById('pub-entry').value)||null;
+    body.target_price=parseFloat(document.getElementById('pub-target').value)||null;
+    body.stop_loss=parseFloat(document.getElementById('pub-sl').value)||null;
+  }
+  fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(d=>{
+    var res=document.getElementById('pub-result');
+    if(d.success){res.style.background='rgba(16,185,129,0.15)';res.style.color='var(--green)';res.textContent='Published successfully! Call ID: '+(d.call_id||d.position_id);
+    }else{res.style.background='rgba(239,68,68,0.15)';res.style.color='var(--red)';res.textContent='Error: '+(d.error||'Unknown error');}
+    res.style.display='block';
+  });
 }
 </script>
 
