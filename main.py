@@ -8817,6 +8817,39 @@ async def bridge_publish_position(req: dict, user=Depends(get_current_user)):
         raise HTTPException(500, f"Failed to publish: {str(e)}")
 
 
+@app.get("/api/bridge/check-permission", tags=["Advisory & Reports"], summary="Check DYOR publish permission")
+async def bridge_check_permission(user=Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        return {"allowed": False, "reason": "no_email"}
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{ALPHAMARKET_URL}/api/external/check-publish-permission",
+                params={"email": email},
+                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY}
+            )
+            return r.json()
+    except Exception as e:
+        return {"allowed": False, "reason": "connection_error", "message": str(e)}
+
+@app.post("/api/bridge/request-permission", tags=["Advisory & Reports"], summary="Request DYOR publish permission")
+async def bridge_request_permission(user=Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        raise HTTPException(400, "User email not found")
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{ALPHAMARKET_URL}/api/external/request-publish-permission",
+                json={"email": email},
+                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY, "Content-Type": "application/json"}
+            )
+            return r.json()
+    except Exception as e:
+        raise HTTPException(500, f"Failed: {str(e)}")
+
+
 # ALPHAVIEW - Comprehensive Stock Profile
 # ==============================================================================
 
