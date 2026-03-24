@@ -10689,7 +10689,7 @@ function requestPublishAccess(){
     btn.textContent='REQUEST PUBLISH ACCESS';btn.disabled=false;
   }).catch(function(){btn.textContent='REQUEST PUBLISH ACCESS';btn.disabled=false;});
 }
-function _doNothing(){
+
 function _loadPublishForm(symbol,price,rationale){
   document.getElementById('pub-symbol').value=symbol||'';
   document.getElementById('pub-entry').value=price?Math.round(price*0.98*100)/100:'';
