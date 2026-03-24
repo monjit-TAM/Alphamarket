@@ -7,6 +7,11 @@ import {
   Briefcase, Target, ArrowUpRight, Building2,
 } from "lucide-react";
 import { useState } from "react";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
+import { CheckCircle, XCircle, Clock } from "lucide-react";
 
 function formatCurrency(val: number) {
   if (val >= 10000000) return "\u20b9" + (val / 10000000).toFixed(2) + " Cr";
@@ -17,6 +22,19 @@ function formatCurrency(val: number) {
 export default function AdminAdvisorBreakup() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/admin/advisor-breakup"],
+  });
+  const { data: publishRequests, isLoading: prLoading } = useQuery<any[]>({
+    queryKey: ["/api/admin/dyor-publish-requests"],
+  });
+  const { toast } = useToast();
+  const approveMutation = useMutation({
+    mutationFn: async ({ id, action }: { id: number; action: string }) => {
+      await apiRequest("POST", `/api/admin/dyor-publish-requests/${id}/approve`, { action });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/dyor-publish-requests"] });
+      toast({ title: "Updated", description: "Permission updated successfully" });
+    },
   });
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -89,6 +107,68 @@ export default function AdminAdvisorBreakup() {
           </CardContent>
         </Card>
       </div>
+
+      {/* DYOR Publish Requests */}
+      {publishRequests && publishRequests.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Clock className="w-4 h-4 text-amber-500" />
+              DYOR Publish Requests
+              <Badge variant="secondary">{publishRequests.filter((r: any) => r.status === 'pending').length} pending</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b bg-muted/50">
+                    <th className="text-left p-3 font-semibold">Advisor</th>
+                    <th className="text-left p-3 font-semibold">Email</th>
+                    <th className="text-left p-3 font-semibold">SEBI Reg</th>
+                    <th className="text-center p-3 font-semibold">Status</th>
+                    <th className="text-left p-3 font-semibold">Requested</th>
+                    <th className="text-center p-3 font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {publishRequests.map((req: any) => (
+                    <tr key={req.id} className="border-b hover:bg-muted/30">
+                      <td className="p-3 font-semibold text-xs">{req.username || req.company_name || "Unknown"}</td>
+                      <td className="p-3 text-xs text-muted-foreground">{req.email}</td>
+                      <td className="p-3 text-xs text-blue-500">{req.sebi_reg_number || "-"}</td>
+                      <td className="text-center p-3">
+                        <Badge variant={req.status === 'approved' ? 'default' : req.status === 'rejected' ? 'destructive' : 'secondary'}>
+                          {req.status}
+                        </Badge>
+                      </td>
+                      <td className="p-3 text-xs text-muted-foreground">{new Date(req.requested_at).toLocaleDateString()}</td>
+                      <td className="text-center p-3">
+                        {req.status === 'pending' ? (
+                          <div className="flex gap-2 justify-center">
+                            <Button size="sm" variant="default" className="h-7 text-xs"
+                              onClick={() => approveMutation.mutate({ id: req.id, action: 'approve' })}
+                              disabled={approveMutation.isPending}>
+                              <CheckCircle className="w-3 h-3 mr-1" /> Approve
+                            </Button>
+                            <Button size="sm" variant="destructive" className="h-7 text-xs"
+                              onClick={() => approveMutation.mutate({ id: req.id, action: 'reject' })}
+                              disabled={approveMutation.isPending}>
+                              <XCircle className="w-3 h-3 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">{req.approved_at ? new Date(req.approved_at).toLocaleDateString() : "-"}</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Per-Advisor Table */}
       <Card>
