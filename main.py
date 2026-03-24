@@ -8779,11 +8779,17 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         except:
             return default
 
-    def fix_pct(val):
+    def fix_pct(val, max_reasonable=100):
+        """Normalize % values. max_reasonable = max sensible % for this field."""
         v2 = sf(val, 0)
-        if v2 and abs(v2) > 100:
-            return round(v2 / 100, 2)
-        return round(v2, 2) if v2 else 0
+        if not v2 or v2 == 0: return 0
+        av = abs(v2)
+        if av < 1: result = round(v2 * 100, 2)
+        elif av > max_reasonable * 10: result = round(v2 / 100, 2)
+        elif av > max_reasonable * 3 and av > 100: result = round(v2 / 100, 2)
+        else: result = round(v2, 2)
+        if abs(result) > max_reasonable * 2: result = round(result / 100, 2)
+        return result
 
     # ── 3. Moving Averages & Trend ──
     sma20 = float(c.rolling(20).mean().iloc[-1]) if len(c) >= 20 else price
@@ -9137,17 +9143,17 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
             "pe_trailing": sf(fund.get("pe_trailing") or fund.get("trailingPE")),
             "pe_forward": sf(fund.get("pe_forward") or fund.get("forwardPE")),
             "pb": sf(fund.get("pb") or fund.get("priceToBook")),
-            "roe": fix_pct(fund.get("roe") or fund.get("returnOnEquity")),
-            "roce": fix_pct(fund.get("roce")),
+            "roe": fix_pct(fund.get("roe") or fund.get("returnOnEquity"), 60),
+            "roce": fix_pct(fund.get("roce"), 60),
             "debt_equity": sf(fund.get("debt_equity") or fund.get("debtToEquity")),
-            "dividend_yield": fix_pct(fund.get("dividend_yield") or fund.get("dividendYield")),
+            "dividend_yield": fix_pct(fund.get("dividend_yield") or fund.get("dividendYield"), 15),
             "dividend_rate": sf(fund.get("dividend_rate") or fund.get("dividendRate")),
             "book_value": sf(fund.get("book_value") or fund.get("bookValue")),
             "revenue": sf(fund.get("revenue")),
-            "revenue_growth": fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth")),
-            "earnings_growth": fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth")),
-            "profit_margin": fix_pct(fund.get("profit_margin") or fund.get("profitMargins")),
-            "operating_margin": fix_pct(fund.get("operating_margin") or fund.get("operatingMargins")),
+            "revenue_growth": fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth"), 80),
+            "earnings_growth": fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth"), 100),
+            "profit_margin": fix_pct(fund.get("profit_margin") or fund.get("profitMargins"), 50),
+            "operating_margin": fix_pct(fund.get("operating_margin") or fund.get("operatingMargins"), 50),
             "promoter_holding": sf(fund.get("promoter_holding")),
         },
 
@@ -9314,7 +9320,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     elif pe and 15 <= pe < 25: value_score += 15
     if pb_val and pb_val < 2: value_score += 25
     elif pb_val and pb_val < 4: value_score += 10
-    if fix_pct(fund.get("dividend_yield") or fund.get("dividendYield")) > 2: value_score += 20
+    if fix_pct(fund.get("dividend_yield") or fund.get("dividendYield"), 15) > 2: value_score += 20
     if de and de < 50: value_score += 15
     elif de and de < 100: value_score += 5
     if pm and pm > 15: value_score += 10
@@ -9336,7 +9342,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     if pm and pm > 15: quality_score += 20
     if de and de < 30: quality_score += 20
     elif de and de < 80: quality_score += 10
-    if fix_pct(fund.get("operating_margin") or fund.get("operatingMargins")) > 15: quality_score += 15
+    if fix_pct(fund.get("operating_margin") or fund.get("operatingMargins"), 50) > 15: quality_score += 15
     if vol_ratio < 2: quality_score += 10
     if adx_val > 20: quality_score += 10
 
