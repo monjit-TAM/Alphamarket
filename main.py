@@ -8724,6 +8724,99 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
 
 
 # ==============================================================================
+# ══════════════════════════════════════════════════════════════════════════════
+# DYOR → ALPHAMARKET BRIDGE (Publish calls to advisor strategies)
+# ══════════════════════════════════════════════════════════════════════════════
+
+ALPHAMARKET_URL = "https://alphamarket.co.in"
+DYOR_BRIDGE_KEY = "dyor_bridge_2026_alphamarket"
+
+@app.get("/api/bridge/strategies", tags=["Advisory & Reports"], summary="Get advisor strategies from AlphaMarket",
+    description="Fetches the advisor's strategies from AlphaMarket for call publishing.")
+async def bridge_get_strategies(user=Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        raise HTTPException(400, "User email not found")
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            r = await client.get(
+                f"{ALPHAMARKET_URL}/api/external/advisor-strategies",
+                params={"email": email},
+                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY}
+            )
+            if r.status_code == 200:
+                return r.json()
+            elif r.status_code == 404:
+                return {"error": "not_advisor", "message": "No advisor account found on AlphaMarket for this email. Register as an advisor at alphamarket.co.in first."}
+            else:
+                return {"error": "api_error", "message": r.text}
+    except Exception as e:
+        return {"error": "connection_error", "message": str(e)}
+
+@app.post("/api/bridge/publish-call", tags=["Advisory & Reports"], summary="Publish stock call to AlphaMarket",
+    description="Publishes a stock recommendation (BUY/SELL) to a strategy on AlphaMarket.")
+async def bridge_publish_call(req: dict, user=Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        raise HTTPException(400, "User email not found")
+    payload = {
+        "advisor_email": email,
+        "strategy_id": req.get("strategy_id"),
+        "stock_name": req.get("stock_name"),
+        "action": req.get("action", "BUY"),
+        "buy_range_start": req.get("buy_range_start"),
+        "buy_range_end": req.get("buy_range_end"),
+        "target_price": req.get("target_price"),
+        "stop_loss": req.get("stop_loss"),
+        "rationale": req.get("rationale", "Published from DYOR Research Platform"),
+        "profit_goal": req.get("profit_goal"),
+        "publish_mode": req.get("publish_mode", "live"),
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{ALPHAMARKET_URL}/api/external/publish-call",
+                json=payload,
+                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY, "Content-Type": "application/json"}
+            )
+            return r.json()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to publish: {str(e)}")
+
+@app.post("/api/bridge/publish-position", tags=["Advisory & Reports"], summary="Publish F&O position to AlphaMarket",
+    description="Publishes an F&O position (futures/options) to a strategy on AlphaMarket.")
+async def bridge_publish_position(req: dict, user=Depends(get_current_user)):
+    email = user.get("email")
+    if not email:
+        raise HTTPException(400, "User email not found")
+    payload = {
+        "advisor_email": email,
+        "strategy_id": req.get("strategy_id"),
+        "symbol": req.get("symbol"),
+        "segment": req.get("segment", "EQ"),
+        "call_put": req.get("call_put"),
+        "buy_sell": req.get("buy_sell", "BUY"),
+        "entry_price": req.get("entry_price"),
+        "target": req.get("target"),
+        "stop_loss": req.get("stop_loss"),
+        "lots": req.get("lots", 1),
+        "expiry": req.get("expiry"),
+        "strike_price": req.get("strike_price"),
+        "rationale": req.get("rationale", "Published from DYOR Research Platform"),
+        "publish_mode": req.get("publish_mode", "live"),
+    }
+    try:
+        async with _httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{ALPHAMARKET_URL}/api/external/publish-position",
+                json=payload,
+                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY, "Content-Type": "application/json"}
+            )
+            return r.json()
+    except Exception as e:
+        raise HTTPException(500, f"Failed to publish: {str(e)}")
+
+
 # ALPHAVIEW - Comprehensive Stock Profile
 # ==============================================================================
 
