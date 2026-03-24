@@ -10300,6 +10300,7 @@ function showVGQInfo(type){
   document.body.appendChild(d);
 }
 function renderAV(d){
+  window._lastAV=d;
   var s=d.summary,r=d.ratings,ma=d.moving_averages,t=d.technicals,rs=d.relative_strength,f=d.fundamentals,lv=d.levels,p=d.patterns||{},a=d.assessment||{};
   var chgC=s.change>=0?'var(--green)':'var(--red)';
   var trendC=r.trend.includes('BULL')?'var(--green)':r.trend.includes('BEAR')?'var(--red)':'var(--text2)';
@@ -10522,7 +10523,7 @@ function loadMethodology(){
 </script>
 
 <div id="publish-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99997;overflow-y:auto;padding:20px">
-<div style="max-width:500px;margin:40px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:24px">
+<div style="max-width:540px;margin:30px auto;background:var(--card,#1a2236);border:1px solid var(--accent,#3b82f6);border-radius:12px;padding:24px;max-height:90vh;overflow-y:auto">
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
 <div style="font-size:18px;font-weight:800;color:var(--accent,#3b82f6)">Publish to AlphaMarket</div>
 <span onclick="document.getElementById('publish-modal').style.display='none'" style="cursor:pointer;font-size:20px;color:var(--text2)">&times;</span>
@@ -10543,21 +10544,54 @@ You need an <b>Advisor account</b> on AlphaMarket to publish calls. <a href="htt
 <select id="pub-action" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option>BUY</option><option>SELL</option><option>HOLD</option></select></div>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:12px">
-<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Entry Price</label>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Buy Range Start</label>
 <input id="pub-entry" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Buy Range End</label>
+<input id="pub-entry2" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
 <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Target Price</label>
 <input id="pub-target" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
 <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Stop Loss</label>
 <input id="pub-sl" type="number" step="0.01" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Profit Goal %</label>
+<input id="pub-profit-goal" type="number" step="0.1" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></div>
+</div>
+<!-- Trailing SL -->
+<div style="margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+<input type="checkbox" id="pub-tsl-enabled" onchange="document.getElementById('pub-tsl-fields').style.display=this.checked?'flex':'none'">
+<label for="pub-tsl-enabled" style="font-size:12px;font-weight:600;color:var(--text1)">Trailing Stop Loss</label>
+</div>
+<div id="pub-tsl-fields" style="display:none;gap:10px">
+<div style="flex:1"><label style="font-size:10px;color:var(--text2)">Type</label><select id="pub-tsl-type" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"><option>PERCENTAGE</option><option>POINTS</option></select></div>
+<div style="flex:1"><label style="font-size:10px;color:var(--text2)">Value</label><input id="pub-tsl-value" type="number" step="0.1" placeholder="e.g. 5" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"></div>
+</div>
+</div>
+<!-- Duration & Theme -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Duration</label>
+<select id="pub-duration" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option value="">Select Duration</option><option>Intraday</option><option>1 Week</option><option>2 Weeks</option><option>1 Month</option><option>3 Months</option><option>6 Months</option><option>1 Year</option><option>Long Term</option></select></div>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Theme / Sector</label>
+<input id="pub-theme" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px" placeholder="e.g. Banking, IT"></div>
+</div>
+<!-- Rationale Type -->
+<div style="margin-bottom:8px">
+<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:6px">Rationale Type</label>
+<div style="display:flex;gap:6px;margin-bottom:8px">
+<label style="font-size:11px;padding:5px 12px;border:1px solid var(--border);border-radius:20px;cursor:pointer;background:var(--bg1);color:var(--text1)"><input type="radio" name="pub-rat-type" value="quantamental" checked onchange="updateRationale()" style="margin-right:4px">Quantamental</label>
+<label style="font-size:11px;padding:5px 12px;border:1px solid var(--border);border-radius:20px;cursor:pointer;background:var(--bg1);color:var(--text1)"><input type="radio" name="pub-rat-type" value="fundamental" onchange="updateRationale()" style="margin-right:4px">Fundamental</label>
+<label style="font-size:11px;padding:5px 12px;border:1px solid var(--border);border-radius:20px;cursor:pointer;background:var(--bg1);color:var(--text1)"><input type="radio" name="pub-rat-type" value="technical" onchange="updateRationale()" style="margin-right:4px">Technical</label>
+<label style="font-size:11px;padding:5px 12px;border:1px solid var(--border);border-radius:20px;cursor:pointer;background:var(--bg1);color:var(--text1)"><input type="radio" name="pub-rat-type" value="custom" onchange="updateRationale()" style="margin-right:4px">Custom</label>
+</div>
 </div>
 <div style="margin-bottom:12px">
-<label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Rationale / Analysis</label>
-<textarea id="pub-rationale" rows="3" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:12px;resize:vertical" placeholder="Generated from DYOR analysis..."></textarea>
+<textarea id="pub-rationale" rows="4" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:12px;resize:vertical;line-height:1.6" placeholder="Auto-generated rationale..."></textarea>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
 <div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Publish Mode</label>
 <select id="pub-mode" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option value="live">Live (notify subscribers)</option><option value="watchlist">Watchlist</option><option value="draft">Draft</option></select></div>
-<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Type</label>
+<div><label style="font-size:11px;color:var(--text2);display:block;margin-bottom:4px">Instrument Type</label>
 <select id="pub-type" onchange="toggleFnoFields()" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"><option value="stock">Stock (Equity)</option><option value="fno">F&O (Futures/Options)</option></select></div>
 </div>
 <div id="pub-fno-fields" style="display:none;margin-bottom:12px;padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
@@ -10570,36 +10604,140 @@ You need an <b>Advisor account</b> on AlphaMarket to publish calls. <a href="htt
 <div style="margin-top:8px"><label style="font-size:10px;color:var(--text2)">Expiry</label><input id="pub-expiry" type="date" style="width:100%;padding:6px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text1);font-size:12px"></div>
 </div>
 <div id="pub-result" style="display:none;margin-bottom:12px;padding:10px;border-radius:6px;font-size:13px"></div>
-<button onclick="submitPublish()" style="width:100%;padding:12px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">PUBLISH TO ALPHAMARKET</button>
+<button onclick="submitPublish()" id="pub-submit-btn" style="width:100%;padding:12px;background:var(--accent,#3b82f6);color:white;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer">PUBLISH TO ALPHAMARKET</button>
 </div>
 </div>
 </div>
 <script>
 var _pubStrategies=[];
 function toggleFnoFields(){document.getElementById('pub-fno-fields').style.display=document.getElementById('pub-type').value==='fno'?'block':'none';}
+
+function generateRationale(type){
+  var d=window._lastAV;
+  if(!d) return 'Published from DYOR Research Platform';
+  var f=d.fundamentals||{},r=d.ratings||{},a=d.assessment||{},t=d.technicals||{},p=d.patterns||{},s=d.summary||{};
+  if(type==='fundamental'){
+    return 'FUNDAMENTAL ANALYSIS: '+d.symbol+
+      '\nP/E: '+(f.pe_trailing||'-')+' | P/B: '+(f.pb||'-')+' | ROE: '+(f.roe||'-')+'%'+
+      '\nD/E: '+(f.debt_equity||'-')+' | Div Yield: '+(f.dividend_yield||'-')+'%'+
+      '\nMargin: '+(f.profit_margin||'-')+'% | Op Margin: '+(f.operating_margin||'-')+'%'+
+      '\nRev Growth: '+(f.revenue_growth||'-')+'% | Earn Growth: '+(f.earnings_growth||'-')+'%'+
+      '\nPromoter Holding: '+(f.promoter_holding||'-')+'%'+
+      '\nValue Score: '+(a.value_score||'-')+'/100 ('+(a.value_verdict||'-')+')'+
+      '\nGrowth Score: '+(a.growth_score||'-')+'/100 ('+(a.growth_verdict||'-')+')'+
+      '\nQuality Score: '+(a.quality_score||'-')+'/100 ('+(a.quality_verdict||'-')+')';
+  }
+  if(type==='technical'){
+    var pats=(p.patterns||[]).map(function(x){return x.pattern||x.name}).join(', ')||'None';
+    return 'TECHNICAL ANALYSIS: '+d.symbol+
+      '\nAlpha Score: '+r.alpha_score+'/99 | Trend: '+r.trend+
+      '\nMomentum: '+r.momentum+' | Accumulation: '+r.accumulation+' | Trend Rating: '+r.trend_rating+
+      '\nRSI: '+(t.rsi||'-')+' | MACD: '+(t.macd>t.macd_signal?'Bullish':'Bearish')+
+      '\nADX: '+(t.adx||'-')+' | Supertrend: '+(t.supertrend_bullish?'Bullish':'Bearish')+
+      '\nSMA Alignment: Above 20/50/200 DMA: '+(d.moving_averages.above_20dma?'Y':'N')+'/'+(d.moving_averages.above_50dma?'Y':'N')+'/'+(d.moving_averages.above_200dma?'Y':'N')+
+      '\nPatterns: '+pats+
+      '\n'+(p.narrative||'').substring(0,250);
+  }
+  // quantamental
+  var pats2=(p.patterns||[]).map(function(x){return x.pattern||x.name}).join(', ')||'None';
+  return 'QUANTAMENTAL ANALYSIS: '+d.symbol+' (Alpha Score: '+r.alpha_score+', '+r.trend+')'+
+    '\n--- Fundamentals ---'+
+    '\nP/E: '+(f.pe_trailing||'-')+' | ROE: '+(f.roe||'-')+'% | D/E: '+(f.debt_equity||'-')+
+    '\nMargins: '+(f.profit_margin||'-')+'% | Growth: Rev '+(f.revenue_growth||'-')+'% / Earn '+(f.earnings_growth||'-')+'%'+
+    '\nAssessment: V:'+(a.value_score||'-')+' G:'+(a.growth_score||'-')+' Q:'+(a.quality_score||'-')+
+    '\n--- Technicals ---'+
+    '\nRSI: '+(t.rsi||'-')+' | MACD: '+(t.macd>t.macd_signal?'Bullish':'Bearish')+' | ADX: '+(t.adx||'-')+
+    '\nMomentum: '+r.momentum+' | Accumulation: '+r.accumulation+' | Sentiment: '+(r.sentiment||'-')+
+    '\nPatterns: '+pats2+
+    '\n'+(p.narrative||'').substring(0,200);
+}
+
+function updateRationale(){
+  var type=document.querySelector('input[name="pub-rat-type"]:checked').value;
+  if(type==='custom') return;
+  document.getElementById('pub-rationale').value=generateRationale(type);
+}
+
 function openPublish(symbol,price,rationale){
+  window._pubSymbol=symbol;window._pubPrice=price;window._pubRat=rationale;
   document.getElementById('publish-modal').style.display='block';
-  document.getElementById('pub-symbol').value=symbol||'';
-  document.getElementById('pub-entry').value=price||'';
-  document.getElementById('pub-rationale').value=rationale||'Published from DYOR AlphaView analysis';
   document.getElementById('pub-result').style.display='none';
   document.getElementById('pub-form').style.display='none';
   document.getElementById('pub-not-advisor').style.display='none';
   document.getElementById('pub-loading').style.display='block';
-  fetch('/dyor/api/bridge/strategies',{credentials:'include'}).then(r=>r.json()).then(d=>{
+  document.getElementById('pub-loading').textContent='Checking permission...';
+  fetch('/dyor/api/bridge/check-permission',{credentials:'include'}).then(function(r){return r.json()}).then(function(perm){
+    if(perm.allowed){_loadPublishForm(symbol,price,rationale);return;}
     document.getElementById('pub-loading').style.display='none';
-    if(d.error==='not_advisor'){document.getElementById('pub-not-advisor').style.display='block';return;}
-    if(d.error){document.getElementById('pub-not-advisor').innerHTML='<b>Error:</b> '+d.message;document.getElementById('pub-not-advisor').style.display='block';return;}
-    _pubStrategies=d.strategies||[];
-    var sel=document.getElementById('pub-strategy');
-    sel.innerHTML=_pubStrategies.map(s=>'<option value="'+s.id+'">'+s.name+' ('+s.type+')</option>').join('');
-    document.getElementById('pub-form').style.display='block';
-  }).catch(()=>{document.getElementById('pub-loading').style.display='none';document.getElementById('pub-not-advisor').innerHTML='<b>Could not connect to AlphaMarket.</b>';document.getElementById('pub-not-advisor').style.display='block';});
+    var msg='';
+    if(perm.reason==='not_advisor') msg='You need an <b>Advisor account</b> on AlphaMarket to publish calls. <a href="https://alphamarket.co.in" target="_blank" style="color:var(--accent)">Register as Advisor</a>';
+    else if(perm.reason==='advisor_not_approved') msg='Your advisor account is <b>pending approval</b> on AlphaMarket. Contact admin.';
+    else if(perm.reason==='pending') msg='Your DYOR publish request is <b>pending admin approval</b>. You will be notified once approved.';
+    else if(perm.reason==='rejected') msg='Your DYOR publish request was <b>rejected</b>. Contact admin at <a href="mailto:hello@alphamarket.co.in" style="color:var(--accent)">hello@alphamarket.co.in</a>';
+    else if(perm.reason==='not_requested') msg='<div style="margin-bottom:12px">You need <b>admin approval</b> to publish calls from DYOR to AlphaMarket.</div><button onclick="requestPublishAccess()" id="req-access-btn" style="padding:10px 24px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer">REQUEST PUBLISH ACCESS</button><div id="req-result" style="margin-top:10px;font-size:12px"></div>';
+    else msg='<b>Error:</b> '+(perm.message||perm.reason||'Unknown error');
+    document.getElementById('pub-not-advisor').innerHTML=msg;
+    document.getElementById('pub-not-advisor').style.display='block';
+  }).catch(function(){document.getElementById('pub-loading').style.display='none';document.getElementById('pub-not-advisor').innerHTML='<b>Could not check permission.</b>';document.getElementById('pub-not-advisor').style.display='block';});
 }
+function requestPublishAccess(){
+  var btn=document.getElementById('req-access-btn');btn.textContent='Requesting...';btn.disabled=true;
+  fetch('/dyor/api/bridge/request-permission',{method:'POST',credentials:'include'}).then(function(r){return r.json()}).then(function(d){
+    var res=document.getElementById('req-result');
+    if(d.success){res.style.color='var(--green)';res.textContent='Request submitted! Admin will review and approve. You will receive confirmation.';}
+    else{res.style.color='var(--red)';res.textContent='Error: '+(d.error||d.message||'Unknown');}
+    btn.textContent='REQUEST PUBLISH ACCESS';btn.disabled=false;
+  }).catch(function(){btn.textContent='REQUEST PUBLISH ACCESS';btn.disabled=false;});
+}
+function _doNothing(){
+function _loadPublishForm(symbol,price,rationale){
+  document.getElementById('pub-symbol').value=symbol||'';
+  document.getElementById('pub-entry').value=price?Math.round(price*0.98*100)/100:'';
+  document.getElementById('pub-entry2').value=price?Math.round(price*1.01*100)/100:'';
+  document.getElementById('pub-target').value='';
+  document.getElementById('pub-sl').value='';
+  document.getElementById('pub-profit-goal').value='';
+  document.getElementById('pub-result').style.display='none';
+  document.getElementById('pub-form').style.display='none';
+  document.getElementById('pub-not-advisor').style.display='none';
+  document.getElementById('pub-loading').style.display='block';
+  document.getElementById('pub-tsl-enabled').checked=false;
+  document.getElementById('pub-tsl-fields').style.display='none';
+  // Auto-populate theme from AV data
+  var d=window._lastAV;
+  if(d){
+    document.getElementById('pub-theme').value=(d.sector||'')+(d.industry?' / '+d.industry:'');
+    // Auto-generate rationale
+    var type=document.querySelector('input[name="pub-rat-type"]:checked').value;
+    if(type!=='custom') document.getElementById('pub-rationale').value=generateRationale(type);
+    else document.getElementById('pub-rationale').value=rationale||'';
+  } else {
+    document.getElementById('pub-rationale').value=rationale||'Published from DYOR';
+  }
+  fetch('/dyor/api/bridge/strategies',{credentials:'include'}).then(function(r){return r.json()}).then(function(d2){
+    document.getElementById('pub-loading').style.display='none';
+    if(d2.error==='not_advisor'){document.getElementById('pub-not-advisor').style.display='block';return;}
+    if(d2.error){document.getElementById('pub-not-advisor').innerHTML='<b>Error:</b> '+d2.message;document.getElementById('pub-not-advisor').style.display='block';return;}
+    _pubStrategies=d2.strategies||[];
+    if(_pubStrategies.length===0){document.getElementById('pub-not-advisor').innerHTML='<b>No strategies found.</b> Create a strategy on AlphaMarket first.';document.getElementById('pub-not-advisor').style.display='block';return;}
+    var sel=document.getElementById('pub-strategy');
+    sel.innerHTML=_pubStrategies.map(function(s){return '<option value="'+s.id+'">'+s.name+' ('+s.type+')</option>'}).join('');
+    document.getElementById('pub-form').style.display='block';
+  }).catch(function(){document.getElementById('pub-loading').style.display='none';document.getElementById('pub-not-advisor').innerHTML='<b>Could not connect to AlphaMarket.</b>';document.getElementById('pub-not-advisor').style.display='block';});
+}
+
 function submitPublish(){
+  var btn=document.getElementById('pub-submit-btn');
+  btn.textContent='Publishing...';btn.disabled=true;
   var isF=document.getElementById('pub-type').value==='fno';
   var url=isF?'/dyor/api/bridge/publish-position':'/dyor/api/bridge/publish-call';
   var body={strategy_id:document.getElementById('pub-strategy').value,publish_mode:document.getElementById('pub-mode').value,rationale:document.getElementById('pub-rationale').value};
+  // Trailing SL
+  if(document.getElementById('pub-tsl-enabled').checked){
+    body.trailingSlEnabled=true;
+    body.trailingSlType=document.getElementById('pub-tsl-type').value;
+    body.trailingSlValue=parseFloat(document.getElementById('pub-tsl-value').value)||null;
+  }
   if(isF){
     body.symbol=document.getElementById('pub-symbol').value;
     body.segment=document.getElementById('pub-segment').value;
@@ -10615,16 +10753,18 @@ function submitPublish(){
     body.stock_name=document.getElementById('pub-symbol').value;
     body.action=document.getElementById('pub-action').value;
     body.buy_range_start=parseFloat(document.getElementById('pub-entry').value)||null;
-    body.buy_range_end=parseFloat(document.getElementById('pub-entry').value)||null;
+    body.buy_range_end=parseFloat(document.getElementById('pub-entry2').value)||null;
     body.target_price=parseFloat(document.getElementById('pub-target').value)||null;
     body.stop_loss=parseFloat(document.getElementById('pub-sl').value)||null;
+    body.profit_goal=parseFloat(document.getElementById('pub-profit-goal').value)||null;
   }
-  fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).then(d=>{
+  fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d2){
     var res=document.getElementById('pub-result');
-    if(d.success){res.style.background='rgba(16,185,129,0.15)';res.style.color='var(--green)';res.textContent='Published successfully! Call ID: '+(d.call_id||d.position_id);
-    }else{res.style.background='rgba(239,68,68,0.15)';res.style.color='var(--red)';res.textContent='Error: '+(d.error||'Unknown error');}
+    btn.textContent='PUBLISH TO ALPHAMARKET';btn.disabled=false;
+    if(d2.success){res.style.background='rgba(16,185,129,0.15)';res.style.color='var(--green)';res.textContent='Published successfully! Call ID: '+(d2.call_id||d2.position_id);
+    }else{res.style.background='rgba(239,68,68,0.15)';res.style.color='var(--red)';res.textContent='Error: '+(d2.error||'Unknown error');}
     res.style.display='block';
-  });
+  }).catch(function(){btn.textContent='PUBLISH TO ALPHAMARKET';btn.disabled=false;});
 }
 </script>
 
