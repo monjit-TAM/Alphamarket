@@ -4593,7 +4593,64 @@ export async function registerRoutes(
   });
 
 
-  // ─── Admin: Bank & Payment Management ────────────────────────
+
+  // Check if advisor has DYOR publish permission
+  app.get("/api/external/check-publish-permission", requireDyorApiKey, async (req: any, res: any) => {
+    try {
+      const email = req.query.email;
+      if (!email) return res.status(400).json({ error: "email required" });
+      const userResult = await db.execute(sql`SELECT id, username, is_approved FROM users WHERE email = ${email} AND role = 'advisor'`);
+      const user = ((userResult as any).rows || [])[0];
+      if (!user) return res.json({ allowed: false, reason: "not_advisor" });
+      if (!user.is_approved) return res.json({ allowed: false, reason: "advisor_not_approved" });
+      const permResult = await db.execute(sql`SELECT status FROM dyor_publish_permissions WHERE email = ${email} ORDER BY requested_at DESC LIMIT 1`);
+      const perm = ((permResult as any).rows || [])[0];
+      if (!perm) return res.json({ allowed: false, reason: "not_requested", advisor_name: user.username });
+      if (perm.status === 'approved') return res.json({ allowed: true, reason: "approved" });
+      if (perm.status === 'rejected') return res.json({ allowed: false, reason: "rejected" });
+      return res.json({ allowed: false, reason: "pending" });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Request DYOR publish permission
+  app.post("/api/external/request-publish-permission", requireDyorApiKey, async (req: any, res: any) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ error: "email required" });
+      const userResult = await db.execute(sql`SELECT id, username, company_name, sebi_reg_number FROM users WHERE email = ${email} AND role = 'advisor'`);
+      const user = ((userResult as any).rows || [])[0];
+      if (!user) return res.status(404).json({ error: "Not registered as advisor on AlphaMarket" });
+      // Check if already requested
+      const existing = await db.execute(sql`SELECT id, status FROM dyor_publish_permissions WHERE email = ${email} ORDER BY requested_at DESC LIMIT 1`);
+      const ex = ((existing as any).rows || [])[0];
+      if (ex && ex.status === 'approved') return res.json({ success: true, status: "already_approved" });
+      if (ex && ex.status === 'pending') return res.json({ success: true, status: "already_pending" });
+      // Create request
+      await db.execute(sql`INSERT INTO dyor_publish_permissions (advisor_id, email, status) VALUES (${user.id}, ${email}, 'pending')`);
+      res.json({ success: true, status: "requested", message: "Request submitted. Admin will review and approve." });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Admin: View DYOR publish requests
+  app.get("/api/admin/dyor-publish-requests", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT dp.*, u.username, u.company_name, u.sebi_reg_number FROM dyor_publish_permissions dp LEFT JOIN users u ON u.id = dp.advisor_id ORDER BY dp.requested_at DESC`);
+      res.json((result as any).rows || []);
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+  // Admin: Approve/Reject DYOR publish request
+  app.post("/api/admin/dyor-publish-requests/:id/approve", requireAdmin, async (req: any, res: any) => {
+    try {
+      const action = req.body.action || 'approve';
+      const status = action === 'reject' ? 'rejected' : 'approved';
+      await db.execute(sql`UPDATE dyor_publish_permissions SET status = ${status}, approved_at = NOW(), approved_by = ${req.session.userId} WHERE id = ${parseInt(req.params.id)}`);
+      res.json({ success: true, status });
+    } catch (err: any) { res.status(500).json({ error: err.message }); }
+  });
+
+
+    // ─── Admin: Bank & Payment Management ────────────────────────
 
   // Admin: View advisor bank details
   app.get("/api/admin/advisor/:id/bank-details", requireAdmin, async (req: any, res: any) => {
