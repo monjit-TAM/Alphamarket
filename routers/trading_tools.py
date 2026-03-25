@@ -12,7 +12,7 @@ logger = logging.getLogger("dyor.trading")
 router = APIRouter(prefix="/api/trading", tags=["Trading Tools"])
 
 from routers.arbitrage import (_kite_store, _is_kite_connected, _get_kite_headers,
-                                FNO_UNIVERSE, _get_current_month_expiry, _format_kite_expiry)
+                                FNO_UNIVERSE, _get_current_month_expiry, _format_kite_expiry, INDEX_FNO)
 
 @router.get("/jobbing/candidates")
 async def jobbing_candidates(limit: int = 50):
@@ -24,6 +24,10 @@ async def jobbing_candidates(limit: int = 50):
     expiry_str = _format_kite_expiry(expiry)
     cash_symbols = [f"NSE:{sym}" for sym in FNO_UNIVERSE[:limit]]
     fut_symbols = [f"NFO:{sym}{expiry_str}FUT" for sym in FNO_UNIVERSE[:limit]]
+    # Add index futures
+    for idx_sym, idx_info in INDEX_FNO.items():
+        cash_symbols.append(idx_info["cash"])
+        fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
     params = "&".join([f"i={s}" for s in cash_symbols + fut_symbols])
     url = f"https://api.kite.trade/quote/ohlc?{params}"
     try:
@@ -39,8 +43,10 @@ async def jobbing_candidates(limit: int = 50):
         raise HTTPException(500, f"Data fetch error: {str(e)}")
 
     candidates = []
-    for sym in FNO_UNIVERSE[:limit]:
-        cash = quotes.get(f"NSE:{sym}", {})
+    all_syms = list(FNO_UNIVERSE[:limit]) + list(INDEX_FNO.keys())
+    for sym in all_syms:
+        is_index = sym in INDEX_FNO
+        cash = quotes.get(INDEX_FNO[sym]["cash"] if is_index else f"NSE:{sym}", {})
         fut = quotes.get(f"NFO:{sym}{expiry_str}FUT", {})
         cash_ltp = cash.get("last_price", 0)
         fut_ltp = fut.get("last_price", 0)
@@ -147,6 +153,10 @@ async def scalping_candidates(limit: int = 50):
     expiry_str = _format_kite_expiry(expiry)
     cash_symbols = [f"NSE:{sym}" for sym in FNO_UNIVERSE[:limit]]
     fut_symbols = [f"NFO:{sym}{expiry_str}FUT" for sym in FNO_UNIVERSE[:limit]]
+    # Add index futures
+    for idx_sym, idx_info in INDEX_FNO.items():
+        cash_symbols.append(idx_info["cash"])
+        fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
     params = "&".join([f"i={s}" for s in cash_symbols + fut_symbols])
     url = f"https://api.kite.trade/quote/ohlc?{params}"
     try:
@@ -162,8 +172,10 @@ async def scalping_candidates(limit: int = 50):
         raise HTTPException(500, f"Data fetch error: {str(e)}")
 
     candidates = []
-    for sym in FNO_UNIVERSE[:limit]:
-        cash = quotes.get(f"NSE:{sym}", {})
+    all_syms = list(FNO_UNIVERSE[:limit]) + list(INDEX_FNO.keys())
+    for sym in all_syms:
+        is_index = sym in INDEX_FNO
+        cash = quotes.get(INDEX_FNO[sym]["cash"] if is_index else f"NSE:{sym}", {})
         fut = quotes.get(f"NFO:{sym}{expiry_str}FUT", {})
         cash_ltp = cash.get("last_price", 0)
         fut_ltp = fut.get("last_price", 0)
