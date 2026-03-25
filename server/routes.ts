@@ -49,6 +49,8 @@ function validateVerifyToken(token: string, orderId: string, userId: string): bo
   return false;
 }
 
+import { initXTSBridge } from "./xts-bridge";
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -6325,7 +6327,7 @@ export async function registerRoutes(
   app.patch("/api/admin/broker-connections/:id", requireAdmin, async (req, res) => {
     try {
       const {name,baseUrl,vendorCode,vendorKey,isEnabled,notes}=req.body;
-      const result=await db.execute(sql`UPDATE broker_connections SET name=COALESCE(${name},name),base_url=COALESCE(${baseUrl},base_url),vendor_code=COALESCE(${vendorCode},vendor_code),vendor_key=COALESCE(${vendorKey},vendor_key),is_enabled=COALESCE(${isEnabled},is_enabled),notes=COALESCE(${notes},notes),updated_at=NOW() WHERE id=${req.params.id} RETURNING *`);
+      const result=await db.execute(sql`UPDATE broker_connections SET name=COALESCE(${name??null},name),base_url=COALESCE(${baseUrl??null},base_url),vendor_code=COALESCE(${vendorCode??null},vendor_code),vendor_key=COALESCE(${vendorKey??null},vendor_key),is_enabled=COALESCE(${isEnabled??null},is_enabled),notes=COALESCE(${notes??null},notes),updated_at=NOW() WHERE id=${req.params.id} RETURNING *`);
       if(!result.rows.length) return res.status(404).send("Not found");
       res.json(result.rows[0]);
     } catch(err:any){res.status(500).send(err.message);}
@@ -6370,7 +6372,8 @@ export async function registerRoutes(
   });
   app.get("/api/admin/broker-connections/:id/strategy-mappings", requireAdmin, async (req, res) => {
     try {
-      const result=await db.execute(sql`SELECT s.id,s.name,s.type,s.status,s."advisorId",u.company_name as advisor_name,bsm.id as mapping_id,bsm.is_enabled as mapping_enabled,bsm.custom_strategy_name FROM strategies s LEFT JOIN users u ON u.id=s."advisorId" LEFT JOIN broker_strategy_mappings bsm ON bsm.strategy_id=s.id AND bsm.broker_connection_id=${req.params.id} WHERE s.status='published' ORDER BY u.company_name,s.name`);
+      const connId = req.params.id.replace(/[^a-f0-9-]/gi, '');
+      const result=await db.execute(sql.raw(`SELECT s.id,s.name,s.type,s.status,s.advisor_id as "advisorId",u.company_name as advisor_name,bsm.id as mapping_id,bsm.is_enabled as mapping_enabled,bsm.custom_strategy_name FROM strategies s LEFT JOIN users u ON u.id=s.advisor_id LEFT JOIN broker_strategy_mappings bsm ON bsm.strategy_id=s.id AND bsm.broker_connection_id='${connId}' WHERE s.status='Published' ORDER BY u.company_name,s.name`));
       res.json(result.rows);
     } catch(err:any){res.status(500).send(err.message);}
   });
@@ -6399,5 +6402,8 @@ export async function registerRoutes(
     } catch(err:any){res.status(500).send(err.message);}
   });
 
-    return httpServer;
+      // Initialize XTS Bridge
+  initXTSBridge();
+
+  return httpServer;
 }

@@ -4,6 +4,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "crypto";
 import { fireWebhookEvent, buildCallEventData, buildPositionEventData } from "./webhook-dispatcher";
+import { handleXTSEvent } from "./xts-bridge";
 
 interface BrokerApiKey {
   id: string;
@@ -677,6 +678,7 @@ export function registerBrokerApiRoutes(app: Express) {
         });
         // Fire webhook
         fireWebhookEvent("POSITION_CREATED", buildPositionEventData(position, strategy), strategy.advisorId).catch(() => {});
+        handleXTSEvent("POSITION_CREATED", buildPositionEventData(position, strategy), strategy.advisorId).catch(() => {});
         return res.status(201).json({ uid: position.id, type: "POSITION", status: "CREATED" });
       }
 
@@ -697,6 +699,7 @@ export function registerBrokerApiRoutes(app: Express) {
       });
       // Fire webhook
       fireWebhookEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
+      handleXTSEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
       res.status(201).json({ uid: call.id, type: "CALL", status: "CREATED" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -756,6 +759,7 @@ export function registerBrokerApiRoutes(app: Express) {
         const updated = await storage.updateCall(callId, updateData);
         const evtType = updateData.status === "Closed" ? "CALL_CLOSED" : "CALL_MODIFIED";
         fireWebhookEvent(evtType, buildCallEventData({ ...call, ...updateData }), call.strategyId).catch(() => {});
+        handleXTSEvent(evtType, buildCallEventData({ ...call, ...updateData }, undefined, { id: call.strategyId }), call.strategyId).catch(() => {});
         return res.json({ uid: updated.id, type: "CALL", status: "UPDATED" });
       }
 
@@ -771,6 +775,7 @@ export function registerBrokerApiRoutes(app: Express) {
         const updated = await storage.updatePosition(callId, updateData);
         const posEvtType = updateData.status === "Closed" ? "POSITION_CLOSED" : "POSITION_MODIFIED";
         fireWebhookEvent(posEvtType, buildPositionEventData({ ...position, ...updateData }), position.strategyId).catch(() => {});
+        handleXTSEvent(posEvtType, buildPositionEventData({ ...position, ...updateData }, undefined, { id: position.strategyId }), position.strategyId).catch(() => {});
         return res.json({ uid: updated.id, type: "POSITION", status: "UPDATED" });
       }
 
