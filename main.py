@@ -45,6 +45,9 @@ API_TAGS = [
     {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
     {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
     {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
+    {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
+    {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
+    {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
 ]
 
 # ══ Alpha Data Service (centralized data layer on port 5004) ══
@@ -84,7 +87,7 @@ from routers.options_backtest import router as options_bt_router
 
 app = FastAPI(
     root_path="/dyor",
-    title="AlphaLab API",
+    title="AlphaLab DYOR API",
     description="""
 ## AlphaLab — Quantitative Research & Advisory Platform for Indian Markets
 
@@ -120,13 +123,13 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 - **Email**: hello@thealphamarket.com
 - **Website**: https://testalpha.in
 """,
-    version="2.1.0",
+    version="2.5.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     openapi_tags=API_TAGS,
-    contact={"name": "AlphaLab by The Alpha Market", "email": "hello@thealphamarket.com", "url": "https://testalpha.in"},
-    license_info={"name": "Proprietary", "url": "https://testalpha.in/terms"},
+    contact={"name": "AlphaLab DYOR by AlphaMarket", "email": "hello@alphamarket.co.in", "url": "https://alphamarket.co.in"},
+    license_info={"name": "Proprietary", "url": "https://alphamarket.co.in/terms"},
 )
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
