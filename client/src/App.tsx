@@ -35,6 +35,7 @@ import EsignAgreementPage from "@/pages/esign-agreement";
 import StrategyPerformance from "@/pages/strategy-performance";
 import DyorPage from "@/pages/dyor/index";
 import { TermsAndConditions, CancellationPolicy, PrivacyPolicy, LegalAgreement, ShippingAndReturns, ContactUs } from "@/pages/legal";
+import BrokerAdmin from "@/pages/admin/BrokerAdmin";
 
 function Router() {
   return (
@@ -75,6 +76,7 @@ function Router() {
       <Route path="/dashboard/:rest*" component={Dashboard} />
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/:rest*" component={AdminDashboard} />
+          <Route path="/admin/brokers" component={BrokerAdmin} />
       <Route path="/dyor" component={DyorPage} />
       <Route path="/dyor/:rest*" component={DyorPage} />
       <Route component={NotFound} />

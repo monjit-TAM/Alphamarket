@@ -6295,5 +6295,109 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
-  return httpServer;
+
+  // ═══ BROKER / XTS ADMIN MODULE ═══════════════════════════════════════════
+  app.get("/api/admin/broker-connections", requireAdmin, async (_req, res) => {
+    try {
+      const result = await db.execute(sql.raw(`
+        SELECT bc.*,
+          COALESCE(COUNT(DISTINCT bam.advisor_id),0)::int as advisor_count,
+          COALESCE(COUNT(DISTINCT bsm.strategy_id),0)::int as strategy_count,
+          COALESCE((SELECT COUNT(*) FROM xts_publish_log xl WHERE xl.broker_connection_id=bc.id AND xl.status='success'),0)::int as total_published,
+          COALESCE((SELECT COUNT(*) FROM xts_publish_log xl WHERE xl.broker_connection_id=bc.id AND xl.status='error'),0)::int as total_errors,
+          COALESCE((SELECT COUNT(*) FROM xts_publish_log xl WHERE xl.broker_connection_id=bc.id AND xl.published_at>NOW()-INTERVAL '24 hours'),0)::int as published_24h
+        FROM broker_connections bc
+        LEFT JOIN broker_advisor_mappings bam ON bam.broker_connection_id=bc.id AND bam.is_enabled=true
+        LEFT JOIN broker_strategy_mappings bsm ON bsm.broker_connection_id=bc.id AND bsm.is_enabled=true
+        GROUP BY bc.id ORDER BY bc.created_at DESC
+      `));
+      res.json(result.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.post("/api/admin/broker-connections", requireAdmin, async (req, res) => {
+    try {
+      const {name,brokerType,baseUrl,vendorCode,vendorKey,notes}=req.body;
+      if(!name||!baseUrl||!vendorCode||!vendorKey) return res.status(400).send("name,baseUrl,vendorCode,vendorKey required");
+      const result=await db.execute(sql`INSERT INTO broker_connections(name,broker_type,base_url,vendor_code,vendor_key,notes) VALUES(${name},${brokerType||'XTS'},${baseUrl},${vendorCode},${vendorKey},${notes||null}) RETURNING *`);
+      res.json(result.rows[0]);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.patch("/api/admin/broker-connections/:id", requireAdmin, async (req, res) => {
+    try {
+      const {name,baseUrl,vendorCode,vendorKey,isEnabled,notes}=req.body;
+      const result=await db.execute(sql`UPDATE broker_connections SET name=COALESCE(${name},name),base_url=COALESCE(${baseUrl},base_url),vendor_code=COALESCE(${vendorCode},vendor_code),vendor_key=COALESCE(${vendorKey},vendor_key),is_enabled=COALESCE(${isEnabled},is_enabled),notes=COALESCE(${notes},notes),updated_at=NOW() WHERE id=${req.params.id} RETURNING *`);
+      if(!result.rows.length) return res.status(404).send("Not found");
+      res.json(result.rows[0]);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.delete("/api/admin/broker-connections/:id", requireAdmin, async (req, res) => {
+    try{await db.execute(sql`DELETE FROM broker_connections WHERE id=${req.params.id}`);res.json({ok:true});}
+    catch(err:any){res.status(500).send(err.message);}
+  });
+  app.post("/api/admin/broker-connections/:id/test", requireAdmin, async (req, res) => {
+    try {
+      const connResult=await db.execute(sql`SELECT * FROM broker_connections WHERE id=${req.params.id}`);
+      if(!connResult.rows.length) return res.status(404).send("Not found");
+      const conn=connResult.rows[0] as any;
+      let pingStatus='error',pingError:string|null=null,token:string|null=null;
+      try {
+        const response=await fetch(`${conn.base_url}/XTSAdvisory/sessiontoken`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendorCode:conn.vendor_code,vendorKey:conn.vendor_key}),signal:AbortSignal.timeout(10000)});
+        const data=await response.json() as any;
+        token=data?.result?.token||data?.token||null;
+        pingStatus=token?'ok':'error';
+        if(!token) pingError=JSON.stringify(data).slice(0,300);
+        await db.execute(sql`UPDATE broker_connections SET last_ping_at=NOW(),last_ping_status=${pingStatus},last_ping_error=${pingError},token=${token},token_issued_at=${token?new Date():null},updated_at=NOW() WHERE id=${req.params.id}`);
+        res.json({status:pingStatus,token:token?'received':null,error:pingError,rawResponse:data});
+      } catch(fetchErr:any){
+        pingError=fetchErr.message;
+        await db.execute(sql`UPDATE broker_connections SET last_ping_at=NOW(),last_ping_status='error',last_ping_error=${pingError},updated_at=NOW() WHERE id=${req.params.id}`);
+        res.json({status:'error',error:pingError});
+      }
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.get("/api/admin/broker-connections/:id/advisor-mappings", requireAdmin, async (req, res) => {
+    try {
+      const result=await db.execute(sql`SELECT u.id,u.email,u.username,u.company_name as "companyName",u.role,u.is_approved as "isApproved",bam.id as mapping_id,bam.is_enabled as mapping_enabled,bam.push_equity_calls,bam.push_fno_positions,bam.push_basket,bam.thematic_collection_override FROM users u LEFT JOIN broker_advisor_mappings bam ON bam.advisor_id=u.id AND bam.broker_connection_id=${req.params.id} WHERE u.role='advisor' ORDER BY u.company_name`);
+      res.json(result.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.post("/api/admin/broker-connections/:id/advisor-mappings", requireAdmin, async (req, res) => {
+    try {
+      const {advisorId,isEnabled,pushEquityCalls,pushFnoPositions,pushBasket,thematicCollectionOverride}=req.body;
+      const result=await db.execute(sql`INSERT INTO broker_advisor_mappings(broker_connection_id,advisor_id,is_enabled,push_equity_calls,push_fno_positions,push_basket,thematic_collection_override) VALUES(${req.params.id},${advisorId},${isEnabled??true},${pushEquityCalls??true},${pushFnoPositions??true},${pushBasket??false},${thematicCollectionOverride||null}) ON CONFLICT(broker_connection_id,advisor_id) DO UPDATE SET is_enabled=EXCLUDED.is_enabled,push_equity_calls=EXCLUDED.push_equity_calls,push_fno_positions=EXCLUDED.push_fno_positions,push_basket=EXCLUDED.push_basket,thematic_collection_override=EXCLUDED.thematic_collection_override RETURNING *`);
+      res.json(result.rows[0]);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.get("/api/admin/broker-connections/:id/strategy-mappings", requireAdmin, async (req, res) => {
+    try {
+      const result=await db.execute(sql`SELECT s.id,s.name,s.type,s.status,s."advisorId",u.company_name as advisor_name,bsm.id as mapping_id,bsm.is_enabled as mapping_enabled,bsm.custom_strategy_name FROM strategies s LEFT JOIN users u ON u.id=s."advisorId" LEFT JOIN broker_strategy_mappings bsm ON bsm.strategy_id=s.id AND bsm.broker_connection_id=${req.params.id} WHERE s.status='published' ORDER BY u.company_name,s.name`);
+      res.json(result.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.post("/api/admin/broker-connections/:id/strategy-mappings", requireAdmin, async (req, res) => {
+    try {
+      const {strategyId,isEnabled,customStrategyName}=req.body;
+      const result=await db.execute(sql`INSERT INTO broker_strategy_mappings(broker_connection_id,strategy_id,is_enabled,custom_strategy_name) VALUES(${req.params.id},${strategyId},${isEnabled??true},${customStrategyName||null}) ON CONFLICT(broker_connection_id,strategy_id) DO UPDATE SET is_enabled=EXCLUDED.is_enabled,custom_strategy_name=EXCLUDED.custom_strategy_name RETURNING *`);
+      res.json(result.rows[0]);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.get("/api/admin/broker-connections/:id/publish-log", requireAdmin, async (req, res) => {
+    try {
+      const limit=Math.min(parseInt(req.query.limit as string||'50'),200);
+      const status=req.query.status as string;
+      const result=await db.execute(sql`SELECT xl.*,u.company_name as advisor_name,s.name as strategy_name FROM xts_publish_log xl LEFT JOIN users u ON u.id=xl.advisor_id LEFT JOIN strategies s ON s.id=xl.strategy_id WHERE xl.broker_connection_id=${req.params.id} ${status?sql`AND xl.status=${status}`:sql``} ORDER BY xl.published_at DESC LIMIT ${limit}`);
+      res.json(result.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+  app.get("/api/admin/xts-dashboard", requireAdmin, async (_req, res) => {
+    try {
+      const [conns,stats]=await Promise.all([
+        db.execute(sql`SELECT COUNT(*)::int as total,SUM(CASE WHEN is_enabled THEN 1 ELSE 0 END)::int as enabled FROM broker_connections`),
+        db.execute(sql`SELECT COUNT(*) FILTER(WHERE status='success')::int as total_success,COUNT(*) FILTER(WHERE status='error')::int as total_error,COUNT(*) FILTER(WHERE status='success' AND published_at>NOW()-INTERVAL '24 hours')::int as success_24h,COUNT(*) FILTER(WHERE status='error' AND published_at>NOW()-INTERVAL '24 hours')::int as error_24h FROM xts_publish_log`),
+      ]);
+      res.json({brokers:conns.rows[0],publishing:stats.rows[0]});
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+    return httpServer;
 }
