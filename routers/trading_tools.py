@@ -24,9 +24,9 @@ async def jobbing_candidates(limit: int = 50):
     expiry_str = _format_kite_expiry(expiry)
     cash_symbols = [f"NSE:{sym}" for sym in FNO_UNIVERSE[:limit]]
     fut_symbols = [f"NFO:{sym}{expiry_str}FUT" for sym in FNO_UNIVERSE[:limit]]
-    # Add index futures
+    # Add index futures (URL-encode cash symbols with spaces)
     for idx_sym, idx_info in INDEX_FNO.items():
-        cash_symbols.append(idx_info["cash"])
+        cash_symbols.append(idx_info["cash"].replace(" ", "%20"))
         fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
     params = "&".join([f"i={s}" for s in cash_symbols + fut_symbols])
     url = f"https://api.kite.trade/quote/ohlc?{params}"
@@ -153,9 +153,9 @@ async def scalping_candidates(limit: int = 50):
     expiry_str = _format_kite_expiry(expiry)
     cash_symbols = [f"NSE:{sym}" for sym in FNO_UNIVERSE[:limit]]
     fut_symbols = [f"NFO:{sym}{expiry_str}FUT" for sym in FNO_UNIVERSE[:limit]]
-    # Add index futures
+    # Add index futures (URL-encode cash symbols with spaces)
     for idx_sym, idx_info in INDEX_FNO.items():
-        cash_symbols.append(idx_info["cash"])
+        cash_symbols.append(idx_info["cash"].replace(" ", "%20"))
         fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
     params = "&".join([f"i={s}" for s in cash_symbols + fut_symbols])
     url = f"https://api.kite.trade/quote/ohlc?{params}"

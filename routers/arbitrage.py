@@ -304,9 +304,9 @@ async def get_spreads(limit: int = 50):
     # Build instrument list
     cash_symbols = [f"NSE:{sym}" for sym in FNO_UNIVERSE[:limit]]
     fut_symbols = [f"NFO:{sym}{expiry_str}FUT" for sym in FNO_UNIVERSE[:limit]]
-    # Add index futures
+    # Add index futures (URL-encode cash symbols with spaces)
     for idx_sym, idx_info in INDEX_FNO.items():
-        cash_symbols.append(idx_info["cash"])
+        cash_symbols.append(idx_info["cash"].replace(" ", "%20"))
         fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
 
     # Fetch quotes in batches (Kite allows ~500 instruments per call)
