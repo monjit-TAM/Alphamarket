@@ -4629,6 +4629,77 @@ export async function registerRoutes(
       if (ex && ex.status === 'pending') return res.json({ success: true, status: "already_pending" });
       // Create request
       await db.execute(sql`INSERT INTO dyor_publish_permissions (advisor_id, email, status) VALUES (${user.id}, ${email}, 'pending')`);
+
+      // Send email notifications via SendGrid
+      try {
+        const sgMail = require("@sendgrid/mail");
+        sgMail.setApiKey(process.env.SENDGRID_API_KEY || "");
+        const fromEmail = process.env.SENDGRID_FROM_EMAIL || "hello@alphamarket.co.in";
+        const advisorName = user.username || email;
+        const company = user.company_name || "N/A";
+        const sebi = user.sebi_reg_number || "N/A";
+
+        // Email 1: Notify admin
+        await sgMail.send({
+          to: "hello@alphamarket.co.in",
+          from: fromEmail,
+          subject: `[AlphaMarket] New Publish Permission Request — ${advisorName}`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+              <div style="background:#0D1B2A;padding:20px;text-align:center">
+                <h2 style="color:#D4A017;margin:0">AlphaMarket Admin Alert</h2>
+                <p style="color:#93C5FD;margin:4px 0 0">New DYOR Publish Permission Request</p>
+              </div>
+              <div style="padding:24px;background:#f8f9fa">
+                <p style="color:#334155">A new advisor has requested permission to publish on DYOR:</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0">
+                  <tr style="background:#e8edf4"><td style="padding:8px 12px;font-weight:bold;color:#0D1B2A;width:40%">Advisor Name</td><td style="padding:8px 12px;color:#334155">${advisorName}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#0D1B2A">Email</td><td style="padding:8px 12px;color:#334155">${email}</td></tr>
+                  <tr style="background:#e8edf4"><td style="padding:8px 12px;font-weight:bold;color:#0D1B2A">Company</td><td style="padding:8px 12px;color:#334155">${company}</td></tr>
+                  <tr><td style="padding:8px 12px;font-weight:bold;color:#0D1B2A">SEBI Reg No.</td><td style="padding:8px 12px;color:#334155">${sebi}</td></tr>
+                  <tr style="background:#e8edf4"><td style="padding:8px 12px;font-weight:bold;color:#0D1B2A">Requested At</td><td style="padding:8px 12px;color:#334155">${new Date().toLocaleString("en-IN", {timeZone:"Asia/Kolkata"})}</td></tr>
+                </table>
+                <div style="text-align:center;margin:24px 0">
+                  <a href="https://alphamarket.co.in/admin/dyor-publish-requests" style="background:#0D1B2A;color:#D4A017;padding:12px 28px;text-decoration:none;border-radius:4px;font-weight:bold;font-size:14px">Review Request in Admin Panel</a>
+                </div>
+                <p style="color:#647080;font-size:12px;text-align:center">AlphaMarket Admin System — hello@alphamarket.co.in</p>
+              </div>
+            </div>`,
+        });
+
+        // Email 2: Confirm to advisor
+        await sgMail.send({
+          to: email,
+          from: fromEmail,
+          subject: `Your AlphaMarket Publish Permission Request Has Been Received`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+              <div style="background:#0D1B2A;padding:20px;text-align:center">
+                <h2 style="color:#D4A017;margin:0">AlphaMarket</h2>
+                <p style="color:#93C5FD;margin:4px 0 0">Publish Permission Request Received</p>
+              </div>
+              <div style="padding:24px;background:#f8f9fa">
+                <p style="color:#334155">Hi ${advisorName},</p>
+                <p style="color:#334155">Thank you for requesting publish permission on <strong>DYOR by AlphaMarket</strong>. Your request has been received and is currently under review.</p>
+                <div style="background:#FDFAED;border-left:4px solid #D4A017;padding:12px 16px;margin:16px 0">
+                  <p style="margin:0;color:#334155"><strong>What happens next?</strong></p>
+                  <ul style="color:#334155;margin:8px 0 0;padding-left:16px">
+                    <li>Our team will verify your SEBI registration details</li>
+                    <li>You will receive an email once your request is approved or if we need more information</li>
+                    <li>Typical review time: 1–2 business days</li>
+                  </ul>
+                </div>
+                <p style="color:#334155">If you have any questions, please reply to this email or reach us at <a href="mailto:hello@alphamarket.co.in" style="color:#0D1B2A">hello@alphamarket.co.in</a>.</p>
+                <p style="color:#334155">Regards,<br><strong>AlphaMarket Team</strong></p>
+                <p style="color:#647080;font-size:11px;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:12px">AlphaMarket Research Intelligence Platform · alphamarket.co.in<br>This is an automated notification. Please do not reply directly to this message.</p>
+              </div>
+            </div>`,
+        });
+      } catch (emailErr: any) {
+        console.error("[Email] Failed to send publish permission notification:", emailErr.message);
+        // Don't fail the request if email fails
+      }
+
       res.json({ success: true, status: "requested", message: "Request submitted. Admin will review and approve." });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
@@ -4647,6 +4718,54 @@ export async function registerRoutes(
       const action = req.body.action || 'approve';
       const status = action === 'reject' ? 'rejected' : 'approved';
       await db.execute(sql`UPDATE dyor_publish_permissions SET status = ${status}, approved_at = NOW(), approved_by = ${req.session.userId} WHERE id = ${parseInt(req.params.id)}`);
+
+      // Send approval/rejection email to advisor
+      try {
+        const permResult = await db.execute(sql`SELECT dp.email, u.username, u.company_name FROM dyor_publish_permissions dp LEFT JOIN users u ON u.id = dp.advisor_id WHERE dp.id = ${parseInt(req.params.id)}`);
+        const perm = ((permResult as any).rows || [])[0];
+        if (perm?.email) {
+          const sgMail = require("@sendgrid/mail");
+          sgMail.setApiKey(process.env.SENDGRID_API_KEY || "");
+          const fromEmail = process.env.SENDGRID_FROM_EMAIL || "hello@alphamarket.co.in";
+          const advisorName = perm.username || perm.email;
+          const isApproved = status === "approved";
+          await sgMail.send({
+            to: perm.email,
+            from: fromEmail,
+            subject: isApproved
+              ? `Your AlphaMarket Publish Permission Has Been Approved`
+              : `Update on Your AlphaMarket Publish Permission Request`,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+                <div style="background:#0D1B2A;padding:20px;text-align:center">
+                  <h2 style="color:#D4A017;margin:0">AlphaMarket</h2>
+                  <p style="color:${isApproved ? "#86EFAC" : "#FCA5A5"};margin:4px 0 0">${isApproved ? "Publish Permission Approved ✓" : "Publish Permission Request Update"}</p>
+                </div>
+                <div style="padding:24px;background:#f8f9fa">
+                  <p style="color:#334155">Hi ${advisorName},</p>
+                  ${isApproved ? `
+                  <div style="background:#F0FDF4;border-left:4px solid #16A34A;padding:12px 16px;margin:16px 0">
+                    <p style="margin:0;color:#166534;font-weight:bold">Your publish permission has been approved!</p>
+                    <p style="margin:8px 0 0;color:#166534">You can now publish investment ideas and advisory calls on DYOR by AlphaMarket.</p>
+                  </div>
+                  <p style="color:#334155">Log in to <a href="https://dyor.alphamarket.co.in" style="color:#0D1B2A;font-weight:bold">DYOR</a> and start publishing your research to your subscribers.</p>
+                  ` : `
+                  <div style="background:#FEF2F2;border-left:4px solid #DC2626;padding:12px 16px;margin:16px 0">
+                    <p style="margin:0;color:#B91C1C;font-weight:bold">Your publish permission request was not approved at this time.</p>
+                    <p style="margin:8px 0 0;color:#B91C1C">Please contact us at hello@alphamarket.co.in for more information or to reapply.</p>
+                  </div>
+                  `}
+                  <p style="color:#334155">For any questions, reach us at <a href="mailto:hello@alphamarket.co.in" style="color:#0D1B2A">hello@alphamarket.co.in</a>.</p>
+                  <p style="color:#334155">Regards,<br><strong>AlphaMarket Team</strong></p>
+                  <p style="color:#647080;font-size:11px;margin-top:24px;border-top:1px solid #e2e8f0;padding-top:12px">AlphaMarket Research Intelligence Platform · alphamarket.co.in</p>
+                </div>
+              </div>`,
+          });
+        }
+      } catch (emailErr: any) {
+        console.error("[Email] Failed to send approval notification:", emailErr.message);
+      }
+
       res.json({ success: true, status });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
