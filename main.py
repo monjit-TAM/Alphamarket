@@ -49,6 +49,7 @@ API_TAGS = [
     {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
     {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
     {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
+    {"name": "AlphaBot", "description": "Algorithmic signal generator for Index F&O. Automated strategies for NIFTY/BANKNIFTY futures, options directional, options writing (straddle/strangle), and index arbitrage. Signals pushed to Upstox/XTS for auto-execution."},
 ]
 
 # ══ Alpha Data Service (centralized data layer on port 5004) ══
@@ -84,6 +85,7 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
 
 from routers.arbitrage import router as arbitrage_router
 from routers.trading_tools import router as trading_router
+from routers.alphabot import router as alphabot_router
 from routers.options_backtest import router as options_bt_router
 
 app = FastAPI(
@@ -146,6 +148,7 @@ app.openapi = custom_openapi
 
 app.include_router(arbitrage_router)
 app.include_router(trading_router)
+app.include_router(alphabot_router)
 app.include_router(options_bt_router)
 
 # DYOR Auth Bridge — validate AlphaMarket session cookies
