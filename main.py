@@ -6272,7 +6272,7 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
         else:
             hist = pd.DataFrame()
         if not hist.empty:
-            c = hist["Close"]
+            c = hist["close"]
             price = float(c.iloc[-1])
             sma_50 = float(c.rolling(50).mean().iloc[-1]) if len(c) >= 50 else price
             sma_200 = float(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else price
@@ -6291,8 +6291,8 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
             macd_signal = macd_line.ewm(span=9).mean()
             macd_cross_up = float(macd_line.iloc[-1]) > float(macd_signal.iloc[-1]) and float(macd_line.iloc[-2]) <= float(macd_signal.iloc[-2])
 
-            vol_avg = hist["Volume"].rolling(20).mean().iloc[-1]
-            vol_ratio = round(float(hist["Volume"].iloc[-1]) / float(vol_avg), 2) if vol_avg > 0 else 1
+            vol_avg = hist["volume"].rolling(20).mean().iloc[-1]
+            vol_ratio = round(float(hist["volume"].iloc[-1]) / float(vol_avg), 2) if vol_avg > 0 else 1
 
             c252 = c.iloc[-min(252, len(c)):]
             rs_3m = round(float(c.iloc[-1] / c.iloc[-min(60, len(c))] - 1) * 100, 1) if len(c) > 60 else 0
@@ -6307,16 +6307,25 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
                 "w52_high": round(float(c252.max()), 2), "w52_low": round(float(c252.min()), 2),
             }
 
-        info = await loop.run_in_executor(None, lambda: ticker.info)
-        if info:
+        fdata = await ds_fundamentals(symbol)
+        if fdata:
+            def sf(v, d=0):
+                try: v=float(v); return d if (v!=v or v==float('inf')) else v
+                except: return d
+            pe = sf(fdata.get("pe_trailing") or fdata.get("pe_forward") or fdata.get("pe_ratio", 0))
+            roe_val = sf(fdata.get("roe", 0))
+            roe = roe_val * 100 if roe_val and roe_val < 1 else roe_val
+            dy = sf(fdata.get("dividend_yield", 0))
             fund_data = {
-                "pe_ratio": info.get("trailingPE", info.get("forwardPE", 0)) or 0,
-                "roe": (info.get("returnOnEquity", 0) or 0) * 100 if (info.get("returnOnEquity", 0) or 0) < 1 else info.get("returnOnEquity", 0) or 0,
-                "dividend_yield": (info.get("dividendYield", 0) or 0) * 100 if (info.get("dividendYield", 0) or 0) < 1 else info.get("dividendYield", 0) or 0,
-                "debt_equity": info.get("debtToEquity", 0) or 0,
-                "market_cap": info.get("marketCap", 0) or 0,
-                "sector": info.get("sector", ""),
-                "name": info.get("shortName", symbol),
+                "pe_ratio": round(pe, 2),
+                "roe": round(roe, 2),
+                "dividend_yield": round(dy, 2),
+                "debt_equity": round(sf(fdata.get("debt_equity", 0)), 2),
+                "market_cap": sf(fdata.get("market_cap", 0)),
+                "sector": fdata.get("sector", ""),
+                "name": fdata.get("name", symbol),
+                "pb": round(sf(fdata.get("pb", 0)), 2),
+                "profit_margin": round(sf(fdata.get("profit_margin", 0)), 2),
             }
     except Exception as e:
         print(f"Data fetch error for {symbol}: {e}")
