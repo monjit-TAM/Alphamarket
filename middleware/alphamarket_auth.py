@@ -32,6 +32,8 @@ PUBLIC_PATHS = {
     "/api/health", "/health",
     "/api/arbitrage/kite-callback", "/api/arbitrage/kite-status", "/api/arbitrage/kite-login",
     "/api/trading/jobbing/calculator", "/api/trading/scalping/calculator",
+    "/api/screener/params", "/api/screener/scan",
+    "/api/screener/warm-fundamentals", "/api/screener/warm-fno", "/api/screener/warm-options",
 }
 
 

@@ -43,12 +43,6 @@ API_TAGS = [
     {"name": "Alerts & Notifications", "description": "Price alerts, strategy signal alerts, and in-app notification management"},
     {"name": "Dashboard", "description": "Aggregated strategy performance dashboard across screener, backtest, and forward test engines"},
     {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
-    {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
-    {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
-    {"name": "Screen Builder", "description": "Custom stock/futures/options scanner for DYOR. Filter 923 NSE stocks by 40+ technical & fundamental parameters. Includes universe warm-up, F&O pipeline, and saved screens."},
-    {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
-    {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
-    {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
 ]
 
 # ══ Alpha Data Service (centralized data layer on port 5004) ══
@@ -88,7 +82,7 @@ from routers.options_backtest import router as options_bt_router
 
 app = FastAPI(
     root_path="/dyor",
-    title="AlphaLab DYOR API",
+    title="AlphaLab API",
     description="""
 ## AlphaLab — Quantitative Research & Advisory Platform for Indian Markets
 
@@ -124,13 +118,13 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 - **Email**: hello@thealphamarket.com
 - **Website**: https://testalpha.in
 """,
-    version="2.6.0",
+    version="2.1.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     openapi_tags=API_TAGS,
-    contact={"name": "AlphaLab DYOR by AlphaMarket", "email": "hello@alphamarket.co.in", "url": "https://alphamarket.co.in"},
-    license_info={"name": "Proprietary", "url": "https://alphamarket.co.in/terms"},
+    contact={"name": "AlphaLab by The Alpha Market", "email": "hello@thealphamarket.com", "url": "https://testalpha.in"},
+    license_info={"name": "Proprietary", "url": "https://testalpha.in/terms"},
 )
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -170,60 +164,6 @@ async def startup():
     except Exception as e:
         print(f"Startup error: {e}")
 
-
-
-@app.get("/api/health", tags=["System"])
-async def health_check():
-    """System health status — check data sources, services, cache"""
-    import subprocess
-    results = {}
-    # Redis
-    try:
-        if redis_client:
-            await redis_client.ping()
-            results["redis"] = {"status": "ok"}
-        else:
-            results["redis"] = {"status": "error", "msg": "not connected"}
-    except:
-        results["redis"] = {"status": "error", "msg": "ping failed"}
-    # DB
-    try:
-        async with db_pool.acquire() as conn:
-            cnt = await conn.fetchval("SELECT COUNT(*) FROM users")
-            results["database"] = {"status": "ok", "users": cnt}
-    except Exception as e:
-        results["database"] = {"status": "error", "msg": str(e)[:100]}
-    # Data service prices
-    import urllib.request, json as _json
-    for sym in ["RELIANCE", "NIFTY"]:
-        try:
-            r = urllib.request.urlopen(f"http://127.0.0.1:5004/data/equity/quote/{sym}", timeout=10)
-            d = _json.loads(r.read())
-            results[f"price_{sym}"] = {"status": "ok", "price": d.get("price"), "source": d.get("source")}
-        except Exception as e:
-            results[f"price_{sym}"] = {"status": "error", "msg": str(e)[:100]}
-    # Groww token
-    try:
-        req = urllib.request.Request("http://127.0.0.1:5001/api/shared/token/groww")
-        req.add_header("x-shared-secret", "alphamarket-shared-2026")
-        r = urllib.request.urlopen(req, timeout=10)
-        d = _json.loads(r.read())
-        import time as _time
-        expiry = d.get("expiry", 0)
-        remaining_hrs = (expiry - _time.time()*1000) / 3600000 if expiry else 0
-        results["groww_token"] = {"status": "ok" if remaining_hrs > 2 else "warn", "hours_remaining": round(remaining_hrs, 1)}
-    except Exception as e:
-        results["groww_token"] = {"status": "error", "msg": str(e)[:100]}
-    # Last health log
-    try:
-        with open("/var/log/dyor-health.log") as f:
-            lines = f.readlines()
-            last_lines = [l.strip() for l in lines[-5:]]
-            results["last_health_check"] = last_lines
-    except:
-        results["last_health_check"] = ["no log"]
-    overall = "ok" if all(v.get("status") == "ok" for v in results.values() if isinstance(v, dict)) else "degraded"
-    return {"status": overall, "checks": results, "timestamp": datetime.utcnow().isoformat()}
 
 async def _precompute_loop():
     """Background task: pre-compute screener results every 15 minutes so users always hit cache."""
@@ -291,7 +231,7 @@ async def init_db():
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS backtests (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 name TEXT NOT NULL, strategy TEXT NOT NULL, symbol TEXT NOT NULL,
                 from_date TEXT NOT NULL, to_date TEXT NOT NULL,
                 initial_capital FLOAT DEFAULT 100000, params JSONB DEFAULT '{}',
@@ -299,26 +239,8 @@ async def init_db():
             )
         """)
         await conn.execute("""
-            CREATE TABLE IF NOT EXISTS user_consents (
-                id SERIAL PRIMARY KEY,
-                user_id INT NOT NULL,
-                consent_type VARCHAR(50) NOT NULL DEFAULT 'platform_disclaimer',
-                version VARCHAR(10) NOT NULL DEFAULT '2.0',
-                ip_address VARCHAR(50),
-                user_agent TEXT,
-                accepted_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(user_id, consent_type, version)
-            );
-            CREATE TABLE IF NOT EXISTS methodology_access_requests (
-                id SERIAL PRIMARY KEY,
-                user_id INT NOT NULL,
-                status VARCHAR(20) DEFAULT 'pending',
-                requested_at TIMESTAMP DEFAULT NOW(),
-                reviewed_at TIMESTAMP,
-                reviewed_by INT
-            );
             CREATE TABLE IF NOT EXISTS paper_trades (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 symbol TEXT NOT NULL, trade_type TEXT NOT NULL, quantity INT NOT NULL,
                 entry_price FLOAT NOT NULL, exit_price FLOAT, stop_loss FLOAT, target FLOAT,
                 status TEXT DEFAULT 'open', pnl FLOAT, created_at TIMESTAMP DEFAULT NOW(), closed_at TIMESTAMP
@@ -326,7 +248,7 @@ async def init_db():
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS watchlists (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 symbols TEXT[] DEFAULT '{}', updated_at TIMESTAMP DEFAULT NOW()
             )
         """)
@@ -347,7 +269,7 @@ async def init_db():
         # Forward Testing tables
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS forward_tests (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 name TEXT NOT NULL, strategy TEXT NOT NULL, symbols TEXT[] NOT NULL,
                 params JSONB DEFAULT '{}', initial_capital FLOAT DEFAULT 100000,
                 current_capital FLOAT DEFAULT 100000, status TEXT DEFAULT 'active',
@@ -399,7 +321,7 @@ async def init_db():
         # Model Portfolios
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS model_portfolios (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 name TEXT NOT NULL, description TEXT DEFAULT '',
                 portfolio_type TEXT DEFAULT 'custom',
                 screener_strategy TEXT, backtest_strategy TEXT, forward_strategy TEXT,
@@ -436,7 +358,7 @@ async def init_db():
         # Advisory reports for SEBI-registered advisors
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS advisory_reports (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 title TEXT NOT NULL, report_type TEXT DEFAULT 'screener',
                 advisor_name TEXT DEFAULT '', ria_reg_no TEXT DEFAULT '',
                 disclaimer TEXT DEFAULT '',
@@ -447,7 +369,7 @@ async def init_db():
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS advisory_recommendations (
                 id SERIAL PRIMARY KEY, report_id INT REFERENCES advisory_reports(id) ON DELETE CASCADE,
-                user_id VARCHAR NOT NULL,
+                user_id INT REFERENCES users(id),
                 symbol TEXT NOT NULL, call_type TEXT NOT NULL,
                 entry_price FLOAT, target_price FLOAT, stop_loss FLOAT,
                 time_horizon TEXT DEFAULT 'short_term',
@@ -460,7 +382,7 @@ async def init_db():
         # ── Alerts & Notifications ──
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS alerts (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 name TEXT NOT NULL,
                 alert_type TEXT NOT NULL,
                 entity_type TEXT NOT NULL,
@@ -475,7 +397,7 @@ async def init_db():
         """)
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS notifications (
-                id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
+                id SERIAL PRIMARY KEY, user_id INT REFERENCES users(id),
                 alert_id INT REFERENCES alerts(id) ON DELETE SET NULL,
                 title TEXT NOT NULL,
                 message TEXT NOT NULL,
@@ -1701,7 +1623,7 @@ def simulate_trades_v2(df, signals, initial_capital, params, exit_type="signal")
 async def health():
     token_set = bool(await get_groww_token())
     return {
-        "status": "ok", "version": "2.6.0",
+        "status": "ok", "version": "2.1.0",
         "universe_size": len(NIFTY_UNIVERSE),
         "sectors": len(set(SECTOR_MAP.values())),
         "universe_source": "stock_universe.json" if _UNIVERSE_LOADED else "built-in (457)",
@@ -1747,80 +1669,6 @@ async def login(req: LoginRequest):
         return {"token": create_token(user["id"], user["email"], user["is_admin"]),
                 "user": {"id": user["id"], "email": user["email"], "name": user["name"], "is_admin": user["is_admin"],
                          "user_type": user.get("user_type", "individual")}}
-
-@app.get("/api/consent/check", tags=["Authentication"], summary="Check if user has accepted disclaimer",
-    description="Returns whether the current user has accepted the platform disclaimer for the current version.")
-async def check_consent(request: Request, user=Depends(get_current_user)):
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT id, accepted_at FROM user_consents WHERE user_id=$1 AND consent_type='platform_disclaimer' AND version='2.0'",
-            user["id"])
-        return {"accepted": row is not None, "accepted_at": str(row["accepted_at"]) if row else None}
-
-@app.post("/api/consent/accept", tags=["Authentication"], summary="Accept platform disclaimer",
-    description="Record user's acceptance of the platform disclaimer. Stores IP, user agent, and timestamp for SEBI compliance.")
-async def accept_consent(request: Request, user=Depends(get_current_user)):
-    ip = request.client.host if request.client else "unknown"
-    ua = request.headers.get("user-agent", "unknown")[:500]
-    async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO user_consents (user_id, consent_type, version, ip_address, user_agent)
-            VALUES ($1, 'platform_disclaimer', '2.0', $2, $3)
-            ON CONFLICT (user_id, consent_type, version) DO NOTHING
-        """, user["id"], ip, ua)
-    return {"status": "accepted", "version": "2.0"}
-
-@app.get("/api/admin/consents", tags=["Admin"], summary="List all user consents",
-    description="Admin only. View all users who have accepted the platform disclaimer with timestamps and IP addresses.")
-async def list_consents(user=Depends(get_admin_user)):
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT uc.*, u.username, u.email FROM user_consents uc
-            LEFT JOIN users u ON u.id = uc.user_id
-            ORDER BY uc.accepted_at DESC
-        """)
-        return {"consents": [dict(r) for r in rows], "total": len(rows)}
-
-@app.get("/api/methodology", tags=["Authentication"], summary="View methodology document",
-    description="Serves the SEBI-compliant methodology document. Available to all authenticated users for consent review. Document is copy-protected in the frontend.")
-async def view_methodology(user=Depends(get_current_user)):
-    from fastapi.responses import HTMLResponse
-    try:
-        with open("/var/www/methodology.html", "r") as f:
-            return HTMLResponse(content=f.read())
-    except:
-        raise HTTPException(404, "Methodology document not available")
-
-@app.post("/api/methodology/request-access", tags=["Authentication"], summary="Request methodology document access",
-    description="Submit a request to view the full methodology document. Admin will review and grant access.")
-async def request_methodology_access(user=Depends(get_current_user)):
-    async with db_pool.acquire() as conn:
-        existing = await conn.fetchrow(
-            "SELECT * FROM methodology_access_requests WHERE user_id=$1 AND status='pending'", user["id"])
-        if existing:
-            return {"status": "already_pending", "requested_at": str(existing["requested_at"])}
-        await conn.execute(
-            "INSERT INTO methodology_access_requests (user_id) VALUES ($1)", user["id"])
-    return {"status": "requested"}
-
-@app.get("/api/admin/methodology-requests", tags=["Admin"], summary="List methodology access requests",
-    description="Admin only. View and manage pending methodology access requests.")
-async def list_methodology_requests(user=Depends(get_admin_user)):
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT mar.*, u.username, u.email FROM methodology_access_requests mar
-            LEFT JOIN users u ON u.id = mar.user_id ORDER BY mar.requested_at DESC
-        """)
-        return {"requests": [dict(r) for r in rows], "total": len(rows)}
-
-@app.post("/api/admin/methodology-requests/{req_id}/approve", tags=["Admin"], summary="Approve methodology access",
-    description="Admin only. Approve a pending methodology access request.")
-async def approve_methodology_request(req_id: int, user=Depends(get_admin_user)):
-    async with db_pool.acquire() as conn:
-        await conn.execute(
-            "UPDATE methodology_access_requests SET status='approved', reviewed_at=NOW(), reviewed_by=$1 WHERE id=$2",
-            user["id"], req_id)
-    return {"status": "approved"}
 
 @app.get("/api/auth/me", tags=["Authentication"], summary="Get current user profile",
     description="Returns the authenticated user's profile including email, name, user type, and admin status.")
@@ -6197,7 +6045,7 @@ def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str):
     story.append(Paragraph("<b>IMPORTANT DISCLAIMER</b>", styles['RLabel']))
     story.append(Paragraph(_sanitize_for_pdf(disclaimer), styles['RDisc']))
     story.append(Spacer(1, 6))
-    story.append(Paragraph(f"Report ID: {report.get('id','')} | Generated: {date_str} | AlphaLab - alphamarket.co.in", styles['RDisc']))
+    story.append(Paragraph(f"Report ID: {report.get('id','')} | Generated: {date_str} | AlphaLab - testalpha.in", styles['RDisc']))
 
     doc.build(story)
     return output_path
@@ -7952,8 +7800,7 @@ async def deactivate_user(user_id: int, user=Depends(get_admin_user)):
         await conn.execute("UPDATE users SET is_active=false WHERE id=$1", user_id)
         return {"message": "User deactivated"}
 
-@app.get("/api/morning-brief", tags=["Market Intelligence"], summary="Pre-market morning brief",
-    description="Global cues (S&P 500, Dow, NASDAQ, Crude, Gold, USD/INR), India indices (NIFTY 50, BANK NIFTY), sector pulse (top 3 gainers/losers), screener picks (momentum, oversold, breakout), and composite sentiment score. Cached 15 min.")
+@app.get("/api/morning-brief")
 async def morning_brief(user=Depends(get_current_user)):
     """Pre-market morning brief with global cues (S&P 500, Dow, NASDAQ, Crude, Gold, USD/INR), India indices (NIFTY 50, BANK NIFTY), sector pulse (top 3 gainers/losers), screener picks (momentum, oversold, breakout), and composite sentiment score. Cached in Redis for 15 minutes. Screener picks may be empty when market is closed."""
     import yfinance as yf  # kept: global tickers (^GSPC, CL=F etc) not in data service
@@ -8177,8 +8024,7 @@ async def compare_stocks(symbols: str, user=Depends(get_current_user)):
 # SECTOR HEATMAP
 # ==============================================================================
 
-@app.get("/api/sector-heatmap", tags=["Market Intelligence"], summary="Sector heatmap",
-    description="Sector-wise performance heatmap showing 1-day returns for all 49 sectors. Cached 15 min.")
+@app.get("/api/sector-heatmap")
 async def sector_heatmap(user=Depends(get_current_user)):
     """Sector rotation heatmap via data service. Cached 15 minutes."""
     # yfinance replaced by data service
@@ -8221,8 +8067,7 @@ async def sector_heatmap(user=Depends(get_current_user)):
 # DCF / INTRINSIC VALUE CALCULATOR
 # ==============================================================================
 
-@app.get("/api/dcf/{symbol}", tags=["Market Intelligence"], summary="DCF intrinsic value calculator",
-    description="Three-method valuation: EPS-based DCF, FCF-based DCF, and Graham Number. Returns intrinsic values, average fair value, margin of safety %, and verdict. Set growth_rate=0 for auto-detect.")
+@app.get("/api/dcf/{symbol}")
 async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: float = 12, terminal_growth: float = 3, years: int = 10, user=Depends(get_current_user)):
     """DCF intrinsic value calculator. Three methods: EPS-based DCF, FCF-based DCF, and Graham Number. Set growth_rate=0 for auto-detect from earnings history. Returns intrinsic values, average fair value, margin of safety %, and verdict (UNDERVALUED / FAIRLY VALUED / OVERVALUED)."""
     import math
@@ -8244,17 +8089,10 @@ async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: flo
     pe = info.get("pe_trailing") or info.get("trailingPE", 0) or 0
     fcf = info.get("free_cashflow") or info.get("freeCashflow", 0) or 0
     shares = info.get("shares_outstanding") or info.get("sharesOutstanding", 0) or 0
-    # Handle both formats: data service returns % directly, Yahoo returns decimal
-    _rg = info.get("revenue_growth") or info.get("revenueGrowth", 0) or 0
-    _eg = info.get("earnings_growth") or info.get("earningsGrowth", 0) or 0
-    rev_growth = _rg if abs(_rg) > 1 else _rg * 100  # Already % if > 1
-    earn_growth = _eg if abs(_eg) > 1 else _eg * 100
-    bv = info.get("book_value") or info.get("bookValue", 0) or 0
-    _roe_raw = info.get("roe") or info.get("returnOnEquity", 0) or 0
-    roe = _roe_raw if abs(_roe_raw) > 1 else _roe_raw * 100  # Already % if > 1
-    # Fix dividend_yield: data service sometimes returns wrong values
-    _dy = info.get("dividend_yield") or info.get("dividendYield", 0) or 0
-    if _dy > 15: _dy = _dy / 100  # Likely raw percentage, normalize
+    rev_growth = (info.get("revenueGrowth", 0) or 0) * 100
+    earn_growth = (info.get("earningsGrowth", 0) or 0) * 100
+    bv = info.get("bookValue", 0) or 0
+    roe = (info.get("returnOnEquity", 0) or 0) * 100
     if growth_rate == 0:
         growth_rate = max(5, min(25, earn_growth if earn_growth > 0 else rev_growth))
     dr = discount_rate / 100
@@ -8309,8 +8147,7 @@ async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: flo
 # DIVIDEND TRACKER
 # ==============================================================================
 
-@app.get("/api/dividends", tags=["Market Intelligence"], summary="Top dividend stocks",
-    description="30 major Indian stocks sorted by dividend yield. Returns yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached 1 hour.")
+@app.get("/api/dividends")
 async def dividend_tracker(user=Depends(get_current_user)):
     """Dividend tracker for 30 major Indian stocks sorted by yield. Returns dividend yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached in Redis for 1 hour."""
     import yfinance as yf  # kept: needs detailed dividend info (exDividendDate, dividendRate)
@@ -8371,8 +8208,7 @@ async def dividend_tracker(user=Depends(get_current_user)):
     return result
 
 
-@app.get("/api/patterns/{symbol}", tags=["Market Intelligence"], summary="Technical pattern scanner",
-    description="Analyses 11 technical indicators and detects 8 chart patterns (Double Bottom/Top, Cup & Handle, H&S, Triangles, Wedges). Returns composite score (-100 to +100), pattern stages, targets, and narrative.")
+@app.get("/api/patterns/{symbol}")
 async def detect_patterns(symbol: str, user=Depends(get_current_user)):
     """Technical pattern scanner. Analyses 11 indicators (SMA, EMA, RSI, MACD, Bollinger, Stochastic, Volume, Supertrend, ADX, Williams %R, CCI, OBV) and detects 8 chart patterns (Double Bottom/Top, Cup & Handle, Head & Shoulders, Ascending/Descending Triangle, Falling/Rising Wedge). Returns composite score (-100 to +100), pattern stages, targets, and auto-generated narrative."""
     # import yfinance as yf  # moved to fallback block
@@ -8411,8 +8247,8 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
             raise HTTPException(404, f"No data for {sym}")
     if hist.empty or len(hist) < 50:
         raise HTTPException(404, f"Insufficient data for {sym}")
-    c_price = float(hist["close"].iloc[-1])
-    h, l, cl, vol = hist["high"], hist["low"], hist["close"], hist["volume"]
+    c_price = float(hist["Close"].iloc[-1])
+    h, l, cl, vol = hist["High"], hist["Low"], hist["Close"], hist["Volume"]
     signals = []
     patterns = []
     # Moving Averages
@@ -8789,472 +8625,109 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
 
 
 # ==============================================================================
-# ══════════════════════════════════════════════════════════════════════════════
-# DYOR → ALPHAMARKET BRIDGE (Publish calls to advisor strategies)
-# ══════════════════════════════════════════════════════════════════════════════
-
-ALPHAMARKET_URL = "https://alphamarket.co.in"
-DYOR_BRIDGE_KEY = "dyor_bridge_2026_alphamarket"
-
-@app.get("/api/bridge/strategies", tags=["Advisory & Reports"], summary="Get advisor strategies from AlphaMarket",
-    description="Fetches the advisor's strategies from AlphaMarket for call publishing.")
-async def bridge_get_strategies(user=Depends(get_current_user)):
-    email = user.get("email")
-    if not email:
-        raise HTTPException(400, "User email not found")
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                f"{ALPHAMARKET_URL}/api/external/advisor-strategies",
-                params={"email": email},
-                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY}
-            )
-            if r.status_code == 200:
-                return r.json()
-            elif r.status_code == 404:
-                return {"error": "not_advisor", "message": "No advisor account found on AlphaMarket for this email. Register as an advisor at alphamarket.co.in first."}
-            else:
-                return {"error": "api_error", "message": r.text}
-    except Exception as e:
-        return {"error": "connection_error", "message": str(e)}
-
-@app.post("/api/bridge/publish-call", tags=["Advisory & Reports"], summary="Publish stock call to AlphaMarket",
-    description="Publishes a stock recommendation (BUY/SELL) to a strategy on AlphaMarket.")
-async def bridge_publish_call(req: dict, user=Depends(get_current_user)):
-    email = user.get("email")
-    if not email:
-        raise HTTPException(400, "User email not found")
-    payload = {
-        "advisor_email": email,
-        "strategy_id": req.get("strategy_id"),
-        "stock_name": req.get("stock_name"),
-        "action": req.get("action", "BUY"),
-        "buy_range_start": req.get("buy_range_start"),
-        "buy_range_end": req.get("buy_range_end"),
-        "target_price": req.get("target_price"),
-        "stop_loss": req.get("stop_loss"),
-        "rationale": req.get("rationale", "Published from DYOR Research Platform"),
-        "profit_goal": req.get("profit_goal"),
-        "publish_mode": req.get("publish_mode", "live"),
-    }
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{ALPHAMARKET_URL}/api/external/publish-call",
-                json=payload,
-                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY, "Content-Type": "application/json"}
-            )
-            return r.json()
-    except Exception as e:
-        raise HTTPException(500, f"Failed to publish: {str(e)}")
-
-@app.post("/api/bridge/publish-position", tags=["Advisory & Reports"], summary="Publish F&O position to AlphaMarket",
-    description="Publishes an F&O position (futures/options) to a strategy on AlphaMarket.")
-async def bridge_publish_position(req: dict, user=Depends(get_current_user)):
-    email = user.get("email")
-    if not email:
-        raise HTTPException(400, "User email not found")
-    payload = {
-        "advisor_email": email,
-        "strategy_id": req.get("strategy_id"),
-        "symbol": req.get("symbol"),
-        "segment": req.get("segment", "EQ"),
-        "call_put": req.get("call_put"),
-        "buy_sell": req.get("buy_sell", "BUY"),
-        "entry_price": req.get("entry_price"),
-        "target": req.get("target"),
-        "stop_loss": req.get("stop_loss"),
-        "lots": req.get("lots", 1),
-        "expiry": req.get("expiry"),
-        "strike_price": req.get("strike_price"),
-        "rationale": req.get("rationale", "Published from DYOR Research Platform"),
-        "publish_mode": req.get("publish_mode", "live"),
-    }
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{ALPHAMARKET_URL}/api/external/publish-position",
-                json=payload,
-                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY, "Content-Type": "application/json"}
-            )
-            return r.json()
-    except Exception as e:
-        raise HTTPException(500, f"Failed to publish: {str(e)}")
-
-
-@app.get("/api/bridge/check-permission", tags=["Advisory & Reports"], summary="Check DYOR publish permission")
-async def bridge_check_permission(user=Depends(get_current_user)):
-    email = user.get("email")
-    if not email:
-        return {"allowed": False, "reason": "no_email"}
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            r = await client.get(
-                f"{ALPHAMARKET_URL}/api/external/check-publish-permission",
-                params={"email": email},
-                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY}
-            )
-            return r.json()
-    except Exception as e:
-        return {"allowed": False, "reason": "connection_error", "message": str(e)}
-
-@app.post("/api/bridge/request-permission", tags=["Advisory & Reports"], summary="Request DYOR publish permission")
-async def bridge_request_permission(user=Depends(get_current_user)):
-    email = user.get("email")
-    if not email:
-        raise HTTPException(400, "User email not found")
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                f"{ALPHAMARKET_URL}/api/external/request-publish-permission",
-                json={"email": email},
-                headers={"X-DYOR-API-Key": DYOR_BRIDGE_KEY, "Content-Type": "application/json"}
-            )
-            return r.json()
-    except Exception as e:
-        raise HTTPException(500, f"Failed: {str(e)}")
-
-
 # ALPHAVIEW - Comprehensive Stock Profile
 # ==============================================================================
 
-@app.get("/api/alphaview/{symbol}", tags=["AlphaView"], summary="AlphaView — Complete stock profile",
+@app.get("/api/alphaview/{symbol}", tags=["Stock Data"], summary="AlphaView - Complete stock profile",
     description="Comprehensive single-page stock analysis combining price chart data, technical indicators, fundamental data, pattern detection, ratings, relative strength vs NIFTY, and sector context.")
 async def alphaview(symbol: str, user=Depends(get_current_user)):
-    """AlphaView: Complete stock profile — fundamentals + technicals + ratings + patterns in one view."""
     from datetime import date, timedelta
     import ta as _ta
     sym = symbol.upper()
-
     cache_key = f"alphaview:{sym}:{date.today().isoformat()}"
     if redis_client:
         cached = await redis_client.get(cache_key)
-        if cached:
-            return json.loads(cached)
+        if cached: return json.loads(cached)
 
-    # ── 1. OHLCV Data (1 year) ──
+    start_1y = (date.today() - timedelta(days=400)).isoformat()
+    end = date.today().isoformat()
     _rows = await ds_ohlcv(sym, "1y")
-    if not _rows:
-        raise HTTPException(404, f"No data for {sym}")
+    if not _rows: raise HTTPException(404, f"No data for {sym}")
     df = pd.DataFrame(_rows)
     df.columns = [col.lower() for col in df.columns]
-    for dc in ["date", "datetime", "timestamp"]:
+    for dc in ["date","datetime","timestamp"]:
         if dc in df.columns:
             df[dc] = pd.to_datetime(df[dc])
             df = df.set_index(dc)
             break
     df.index.name = "date"
-    keep = [col for col in ["open", "high", "low", "close", "volume"] if col in df.columns]
+    keep = [col for col in ["open","high","low","close","volume"] if col in df.columns]
     df = df[keep].astype({col: float for col in keep}).dropna().sort_index()
-    if len(df) < 30:
-        raise HTTPException(404, f"Insufficient data for {sym} ({len(df)} days)")
+    if len(df) < 30: raise HTTPException(404, f"Insufficient data for {sym}")
 
-    c = df["close"].astype(float)
-    h = df["high"].astype(float)
-    l = df["low"].astype(float)
-    v = df["volume"].astype(float)
+    c = df["close"]; h = df["high"]; l = df["low"]; v = df["volume"]
     price = float(c.iloc[-1])
     prev_close = float(c.iloc[-2]) if len(c) > 1 else price
-
-    # ── 2. Fundamentals ──
-    fund = await ds_fundamentals(sym)
-    if not fund:
-        fund = {}
+    fund = await ds_fundamentals(sym) or {}
 
     def sf(val, default=None):
-        if val is None:
-            return default
+        if val is None: return default
         try:
             fv = float(val)
             return default if (np.isnan(fv) or np.isinf(fv)) else fv
-        except:
-            return default
+        except: return default
 
-    def fix_pct(val, max_reasonable=100):
-        """Normalize % values. max_reasonable = max sensible % for this field."""
+    def fix_pct(val):
         v2 = sf(val, 0)
-        if not v2 or v2 == 0: return 0
-        av = abs(v2)
-        if av < 1: result = round(v2 * 100, 2)
-        elif av > max_reasonable * 10: result = round(v2 / 100, 2)
-        elif av > max_reasonable * 3 and av > 100: result = round(v2 / 100, 2)
-        else: result = round(v2, 2)
-        if abs(result) > max_reasonable * 2: result = round(result / 100, 2)
-        return result
+        if v2 and abs(v2) > 100: return round(v2 / 100, 2)
+        return round(v2, 2) if v2 else 0
 
-    # ── 3. Moving Averages & Trend ──
     sma20 = float(c.rolling(20).mean().iloc[-1]) if len(c) >= 20 else price
     sma50 = float(c.rolling(50).mean().iloc[-1]) if len(c) >= 50 else price
     sma200 = float(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else price
     ema9 = float(c.ewm(span=9).mean().iloc[-1])
     ema21 = float(c.ewm(span=21).mean().iloc[-1])
-    above_20 = price > sma20
-    above_50 = price > sma50
-    above_200 = price > sma200
+    above_20 = price > sma20; above_50 = price > sma50; above_200 = price > sma200
 
-    # ── 4. Technical Indicators ──
     delta = c.diff()
     gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
     loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
     rs_val = float(gain.iloc[-1] / loss.iloc[-1]) if sf(loss.iloc[-1]) != 0 else 0
     rsi = round(100 - 100 / (1 + rs_val), 1) if rs_val else 50
 
-    ema12 = c.ewm(span=12).mean()
-    ema26 = c.ewm(span=26).mean()
-    macd_line = ema12 - ema26
-    signal_line = macd_line.ewm(span=9).mean()
+    ema12 = c.ewm(span=12).mean(); ema26 = c.ewm(span=26).mean()
+    macd_line = ema12 - ema26; signal_line = macd_line.ewm(span=9).mean()
     macd = round(float(macd_line.iloc[-1]), 2)
     macd_signal = round(float(signal_line.iloc[-1]), 2)
     macd_hist = round(macd - macd_signal, 2)
 
-    bb_mid = c.rolling(20).mean()
-    bb_std = c.rolling(20).std()
+    bb_mid = c.rolling(20).mean(); bb_std = c.rolling(20).std()
     bb_upper = round(float((bb_mid + 2 * bb_std).iloc[-1]), 2) if len(c) >= 20 else 0
     bb_lower = round(float((bb_mid - 2 * bb_std).iloc[-1]), 2) if len(c) >= 20 else 0
 
     vol_avg20 = float(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else float(v.mean())
     vol_ratio = round(float(v.iloc[-1]) / vol_avg20, 2) if vol_avg20 > 0 else 1
 
-    # ADX
     adx_val = 0
     if len(df) >= 30:
         try:
             adx_i = _ta.trend.ADXIndicator(h, l, c, window=14)
             adx_val = round(float(adx_i.adx().iloc[-1]), 1)
-        except:
-            pass
+        except: pass
 
-    # Supertrend (simple approximation)
     atr = _ta.volatility.AverageTrueRange(h, l, c, window=10).average_true_range()
     st_upper = round(float((h.rolling(10).mean() + 3 * atr).iloc[-1]), 2) if len(c) >= 10 else 0
     st_lower = round(float((l.rolling(10).mean() - 3 * atr).iloc[-1]), 2) if len(c) >= 10 else 0
     supertrend_bullish = price > st_lower
 
-    # Stochastic
-    low14 = l.rolling(14).min()
-    high14 = h.rolling(14).max()
+    low14 = l.rolling(14).min(); high14 = h.rolling(14).max()
     stoch_k = round(float(((c - low14) / (high14 - low14) * 100).iloc[-1]), 1) if len(c) >= 14 else 50
     stoch_d = round(float(((c - low14) / (high14 - low14) * 100).rolling(3).mean().iloc[-1]), 1) if len(c) >= 14 else 50
 
-    # ── 5. Relative Strength vs NIFTY ──
-    try:
-        _nifty_rows = await ds_ohlcv("NIFTY", "1y")
-        if not _nifty_rows:
-            _nifty_rows = await ds_ohlcv("^NSEI", "1y")
-        if _nifty_rows:
-            nifty_df = pd.DataFrame(_nifty_rows)
-            nifty_df.columns = [col.lower() for col in nifty_df.columns]
-            for dc in ["date", "datetime", "timestamp"]:
-                if dc in nifty_df.columns:
-                    nifty_df[dc] = pd.to_datetime(nifty_df[dc])
-                    nifty_df = nifty_df.set_index(dc)
-                    break
-            nc = nifty_df["close"].astype(float)
-            stock_ret_1m = round((float(c.iloc[-1]) / float(c.iloc[-22]) - 1) * 100, 1) if len(c) > 22 else 0
-            stock_ret_3m = round((float(c.iloc[-1]) / float(c.iloc[-66]) - 1) * 100, 1) if len(c) > 66 else 0
-            stock_ret_6m = round((float(c.iloc[-1]) / float(c.iloc[-132]) - 1) * 100, 1) if len(c) > 132 else 0
-            stock_ret_1y = round((float(c.iloc[-1]) / float(c.iloc[0]) - 1) * 100, 1) if len(c) > 200 else 0
-            nifty_ret_1m = round((float(nc.iloc[-1]) / float(nc.iloc[-22]) - 1) * 100, 1) if len(nc) > 22 else 0
-            nifty_ret_3m = round((float(nc.iloc[-1]) / float(nc.iloc[-66]) - 1) * 100, 1) if len(nc) > 66 else 0
-            nifty_ret_6m = round((float(nc.iloc[-1]) / float(nc.iloc[-132]) - 1) * 100, 1) if len(nc) > 132 else 0
-            nifty_ret_1y = round((float(nc.iloc[-1]) / float(nc.iloc[0]) - 1) * 100, 1) if len(nc) > 200 else 0
-            rs_1m = round(stock_ret_1m - nifty_ret_1m, 1)
-            rs_3m = round(stock_ret_3m - nifty_ret_3m, 1)
-            rs_6m = round(stock_ret_6m - nifty_ret_6m, 1)
-            rs_1y = round(stock_ret_1y - nifty_ret_1y, 1)
-        else:
-            stock_ret_1m = stock_ret_3m = stock_ret_6m = stock_ret_1y = 0
-            nifty_ret_1m = nifty_ret_3m = nifty_ret_6m = nifty_ret_1y = 0
-            rs_1m = rs_3m = rs_6m = rs_1y = 0
-    except:
-        stock_ret_1m = stock_ret_3m = stock_ret_6m = stock_ret_1y = 0
-        nifty_ret_1m = nifty_ret_3m = nifty_ret_6m = nifty_ret_1y = 0
-        rs_1m = rs_3m = rs_6m = rs_1y = 0
+    stock_ret_1m = round((float(c.iloc[-1]) / float(c.iloc[-22]) - 1) * 100, 1) if len(c) > 22 else 0
+    stock_ret_3m = round((float(c.iloc[-1]) / float(c.iloc[-66]) - 1) * 100, 1) if len(c) > 66 else 0
+    stock_ret_6m = round((float(c.iloc[-1]) / float(c.iloc[-132]) - 1) * 100, 1) if len(c) > 132 else 0
+    stock_ret_1y = round((float(c.iloc[-1]) / float(c.iloc[0]) - 1) * 100, 1) if len(c) > 200 else 0
+    rs_1m = rs_3m = rs_6m = rs_1y = stock_ret_1m; rs_3m = stock_ret_3m; rs_6m = stock_ret_6m; rs_1y = stock_ret_1y
 
-    # ── 6. Alpha Ratings (AlphaMarket Proprietary, 0-99) ──
-
-    # --- 6a. MOMENTUM (price momentum + relative strength) ---
-    # RS component: outperformance vs NIFTY (30%)
-    rs_component = min(99, max(1, int(50 + rs_3m * 1.5 + rs_1m * 0.8)))
-    # Price position: distance from 200 DMA (20%)
-    pct_200dma = round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0
-    pos_component = min(99, max(1, int(50 + pct_200dma * 1.5)))
-    # RSI zone mapping (20%) — 30-70 is healthy, extremes penalized
-    if rsi >= 50 and rsi <= 70: rsi_component = int(50 + (rsi - 50) * 2.4)
-    elif rsi > 70: rsi_component = int(98 - (rsi - 70) * 1.5)  # overbought drag
-    elif rsi >= 30: rsi_component = int(rsi * 1.0 + 20)
-    else: rsi_component = int(rsi * 0.8)
-    rsi_component = min(99, max(1, rsi_component))
-    # MACD histogram direction (15%)
-    macd_component = min(99, max(1, int(50 + macd_hist * 8)))
-    # EMA cross (15%) — EMA9 vs EMA21
-    ema_spread = round((ema9 / ema21 - 1) * 100, 2) if ema21 > 0 else 0
-    ema_component = min(99, max(1, int(50 + ema_spread * 10)))
-
-    momentum_rating = min(99, max(1, int(
-        rs_component * 0.30 + pos_component * 0.20 + rsi_component * 0.20 +
-        macd_component * 0.15 + ema_component * 0.15
-    )))
-
-    # --- 6b. FUNDAMENTALS (financial health + growth) ---
-    eps_growth_val = sf(fund.get("earnings_growth") or fund.get("earningsGrowth"), 0)
-    if eps_growth_val and abs(eps_growth_val) < 1:
-        eps_growth_val = eps_growth_val * 100
-    rev_growth_val = sf(fund.get("revenue_growth") or fund.get("revenueGrowth"), 0)
-    if rev_growth_val and abs(rev_growth_val) < 1:
-        rev_growth_val = rev_growth_val * 100
-    roe_val = sf(fund.get("roe") or fund.get("returnOnEquity"), 0)
-    if roe_val and abs(roe_val) < 1:
-        roe_val = roe_val * 100
-    margin_val = sf(fund.get("profit_margin") or fund.get("profitMargins"), 0)
-    if margin_val and abs(margin_val) < 1:
-        margin_val = margin_val * 100
-    de_val = sf(fund.get("debt_equity") or fund.get("debtToEquity"), 0)
-
-    # Earnings growth (25%) — higher is better, cap at 50%
-    earn_comp = min(99, max(1, int(50 + min(eps_growth_val, 50) * 0.9))) if eps_growth_val else 40
-    # ROE (25%) — above 15% is great
-    roe_comp = min(99, max(1, int(roe_val * 3.5))) if roe_val > 0 else 25
-    # Profit margin (20%) — above 15% is strong
-    margin_comp = min(99, max(1, int(margin_val * 3.5))) if margin_val > 0 else 25
-    # D/E health (15%) — lower is better, inverted scoring
-    if de_val is not None and de_val >= 0:
-        de_comp = min(99, max(1, int(99 - min(de_val, 200) * 0.45)))
-    else:
-        de_comp = 50
-    # Revenue growth (15%)
-    rev_comp = min(99, max(1, int(50 + min(rev_growth_val, 50) * 0.9))) if rev_growth_val else 40
-
-    fundamentals_rating = min(99, max(1, int(
-        earn_comp * 0.25 + roe_comp * 0.25 + margin_comp * 0.20 +
-        de_comp * 0.15 + rev_comp * 0.15
-    )))
-
-    # --- 6c. ACCUMULATION (institutional activity signals) ---
+    eps_growth = sf(fund.get("earnings_growth") or fund.get("earningsGrowth"), 0)
+    if eps_growth and abs(eps_growth) < 1: eps_growth = eps_growth * 100
+    eps_strength = min(99, max(1, int(50 + eps_growth * 1.5))) if eps_growth else 50
+    rs_score = min(99, max(1, int(50 + rs_3m * 2 + rs_1m)))
     up_days = int((delta.iloc[-20:] > 0).sum()) if len(delta) >= 20 else 10
-    down_days = 20 - up_days
-    # Up-day vs down-day ratio (40%)
-    ud_ratio_comp = min(99, max(1, int(up_days / 20 * 99)))
-    # Volume ratio (30%) — current vs average
-    vr_comp = min(99, max(1, int(min(vol_ratio, 3.0) * 33)))
-    # OBV trend (30%) — is OBV rising over 20 days?
-    try:
-        obv = (v * delta.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))).cumsum()
-        obv_20ago = float(obv.iloc[-21]) if len(obv) > 20 else float(obv.iloc[0])
-        obv_now = float(obv.iloc[-1])
-        obv_change = (obv_now - obv_20ago) / abs(obv_20ago) * 100 if obv_20ago != 0 else 0
-        obv_comp = min(99, max(1, int(50 + obv_change * 0.5)))
-    except:
-        obv_comp = 50
-
-    accumulation_rating = min(99, max(1, int(
-        ud_ratio_comp * 0.40 + vr_comp * 0.30 + obv_comp * 0.30
-    )))
-
-    # --- 6d. TREND (technical alignment) ---
-    # SMA alignment (30%) — 20>50>200 = perfect bull, reverse = perfect bear
-    sma_align = 0
-    if sma20 > sma50 > sma200: sma_align = 99
-    elif sma20 > sma50: sma_align = 75
-    elif sma50 > sma200: sma_align = 55
-    elif sma20 < sma50 < sma200: sma_align = 1
-    elif sma20 < sma50: sma_align = 25
-    else: sma_align = 50
-    # ADX strength (25%)
-    adx_comp = min(99, max(1, int(adx_val * 3))) if adx_val else 30
-    # Supertrend (20%)
-    st_comp = 80 if supertrend_bullish else 20
-    # Stochastic position (15%)
-    stoch_comp = min(99, max(1, int(stoch_k)))
-    # BB width — tighter bands = breakout potential (10%)
-    bb_w = (bb_upper - bb_lower) / price * 100 if price > 0 and bb_upper > 0 else 5
-    bb_comp = min(99, max(1, int(99 - min(bb_w, 15) * 5)))  # tighter = higher
-
-    trend_rating = min(99, max(1, int(
-        sma_align * 0.30 + adx_comp * 0.25 + st_comp * 0.20 +
-        stoch_comp * 0.15 + bb_comp * 0.10
-    )))
-
-    # --- 6e. SENTIMENT (news & events pulse via yfinance) ---
-    sentiment_rating = 50  # neutral default
-    try:
-        import yfinance as _yf_news
-        tk_news = _yf_news.Ticker(f"{sym}.NS")
-        news_items = getattr(tk_news, "news", []) or []
-        if news_items:
-            from datetime import datetime as _dt_news
-            pos_kw = ["upgrade","bullish","growth","profit","beat","expansion","dividend","buyback",
-                       "partnership","acquisition","deal","record","outperform","buy","strong",
-                       "rally","surge","breakout","approve","launch","fii buying","dii buying","bonus"]
-            neg_kw = ["downgrade","bearish","loss","fraud","governance","resign","exit","probe",
-                       "sebi","default","debt","sell","cut","slash","miss","warning","decline",
-                       "fii selling","dii selling","ban","penalty","scam","investigation","layoff"]
-            high_pos = ["acquisition","buyback","bonus","merger","record profit","fii buying"]
-            high_neg = ["fraud","scam","ceo exit","ceo resign","sebi ban","default","governance"]
-            score_sum = 0
-            count = 0
-            now_ts = __import__("time").time()
-            for item in news_items[:10]:
-                title = (item.get("title") or "").lower()
-                pub_ts = item.get("providerPublishTime") or item.get("published", 0)
-                if isinstance(pub_ts, str):
-                    try: pub_ts = _dt_news.fromisoformat(pub_ts.replace("Z","+00:00")).timestamp()
-                    except: pub_ts = 0
-                age_days = (now_ts - pub_ts) / 86400 if pub_ts else 7
-                recency_w = 3.0 if age_days <= 3 else (1.5 if age_days <= 7 else 1.0)
-                s = 0
-                for kw in high_pos:
-                    if kw in title: s += 3
-                for kw in high_neg:
-                    if kw in title: s -= 3
-                for kw in pos_kw:
-                    if kw in title: s += 1
-                for kw in neg_kw:
-                    if kw in title: s -= 1
-                score_sum += s * recency_w
-                count += 1
-            if count > 0:
-                avg = score_sum / count
-                sentiment_rating = min(99, max(1, int(50 + avg * 8)))
-    except:
-        sentiment_rating = 50
-
-    # --- ALPHA SCORE (composite) ---
-    alpha_score = min(99, max(1, int(
-        momentum_rating * 0.25 + fundamentals_rating * 0.25 +
-        accumulation_rating * 0.20 + trend_rating * 0.15 +
-        sentiment_rating * 0.15
-    )))
-
-    # Keep backward compat vars
-    eps_growth = eps_growth_val
-
-    sector = fund.get("sector") or SECTOR_MAP.get(sym, "Other")
-
-    # ── 7. 52-week stats ──
-    high_52w = round(float(h.max()), 2)
-    low_52w = round(float(l.min()), 2)
-    off_high = round((price / high_52w - 1) * 100, 1) if high_52w > 0 else 0
-    off_low = round((price / low_52w - 1) * 100, 1) if low_52w > 0 else 0
-
-    # ── 8. Price Data for Chart (last 250 days) ──
-    chart_data_list = []
-    for idx, row in df.tail(250).iterrows():
-        ts = int(idx.timestamp()) if hasattr(idx, "timestamp") else 0
-        chart_data_list.append({
-            "time": ts,
-            "open": round(float(row["open"]), 2),
-            "high": round(float(row["high"]), 2),
-            "low": round(float(row["low"]), 2),
-            "close": round(float(row["close"]), 2),
-            "volume": int(row["volume"]),
-        })
-
-    # ── 9. Cap Segment ──
-    cap = get_cap_segment(sym)
-
-    # ── 10. Trend Assessment ──
+    vol_acc = min(99, max(1, int(up_days * 5 + vol_ratio * 10)))
     bullish_count = sum([above_20, above_50, above_200, rsi > 50, macd > macd_signal, supertrend_bullish, adx_val > 20])
+    composite = min(99, max(1, int(eps_strength * 0.3 + rs_score * 0.3 + vol_acc * 0.2 + (rsi / 100 * 99) * 0.2)))
     bearish_count = sum([not above_20, not above_50, not above_200, rsi < 50, macd < macd_signal, not supertrend_bullish])
     if bullish_count >= 5: trend = "STRONG BULLISH"
     elif bullish_count >= 4: trend = "BULLISH"
@@ -9262,118 +8735,59 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     elif bearish_count >= 4: trend = "STRONG BEARISH"
     else: trend = "NEUTRAL"
 
+    high_52w = round(float(h.max()), 2); low_52w = round(float(l.min()), 2)
+    off_high = round((price / high_52w - 1) * 100, 1) if high_52w > 0 else 0
+    off_low = round((price / low_52w - 1) * 100, 1) if low_52w > 0 else 0
+
+    chart_data_list = []
+    for idx, row in df.tail(250).iterrows():
+        ts = int(idx.timestamp()) if hasattr(idx, "timestamp") else 0
+        chart_data_list.append({"time": ts, "open": round(float(row["open"]), 2), "high": round(float(row["high"]), 2), "low": round(float(row["low"]), 2), "close": round(float(row["close"]), 2), "volume": int(row["volume"])})
+
+    cap = get_cap_segment(sym)
+    sector = fund.get("sector") or SECTOR_MAP.get(sym, "Other")
+
     result = {
-        "symbol": sym,
-        "name": fund.get("name") or fund.get("longName") or sym,
-        "sector": sector,
-        "industry": fund.get("industry") or INDUSTRY_MAP.get(sym, "\u2014"),
-        "cap_segment": cap,
-
-        "summary": {
-            "price": price,
-            "prev_close": prev_close,
-            "change": round(price - prev_close, 2),
+        "symbol": sym, "name": fund.get("name") or sym, "sector": sector,
+        "industry": fund.get("industry") or INDUSTRY_MAP.get(sym, ""), "cap_segment": cap,
+        "summary": {"price": price, "prev_close": prev_close, "change": round(price - prev_close, 2),
             "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
-            "high_52w": high_52w,
-            "low_52w": low_52w,
-            "off_high_pct": off_high,
-            "off_low_pct": off_low,
-            "market_cap": sf(fund.get("market_cap") or fund.get("marketCap")),
-            "market_cap_cr": round(sf(fund.get("market_cap") or fund.get("marketCap"), 0) / 10000000, 0),
-            "shares_outstanding": sf(fund.get("shares_outstanding") or fund.get("sharesOutstanding")),
-            "avg_volume": int(vol_avg20),
-            "volume": int(v.iloc[-1]),
-            "volume_ratio": vol_ratio,
-            "beta": sf(fund.get("beta"), 0),
-        },
-
-        "ratings": {
-            "alpha_score": alpha_score,
-            "momentum": momentum_rating,
-            "fundamentals": fundamentals_rating,
-            "accumulation": accumulation_rating,
-            "trend_rating": trend_rating,
-            "sentiment": sentiment_rating,
-            "trend": trend,
-            "momentum_detail": {"rs": rs_component, "position": pos_component, "rsi": rsi_component, "macd": macd_component, "ema": ema_component},
-            "fundamentals_detail": {"earnings": earn_comp, "roe": roe_comp, "margin": margin_comp, "debt": de_comp, "revenue": rev_comp},
-            "accumulation_detail": {"up_days": ud_ratio_comp, "vol_ratio": vr_comp, "obv": obv_comp},
-            "trend_detail": {"sma_align": sma_align, "adx": adx_comp, "supertrend": st_comp, "stochastic": stoch_comp, "bb": bb_comp},
-        },
-
-        "moving_averages": {
-            "sma20": round(sma20, 2), "sma50": round(sma50, 2), "sma200": round(sma200, 2),
-            "ema9": round(ema9, 2), "ema21": round(ema21, 2),
-            "above_20dma": above_20, "above_50dma": above_50, "above_200dma": above_200,
-            "price_vs_200dma_pct": round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0,
-        },
-
-        "technicals": {
-            "rsi": rsi,
-            "macd": macd, "macd_signal": macd_signal, "macd_histogram": macd_hist,
-            "bb_upper": bb_upper, "bb_lower": bb_lower,
-            "bb_width": round((bb_upper - bb_lower) / price * 100, 1) if price > 0 else 0,
-            "adx": adx_val,
-            "stoch_k": stoch_k, "stoch_d": stoch_d,
-            "supertrend_bullish": supertrend_bullish,
-            "supertrend_upper": st_upper, "supertrend_lower": st_lower,
-            "volume_ratio": vol_ratio,
-            "atr": round(float(atr.iloc[-1]), 2) if len(atr) > 0 else 0,
-        },
-
-        "relative_strength": {
-            "rs_1m": rs_1m, "rs_3m": rs_3m, "rs_6m": rs_6m, "rs_1y": rs_1y,
+            "high_52w": high_52w, "low_52w": low_52w, "off_high_pct": off_high, "off_low_pct": off_low,
+            "market_cap": sf(fund.get("market_cap")), "market_cap_cr": round(sf(fund.get("market_cap"), 0) / 10000000, 0),
+            "shares_outstanding": sf(fund.get("shares_outstanding")), "avg_volume": int(vol_avg20),
+            "volume": int(v.iloc[-1]), "volume_ratio": vol_ratio, "beta": sf(fund.get("beta"), 0)},
+        "ratings": {"composite": composite, "eps_strength": eps_strength, "rs_rating": rs_score,
+            "vol_accumulation": vol_acc, "trend_score": int(bullish_count / 7 * 99), "trend": trend},
+        "moving_averages": {"sma20": round(sma20, 2), "sma50": round(sma50, 2), "sma200": round(sma200, 2),
+            "ema9": round(ema9, 2), "ema21": round(ema21, 2), "above_20dma": above_20, "above_50dma": above_50,
+            "above_200dma": above_200, "price_vs_200dma_pct": round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0},
+        "technicals": {"rsi": rsi, "macd": macd, "macd_signal": macd_signal, "macd_histogram": macd_hist,
+            "bb_upper": bb_upper, "bb_lower": bb_lower, "bb_width": round((bb_upper - bb_lower) / price * 100, 1) if price > 0 else 0,
+            "adx": adx_val, "stoch_k": stoch_k, "stoch_d": stoch_d, "supertrend_bullish": supertrend_bullish,
+            "supertrend_upper": st_upper, "supertrend_lower": st_lower, "volume_ratio": vol_ratio,
+            "atr": round(float(atr.iloc[-1]), 2) if len(atr) > 0 else 0},
+        "relative_strength": {"rs_1m": stock_ret_1m, "rs_3m": stock_ret_3m, "rs_6m": stock_ret_6m, "rs_1y": stock_ret_1y,
             "stock_return": {"1m": stock_ret_1m, "3m": stock_ret_3m, "6m": stock_ret_6m, "1y": stock_ret_1y},
-            "nifty_return": {"1m": nifty_ret_1m, "3m": nifty_ret_3m, "6m": nifty_ret_6m, "1y": nifty_ret_1y},
-            "outperforming_1m": rs_1m > 0,
-            "outperforming_3m": rs_3m > 0,
-        },
-
-        "fundamentals": {
-            "eps": sf(fund.get("eps") or fund.get("trailingEps")),
-            "pe_trailing": sf(fund.get("pe_trailing") or fund.get("trailingPE")),
-            "pe_forward": sf(fund.get("pe_forward") or fund.get("forwardPE")),
-            "pb": sf(fund.get("pb") or fund.get("priceToBook")),
-            "roe": fix_pct(fund.get("roe") or fund.get("returnOnEquity"), 60),
-            "roce": fix_pct(fund.get("roce"), 60),
-            "debt_equity": sf(fund.get("debt_equity") or fund.get("debtToEquity")),
-            "dividend_yield": fix_pct(fund.get("dividend_yield") or fund.get("dividendYield"), 15),
-            "dividend_rate": sf(fund.get("dividend_rate") or fund.get("dividendRate")),
-            "book_value": sf(fund.get("book_value") or fund.get("bookValue")),
-            "revenue": sf(fund.get("revenue")),
-            "revenue_growth": fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth"), 80),
-            "earnings_growth": fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth"), 100),
-            "profit_margin": fix_pct(fund.get("profit_margin") or fund.get("profitMargins"), 50),
-            "operating_margin": fix_pct(fund.get("operating_margin") or fund.get("operatingMargins"), 50),
-            "promoter_holding": sf(fund.get("promoter_holding")),
-        },
-
-        "levels": {
-            "pivot": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3, 2),
+            "outperforming_1m": stock_ret_1m > 0, "outperforming_3m": stock_ret_3m > 0},
+        "fundamentals": {"eps": sf(fund.get("eps")), "pe_trailing": sf(fund.get("pe_trailing")),
+            "pe_forward": sf(fund.get("pe_forward")), "pb": sf(fund.get("pb")),
+            "roe": fix_pct(fund.get("roe")), "roce": fix_pct(fund.get("roce")),
+            "debt_equity": sf(fund.get("debt_equity")), "dividend_yield": fix_pct(fund.get("dividend_yield")),
+            "book_value": sf(fund.get("book_value")), "revenue": sf(fund.get("revenue")),
+            "revenue_growth": fix_pct(fund.get("revenue_growth")), "earnings_growth": fix_pct(fund.get("earnings_growth")),
+            "profit_margin": fix_pct(fund.get("profit_margin")), "operating_margin": fix_pct(fund.get("operating_margin")),
+            "promoter_holding": sf(fund.get("promoter_holding"))},
+        "levels": {"pivot": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3, 2),
             "r1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(l.iloc[-1]), 2),
-            "r2": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 + float(h.iloc[-1]) - float(l.iloc[-1]), 2),
-            "s1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(h.iloc[-1]), 2),
-            "s2": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 - float(h.iloc[-1]) + float(l.iloc[-1]), 2),
-        },
-
-        "chart": chart_data_list,
-        "as_of": date.today().isoformat(),
-        "data_points": len(df),
+            "s1": round((float(h.iloc[-1]) + float(l.iloc[-1]) + price) / 3 * 2 - float(h.iloc[-1]), 2)},
+        "chart": chart_data_list, "as_of": date.today().isoformat(), "data_points": len(df),
     }
-
-    # ── 11. Patterns Data ──
-    patterns_data = {}
+    # Patterns, signals, narrative
     try:
-        import ta as _ta2
         signals_list = []
         patterns_list = []
-        narrative_parts = []
-
-        # Pattern signals from indicators
         if rsi > 50: signals_list.append(f"RSI Bullish ({rsi})")
-        elif rsi < 50: signals_list.append(f"RSI Bearish ({rsi})")
-        if rsi > 70: signals_list.append(f"RSI Overbought ({rsi})")
-        if rsi < 30: signals_list.append(f"RSI Oversold ({rsi})")
+        else: signals_list.append(f"RSI Bearish ({rsi})")
         if macd > macd_signal: signals_list.append("MACD above signal line")
         else: signals_list.append("MACD below signal line")
         if above_200: signals_list.append("Trading above 200 DMA")
@@ -9385,1017 +8799,63 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         if vol_ratio > 1.5: signals_list.append(f"High volume ({vol_ratio}x avg)")
         if adx_val > 25: signals_list.append(f"Strong trend (ADX {adx_val})")
         elif adx_val < 20: signals_list.append(f"Weak trend (ADX {adx_val})")
-
-        # Williams %R
-        wr = -100 * (float(h.rolling(14).max().iloc[-1]) - price) / (float(h.rolling(14).max().iloc[-1]) - float(l.rolling(14).min().iloc[-1])) if len(c) >= 14 else -50
-        wr = round(wr, 1)
-        if wr > -20: signals_list.append(f"Williams %R Overbought ({wr})")
-        elif wr < -80: signals_list.append(f"Williams %R Oversold ({wr})")
-
-        # OBV trend
-        obv = (v * c.diff().apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))).cumsum()
-        obv_sma = obv.rolling(20).mean()
-        if len(obv) >= 20 and float(obv.iloc[-1]) > float(obv_sma.iloc[-1]):
-            signals_list.append("OBV above 20-day avg (accumulation)")
-        elif len(obv) >= 20:
-            signals_list.append("OBV below 20-day avg (distribution)")
-
-        # EMA cross
-        if ema9 > ema21: signals_list.append("EMA 9 above EMA 21")
-        else: signals_list.append("EMA 12 below EMA 26")
-
-        # Chart patterns detection
         if len(c) >= 60:
-            # Double Bottom
             lows_60 = l.iloc[-60:]
-            min1_idx = lows_60.iloc[:30].idxmin()
-            min2_idx = lows_60.iloc[30:].idxmin()
-            min1 = float(lows_60.loc[min1_idx])
-            min2 = float(lows_60.loc[min2_idx])
+            min1_idx = lows_60.iloc[:30].idxmin(); min2_idx = lows_60.iloc[30:].idxmin()
+            min1 = float(lows_60.loc[min1_idx]); min2 = float(lows_60.loc[min2_idx])
             neckline = float(h.iloc[-60:].loc[min1_idx:min2_idx].max()) if min1_idx < min2_idx else 0
             if min1 > 0 and abs(min1 - min2) / min1 < 0.03 and neckline > 0:
-                pct_above = round((neckline / price - 1) * 100, 1)
-                target = round(neckline + (neckline - min((min1, min2))), 1)
-                patterns_list.append({
-                    "name": "Double Bottom (W)", "status": "FORMING" if price < neckline else "CONFIRMED",
-                    "reliability": "high", "pivot": round(neckline, 0),
-                    "target": target,
-                    "description": f"Two bottoms at Rs.{round(min1)} and Rs.{round(min2)}. Neckline at Rs.{round(neckline)} ({pct_above}% above CMP). Breakout above neckline confirms pattern. Target: Rs.{target}"
-                })
-
-            # Head & Shoulders
-            highs_60 = h.iloc[-60:]
-            peak_idx = highs_60.idxmax()
-            peak = float(highs_60.loc[peak_idx])
-            left_shoulder = float(highs_60.iloc[:20].max())
-            right_shoulder = float(highs_60.iloc[-20:].max())
-            if peak > left_shoulder and peak > right_shoulder and left_shoulder > 0:
-                pct_diff = abs(left_shoulder - right_shoulder) / left_shoulder
-                if pct_diff < 0.05:
-                    hs_neckline = float(l.iloc[-60:].min())
-                    hs_target = round(hs_neckline - (peak - hs_neckline), 1)
-                    patterns_list.append({
-                        "name": "Head & Shoulders", "status": "FORMING",
-                        "reliability": "high", "pivot": round(hs_neckline, 0),
-                        "target": hs_target,
-                        "description": f"Head at Rs.{round(peak)}, shoulders at Rs.{round(left_shoulder)}/{round(right_shoulder)}. Neckline Rs.{round(hs_neckline)}. Breakdown target: Rs.{hs_target}"
-                    })
-
-            # Near 52-week high/low
+                target = round(neckline + (neckline - min(min1, min2)), 1)
+                patterns_list.append({"name": "Double Bottom (W)", "status": "FORMING" if price < neckline else "CONFIRMED", "reliability": "high", "pivot": round(neckline, 0), "target": target, "description": f"Bottoms at Rs.{round(min1)}/{round(min2)}. Neckline Rs.{round(neckline)}. Target: Rs.{target}"})
+            highs_60 = h.iloc[-60:]; peak = float(highs_60.max())
+            left_s = float(highs_60.iloc[:20].max()); right_s = float(highs_60.iloc[-20:].max())
+            if peak > left_s and peak > right_s and abs(left_s - right_s) / left_s < 0.05:
+                hs_neck = float(l.iloc[-60:].min()); hs_tgt = round(hs_neck - (peak - hs_neck), 1)
+                patterns_list.append({"name": "Head & Shoulders", "status": "FORMING", "reliability": "high", "pivot": round(hs_neck, 0), "target": hs_tgt, "description": f"Head Rs.{round(peak)}, shoulders Rs.{round(left_s)}/{round(right_s)}. Target: Rs.{hs_tgt}"})
             if price >= high_52w * 0.95:
-                patterns_list.append({"name": "Near 52-Week High", "status": "", "reliability": "moderate", "pivot": high_52w, "target": 0,
-                    "description": f"{round((price/high_52w-1)*100, 1)}% from 52W high - strength"})
+                patterns_list.append({"name": "Near 52-Week High", "status": "", "reliability": "moderate", "pivot": high_52w, "target": 0, "description": f"{round((price/high_52w-1)*100,1)}% from 52W high"})
             if price <= low_52w * 1.05:
-                patterns_list.append({"name": "Near 52-Week Low", "status": "", "reliability": "moderate", "pivot": low_52w, "target": 0,
-                    "description": f"{round((price/low_52w-1)*100, 1)}% from 52W low - weakness"})
-
-            # RSI divergence
-            rsi_series = []
-            for i in range(max(0, len(c)-30), len(c)):
-                _g = delta.iloc[max(0,i-14):i].clip(lower=0).ewm(span=14, adjust=False).mean()
-                _l2 = (-delta.iloc[max(0,i-14):i].clip(upper=0)).ewm(span=14, adjust=False).mean()
-                if len(_l2) > 0 and float(_l2.iloc[-1]) != 0:
-                    rsi_series.append(100 - 100 / (1 + float(_g.iloc[-1]) / float(_l2.iloc[-1])))
-            if len(rsi_series) >= 10:
-                price_lower = float(c.iloc[-1]) < float(c.iloc[-10])
-                rsi_higher = rsi_series[-1] > rsi_series[-10] if len(rsi_series) > 10 else False
-                if price_lower and rsi_higher:
-                    patterns_list.append({"name": "Bullish RSI Divergence", "status": "", "reliability": "moderate", "pivot": 0, "target": 0,
-                        "description": "Price making lower lows but RSI making higher lows"})
-
-        # Build narrative
-        narrative_parts.append(f"{sym} ({fund.get('name', sym)}) is currently trading at Rs.{price:,.2f}, {'up' if (price - prev_close)>=0 else 'down'} {abs(round((price - prev_close)/prev_close*100,2))}% in the latest session.")
-        if above_200: narrative_parts.append(f"The stock is trading above its 200-day moving average (Rs.{sma200:,.0f}), indicating a long-term bullish structure.")
-        else: narrative_parts.append(f"The stock is trading below its 200-day moving average (Rs.{sma200:,.0f}), indicating a long-term bearish structure.")
-        if above_50: narrative_parts.append(f"It remains above the 50 DMA (Rs.{sma50:,.0f}), showing medium-term strength.")
-        else: narrative_parts.append(f"It has slipped below the 50 DMA (Rs.{sma50:,.0f}), showing medium-term weakness.")
-        narrative_parts.append(f"RSI at {rsi} is {'overbought' if rsi>70 else 'oversold' if rsi<30 else 'neutral'}, offering {'no strong' if 40<rsi<60 else 'a'} directional signal.")
-        if macd_hist > 0: narrative_parts.append("MACD histogram is positive, confirming upward momentum.")
-        else: narrative_parts.append("MACD histogram is negative, suggesting downward pressure.")
-        if adx_val > 25: narrative_parts.append(f"ADX at {adx_val} indicates a strong trending market.")
-        else: narrative_parts.append(f"ADX at {adx_val} indicates a weak or range-bound market. Mean-reversion strategies may work better than trend-following.")
-        for pat in patterns_list:
-            if pat["name"] and pat["description"]:
-                narrative_parts.append(f"IMPORTANT: {pat['name']} detected \u2014 {pat['description']}")
-        narrative_parts.append(f"OUTLOOK: The weight of technical evidence is {'bullish' if bullish_count >= 4 else 'bearish' if bearish_count >= 4 else 'mixed/neutral'}.")
-        narrative_parts.append(f"{sym} shows {bullish_count} bullish signals against {bearish_count} bearish.")
-        narrative_parts.append(f"Near-term upside target is R1 at Rs.{round((float(h.iloc[-1])+float(l.iloc[-1])+price)/3*2-float(l.iloc[-1]),0):,.0f}, with support at S1 Rs.{round((float(h.iloc[-1])+float(l.iloc[-1])+price)/3*2-float(h.iloc[-1]),0):,.0f}.")
-
-        patterns_data = {
-            "verdict": "BULLISH" if bullish_count >= 4 else "BEARISH" if bearish_count >= 4 else "NEUTRAL",
-            "score": int((bullish_count / max(bullish_count + bearish_count, 1)) * 100),
-            "bullish_signals": bullish_count,
-            "bearish_signals": bearish_count,
-            "signals": signals_list,
-            "patterns": patterns_list,
-            "narrative": " ".join(narrative_parts),
-            "williams_r": wr,
-        }
+                patterns_list.append({"name": "Near 52-Week Low", "status": "", "reliability": "moderate", "pivot": low_52w, "target": 0, "description": f"{round((price/low_52w-1)*100,1)}% from 52W low"})
+        narr = f"{sym} ({fund.get('name', sym)}) at Rs.{price:,.2f}, {'up' if (price-prev_close)>=0 else 'down'} {abs(round((price-prev_close)/prev_close*100,2))}%. "
+        narr += f"{'Above' if above_200 else 'Below'} 200 DMA (Rs.{sma200:,.0f}). {'Above' if above_50 else 'Below'} 50 DMA. "
+        narr += f"RSI {rsi} ({'overbought' if rsi>70 else 'oversold' if rsi<30 else 'neutral'}). MACD {'positive' if macd_hist>0 else 'negative'}. ADX {adx_val} ({'trending' if adx_val>25 else 'range-bound'}). "
+        narr += f"{'BULLISH' if bullish_count>=4 else 'BEARISH' if bearish_count>=4 else 'NEUTRAL'} outlook — {bullish_count} bull vs {bearish_count} bear signals."
+        for pt in patterns_list:
+            narr += f" {pt['name']}: {pt['description']}"
+        result["patterns"] = {"verdict": trend, "score": int(bullish_count/(bullish_count+bearish_count)*100) if (bullish_count+bearish_count)>0 else 50, "bullish_signals": bullish_count, "bearish_signals": bearish_count, "signals": signals_list, "patterns": patterns_list, "narrative": narr}
     except Exception as _pe:
-        patterns_data = {"error": str(_pe), "signals": [], "patterns": [], "narrative": ""}
+        result["patterns"] = {"signals": [], "patterns": [], "narrative": "", "error": str(_pe)}
 
-    result["patterns"] = patterns_data
+    # Assessment
+    pe_v = sf(fund.get("pe_trailing"), 0); pb_v = sf(fund.get("pb"), 0)
+    roe_v = fix_pct(fund.get("roe")); de_v = sf(fund.get("debt_equity"), 0)
+    rev_g = fix_pct(fund.get("revenue_growth")); earn_g = fix_pct(fund.get("earnings_growth")); pm_v = fix_pct(fund.get("profit_margin"))
+    vs = 0
+    if pe_v and 0 < pe_v < 15: vs += 30
+    elif pe_v and 15 <= pe_v < 25: vs += 15
+    if pb_v and pb_v < 2: vs += 25
+    elif pb_v and pb_v < 4: vs += 10
+    if fix_pct(fund.get("dividend_yield")) > 2: vs += 20
+    if de_v and de_v < 50: vs += 15
+    if pm_v and pm_v > 15: vs += 10
+    gs = 0
+    if rev_g and rev_g > 15: gs += 30
+    elif rev_g and rev_g > 5: gs += 15
+    if earn_g and earn_g > 20: gs += 30
+    elif earn_g and earn_g > 5: gs += 15
+    if roe_v and roe_v > 15: gs += 20
+    if rs_score > 60: gs += 20
+    qs = 0
+    if roe_v and roe_v > 15: qs += 25
+    if pm_v and pm_v > 15: qs += 20
+    if de_v and de_v < 30: qs += 20
+    if fix_pct(fund.get("operating_margin")) > 15: qs += 15
+    if vol_ratio < 2: qs += 10
+    if adx_val > 20: qs += 10
+    result["assessment"] = {"value_score": min(100,vs), "growth_score": min(100,gs), "quality_score": min(100,qs),
+        "value_verdict": "STRONG VALUE" if vs>=70 else "VALUE" if vs>=40 else "FAIR" if vs>=20 else "EXPENSIVE",
+        "growth_verdict": "HIGH GROWTH" if gs>=70 else "GROWTH" if gs>=40 else "MODERATE" if gs>=20 else "SLOW",
+        "quality_verdict": "HIGH QUALITY" if qs>=70 else "QUALITY" if qs>=40 else "AVERAGE" if qs>=20 else "WEAK"}
 
-    # ── 12. Quantamental Assessment ──
-    pe = sf(fund.get("pe_trailing") or fund.get("trailingPE"), 0)
-    pb_val = sf(fund.get("pb") or fund.get("priceToBook"), 0)
-    roe_val = fix_pct(fund.get("roe") or fund.get("returnOnEquity"))
-    de = sf(fund.get("debt_equity") or fund.get("debtToEquity"), 0)
-    rev_g = fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth"))
-    earn_g = fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth"))
-    pm = fix_pct(fund.get("profit_margin") or fund.get("profitMargins"))
-
-    # Value score
-    value_score = 0
-    if pe and 0 < pe < 15: value_score += 30
-    elif pe and 15 <= pe < 25: value_score += 15
-    if pb_val and pb_val < 2: value_score += 25
-    elif pb_val and pb_val < 4: value_score += 10
-    if fix_pct(fund.get("dividend_yield") or fund.get("dividendYield"), 15) > 2: value_score += 20
-    if de and de < 50: value_score += 15
-    elif de and de < 100: value_score += 5
-    if pm and pm > 15: value_score += 10
-
-    # Growth score
-    growth_score = 0
-    if rev_g and rev_g > 15: growth_score += 30
-    elif rev_g and rev_g > 5: growth_score += 15
-    if earn_g and earn_g > 20: growth_score += 30
-    elif earn_g and earn_g > 5: growth_score += 15
-    if roe_val and roe_val > 15: growth_score += 20
-    elif roe_val and roe_val > 10: growth_score += 10
-    if rs_component > 60: growth_score += 20
-    elif rs_component > 40: growth_score += 10
-
-    # Quality score
-    quality_score = 0
-    if roe_val and roe_val > 15: quality_score += 25
-    if pm and pm > 15: quality_score += 20
-    if de and de < 30: quality_score += 20
-    elif de and de < 80: quality_score += 10
-    if fix_pct(fund.get("operating_margin") or fund.get("operatingMargins"), 50) > 15: quality_score += 15
-    if vol_ratio < 2: quality_score += 10
-    if adx_val > 20: quality_score += 10
-
-    result["assessment"] = {
-        "value_score": min(100, value_score),
-        "growth_score": min(100, growth_score),
-        "quality_score": min(100, quality_score),
-        "value_verdict": "STRONG VALUE" if value_score >= 70 else "VALUE" if value_score >= 40 else "FAIRLY PRICED" if value_score >= 20 else "EXPENSIVE",
-        "growth_verdict": "HIGH GROWTH" if growth_score >= 70 else "GROWTH" if growth_score >= 40 else "MODERATE" if growth_score >= 20 else "SLOW",
-        "quality_verdict": "HIGH QUALITY" if quality_score >= 70 else "QUALITY" if quality_score >= 40 else "AVERAGE" if quality_score >= 20 else "WEAK",
-    }
-
-    if redis_client:
-        await redis_client.setex(cache_key, 900, json.dumps(result))
-
+    if redis_client: await redis_client.setex(cache_key, 900, json.dumps(result))
     return result
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# SCREEN BUILDER — DYOR (installed 28 March 2026)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-SCREENER_PARAMS = {
-    "stocks": {
-        "technical": [
-            {"id":"price","label":"Current Price","unit":"Rs","field":"price"},
-            {"id":"rsi","label":"RSI (14)","unit":"","field":"rsi"},
-            {"id":"macd_hist","label":"MACD Histogram","unit":"","field":"macd_hist"},
-            {"id":"sma_50","label":"SMA 50","unit":"Rs","field":"sma_50"},
-            {"id":"sma_200","label":"SMA 200","unit":"Rs","field":"sma_200"},
-            {"id":"ema_20","label":"EMA 20","unit":"Rs","field":"ema_20"},
-            {"id":"price_vs_sma50","label":"Price vs SMA50 pct","unit":"%","field":"price_vs_sma50","computed":True},
-            {"id":"price_vs_sma200","label":"Price vs SMA200 pct","unit":"%","field":"price_vs_sma200","computed":True},
-            {"id":"vol_ratio","label":"Volume Ratio (vs 20D)","unit":"x","field":"vol_ratio"},
-            {"id":"atr_pct","label":"ATR pct","unit":"%","field":"atr_pct"},
-            {"id":"bb_width","label":"Bollinger Width","unit":"%","field":"bb_width"},
-            {"id":"bb_pos","label":"BB Position","unit":"","field":"bb_pos"},
-            {"id":"rs_3m","label":"Relative Strength 3M","unit":"%","field":"rs_3m"},
-            {"id":"rs_6m","label":"Relative Strength 6M","unit":"%","field":"rs_6m"},
-            {"id":"w52_high_pct","label":"pct from 52W High","unit":"%","field":"w52_high_pct","computed":True},
-            {"id":"w52_low_pct","label":"pct from 52W Low","unit":"%","field":"w52_low_pct","computed":True},
-            {"id":"adx","label":"ADX","unit":"","field":"adx"},
-            {"id":"stoch_k","label":"Stochastic pctK","unit":"","field":"stoch_k"},
-            {"id":"cci","label":"CCI (20)","unit":"","field":"cci"},
-            {"id":"mfi","label":"Money Flow Index","unit":"","field":"mfi"},
-            {"id":"supertrend","label":"Supertrend","unit":"","field":"supertrend","kind":"select"},
-            {"id":"macd_signal","label":"MACD vs Signal","unit":"","field":"macd_signal","kind":"select"},
-            {"id":"ma_cross","label":"MA Crossover","unit":"","field":"ma_cross","kind":"select"},
-        ],
-        "fundamental": [
-            {"id":"market_cap","label":"Market Cap","unit":"Cr","field":"market_cap"},
-            {"id":"pe_ratio","label":"P/E Ratio","unit":"x","field":"pe_ratio"},
-            {"id":"pb_ratio","label":"P/B Ratio","unit":"x","field":"pb_ratio"},
-            {"id":"ev_ebitda","label":"EV/EBITDA","unit":"x","field":"ev_ebitda"},
-            {"id":"peg_ratio","label":"PEG Ratio","unit":"x","field":"peg_ratio"},
-            {"id":"roe","label":"ROE","unit":"%","field":"roe"},
-            {"id":"roce","label":"ROCE","unit":"%","field":"roce"},
-            {"id":"debt_equity","label":"Debt/Equity","unit":"x","field":"debt_equity"},
-            {"id":"current_ratio","label":"Current Ratio","unit":"x","field":"current_ratio"},
-            {"id":"div_yield","label":"Dividend Yield","unit":"%","field":"dividend_yield"},
-            {"id":"revenue_growth","label":"Revenue Growth YoY","unit":"%","field":"revenue_growth"},
-            {"id":"pat_growth","label":"PAT Growth YoY","unit":"%","field":"pat_growth"},
-            {"id":"eps_growth","label":"EPS Growth QoQ","unit":"%","field":"eps_growth"},
-            {"id":"operating_margin","label":"Operating Margin","unit":"%","field":"operating_margin"},
-            {"id":"net_margin","label":"Net Margin","unit":"%","field":"net_margin"},
-        ],
-        "ownership": [
-            {"id":"promoter_hold","label":"Promoter Holding","unit":"%","field":"promoter_holding"},
-            {"id":"promoter_pledge","label":"Promoter Pledge","unit":"%","field":"promoter_pledge"},
-            {"id":"fii_hold","label":"FII Holding","unit":"%","field":"fii_holding"},
-            {"id":"fii_chg","label":"FII Change QoQ","unit":"%","field":"fii_change"},
-            {"id":"dii_hold","label":"DII Holding","unit":"%","field":"dii_holding"},
-            {"id":"dii_chg","label":"DII Change QoQ","unit":"%","field":"dii_change"},
-        ],
-        "alpha": [
-            {"id":"alpha_rating","label":"Alpha Rating","unit":"/100","field":"alpha_rating"},
-            {"id":"momentum_score","label":"Momentum (25pct)","unit":"/100","field":"momentum_score"},
-            {"id":"fundamental_score","label":"Fundamentals (25pct)","unit":"/100","field":"fundamental_score"},
-            {"id":"accumulation_score","label":"Accumulation (20pct)","unit":"/100","field":"accumulation_score"},
-            {"id":"trend_score","label":"Trend (15pct)","unit":"/100","field":"trend_score"},
-            {"id":"sentiment_score","label":"Sentiment (15pct)","unit":"/100","field":"sentiment_score"},
-        ],
-        "sector": [
-            {"id":"sector","label":"Sector","unit":"","field":"sector","kind":"multi_select"},
-            {"id":"index","label":"Index","unit":"","field":"index_membership","kind":"multi_select"},
-        ],
-    },
-    "futures": {
-        "technical": [
-            {"id":"price","label":"Futures Price","unit":"Rs","field":"price"},
-            {"id":"rsi","label":"RSI (14)","unit":"","field":"rsi"},
-            {"id":"macd_hist","label":"MACD Histogram","unit":"","field":"macd_hist"},
-            {"id":"adx","label":"ADX","unit":"","field":"adx"},
-            {"id":"vol_ratio","label":"Volume Ratio","unit":"x","field":"vol_ratio"},
-            {"id":"supertrend","label":"Supertrend","unit":"","field":"supertrend","kind":"select"},
-        ],
-        "contract": [
-            {"id":"basis","label":"Basis pct","unit":"%","field":"basis"},
-            {"id":"basis_ann","label":"Annualized Basis","unit":"%","field":"basis_annualized"},
-            {"id":"oi","label":"Open Interest","unit":"lots","field":"oi"},
-            {"id":"oi_chg","label":"OI Change 1D","unit":"%","field":"oi_change"},
-            {"id":"oi_buildup","label":"OI Buildup","unit":"","field":"oi_buildup","kind":"select"},
-            {"id":"lot_size","label":"Lot Size","unit":"","field":"lot_size"},
-            {"id":"expiry_days","label":"Days to Expiry","unit":"d","field":"expiry_days"},
-            {"id":"rollover_pct","label":"Rollover pct","unit":"%","field":"rollover_pct"},
-            {"id":"coc","label":"Cost of Carry","unit":"%","field":"cost_of_carry"},
-        ],
-        "alpha": [
-            {"id":"alpha_rating","label":"Alpha Rating","unit":"/100","field":"alpha_rating"},
-            {"id":"momentum_score","label":"Momentum Score","unit":"/100","field":"momentum_score"},
-        ],
-    },
-    "options": {
-        "contract": [
-            {"id":"option_type","label":"Option Type","unit":"","field":"option_type","kind":"select"},
-            {"id":"moneyness","label":"Moneyness","unit":"","field":"moneyness","kind":"select"},
-            {"id":"expiry_days","label":"Days to Expiry","unit":"d","field":"expiry_days"},
-            {"id":"strike_dist","label":"Strike Distance pct","unit":"%","field":"strike_distance"},
-            {"id":"premium","label":"Premium","unit":"Rs","field":"premium"},
-            {"id":"volume","label":"Volume","unit":"","field":"volume"},
-            {"id":"oi","label":"Open Interest","unit":"lots","field":"oi"},
-            {"id":"oi_chg","label":"OI Change pct","unit":"%","field":"oi_change"},
-        ],
-        "volatility": [
-            {"id":"iv","label":"Implied Volatility","unit":"%","field":"iv"},
-            {"id":"iv_rank","label":"IV Rank","unit":"%","field":"iv_rank"},
-            {"id":"iv_pctl","label":"IV Percentile","unit":"%","field":"iv_percentile"},
-            {"id":"hv_20","label":"HV 20D","unit":"%","field":"hv_20"},
-            {"id":"iv_hv_diff","label":"IV-HV Spread","unit":"%","field":"iv_hv_spread"},
-        ],
-        "greeks": [
-            {"id":"delta","label":"Delta","unit":"","field":"delta"},
-            {"id":"gamma","label":"Gamma","unit":"","field":"gamma"},
-            {"id":"theta","label":"Theta","unit":"Rs/day","field":"theta"},
-            {"id":"vega","label":"Vega","unit":"Rs/pctIV","field":"vega"},
-        ],
-        "sentiment": [
-            {"id":"pcr_oi","label":"PCR (OI)","unit":"","field":"pcr_oi"},
-            {"id":"pcr_vol","label":"PCR (Volume)","unit":"","field":"pcr_volume"},
-            {"id":"max_pain","label":"Max Pain Distance","unit":"%","field":"max_pain_dist"},
-        ],
-    },
-}
-
-
-def sb_apply_operator(value, operator, filter_values):
-    if value is None:
-        return False
-    try:
-        if isinstance(value, str) and operator not in ("eq", "in"):
-            val = float(value)
-        else:
-            val = value
-    except (TypeError, ValueError):
-        return False
-    if operator == "eq":
-        if isinstance(val, str):
-            return str(val).lower() == str(filter_values[0]).lower()
-        try:
-            return abs(float(val) - float(filter_values[0])) < 0.001
-        except:
-            return str(val) == str(filter_values[0])
-    elif operator == "gt":
-        return float(val) > float(filter_values[0])
-    elif operator == "lt":
-        return float(val) < float(filter_values[0])
-    elif operator == "gte":
-        return float(val) >= float(filter_values[0])
-    elif operator == "lte":
-        return float(val) <= float(filter_values[0])
-    elif operator == "between":
-        return float(filter_values[0]) <= float(val) <= float(filter_values[1])
-    elif operator == "in":
-        if isinstance(val, list):
-            return any(v in filter_values for v in val)
-        return val in filter_values
-    return False
-
-
-def sb_extract_value(data, param_id, category, asset_type):
-    params_list = SCREENER_PARAMS.get(asset_type, {}).get(category, [])
-    param_def = next((p for p in params_list if p["id"] == param_id), None)
-    if not param_def:
-        for cat_params in SCREENER_PARAMS.get(asset_type, {}).values():
-            param_def = next((p for p in cat_params if p["id"] == param_id), None)
-            if param_def:
-                break
-    field = param_def.get("field", param_id) if param_def else param_id
-    if field in data:
-        return data[field]
-    ALT_FIELDS = {
-        "w52_high_pct": "pct_from_52h", "w52_low_pct": "pct_from_52l",
-        "price_vs_sma50": "pct_from_sma50", "price_vs_sma200": "pct_from_sma200",
-        "dividend_yield": "div_yield", "change_pct": "change",
-        "basis_ann": "basis_annualized", "oi_chg": "oi_change",
-        "fut_price": "futures_price", "pe_ratio": "pe_ratio",
-        "div_yield": "dividend_yield", "iv": "atm_iv",
-        "iv_hv_diff": "iv_hv_spread", "pcr": "pcr_oi",
-        "max_pain_dist": "max_pain_dist", "hv_20": "hv_20",
-        "strike_dist": "max_pain_dist", "premium": "atm_iv",
-    }
-    if field in ALT_FIELDS and ALT_FIELDS[field] in data:
-        return data[ALT_FIELDS[field]]
-    if param_id in ALT_FIELDS and ALT_FIELDS[param_id] in data:
-        return data[ALT_FIELDS[param_id]]
-    if param_id in data:
-        return data[param_id]
-    if param_id == "price_vs_sma50":
-        price = data.get("price"); sma50 = data.get("sma_50")
-        if price and sma50 and float(sma50) > 0:
-            return ((float(price) - float(sma50)) / float(sma50)) * 100
-    elif param_id == "price_vs_sma200":
-        price = data.get("price"); sma200 = data.get("sma_200")
-        if price and sma200 and float(sma200) > 0:
-            return ((float(price) - float(sma200)) / float(sma200)) * 100
-    elif param_id == "w52_high_pct":
-        price = data.get("price"); w52h = data.get("w52_high")
-        if price and w52h and float(w52h) > 0:
-            return ((float(price) - float(w52h)) / float(w52h)) * 100
-    elif param_id == "w52_low_pct":
-        price = data.get("price"); w52l = data.get("w52_low")
-        if price and w52l and float(w52l) > 0:
-            return ((float(price) - float(w52l)) / float(w52l)) * 100
-    for section in ["technical", "fundamental", "ownership", "alpha"]:
-        if section in data and isinstance(data[section], dict):
-            if field in data[section]:
-                return data[section][field]
-    return None
-
-
-def sb_evaluate_filters(data, filters, logic, asset_type):
-    if not filters:
-        return True
-    results = []
-    for f in filters:
-        param_id = f.get("pid") or f.get("param_id")
-        category = f.get("cat") or f.get("category")
-        operator = f.get("op") or f.get("operator", "between")
-        values = f.get("vals") or f.get("values", [])
-        for cat_params in SCREENER_PARAMS.get(asset_type, {}).values():
-            pd_ = next((p for p in cat_params if p["id"] == param_id), None)
-            if pd_:
-                if pd_.get("kind") == "multi_select":
-                    operator = "in"
-                break
-        value = sb_extract_value(data, param_id, category, asset_type)
-        results.append(sb_apply_operator(value, operator, values))
-    return all(results) if logic == "AND" else any(results)
-
-
-@app.get("/api/screener/params", tags=["Screen Builder"], summary="Get screener parameter catalog")
-async def get_screener_params(asset_type: str = "stocks"):
-    if asset_type not in SCREENER_PARAMS:
-        return {"error": "Unknown asset type. Use: stocks, futures, options"}
-    return {"asset_type": asset_type, "categories": SCREENER_PARAMS[asset_type]}
-
-
-async def sb_get_full_universe() -> list:
-    """Scan full 923-stock universe for Screen Builder. Redis-cached 4 hours."""
-    from datetime import date, timedelta
-    if redis_client:
-        cached = await redis_client.get("sb_universe")
-        if cached:
-            return json.loads(cached)
-    start = (date.today() - timedelta(days=400)).isoformat()
-    end = date.today().isoformat()
-    symbols_to_scan = list(NIFTY_UNIVERSE)
-    yf_symbols = [f"{s}.NS" for s in symbols_to_scan]
-    _batch_sz = 40 if len(yf_symbols) > 500 else 50
-    all_data = await batch_download_yf(yf_symbols, start, end, batch_size=_batch_sz)
-
-    def sf(v, d=0):
-        try:
-            v = float(v)
-            return d if (np.isnan(v) or np.isinf(v)) else v
-        except:
-            return d
-
-    stocks = []
-    for sym in symbols_to_scan:
-        try:
-            yf_sym = f"{sym}.NS"
-            if yf_sym not in all_data:
-                continue
-            df = all_data[yf_sym].dropna()
-            if len(df) < 30:
-                continue
-            c = df["Close"].astype(float)
-            h = df["High"].astype(float)
-            l = df["Low"].astype(float)
-            v = df["Volume"].astype(float)
-            price = float(c.iloc[-1])
-            prev = float(c.iloc[-2])
-            change_pct = sf((price - prev) / prev * 100)
-            vol = int(v.iloc[-1])
-            vol_avg = int(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else int(v.mean())
-            vol_ratio = sf(vol / vol_avg, 1.0) if vol_avg > 0 else 1.0
-            delta = c.diff()
-            gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
-            loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
-            rs_val = gain.iloc[-1] / loss.iloc[-1] if sf(loss.iloc[-1]) != 0 else 0
-            rsi = sf(100 - 100 / (1 + rs_val), 50)
-            sma_50 = sf(c.rolling(50).mean().iloc[-1])
-            sma_200 = sf(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else sf(c.mean())
-            c_252 = c.iloc[-min(252, len(c)):]
-            w52_high = sf(c_252.max())
-            w52_low = sf(c_252.min())
-            pct_from_52h = sf((price - w52_high) / w52_high * 100) if w52_high > 0 else 0
-            pct_from_52l = sf((price - w52_low) / w52_low * 100) if w52_low > 0 else 0
-            bb_mid = c.rolling(20).mean()
-            bb_std = c.rolling(20).std()
-            bb_upper = sf((bb_mid + 2 * bb_std).iloc[-1])
-            bb_lower_val = sf((bb_mid - 2 * bb_std).iloc[-1])
-            bb_width = sf((bb_upper - bb_lower_val) / sf(bb_mid.iloc[-1], 1) * 100) if sf(bb_mid.iloc[-1]) > 0 else 0
-            ema12 = c.ewm(span=12, adjust=False).mean()
-            ema26 = c.ewm(span=26, adjust=False).mean()
-            macd_line = ema12 - ema26
-            macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
-            macd_hist = sf((macd_line - macd_signal_line).iloc[-1])
-            rs_3m = sf(c.iloc[-1] / c.iloc[-60] - 1, 0) * 100 if len(c) >= 60 and sf(c.iloc[-60]) > 0 else change_pct
-            rs_1m = sf(c.iloc[-1] / c.iloc[-22] - 1, 0) * 100 if len(c) >= 22 and sf(c.iloc[-22]) > 0 else change_pct
-            sma50_s = c.rolling(50).mean()
-            sma200_s = c.rolling(200).mean() if len(c) >= 200 else c.rolling(min(len(c), 100)).mean()
-            golden_cross = False
-            if len(sma50_s.dropna()) >= 2 and len(sma200_s.dropna()) >= 2:
-                golden_cross = bool(sf(sma50_s.iloc[-1]) > sf(sma200_s.iloc[-1]) and sf(sma50_s.iloc[-2]) <= sf(sma200_s.iloc[-2]))
-            tr = pd.concat([h - l, (h - df["Close"].shift(1)).abs(), (l - df["Close"].shift(1)).abs()], axis=1).max(axis=1)
-            atr = tr.rolling(10).mean()
-            st_lower_val = (h + l) / 2 - 3 * atr
-            above_supertrend = bool(price > sf(st_lower_val.iloc[-1])) if len(atr.dropna()) > 0 else bool(price > sma_200)
-            minervini_score = sum([
-                bool(price > sf(c.rolling(150).mean().iloc[-1])) if len(c) >= 150 else False,
-                bool(price > sma_200), bool(price > sma_50), bool(sma_50 > sma_200),
-                bool(pct_from_52l >= 25), bool(pct_from_52h >= -25),
-            ])
-            wk_change = sf((price / sf(c.iloc[-6], price) - 1) * 100) if len(c) >= 6 else change_pct
-            gap_pct = sf((float(df["Open"].iloc[-1]) - prev) / prev * 100) if prev > 0 else 0
-            stocks.append({
-                "symbol": sym, "name": sym,
-                "price": round(sf(price), 2), "change_pct": round(change_pct, 2), "change": round(change_pct, 2),
-                "volume": vol, "vol_ratio": round(vol_ratio, 2), "rsi": round(rsi, 1),
-                "macd_hist": round(macd_hist, 2), "sma_50": round(sma_50, 2), "sma_200": round(sma_200, 2),
-                "w52_high": round(w52_high, 2), "w52_low": round(w52_low, 2),
-                "pct_from_52h": round(pct_from_52h, 1), "pct_from_52l": round(pct_from_52l, 1),
-                "bb_width": round(bb_width, 2), "rs_1m": round(rs_1m, 1), "rs_3m": round(rs_3m, 1),
-                "gap_pct": round(gap_pct, 2), "wk_change": round(wk_change, 2),
-                "above_200dma": bool(price > sma_200), "above_50dma": bool(price > sma_50),
-                "golden_cross": golden_cross, "above_supertrend": above_supertrend,
-                "minervini_score": minervini_score,
-                "sector": SECTOR_MAP.get(sym, "Other"), "industry": INDUSTRY_MAP.get(sym, "Other"),
-                "cap_segment": get_cap_segment(sym),
-                "pe_ratio": 0, "roe": 0, "dividend_yield": 0, "debt_equity": 0,
-                "market_cap": 0, "alpha_rating": 0, "momentum_score": 0,
-                "fundamental_score": 0, "accumulation_score": 0, "trend_score": 0, "sentiment_score": 0,
-            })
-        except Exception:
-            continue
-    if redis_client and stocks:
-        await redis_client.set("sb_universe", json.dumps(stocks), ex=14400)
-    return stocks
-
-
-async def sb_enrich_fundamentals(stocks: list) -> list:
-    """Fetch fundamentals for all stocks concurrently, in batches of 25."""
-    import asyncio
-    def sf(v, d=0):
-        try:
-            v = float(v)
-            return d if (np.isnan(v) or np.isinf(v)) else v
-        except:
-            return d
-    async def fetch_one(s):
-        try:
-            fdata = await ds_fundamentals(s["symbol"])
-            if fdata:
-                pe = sf(fdata.get("pe_trailing") or fdata.get("pe_forward") or fdata.get("pe_ratio", 0))
-                roe_val = sf(fdata.get("roe", 0))
-                if roe_val == 0:
-                    roe_val = sf(fdata.get("roce", 0))
-                roe = roe_val * 100 if roe_val and roe_val < 1 else (roe_val or 0)
-                dy = sf(fdata.get("dividend_yield", 0))
-                de = sf(fdata.get("debt_equity", 0))
-                mc = sf(fdata.get("market_cap", 0))
-                pb = sf(fdata.get("pb", 0))
-                pm = sf(fdata.get("profit_margin", 0))
-                s["pe_ratio"] = round(pe, 2)
-                s["roe"] = round(roe, 2)
-                s["dividend_yield"] = round(dy, 2)
-                s["debt_equity"] = round(de, 2)
-                s["market_cap"] = mc
-                s["pb"] = round(pb, 2)
-                s["profit_margin"] = round(pm, 2)
-                s["name"] = fdata.get("name", s.get("name", s["symbol"]))
-        except:
-            pass
-        return s
-    batch_size = 25
-    enriched = []
-    for i in range(0, len(stocks), batch_size):
-        batch = stocks[i:i + batch_size]
-        results = await asyncio.gather(*[fetch_one(s) for s in batch])
-        enriched.extend(results)
-    return enriched
-
-
-@app.post("/api/screener/warm-fundamentals", tags=["Screen Builder"], summary="Pre-warm stock universe + fundamentals cache")
-async def screener_warm_fundamentals(request: Request, user=None):
-    import asyncio, time as _time
-    t0 = _time.time()
-    if not redis_client:
-        return {"error": "Redis not available"}
-    existing = await redis_client.get("sb_universe_enriched")
-    if existing:
-        ttl = await redis_client.ttl("sb_universe_enriched")
-        if ttl > 7200:
-            return {"status": "already_warm", "ttl_seconds": ttl}
-    stocks = await sb_get_full_universe()
-    enriched = await sb_enrich_fundamentals([s.copy() for s in stocks])
-    await redis_client.set("sb_universe_enriched", json.dumps(enriched), ex=14400)
-    elapsed = round(_time.time() - t0, 1)
-    non_zero_pe = sum(1 for s in enriched if s.get("pe_ratio", 0) > 0)
-    return {"status": "ok", "total": len(enriched), "with_pe": non_zero_pe, "elapsed_s": elapsed}
-
-
-def sb_get_fno_symbol(symbol: str, expiry_date) -> str:
-    mon = expiry_date.strftime("%b").upper()
-    yr = expiry_date.strftime("%y")
-    return f"NSE_{symbol}{yr}{mon}FUT"
-
-def sb_get_near_expiry():
-    from datetime import date, timedelta
-    import calendar
-    today = date.today()
-    for month_offset in range(3):
-        month = today.month + month_offset
-        year = today.year + (month - 1) // 12
-        month = ((month - 1) % 12) + 1
-        last_day = calendar.monthrange(year, month)[1]
-        ld = date(year, month, last_day)
-        while ld.weekday() != 3:
-            ld -= timedelta(days=1)
-        if ld >= today:
-            return ld
-    return today + timedelta(days=30)
-
-
-async def sb_build_futures_cache() -> dict:
-    import urllib.request, urllib.error, urllib.parse, math
-    from datetime import date
-    LOT_SIZES = {
-        "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
-        "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
-        "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
-        "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
-        "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
-        "TITAN": 375, "HINDALCO": 1400, "JSWSTEEL": 675, "CIPLA": 650,
-        "DRREDDY": 125, "ONGC": 3250, "NTPC": 2250, "POWERGRID": 2700,
-        "COALINDIA": 2100,
-    }
-    INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
-    GROWW_SYMBOL_MAP = {"TATAMOTORS": "TMPV", "M&M": "M&M"}
-    groww_token = await get_groww_token()
-    if not groww_token:
-        return {"error": "No Groww token"}
-    expiry = sb_get_near_expiry()
-    days_to_expiry = max(1, (expiry - date.today()).days)
-    risk_free = 0.065
-
-    async def groww_get(url):
-        import asyncio
-        loop = asyncio.get_event_loop()
-        req_obj = urllib.request.Request(url, headers={
-            "Accept": "application/json",
-            "Authorization": f"Bearer {groww_token}",
-            "X-API-VERSION": "1.0"
-        })
-        return await loop.run_in_executor(None,
-            lambda: urllib.request.urlopen(req_obj, timeout=10).read().decode())
-
-    symbols = list(LOT_SIZES.keys())
-    non_index_symbols = [s for s in symbols if s not in INDEX_SYMBOLS]
-    cash_syms = [f"NSE_{GROWW_SYMBOL_MAP.get(s, s)}" for s in non_index_symbols]
-    spot_prices = {}
-    BATCH = 15
-    for i in range(0, len(cash_syms), BATCH):
-        batch_syms = cash_syms[i:i+BATCH]
-        batch_names = non_index_symbols[i:i+BATCH]
-        try:
-            encoded = urllib.parse.quote(",".join(batch_syms), safe=",_")
-            resp = json.loads(await groww_get(
-                f"https://api.groww.in/v1/live-data/ltp?segment=CASH&exchange_symbols={encoded}"
-            ))
-            if resp.get("status") == "SUCCESS":
-                for sym, gs in zip(batch_names, batch_syms):
-                    spot_prices[sym] = float(resp["payload"].get(gs, 0))
-        except:
-            pass
-    index_cash_map = {"NIFTY": "NSE_NIFTY_50", "BANKNIFTY": "NSE_NIFTY_BANK", "FINNIFTY": "NSE_NIFTY_FIN_SERVICE"}
-    for idx, gsym in index_cash_map.items():
-        try:
-            resp = json.loads(await groww_get(
-                f"https://api.groww.in/v1/live-data/ltp?segment=CASH&exchange_symbols={gsym}"
-            ))
-            if resp.get("status") == "SUCCESS" and resp["payload"].get(gsym):
-                spot_prices[idx] = float(resp["payload"][gsym])
-        except:
-            pass
-
-    def make_fut_sym(s, exp):
-        gs = GROWW_SYMBOL_MAP.get(s, s)
-        mon = exp.strftime("%b").upper()
-        yr = exp.strftime("%y")
-        return f"NSE_{gs}{yr}{mon}FUT"
-
-    fut_syms = [make_fut_sym(s, expiry) for s in symbols]
-    fut_prices = {}
-    for i in range(0, len(fut_syms), BATCH):
-        batch_fsyms = fut_syms[i:i+BATCH]
-        batch_names = symbols[i:i+BATCH]
-        try:
-            encoded = urllib.parse.quote(",".join(batch_fsyms), safe=",_")
-            resp = json.loads(await groww_get(
-                f"https://api.groww.in/v1/live-data/ltp?segment=FNO&exchange_symbols={encoded}"
-            ))
-            if resp.get("status") == "SUCCESS":
-                for sym, fsym in zip(batch_names, batch_fsyms):
-                    fut_prices[sym] = float(resp["payload"].get(fsym, 0))
-        except:
-            pass
-
-    results = {}
-    for sym in symbols:
-        try:
-            spot = spot_prices.get(sym, 0)
-            fut = fut_prices.get(sym, 0)
-            lot = LOT_SIZES.get(sym, 50)
-            if not spot and not fut:
-                continue
-            if not fut and spot:
-                t = days_to_expiry / 365
-                fut = round(spot * math.exp(risk_free * t), 2)
-            basis = round(fut - spot, 2) if spot else 0
-            basis_pct = round(basis / spot * 100, 2) if spot else 0
-            t = days_to_expiry / 365
-            basis_ann = round((basis_pct / 100) / t * 100, 2) if t > 0 and spot > 0 else 0
-            data = {
-                "symbol": sym, "spot": round(spot, 2),
-                "futures_price": round(fut, 2), "price": round(fut, 2),
-                "basis": basis, "basis_pct": basis_pct, "basis_annualized": basis_ann,
-                "lot_size": lot, "expiry": expiry.isoformat(),
-                "days_to_expiry": days_to_expiry,
-                "oi": 0, "oi_change": 0, "oi_buildup": "long_buildup",
-                "change_pct": round((fut - spot) / spot * 100, 2) if spot else 0,
-                "is_fno": True, "is_index": sym in INDEX_SYMBOLS,
-                "sector": SECTOR_MAP.get(sym, "Index" if sym in INDEX_SYMBOLS else "Other"),
-            }
-            if redis_client:
-                await redis_client.set(f"futures:{sym}", json.dumps(data), ex=3600)
-            results[sym] = data
-        except:
-            continue
-    return results
-
-
-@app.post("/api/screener/warm-fno", tags=["Screen Builder"], summary="Pre-warm futures cache for all F&O stocks")
-async def screener_warm_fno(request: Request, user=None):
-    import time as _time
-    t0 = _time.time()
-    if not redis_client:
-        return {"error": "Redis not available"}
-    fut_results = await sb_build_futures_cache()
-    elapsed = round(_time.time() - t0, 1)
-    return {
-        "status": "ok", "futures_cached": len(fut_results),
-        "elapsed_s": elapsed, "symbols": list(fut_results.keys()),
-        "error": fut_results.get("error")
-    }
-
-
-async def sb_build_options_cache() -> dict:
-    import asyncio
-    LOT_SIZES = {
-        "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
-        "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
-        "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
-        "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
-        "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
-        "TITAN": 375, "HINDALCO": 1400, "JSWSTEEL": 675, "CIPLA": 650,
-        "DRREDDY": 125, "ONGC": 3250, "NTPC": 2250, "POWERGRID": 2700,
-        "COALINDIA": 2100,
-    }
-    async def fetch_one(sym):
-        try:
-            import httpx
-            svc_token = create_token(1, "service@alphamarket.co.in", True)
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(
-                    f"http://localhost:8001/api/options/chain/{sym}",
-                    headers={"Authorization": f"Bearer {svc_token}"},
-                    timeout=30
-                )
-                if resp.status_code != 200:
-                    return None
-                d = resp.json()
-            spot = d.get("spot_price", 0)
-            chains = d.get("chains", [])
-            if not chains or not spot:
-                return None
-            c0 = chains[0]
-            calls = c0.get("calls", [])
-            puts = c0.get("puts", [])
-            expiry = c0.get("expiry", "")
-            atm_call = min(calls, key=lambda x: abs(x.get("strike", 0) - spot)) if calls else {}
-            atm_put  = min(puts,  key=lambda x: abs(x.get("strike", 0) - spot)) if puts  else {}
-            atm_iv   = round((atm_call.get("iv", 0) + atm_put.get("iv", 0)) / 2, 1)
-            atm_strike = atm_call.get("strike", 0)
-            otm_puts = [p for p in puts if p.get("strike", 0) < spot * 0.97]
-            otm_put_iv = round(sum(p.get("iv", 0) for p in otm_puts[-3:]) / max(len(otm_puts[-3:]), 1), 1) if otm_puts else atm_iv
-            iv_skew = round(otm_put_iv - atm_iv, 1)
-            hv_20 = d.get("hist_vol", 0)
-            pcr_oi   = d.get("pcr", 0)
-            max_pain = d.get("max_pain", 0)
-            max_pain_dist = round((max_pain - spot) / spot * 100, 2) if spot and max_pain else 0
-            total_call_oi = d.get("total_call_oi", 0)
-            total_put_oi  = d.get("total_put_oi", 0)
-            from datetime import date
-            try:
-                exp_date = date.fromisoformat(expiry)
-                days_to_expiry = max(0, (exp_date - date.today()).days)
-            except:
-                days_to_expiry = 0
-            data = {
-                "symbol": sym, "spot": spot,
-                "atm_strike": atm_strike, "atm_iv": atm_iv,
-                "iv_skew": iv_skew,
-                "hv_20": round(float(hv_20 or 0) if float(hv_20 or 0) > 1 else float(hv_20 or 0) * 100, 1),
-                "iv_hv_spread": round(atm_iv - (float(hv_20 or 0) if float(hv_20 or 0) > 1 else float(hv_20 or 0) * 100), 1),
-                "pcr_oi": pcr_oi, "max_pain": max_pain, "max_pain_dist": max_pain_dist,
-                "total_call_oi": total_call_oi, "total_put_oi": total_put_oi,
-                "expiry": expiry, "days_to_expiry": days_to_expiry,
-                "lot_size": LOT_SIZES.get(sym, 50),
-                "delta": atm_call.get("delta", 0),
-                "theta": atm_call.get("theta", 0),
-                "vega": atm_call.get("vega", 0),
-                "iv_rank": 0, "iv_percentile": 0,
-                "is_fno": True,
-                "sector": SECTOR_MAP.get(sym, "Index"),
-            }
-            if redis_client:
-                await redis_client.set(f"options:{sym}", json.dumps(data), ex=3600)
-            return (sym, data)
-        except Exception:
-            return None
-    symbols = list(LOT_SIZES.keys())
-    results = {}
-    for i in range(0, len(symbols), 5):
-        batch = symbols[i:i+5]
-        batch_results = await asyncio.gather(*[fetch_one(s) for s in batch])
-        for r in batch_results:
-            if r:
-                results[r[0]] = r[1]
-    return results
-
-
-@app.post("/api/screener/warm-options", tags=["Screen Builder"], summary="Pre-warm options cache for all F&O stocks")
-async def screener_warm_options(request: Request, user=None):
-    import time as _time
-    t0 = _time.time()
-    if not redis_client:
-        return {"error": "Redis not available"}
-    results = await sb_build_options_cache()
-    elapsed = round(_time.time() - t0, 1)
-    return {"status": "ok", "options_cached": len(results), "elapsed_s": elapsed, "symbols": list(results.keys())}
-
-
-@app.post("/api/screener/scan", tags=["Screen Builder"], summary="Scan stocks/futures/options with custom filters")
-async def screener_scan(request: Request, user=None):
-    import time as _time
-    t0 = _time.time()
-    try:
-        body = await request.json()
-    except:
-        return {"error": "Invalid JSON body"}
-    asset_type = body.get("asset_type", "stocks")
-    filters = body.get("filters", [])
-    logic = body.get("logic", "AND").upper()
-    sort_by = body.get("sort_by", "alpha_rating")
-    sort_order = body.get("sort_order", "desc")
-    limit = min(body.get("limit", 50), 200)
-    if not filters:
-        return {"error": "No filters provided"}
-    if asset_type not in SCREENER_PARAMS:
-        return {"error": "Unknown asset type"}
-    if not redis_client:
-        return {"error": "Redis not available"}
-    results = []
-    scanned = 0
-
-    if asset_type == "stocks":
-        FUNDAMENTAL_PIDS = {"pe_ratio", "roe", "dividend_yield", "debt_equity", "market_cap"}
-        has_fundamental = any(f.get("pid") in FUNDAMENTAL_PIDS for f in filters)
-        if has_fundamental:
-            enriched_raw = await redis_client.get("sb_universe_enriched")
-            if enriched_raw:
-                all_stocks = json.loads(enriched_raw)
-            else:
-                base = await sb_get_full_universe()
-                all_stocks = await sb_enrich_fundamentals([s.copy() for s in base])
-                await redis_client.set("sb_universe_enriched", json.dumps(all_stocks), ex=14400)
-        else:
-            all_stocks = await sb_get_full_universe()
-        seen = set()
-        unique_stocks = []
-        for s in all_stocks:
-            sym = s.get("symbol", "")
-            if sym and sym not in seen:
-                seen.add(sym)
-                unique_stocks.append(s)
-        scanned = len(unique_stocks)
-        for data in unique_stocks:
-            try:
-                if not data.get("price") and not data.get("symbol"):
-                    continue
-                if sb_evaluate_filters(data, filters, logic, asset_type):
-                    results.append({
-                        "symbol": data.get("symbol", ""), "name": data.get("name", ""),
-                        "price": data.get("price", 0), "change": data.get("change_pct", 0),
-                        "alpha_rating": data.get("alpha_rating", 0),
-                        "rsi": data.get("rsi"), "macd_hist": data.get("macd_hist"),
-                        "vol_ratio": data.get("vol_ratio"),
-                        "pe_ratio": data.get("pe_ratio"), "roe": data.get("roe"),
-                        "debt_equity": data.get("debt_equity"), "market_cap": data.get("market_cap"),
-                        "sector": data.get("sector", ""), "rs_3m": data.get("rs_3m"),
-                        "sma_50": data.get("sma_50"), "sma_200": data.get("sma_200"),
-                        "w52_high": data.get("w52_high"), "w52_low": data.get("w52_low"),
-                        "bb_width": data.get("bb_width"),
-                        "pct_from_52h": data.get("pct_from_52h"),
-                        "pct_from_52l": data.get("pct_from_52l"),
-                        "momentum_score": data.get("momentum_score"),
-                        "fundamental_score": data.get("fundamental_score"),
-                        "accumulation_score": data.get("accumulation_score"),
-                        "trend_score": data.get("trend_score"),
-                        "sentiment_score": data.get("sentiment_score"),
-                        "div_yield": data.get("dividend_yield"),
-                    })
-            except:
-                continue
-
-    elif asset_type == "futures":
-        keys = await redis_client.keys("futures:*")
-        scanned = len(keys)
-        for key in keys:
-            try:
-                raw = await redis_client.get(key)
-                if not raw:
-                    continue
-                data = json.loads(raw)
-                key_str = key.decode() if isinstance(key, bytes) else key
-                if not data.get("is_fno") and "futures:" not in key_str:
-                    continue
-                if sb_evaluate_filters(data, filters, logic, asset_type):
-                    results.append({
-                        "symbol": data.get("symbol", "") + " FUT",
-                        "price": data.get("futures_price") or data.get("price", 0),
-                        "spot": data.get("spot", 0), "change": data.get("change_pct", 0),
-                        "basis": data.get("basis", 0),
-                        "basis_annualized": data.get("basis_annualized", 0),
-                        "oi": data.get("oi", 0), "oi_change": data.get("oi_change", 0),
-                        "oi_buildup": data.get("oi_buildup", ""),
-                        "lot_size": data.get("lot_size", 0),
-                        "expiry_days": data.get("days_to_expiry", 0),
-                        "alpha_rating": data.get("alpha_rating", 0),
-                    })
-            except:
-                continue
-
-    elif asset_type == "options":
-        keys = await redis_client.keys("options:*")
-        scanned = len(keys)
-        for key in keys:
-            try:
-                raw = await redis_client.get(key)
-                if not raw:
-                    continue
-                data = json.loads(raw)
-                if sb_evaluate_filters(data, filters, logic, asset_type):
-                    results.append({
-                        "symbol": data.get("symbol", ""), "spot": data.get("spot", 0),
-                        "atm_strike": data.get("atm_strike", 0),
-                        "atm_iv": data.get("atm_iv", 0), "iv": data.get("atm_iv", 0),
-                        "iv_skew": data.get("iv_skew", 0), "hv_20": data.get("hv_20", 0),
-                        "iv_hv_spread": data.get("iv_hv_spread", 0),
-                        "pcr_oi": data.get("pcr_oi", 0), "max_pain": data.get("max_pain", 0),
-                        "max_pain_dist": data.get("max_pain_dist", 0),
-                        "total_call_oi": data.get("total_call_oi", 0),
-                        "total_put_oi": data.get("total_put_oi", 0),
-                        "delta": data.get("delta", 0), "theta": data.get("theta", 0),
-                        "vega": data.get("vega", 0), "expiry": data.get("expiry", ""),
-                        "days_to_expiry": data.get("days_to_expiry", 0),
-                        "lot_size": data.get("lot_size", 0), "sector": data.get("sector", ""),
-                        "iv_rank": data.get("iv_rank", 0),
-                        "iv_percentile": data.get("iv_percentile", 0),
-                    })
-            except:
-                continue
-
-    reverse = sort_order == "desc"
-    try:
-        results.sort(key=lambda x: x.get(sort_by, 0) or 0, reverse=reverse)
-    except:
-        pass
-    results = results[:limit]
-    elapsed = int((_time.time() - t0) * 1000)
-    return {
-        "results": results, "count": len(results), "scanned": scanned,
-        "scan_time_ms": elapsed, "asset_type": asset_type,
-        "filters_applied": len(filters), "logic": logic,
-    }
-
-
-@app.post("/api/screener/save", tags=["Screen Builder"], summary="Save a screen")
-async def save_screen(request: Request, user=Depends(get_current_user)):
-    try:
-        body = await request.json()
-    except:
-        return {"error": "Invalid JSON"}
-    name = body.get("name", "").strip()
-    if not name:
-        return {"error": "Screen name is required"}
-    asset_type = body.get("asset_type", "stocks")
-    filters = body.get("filters", [])
-    logic = body.get("logic", "AND")
-    sort_by = body.get("sort_by", "alpha_rating")
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "INSERT INTO saved_screens (user_id, name, asset_type, filters, logic, sort_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at",
-            user["id"], name, asset_type, json.dumps(filters), logic, sort_by
-        )
-    return {"id": row["id"], "name": name, "asset_type": asset_type, "filters": filters, "logic": logic, "created_at": str(row["created_at"])}
-
-
-@app.get("/api/screener/saved", tags=["Screen Builder"], summary="List saved screens")
-async def get_saved_screens(request: Request, user=Depends(get_current_user)):
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT id, name, asset_type, filters, logic, sort_by, created_at, updated_at FROM saved_screens WHERE user_id=$1 ORDER BY updated_at DESC",
-            user["id"]
-        )
-    return {"screens": [{"id": r["id"], "name": r["name"], "asset_type": r["asset_type"],
-        "filters": json.loads(r["filters"]) if isinstance(r["filters"], str) else r["filters"],
-        "logic": r["logic"], "sort_by": r["sort_by"],
-        "created_at": str(r["created_at"]), "updated_at": str(r["updated_at"])} for r in rows]}
-
-
-@app.delete("/api/screener/saved/{screen_id}", tags=["Screen Builder"], summary="Delete a saved screen")
-async def delete_saved_screen(screen_id: int, user=Depends(get_current_user)):
-    async with db_pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM saved_screens WHERE id=$1 AND user_id=$2", screen_id, user["id"]
-        )
-    if "DELETE 0" in result:
-        return {"error": "Screen not found or not owned by you"}
-    return {"deleted": True, "id": screen_id}

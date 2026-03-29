@@ -95,6 +95,14 @@ _load_kite_token()
 
 # ── F&O Stock Universe (NSE) ─────────────────────────────────────
 # Top liquid F&O stocks for spread scanning
+# Index F&O — separate because Kite uses different symbol format for index spot
+INDEX_FNO = {
+    "NIFTY": {"cash": "NSE:NIFTY 50", "lot": 25, "sector": "Index"},
+    "BANKNIFTY": {"cash": "NSE:NIFTY BANK", "lot": 15, "sector": "Index"},
+    "FINNIFTY": {"cash": "NSE:NIFTY FIN SERVICE", "lot": 25, "sector": "Index"},
+    "MIDCPNIFTY": {"cash": "NSE:NIFTY MID SELECT", "lot": 50, "sector": "Index"},
+}
+
 FNO_UNIVERSE = [
     "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","ITC","SBIN",
     "BHARTIARTL","KOTAKBANK","LT","AXISBANK","BAJFINANCE","MARUTI","HCLTECH",
@@ -296,14 +304,20 @@ async def get_spreads(limit: int = 50):
     # Build instrument list
     cash_symbols = [f"NSE:{sym}" for sym in FNO_UNIVERSE[:limit]]
     fut_symbols = [f"NFO:{sym}{expiry_str}FUT" for sym in FNO_UNIVERSE[:limit]]
+    # Add index futures (URL-encode cash symbols with spaces)
+    for idx_sym, idx_info in INDEX_FNO.items():
+        cash_symbols.append(idx_info["cash"].replace(" ", "%20"))
+        fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
 
     # Fetch quotes in batches (Kite allows ~500 instruments per call)
     all_symbols = cash_symbols + fut_symbols
     quotes = await _fetch_kite_quotes(all_symbols)
 
     spreads = []
-    for sym in FNO_UNIVERSE[:limit]:
-        cash_key = f"NSE:{sym}"
+    all_syms = list(FNO_UNIVERSE[:limit]) + list(INDEX_FNO.keys())
+    for sym in all_syms:
+        is_index = sym in INDEX_FNO
+        cash_key = INDEX_FNO[sym]["cash"] if is_index else f"NSE:{sym}"
         fut_key = f"NFO:{sym}{expiry_str}FUT"
 
         cash_data = quotes.get(cash_key, {})
