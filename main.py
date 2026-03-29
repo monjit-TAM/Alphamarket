@@ -45,6 +45,7 @@ API_TAGS = [
     {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
     {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
     {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
+    {"name": "Screen Builder", "description": "Custom stock/futures/options scanner for DYOR. Filter 923 NSE stocks by 40+ technical & fundamental parameters. Includes universe warm-up, F&O pipeline, and saved screens."},
     {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
     {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
     {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
@@ -123,7 +124,7 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 - **Email**: hello@thealphamarket.com
 - **Website**: https://testalpha.in
 """,
-    version="2.5.0",
+    version="2.6.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
@@ -1700,7 +1701,7 @@ def simulate_trades_v2(df, signals, initial_capital, params, exit_type="signal")
 async def health():
     token_set = bool(await get_groww_token())
     return {
-        "status": "ok", "version": "2.1.0",
+        "status": "ok", "version": "2.6.0",
         "universe_size": len(NIFTY_UNIVERSE),
         "sectors": len(set(SECTOR_MAP.values())),
         "universe_source": "stock_universe.json" if _UNIVERSE_LOADED else "built-in (457)",
@@ -9549,3 +9550,852 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         await redis_client.setex(cache_key, 900, json.dumps(result))
 
     return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SCREEN BUILDER — DYOR (installed 28 March 2026)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+SCREENER_PARAMS = {
+    "stocks": {
+        "technical": [
+            {"id":"price","label":"Current Price","unit":"Rs","field":"price"},
+            {"id":"rsi","label":"RSI (14)","unit":"","field":"rsi"},
+            {"id":"macd_hist","label":"MACD Histogram","unit":"","field":"macd_hist"},
+            {"id":"sma_50","label":"SMA 50","unit":"Rs","field":"sma_50"},
+            {"id":"sma_200","label":"SMA 200","unit":"Rs","field":"sma_200"},
+            {"id":"ema_20","label":"EMA 20","unit":"Rs","field":"ema_20"},
+            {"id":"price_vs_sma50","label":"Price vs SMA50 pct","unit":"%","field":"price_vs_sma50","computed":True},
+            {"id":"price_vs_sma200","label":"Price vs SMA200 pct","unit":"%","field":"price_vs_sma200","computed":True},
+            {"id":"vol_ratio","label":"Volume Ratio (vs 20D)","unit":"x","field":"vol_ratio"},
+            {"id":"atr_pct","label":"ATR pct","unit":"%","field":"atr_pct"},
+            {"id":"bb_width","label":"Bollinger Width","unit":"%","field":"bb_width"},
+            {"id":"bb_pos","label":"BB Position","unit":"","field":"bb_pos"},
+            {"id":"rs_3m","label":"Relative Strength 3M","unit":"%","field":"rs_3m"},
+            {"id":"rs_6m","label":"Relative Strength 6M","unit":"%","field":"rs_6m"},
+            {"id":"w52_high_pct","label":"pct from 52W High","unit":"%","field":"w52_high_pct","computed":True},
+            {"id":"w52_low_pct","label":"pct from 52W Low","unit":"%","field":"w52_low_pct","computed":True},
+            {"id":"adx","label":"ADX","unit":"","field":"adx"},
+            {"id":"stoch_k","label":"Stochastic pctK","unit":"","field":"stoch_k"},
+            {"id":"cci","label":"CCI (20)","unit":"","field":"cci"},
+            {"id":"mfi","label":"Money Flow Index","unit":"","field":"mfi"},
+            {"id":"supertrend","label":"Supertrend","unit":"","field":"supertrend","kind":"select"},
+            {"id":"macd_signal","label":"MACD vs Signal","unit":"","field":"macd_signal","kind":"select"},
+            {"id":"ma_cross","label":"MA Crossover","unit":"","field":"ma_cross","kind":"select"},
+        ],
+        "fundamental": [
+            {"id":"market_cap","label":"Market Cap","unit":"Cr","field":"market_cap"},
+            {"id":"pe_ratio","label":"P/E Ratio","unit":"x","field":"pe_ratio"},
+            {"id":"pb_ratio","label":"P/B Ratio","unit":"x","field":"pb_ratio"},
+            {"id":"ev_ebitda","label":"EV/EBITDA","unit":"x","field":"ev_ebitda"},
+            {"id":"peg_ratio","label":"PEG Ratio","unit":"x","field":"peg_ratio"},
+            {"id":"roe","label":"ROE","unit":"%","field":"roe"},
+            {"id":"roce","label":"ROCE","unit":"%","field":"roce"},
+            {"id":"debt_equity","label":"Debt/Equity","unit":"x","field":"debt_equity"},
+            {"id":"current_ratio","label":"Current Ratio","unit":"x","field":"current_ratio"},
+            {"id":"div_yield","label":"Dividend Yield","unit":"%","field":"dividend_yield"},
+            {"id":"revenue_growth","label":"Revenue Growth YoY","unit":"%","field":"revenue_growth"},
+            {"id":"pat_growth","label":"PAT Growth YoY","unit":"%","field":"pat_growth"},
+            {"id":"eps_growth","label":"EPS Growth QoQ","unit":"%","field":"eps_growth"},
+            {"id":"operating_margin","label":"Operating Margin","unit":"%","field":"operating_margin"},
+            {"id":"net_margin","label":"Net Margin","unit":"%","field":"net_margin"},
+        ],
+        "ownership": [
+            {"id":"promoter_hold","label":"Promoter Holding","unit":"%","field":"promoter_holding"},
+            {"id":"promoter_pledge","label":"Promoter Pledge","unit":"%","field":"promoter_pledge"},
+            {"id":"fii_hold","label":"FII Holding","unit":"%","field":"fii_holding"},
+            {"id":"fii_chg","label":"FII Change QoQ","unit":"%","field":"fii_change"},
+            {"id":"dii_hold","label":"DII Holding","unit":"%","field":"dii_holding"},
+            {"id":"dii_chg","label":"DII Change QoQ","unit":"%","field":"dii_change"},
+        ],
+        "alpha": [
+            {"id":"alpha_rating","label":"Alpha Rating","unit":"/100","field":"alpha_rating"},
+            {"id":"momentum_score","label":"Momentum (25pct)","unit":"/100","field":"momentum_score"},
+            {"id":"fundamental_score","label":"Fundamentals (25pct)","unit":"/100","field":"fundamental_score"},
+            {"id":"accumulation_score","label":"Accumulation (20pct)","unit":"/100","field":"accumulation_score"},
+            {"id":"trend_score","label":"Trend (15pct)","unit":"/100","field":"trend_score"},
+            {"id":"sentiment_score","label":"Sentiment (15pct)","unit":"/100","field":"sentiment_score"},
+        ],
+        "sector": [
+            {"id":"sector","label":"Sector","unit":"","field":"sector","kind":"multi_select"},
+            {"id":"index","label":"Index","unit":"","field":"index_membership","kind":"multi_select"},
+        ],
+    },
+    "futures": {
+        "technical": [
+            {"id":"price","label":"Futures Price","unit":"Rs","field":"price"},
+            {"id":"rsi","label":"RSI (14)","unit":"","field":"rsi"},
+            {"id":"macd_hist","label":"MACD Histogram","unit":"","field":"macd_hist"},
+            {"id":"adx","label":"ADX","unit":"","field":"adx"},
+            {"id":"vol_ratio","label":"Volume Ratio","unit":"x","field":"vol_ratio"},
+            {"id":"supertrend","label":"Supertrend","unit":"","field":"supertrend","kind":"select"},
+        ],
+        "contract": [
+            {"id":"basis","label":"Basis pct","unit":"%","field":"basis"},
+            {"id":"basis_ann","label":"Annualized Basis","unit":"%","field":"basis_annualized"},
+            {"id":"oi","label":"Open Interest","unit":"lots","field":"oi"},
+            {"id":"oi_chg","label":"OI Change 1D","unit":"%","field":"oi_change"},
+            {"id":"oi_buildup","label":"OI Buildup","unit":"","field":"oi_buildup","kind":"select"},
+            {"id":"lot_size","label":"Lot Size","unit":"","field":"lot_size"},
+            {"id":"expiry_days","label":"Days to Expiry","unit":"d","field":"expiry_days"},
+            {"id":"rollover_pct","label":"Rollover pct","unit":"%","field":"rollover_pct"},
+            {"id":"coc","label":"Cost of Carry","unit":"%","field":"cost_of_carry"},
+        ],
+        "alpha": [
+            {"id":"alpha_rating","label":"Alpha Rating","unit":"/100","field":"alpha_rating"},
+            {"id":"momentum_score","label":"Momentum Score","unit":"/100","field":"momentum_score"},
+        ],
+    },
+    "options": {
+        "contract": [
+            {"id":"option_type","label":"Option Type","unit":"","field":"option_type","kind":"select"},
+            {"id":"moneyness","label":"Moneyness","unit":"","field":"moneyness","kind":"select"},
+            {"id":"expiry_days","label":"Days to Expiry","unit":"d","field":"expiry_days"},
+            {"id":"strike_dist","label":"Strike Distance pct","unit":"%","field":"strike_distance"},
+            {"id":"premium","label":"Premium","unit":"Rs","field":"premium"},
+            {"id":"volume","label":"Volume","unit":"","field":"volume"},
+            {"id":"oi","label":"Open Interest","unit":"lots","field":"oi"},
+            {"id":"oi_chg","label":"OI Change pct","unit":"%","field":"oi_change"},
+        ],
+        "volatility": [
+            {"id":"iv","label":"Implied Volatility","unit":"%","field":"iv"},
+            {"id":"iv_rank","label":"IV Rank","unit":"%","field":"iv_rank"},
+            {"id":"iv_pctl","label":"IV Percentile","unit":"%","field":"iv_percentile"},
+            {"id":"hv_20","label":"HV 20D","unit":"%","field":"hv_20"},
+            {"id":"iv_hv_diff","label":"IV-HV Spread","unit":"%","field":"iv_hv_spread"},
+        ],
+        "greeks": [
+            {"id":"delta","label":"Delta","unit":"","field":"delta"},
+            {"id":"gamma","label":"Gamma","unit":"","field":"gamma"},
+            {"id":"theta","label":"Theta","unit":"Rs/day","field":"theta"},
+            {"id":"vega","label":"Vega","unit":"Rs/pctIV","field":"vega"},
+        ],
+        "sentiment": [
+            {"id":"pcr_oi","label":"PCR (OI)","unit":"","field":"pcr_oi"},
+            {"id":"pcr_vol","label":"PCR (Volume)","unit":"","field":"pcr_volume"},
+            {"id":"max_pain","label":"Max Pain Distance","unit":"%","field":"max_pain_dist"},
+        ],
+    },
+}
+
+
+def sb_apply_operator(value, operator, filter_values):
+    if value is None:
+        return False
+    try:
+        if isinstance(value, str) and operator not in ("eq", "in"):
+            val = float(value)
+        else:
+            val = value
+    except (TypeError, ValueError):
+        return False
+    if operator == "eq":
+        if isinstance(val, str):
+            return str(val).lower() == str(filter_values[0]).lower()
+        try:
+            return abs(float(val) - float(filter_values[0])) < 0.001
+        except:
+            return str(val) == str(filter_values[0])
+    elif operator == "gt":
+        return float(val) > float(filter_values[0])
+    elif operator == "lt":
+        return float(val) < float(filter_values[0])
+    elif operator == "gte":
+        return float(val) >= float(filter_values[0])
+    elif operator == "lte":
+        return float(val) <= float(filter_values[0])
+    elif operator == "between":
+        return float(filter_values[0]) <= float(val) <= float(filter_values[1])
+    elif operator == "in":
+        if isinstance(val, list):
+            return any(v in filter_values for v in val)
+        return val in filter_values
+    return False
+
+
+def sb_extract_value(data, param_id, category, asset_type):
+    params_list = SCREENER_PARAMS.get(asset_type, {}).get(category, [])
+    param_def = next((p for p in params_list if p["id"] == param_id), None)
+    if not param_def:
+        for cat_params in SCREENER_PARAMS.get(asset_type, {}).values():
+            param_def = next((p for p in cat_params if p["id"] == param_id), None)
+            if param_def:
+                break
+    field = param_def.get("field", param_id) if param_def else param_id
+    if field in data:
+        return data[field]
+    ALT_FIELDS = {
+        "w52_high_pct": "pct_from_52h", "w52_low_pct": "pct_from_52l",
+        "price_vs_sma50": "pct_from_sma50", "price_vs_sma200": "pct_from_sma200",
+        "dividend_yield": "div_yield", "change_pct": "change",
+        "basis_ann": "basis_annualized", "oi_chg": "oi_change",
+        "fut_price": "futures_price", "pe_ratio": "pe_ratio",
+        "div_yield": "dividend_yield", "iv": "atm_iv",
+        "iv_hv_diff": "iv_hv_spread", "pcr": "pcr_oi",
+        "max_pain_dist": "max_pain_dist", "hv_20": "hv_20",
+        "strike_dist": "max_pain_dist", "premium": "atm_iv",
+    }
+    if field in ALT_FIELDS and ALT_FIELDS[field] in data:
+        return data[ALT_FIELDS[field]]
+    if param_id in ALT_FIELDS and ALT_FIELDS[param_id] in data:
+        return data[ALT_FIELDS[param_id]]
+    if param_id in data:
+        return data[param_id]
+    if param_id == "price_vs_sma50":
+        price = data.get("price"); sma50 = data.get("sma_50")
+        if price and sma50 and float(sma50) > 0:
+            return ((float(price) - float(sma50)) / float(sma50)) * 100
+    elif param_id == "price_vs_sma200":
+        price = data.get("price"); sma200 = data.get("sma_200")
+        if price and sma200 and float(sma200) > 0:
+            return ((float(price) - float(sma200)) / float(sma200)) * 100
+    elif param_id == "w52_high_pct":
+        price = data.get("price"); w52h = data.get("w52_high")
+        if price and w52h and float(w52h) > 0:
+            return ((float(price) - float(w52h)) / float(w52h)) * 100
+    elif param_id == "w52_low_pct":
+        price = data.get("price"); w52l = data.get("w52_low")
+        if price and w52l and float(w52l) > 0:
+            return ((float(price) - float(w52l)) / float(w52l)) * 100
+    for section in ["technical", "fundamental", "ownership", "alpha"]:
+        if section in data and isinstance(data[section], dict):
+            if field in data[section]:
+                return data[section][field]
+    return None
+
+
+def sb_evaluate_filters(data, filters, logic, asset_type):
+    if not filters:
+        return True
+    results = []
+    for f in filters:
+        param_id = f.get("pid") or f.get("param_id")
+        category = f.get("cat") or f.get("category")
+        operator = f.get("op") or f.get("operator", "between")
+        values = f.get("vals") or f.get("values", [])
+        for cat_params in SCREENER_PARAMS.get(asset_type, {}).values():
+            pd_ = next((p for p in cat_params if p["id"] == param_id), None)
+            if pd_:
+                if pd_.get("kind") == "multi_select":
+                    operator = "in"
+                break
+        value = sb_extract_value(data, param_id, category, asset_type)
+        results.append(sb_apply_operator(value, operator, values))
+    return all(results) if logic == "AND" else any(results)
+
+
+@app.get("/api/screener/params", tags=["Screen Builder"], summary="Get screener parameter catalog")
+async def get_screener_params(asset_type: str = "stocks"):
+    if asset_type not in SCREENER_PARAMS:
+        return {"error": "Unknown asset type. Use: stocks, futures, options"}
+    return {"asset_type": asset_type, "categories": SCREENER_PARAMS[asset_type]}
+
+
+async def sb_get_full_universe() -> list:
+    """Scan full 923-stock universe for Screen Builder. Redis-cached 4 hours."""
+    from datetime import date, timedelta
+    if redis_client:
+        cached = await redis_client.get("sb_universe")
+        if cached:
+            return json.loads(cached)
+    start = (date.today() - timedelta(days=400)).isoformat()
+    end = date.today().isoformat()
+    symbols_to_scan = list(NIFTY_UNIVERSE)
+    yf_symbols = [f"{s}.NS" for s in symbols_to_scan]
+    _batch_sz = 40 if len(yf_symbols) > 500 else 50
+    all_data = await batch_download_yf(yf_symbols, start, end, batch_size=_batch_sz)
+
+    def sf(v, d=0):
+        try:
+            v = float(v)
+            return d if (np.isnan(v) or np.isinf(v)) else v
+        except:
+            return d
+
+    stocks = []
+    for sym in symbols_to_scan:
+        try:
+            yf_sym = f"{sym}.NS"
+            if yf_sym not in all_data:
+                continue
+            df = all_data[yf_sym].dropna()
+            if len(df) < 30:
+                continue
+            c = df["Close"].astype(float)
+            h = df["High"].astype(float)
+            l = df["Low"].astype(float)
+            v = df["Volume"].astype(float)
+            price = float(c.iloc[-1])
+            prev = float(c.iloc[-2])
+            change_pct = sf((price - prev) / prev * 100)
+            vol = int(v.iloc[-1])
+            vol_avg = int(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else int(v.mean())
+            vol_ratio = sf(vol / vol_avg, 1.0) if vol_avg > 0 else 1.0
+            delta = c.diff()
+            gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
+            loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
+            rs_val = gain.iloc[-1] / loss.iloc[-1] if sf(loss.iloc[-1]) != 0 else 0
+            rsi = sf(100 - 100 / (1 + rs_val), 50)
+            sma_50 = sf(c.rolling(50).mean().iloc[-1])
+            sma_200 = sf(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else sf(c.mean())
+            c_252 = c.iloc[-min(252, len(c)):]
+            w52_high = sf(c_252.max())
+            w52_low = sf(c_252.min())
+            pct_from_52h = sf((price - w52_high) / w52_high * 100) if w52_high > 0 else 0
+            pct_from_52l = sf((price - w52_low) / w52_low * 100) if w52_low > 0 else 0
+            bb_mid = c.rolling(20).mean()
+            bb_std = c.rolling(20).std()
+            bb_upper = sf((bb_mid + 2 * bb_std).iloc[-1])
+            bb_lower_val = sf((bb_mid - 2 * bb_std).iloc[-1])
+            bb_width = sf((bb_upper - bb_lower_val) / sf(bb_mid.iloc[-1], 1) * 100) if sf(bb_mid.iloc[-1]) > 0 else 0
+            ema12 = c.ewm(span=12, adjust=False).mean()
+            ema26 = c.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
+            macd_hist = sf((macd_line - macd_signal_line).iloc[-1])
+            rs_3m = sf(c.iloc[-1] / c.iloc[-60] - 1, 0) * 100 if len(c) >= 60 and sf(c.iloc[-60]) > 0 else change_pct
+            rs_1m = sf(c.iloc[-1] / c.iloc[-22] - 1, 0) * 100 if len(c) >= 22 and sf(c.iloc[-22]) > 0 else change_pct
+            sma50_s = c.rolling(50).mean()
+            sma200_s = c.rolling(200).mean() if len(c) >= 200 else c.rolling(min(len(c), 100)).mean()
+            golden_cross = False
+            if len(sma50_s.dropna()) >= 2 and len(sma200_s.dropna()) >= 2:
+                golden_cross = bool(sf(sma50_s.iloc[-1]) > sf(sma200_s.iloc[-1]) and sf(sma50_s.iloc[-2]) <= sf(sma200_s.iloc[-2]))
+            tr = pd.concat([h - l, (h - df["Close"].shift(1)).abs(), (l - df["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            atr = tr.rolling(10).mean()
+            st_lower_val = (h + l) / 2 - 3 * atr
+            above_supertrend = bool(price > sf(st_lower_val.iloc[-1])) if len(atr.dropna()) > 0 else bool(price > sma_200)
+            minervini_score = sum([
+                bool(price > sf(c.rolling(150).mean().iloc[-1])) if len(c) >= 150 else False,
+                bool(price > sma_200), bool(price > sma_50), bool(sma_50 > sma_200),
+                bool(pct_from_52l >= 25), bool(pct_from_52h >= -25),
+            ])
+            wk_change = sf((price / sf(c.iloc[-6], price) - 1) * 100) if len(c) >= 6 else change_pct
+            gap_pct = sf((float(df["Open"].iloc[-1]) - prev) / prev * 100) if prev > 0 else 0
+            stocks.append({
+                "symbol": sym, "name": sym,
+                "price": round(sf(price), 2), "change_pct": round(change_pct, 2), "change": round(change_pct, 2),
+                "volume": vol, "vol_ratio": round(vol_ratio, 2), "rsi": round(rsi, 1),
+                "macd_hist": round(macd_hist, 2), "sma_50": round(sma_50, 2), "sma_200": round(sma_200, 2),
+                "w52_high": round(w52_high, 2), "w52_low": round(w52_low, 2),
+                "pct_from_52h": round(pct_from_52h, 1), "pct_from_52l": round(pct_from_52l, 1),
+                "bb_width": round(bb_width, 2), "rs_1m": round(rs_1m, 1), "rs_3m": round(rs_3m, 1),
+                "gap_pct": round(gap_pct, 2), "wk_change": round(wk_change, 2),
+                "above_200dma": bool(price > sma_200), "above_50dma": bool(price > sma_50),
+                "golden_cross": golden_cross, "above_supertrend": above_supertrend,
+                "minervini_score": minervini_score,
+                "sector": SECTOR_MAP.get(sym, "Other"), "industry": INDUSTRY_MAP.get(sym, "Other"),
+                "cap_segment": get_cap_segment(sym),
+                "pe_ratio": 0, "roe": 0, "dividend_yield": 0, "debt_equity": 0,
+                "market_cap": 0, "alpha_rating": 0, "momentum_score": 0,
+                "fundamental_score": 0, "accumulation_score": 0, "trend_score": 0, "sentiment_score": 0,
+            })
+        except Exception:
+            continue
+    if redis_client and stocks:
+        await redis_client.set("sb_universe", json.dumps(stocks), ex=14400)
+    return stocks
+
+
+async def sb_enrich_fundamentals(stocks: list) -> list:
+    """Fetch fundamentals for all stocks concurrently, in batches of 25."""
+    import asyncio
+    def sf(v, d=0):
+        try:
+            v = float(v)
+            return d if (np.isnan(v) or np.isinf(v)) else v
+        except:
+            return d
+    async def fetch_one(s):
+        try:
+            fdata = await ds_fundamentals(s["symbol"])
+            if fdata:
+                pe = sf(fdata.get("pe_trailing") or fdata.get("pe_forward") or fdata.get("pe_ratio", 0))
+                roe_val = sf(fdata.get("roe", 0))
+                if roe_val == 0:
+                    roe_val = sf(fdata.get("roce", 0))
+                roe = roe_val * 100 if roe_val and roe_val < 1 else (roe_val or 0)
+                dy = sf(fdata.get("dividend_yield", 0))
+                de = sf(fdata.get("debt_equity", 0))
+                mc = sf(fdata.get("market_cap", 0))
+                pb = sf(fdata.get("pb", 0))
+                pm = sf(fdata.get("profit_margin", 0))
+                s["pe_ratio"] = round(pe, 2)
+                s["roe"] = round(roe, 2)
+                s["dividend_yield"] = round(dy, 2)
+                s["debt_equity"] = round(de, 2)
+                s["market_cap"] = mc
+                s["pb"] = round(pb, 2)
+                s["profit_margin"] = round(pm, 2)
+                s["name"] = fdata.get("name", s.get("name", s["symbol"]))
+        except:
+            pass
+        return s
+    batch_size = 25
+    enriched = []
+    for i in range(0, len(stocks), batch_size):
+        batch = stocks[i:i + batch_size]
+        results = await asyncio.gather(*[fetch_one(s) for s in batch])
+        enriched.extend(results)
+    return enriched
+
+
+@app.post("/api/screener/warm-fundamentals", tags=["Screen Builder"], summary="Pre-warm stock universe + fundamentals cache")
+async def screener_warm_fundamentals(request: Request, user=None):
+    import asyncio, time as _time
+    t0 = _time.time()
+    if not redis_client:
+        return {"error": "Redis not available"}
+    existing = await redis_client.get("sb_universe_enriched")
+    if existing:
+        ttl = await redis_client.ttl("sb_universe_enriched")
+        if ttl > 7200:
+            return {"status": "already_warm", "ttl_seconds": ttl}
+    stocks = await sb_get_full_universe()
+    enriched = await sb_enrich_fundamentals([s.copy() for s in stocks])
+    await redis_client.set("sb_universe_enriched", json.dumps(enriched), ex=14400)
+    elapsed = round(_time.time() - t0, 1)
+    non_zero_pe = sum(1 for s in enriched if s.get("pe_ratio", 0) > 0)
+    return {"status": "ok", "total": len(enriched), "with_pe": non_zero_pe, "elapsed_s": elapsed}
+
+
+def sb_get_fno_symbol(symbol: str, expiry_date) -> str:
+    mon = expiry_date.strftime("%b").upper()
+    yr = expiry_date.strftime("%y")
+    return f"NSE_{symbol}{yr}{mon}FUT"
+
+def sb_get_near_expiry():
+    from datetime import date, timedelta
+    import calendar
+    today = date.today()
+    for month_offset in range(3):
+        month = today.month + month_offset
+        year = today.year + (month - 1) // 12
+        month = ((month - 1) % 12) + 1
+        last_day = calendar.monthrange(year, month)[1]
+        ld = date(year, month, last_day)
+        while ld.weekday() != 3:
+            ld -= timedelta(days=1)
+        if ld >= today:
+            return ld
+    return today + timedelta(days=30)
+
+
+async def sb_build_futures_cache() -> dict:
+    import urllib.request, urllib.error, urllib.parse, math
+    from datetime import date
+    LOT_SIZES = {
+        "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
+        "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
+        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+        "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
+        "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
+        "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
+        "TITAN": 375, "HINDALCO": 1400, "JSWSTEEL": 675, "CIPLA": 650,
+        "DRREDDY": 125, "ONGC": 3250, "NTPC": 2250, "POWERGRID": 2700,
+        "COALINDIA": 2100,
+    }
+    INDEX_SYMBOLS = {"NIFTY", "BANKNIFTY", "FINNIFTY"}
+    GROWW_SYMBOL_MAP = {"TATAMOTORS": "TMPV", "M&M": "M&M"}
+    groww_token = await get_groww_token()
+    if not groww_token:
+        return {"error": "No Groww token"}
+    expiry = sb_get_near_expiry()
+    days_to_expiry = max(1, (expiry - date.today()).days)
+    risk_free = 0.065
+
+    async def groww_get(url):
+        import asyncio
+        loop = asyncio.get_event_loop()
+        req_obj = urllib.request.Request(url, headers={
+            "Accept": "application/json",
+            "Authorization": f"Bearer {groww_token}",
+            "X-API-VERSION": "1.0"
+        })
+        return await loop.run_in_executor(None,
+            lambda: urllib.request.urlopen(req_obj, timeout=10).read().decode())
+
+    symbols = list(LOT_SIZES.keys())
+    non_index_symbols = [s for s in symbols if s not in INDEX_SYMBOLS]
+    cash_syms = [f"NSE_{GROWW_SYMBOL_MAP.get(s, s)}" for s in non_index_symbols]
+    spot_prices = {}
+    BATCH = 15
+    for i in range(0, len(cash_syms), BATCH):
+        batch_syms = cash_syms[i:i+BATCH]
+        batch_names = non_index_symbols[i:i+BATCH]
+        try:
+            encoded = urllib.parse.quote(",".join(batch_syms), safe=",_")
+            resp = json.loads(await groww_get(
+                f"https://api.groww.in/v1/live-data/ltp?segment=CASH&exchange_symbols={encoded}"
+            ))
+            if resp.get("status") == "SUCCESS":
+                for sym, gs in zip(batch_names, batch_syms):
+                    spot_prices[sym] = float(resp["payload"].get(gs, 0))
+        except:
+            pass
+    index_cash_map = {"NIFTY": "NSE_NIFTY_50", "BANKNIFTY": "NSE_NIFTY_BANK", "FINNIFTY": "NSE_NIFTY_FIN_SERVICE"}
+    for idx, gsym in index_cash_map.items():
+        try:
+            resp = json.loads(await groww_get(
+                f"https://api.groww.in/v1/live-data/ltp?segment=CASH&exchange_symbols={gsym}"
+            ))
+            if resp.get("status") == "SUCCESS" and resp["payload"].get(gsym):
+                spot_prices[idx] = float(resp["payload"][gsym])
+        except:
+            pass
+
+    def make_fut_sym(s, exp):
+        gs = GROWW_SYMBOL_MAP.get(s, s)
+        mon = exp.strftime("%b").upper()
+        yr = exp.strftime("%y")
+        return f"NSE_{gs}{yr}{mon}FUT"
+
+    fut_syms = [make_fut_sym(s, expiry) for s in symbols]
+    fut_prices = {}
+    for i in range(0, len(fut_syms), BATCH):
+        batch_fsyms = fut_syms[i:i+BATCH]
+        batch_names = symbols[i:i+BATCH]
+        try:
+            encoded = urllib.parse.quote(",".join(batch_fsyms), safe=",_")
+            resp = json.loads(await groww_get(
+                f"https://api.groww.in/v1/live-data/ltp?segment=FNO&exchange_symbols={encoded}"
+            ))
+            if resp.get("status") == "SUCCESS":
+                for sym, fsym in zip(batch_names, batch_fsyms):
+                    fut_prices[sym] = float(resp["payload"].get(fsym, 0))
+        except:
+            pass
+
+    results = {}
+    for sym in symbols:
+        try:
+            spot = spot_prices.get(sym, 0)
+            fut = fut_prices.get(sym, 0)
+            lot = LOT_SIZES.get(sym, 50)
+            if not spot and not fut:
+                continue
+            if not fut and spot:
+                t = days_to_expiry / 365
+                fut = round(spot * math.exp(risk_free * t), 2)
+            basis = round(fut - spot, 2) if spot else 0
+            basis_pct = round(basis / spot * 100, 2) if spot else 0
+            t = days_to_expiry / 365
+            basis_ann = round((basis_pct / 100) / t * 100, 2) if t > 0 and spot > 0 else 0
+            data = {
+                "symbol": sym, "spot": round(spot, 2),
+                "futures_price": round(fut, 2), "price": round(fut, 2),
+                "basis": basis, "basis_pct": basis_pct, "basis_annualized": basis_ann,
+                "lot_size": lot, "expiry": expiry.isoformat(),
+                "days_to_expiry": days_to_expiry,
+                "oi": 0, "oi_change": 0, "oi_buildup": "long_buildup",
+                "change_pct": round((fut - spot) / spot * 100, 2) if spot else 0,
+                "is_fno": True, "is_index": sym in INDEX_SYMBOLS,
+                "sector": SECTOR_MAP.get(sym, "Index" if sym in INDEX_SYMBOLS else "Other"),
+            }
+            if redis_client:
+                await redis_client.set(f"futures:{sym}", json.dumps(data), ex=3600)
+            results[sym] = data
+        except:
+            continue
+    return results
+
+
+@app.post("/api/screener/warm-fno", tags=["Screen Builder"], summary="Pre-warm futures cache for all F&O stocks")
+async def screener_warm_fno(request: Request, user=None):
+    import time as _time
+    t0 = _time.time()
+    if not redis_client:
+        return {"error": "Redis not available"}
+    fut_results = await sb_build_futures_cache()
+    elapsed = round(_time.time() - t0, 1)
+    return {
+        "status": "ok", "futures_cached": len(fut_results),
+        "elapsed_s": elapsed, "symbols": list(fut_results.keys()),
+        "error": fut_results.get("error")
+    }
+
+
+async def sb_build_options_cache() -> dict:
+    import asyncio
+    LOT_SIZES = {
+        "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
+        "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
+        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+        "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
+        "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
+        "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
+        "TITAN": 375, "HINDALCO": 1400, "JSWSTEEL": 675, "CIPLA": 650,
+        "DRREDDY": 125, "ONGC": 3250, "NTPC": 2250, "POWERGRID": 2700,
+        "COALINDIA": 2100,
+    }
+    async def fetch_one(sym):
+        try:
+            import httpx
+            svc_token = create_token(1, "service@alphamarket.co.in", True)
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    f"http://localhost:8001/api/options/chain/{sym}",
+                    headers={"Authorization": f"Bearer {svc_token}"},
+                    timeout=30
+                )
+                if resp.status_code != 200:
+                    return None
+                d = resp.json()
+            spot = d.get("spot_price", 0)
+            chains = d.get("chains", [])
+            if not chains or not spot:
+                return None
+            c0 = chains[0]
+            calls = c0.get("calls", [])
+            puts = c0.get("puts", [])
+            expiry = c0.get("expiry", "")
+            atm_call = min(calls, key=lambda x: abs(x.get("strike", 0) - spot)) if calls else {}
+            atm_put  = min(puts,  key=lambda x: abs(x.get("strike", 0) - spot)) if puts  else {}
+            atm_iv   = round((atm_call.get("iv", 0) + atm_put.get("iv", 0)) / 2, 1)
+            atm_strike = atm_call.get("strike", 0)
+            otm_puts = [p for p in puts if p.get("strike", 0) < spot * 0.97]
+            otm_put_iv = round(sum(p.get("iv", 0) for p in otm_puts[-3:]) / max(len(otm_puts[-3:]), 1), 1) if otm_puts else atm_iv
+            iv_skew = round(otm_put_iv - atm_iv, 1)
+            hv_20 = d.get("hist_vol", 0)
+            pcr_oi   = d.get("pcr", 0)
+            max_pain = d.get("max_pain", 0)
+            max_pain_dist = round((max_pain - spot) / spot * 100, 2) if spot and max_pain else 0
+            total_call_oi = d.get("total_call_oi", 0)
+            total_put_oi  = d.get("total_put_oi", 0)
+            from datetime import date
+            try:
+                exp_date = date.fromisoformat(expiry)
+                days_to_expiry = max(0, (exp_date - date.today()).days)
+            except:
+                days_to_expiry = 0
+            data = {
+                "symbol": sym, "spot": spot,
+                "atm_strike": atm_strike, "atm_iv": atm_iv,
+                "iv_skew": iv_skew,
+                "hv_20": round(float(hv_20 or 0) if float(hv_20 or 0) > 1 else float(hv_20 or 0) * 100, 1),
+                "iv_hv_spread": round(atm_iv - (float(hv_20 or 0) if float(hv_20 or 0) > 1 else float(hv_20 or 0) * 100), 1),
+                "pcr_oi": pcr_oi, "max_pain": max_pain, "max_pain_dist": max_pain_dist,
+                "total_call_oi": total_call_oi, "total_put_oi": total_put_oi,
+                "expiry": expiry, "days_to_expiry": days_to_expiry,
+                "lot_size": LOT_SIZES.get(sym, 50),
+                "delta": atm_call.get("delta", 0),
+                "theta": atm_call.get("theta", 0),
+                "vega": atm_call.get("vega", 0),
+                "iv_rank": 0, "iv_percentile": 0,
+                "is_fno": True,
+                "sector": SECTOR_MAP.get(sym, "Index"),
+            }
+            if redis_client:
+                await redis_client.set(f"options:{sym}", json.dumps(data), ex=3600)
+            return (sym, data)
+        except Exception:
+            return None
+    symbols = list(LOT_SIZES.keys())
+    results = {}
+    for i in range(0, len(symbols), 5):
+        batch = symbols[i:i+5]
+        batch_results = await asyncio.gather(*[fetch_one(s) for s in batch])
+        for r in batch_results:
+            if r:
+                results[r[0]] = r[1]
+    return results
+
+
+@app.post("/api/screener/warm-options", tags=["Screen Builder"], summary="Pre-warm options cache for all F&O stocks")
+async def screener_warm_options(request: Request, user=None):
+    import time as _time
+    t0 = _time.time()
+    if not redis_client:
+        return {"error": "Redis not available"}
+    results = await sb_build_options_cache()
+    elapsed = round(_time.time() - t0, 1)
+    return {"status": "ok", "options_cached": len(results), "elapsed_s": elapsed, "symbols": list(results.keys())}
+
+
+@app.post("/api/screener/scan", tags=["Screen Builder"], summary="Scan stocks/futures/options with custom filters")
+async def screener_scan(request: Request, user=None):
+    import time as _time
+    t0 = _time.time()
+    try:
+        body = await request.json()
+    except:
+        return {"error": "Invalid JSON body"}
+    asset_type = body.get("asset_type", "stocks")
+    filters = body.get("filters", [])
+    logic = body.get("logic", "AND").upper()
+    sort_by = body.get("sort_by", "alpha_rating")
+    sort_order = body.get("sort_order", "desc")
+    limit = min(body.get("limit", 50), 200)
+    if not filters:
+        return {"error": "No filters provided"}
+    if asset_type not in SCREENER_PARAMS:
+        return {"error": "Unknown asset type"}
+    if not redis_client:
+        return {"error": "Redis not available"}
+    results = []
+    scanned = 0
+
+    if asset_type == "stocks":
+        FUNDAMENTAL_PIDS = {"pe_ratio", "roe", "dividend_yield", "debt_equity", "market_cap"}
+        has_fundamental = any(f.get("pid") in FUNDAMENTAL_PIDS for f in filters)
+        if has_fundamental:
+            enriched_raw = await redis_client.get("sb_universe_enriched")
+            if enriched_raw:
+                all_stocks = json.loads(enriched_raw)
+            else:
+                base = await sb_get_full_universe()
+                all_stocks = await sb_enrich_fundamentals([s.copy() for s in base])
+                await redis_client.set("sb_universe_enriched", json.dumps(all_stocks), ex=14400)
+        else:
+            all_stocks = await sb_get_full_universe()
+        seen = set()
+        unique_stocks = []
+        for s in all_stocks:
+            sym = s.get("symbol", "")
+            if sym and sym not in seen:
+                seen.add(sym)
+                unique_stocks.append(s)
+        scanned = len(unique_stocks)
+        for data in unique_stocks:
+            try:
+                if not data.get("price") and not data.get("symbol"):
+                    continue
+                if sb_evaluate_filters(data, filters, logic, asset_type):
+                    results.append({
+                        "symbol": data.get("symbol", ""), "name": data.get("name", ""),
+                        "price": data.get("price", 0), "change": data.get("change_pct", 0),
+                        "alpha_rating": data.get("alpha_rating", 0),
+                        "rsi": data.get("rsi"), "macd_hist": data.get("macd_hist"),
+                        "vol_ratio": data.get("vol_ratio"),
+                        "pe_ratio": data.get("pe_ratio"), "roe": data.get("roe"),
+                        "debt_equity": data.get("debt_equity"), "market_cap": data.get("market_cap"),
+                        "sector": data.get("sector", ""), "rs_3m": data.get("rs_3m"),
+                        "sma_50": data.get("sma_50"), "sma_200": data.get("sma_200"),
+                        "w52_high": data.get("w52_high"), "w52_low": data.get("w52_low"),
+                        "bb_width": data.get("bb_width"),
+                        "pct_from_52h": data.get("pct_from_52h"),
+                        "pct_from_52l": data.get("pct_from_52l"),
+                        "momentum_score": data.get("momentum_score"),
+                        "fundamental_score": data.get("fundamental_score"),
+                        "accumulation_score": data.get("accumulation_score"),
+                        "trend_score": data.get("trend_score"),
+                        "sentiment_score": data.get("sentiment_score"),
+                        "div_yield": data.get("dividend_yield"),
+                    })
+            except:
+                continue
+
+    elif asset_type == "futures":
+        keys = await redis_client.keys("futures:*")
+        scanned = len(keys)
+        for key in keys:
+            try:
+                raw = await redis_client.get(key)
+                if not raw:
+                    continue
+                data = json.loads(raw)
+                key_str = key.decode() if isinstance(key, bytes) else key
+                if not data.get("is_fno") and "futures:" not in key_str:
+                    continue
+                if sb_evaluate_filters(data, filters, logic, asset_type):
+                    results.append({
+                        "symbol": data.get("symbol", "") + " FUT",
+                        "price": data.get("futures_price") or data.get("price", 0),
+                        "spot": data.get("spot", 0), "change": data.get("change_pct", 0),
+                        "basis": data.get("basis", 0),
+                        "basis_annualized": data.get("basis_annualized", 0),
+                        "oi": data.get("oi", 0), "oi_change": data.get("oi_change", 0),
+                        "oi_buildup": data.get("oi_buildup", ""),
+                        "lot_size": data.get("lot_size", 0),
+                        "expiry_days": data.get("days_to_expiry", 0),
+                        "alpha_rating": data.get("alpha_rating", 0),
+                    })
+            except:
+                continue
+
+    elif asset_type == "options":
+        keys = await redis_client.keys("options:*")
+        scanned = len(keys)
+        for key in keys:
+            try:
+                raw = await redis_client.get(key)
+                if not raw:
+                    continue
+                data = json.loads(raw)
+                if sb_evaluate_filters(data, filters, logic, asset_type):
+                    results.append({
+                        "symbol": data.get("symbol", ""), "spot": data.get("spot", 0),
+                        "atm_strike": data.get("atm_strike", 0),
+                        "atm_iv": data.get("atm_iv", 0), "iv": data.get("atm_iv", 0),
+                        "iv_skew": data.get("iv_skew", 0), "hv_20": data.get("hv_20", 0),
+                        "iv_hv_spread": data.get("iv_hv_spread", 0),
+                        "pcr_oi": data.get("pcr_oi", 0), "max_pain": data.get("max_pain", 0),
+                        "max_pain_dist": data.get("max_pain_dist", 0),
+                        "total_call_oi": data.get("total_call_oi", 0),
+                        "total_put_oi": data.get("total_put_oi", 0),
+                        "delta": data.get("delta", 0), "theta": data.get("theta", 0),
+                        "vega": data.get("vega", 0), "expiry": data.get("expiry", ""),
+                        "days_to_expiry": data.get("days_to_expiry", 0),
+                        "lot_size": data.get("lot_size", 0), "sector": data.get("sector", ""),
+                        "iv_rank": data.get("iv_rank", 0),
+                        "iv_percentile": data.get("iv_percentile", 0),
+                    })
+            except:
+                continue
+
+    reverse = sort_order == "desc"
+    try:
+        results.sort(key=lambda x: x.get(sort_by, 0) or 0, reverse=reverse)
+    except:
+        pass
+    results = results[:limit]
+    elapsed = int((_time.time() - t0) * 1000)
+    return {
+        "results": results, "count": len(results), "scanned": scanned,
+        "scan_time_ms": elapsed, "asset_type": asset_type,
+        "filters_applied": len(filters), "logic": logic,
+    }
+
+
+@app.post("/api/screener/save", tags=["Screen Builder"], summary="Save a screen")
+async def save_screen(request: Request, user=Depends(get_current_user)):
+    try:
+        body = await request.json()
+    except:
+        return {"error": "Invalid JSON"}
+    name = body.get("name", "").strip()
+    if not name:
+        return {"error": "Screen name is required"}
+    asset_type = body.get("asset_type", "stocks")
+    filters = body.get("filters", [])
+    logic = body.get("logic", "AND")
+    sort_by = body.get("sort_by", "alpha_rating")
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "INSERT INTO saved_screens (user_id, name, asset_type, filters, logic, sort_by) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at",
+            user["id"], name, asset_type, json.dumps(filters), logic, sort_by
+        )
+    return {"id": row["id"], "name": name, "asset_type": asset_type, "filters": filters, "logic": logic, "created_at": str(row["created_at"])}
+
+
+@app.get("/api/screener/saved", tags=["Screen Builder"], summary="List saved screens")
+async def get_saved_screens(request: Request, user=Depends(get_current_user)):
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, asset_type, filters, logic, sort_by, created_at, updated_at FROM saved_screens WHERE user_id=$1 ORDER BY updated_at DESC",
+            user["id"]
+        )
+    return {"screens": [{"id": r["id"], "name": r["name"], "asset_type": r["asset_type"],
+        "filters": json.loads(r["filters"]) if isinstance(r["filters"], str) else r["filters"],
+        "logic": r["logic"], "sort_by": r["sort_by"],
+        "created_at": str(r["created_at"]), "updated_at": str(r["updated_at"])} for r in rows]}
+
+
+@app.delete("/api/screener/saved/{screen_id}", tags=["Screen Builder"], summary="Delete a saved screen")
+async def delete_saved_screen(screen_id: int, user=Depends(get_current_user)):
+    async with db_pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM saved_screens WHERE id=$1 AND user_id=$2", screen_id, user["id"]
+        )
+    if "DELETE 0" in result:
+        return {"error": "Screen not found or not owned by you"}
+    return {"deleted": True, "id": screen_id}
