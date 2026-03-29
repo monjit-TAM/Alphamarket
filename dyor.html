@@ -487,6 +487,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('heatmap_tab',this)" style="color:#22c55e;font-weight:700">HEATMAP</button>
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('screenbuilder',this)" style="color:#06b6d4;font-weight:700">SCREEN BUILDER</button>
+      <button class="nbtn" onclick="nav('alphabot',this)" style="color:#ff6b3d;font-weight:700">🤖 ALPHABOT</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
       <button class="nbtn" id="mnav" style="display:none;color:#3b82f6" onclick="loadMethodology()">METHODOLOGY</button>
@@ -3082,6 +3083,56 @@ tr:last-child td{border-bottom:none}
           </div>
         </div>
 
+        <!-- ── ALPHABOT ── -->
+        <div id="sec-alphabot" class="section" style="display:none">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+            <div>
+              <div style="font-size:20px;font-weight:700;color:#ff6b3d">🤖 ALPHABOT</div>
+              <div style="font-size:11px;color:var(--text3)">Automated Index F&O Signal Engine</div>
+            </div>
+            <div style="display:flex;gap:8px;align-items:center">
+              <span id="ab-status" style="font-size:10px;padding:4px 10px;border-radius:12px;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.3)">INACTIVE</span>
+              <button class="btn" onclick="abRefresh()" style="font-size:10px;background:var(--bg3);color:var(--text1);border:1px solid var(--border)">REFRESH</button>
+            </div>
+          </div>
+
+          <!-- Dashboard Cards -->
+          <div id="ab-dash" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--accent)" id="ab-active">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">ACTIVE SIGNALS</div></div>
+            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--green)" id="ab-today-pnl">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">TODAY P&L</div></div>
+            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--text1)" id="ab-total-trades">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">TOTAL TRADES</div></div>
+            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#f0c040" id="ab-winrate">0%</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">WIN RATE</div></div>
+          </div>
+
+          <!-- Strategies -->
+          <div class="card" style="margin-bottom:16px">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:700;color:var(--text1)">STRATEGIES</div>
+              <button class="btn btn-s" onclick="abRunEngine()" style="background:var(--accent);color:#fff;font-size:10px">▶ RUN SCAN NOW</button>
+            </div>
+            <div id="ab-strategies" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px"></div>
+          </div>
+
+          <!-- Active Signals -->
+          <div class="card" style="margin-bottom:16px">
+            <div style="font-size:13px;font-weight:700;color:var(--text1);margin-bottom:12px">ACTIVE SIGNALS</div>
+            <div id="ab-signals" style="font-size:11px;color:var(--text3)">No active signals</div>
+          </div>
+
+          <!-- Trade History -->
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+              <div style="font-size:13px;font-weight:700;color:var(--text1)">TRADE HISTORY</div>
+              <select id="ab-days" class="fi" style="width:100px" onchange="abLoadTrades()">
+                <option value="1">Today</option>
+                <option value="7" selected>7 Days</option>
+                <option value="30">30 Days</option>
+              </select>
+            </div>
+            <div id="ab-trades" style="font-size:11px;color:var(--text3)">No trades yet</div>
+          </div>
+        </div>
+
         <!-- ── SCREEN BUILDER ── -->
         <div class="card" id="guide-screenbuilder" style="margin-bottom:20px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #06b6d4">
@@ -4139,12 +4190,108 @@ function openCurrentPageGuide(){
     nav('guide',document.querySelectorAll('.nbtn')[12]);
   }
 }
+
+// ═══ ALPHABOT ═══
+async function abRefresh(){
+  try{
+    const d=await req('GET','/api/alphabot/dashboard');
+    document.getElementById('ab-active').textContent=d.active_signals||0;
+    const tp=d.today?.pnl||0;
+    const tpEl=document.getElementById('ab-today-pnl');
+    tpEl.textContent=(tp>=0?'+':'')+Math.round(tp);
+    tpEl.style.color=tp>=0?'var(--green)':'var(--red)';
+    document.getElementById('ab-total-trades').textContent=d.overall?.total_trades||0;
+    document.getElementById('ab-winrate').textContent=(d.overall?.win_rate||0)+'%';
+    const hasActive=d.strategies?.some(s=>s.is_active);
+    const st=document.getElementById('ab-status');
+    if(hasActive){st.textContent='LIVE';st.style.background='rgba(0,212,170,0.1)';st.style.color='#00d4aa';st.style.borderColor='rgba(0,212,170,0.3)';}
+    else{st.textContent='INACTIVE';st.style.background='rgba(239,68,68,0.1)';st.style.color='#ef4444';st.style.borderColor='rgba(239,68,68,0.3)';}
+    const sg=document.getElementById('ab-strategies');
+    sg.innerHTML=(d.strategies||[]).map(s=>{
+      const cfg=typeof s.config==='string'?JSON.parse(s.config):s.config;
+      const risk=typeof s.risk_config==='string'?JSON.parse(s.risk_config):s.risk_config;
+      const typeColors={momentum_futures:'#4fc3f7',options_directional:'#81c784',options_writing:'#f0c040',index_arbitrage:'#ce93d8'};
+      const typeLabels={momentum_futures:'MOMENTUM FUT',options_directional:'OPTIONS DIR',options_writing:'OPTIONS WRITE',index_arbitrage:'ARBITRAGE'};
+      const col=typeColors[s.strategy_type]||'var(--text2)';
+      return '<div style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:14px;border-left:3px solid '+col+'">'+
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+          '<div><div style="font-size:12px;font-weight:700;color:var(--text1)">'+s.name+'</div>'+
+          '<div style="font-size:9px;color:'+col+';letter-spacing:0.5px;margin-top:2px">'+(typeLabels[s.strategy_type]||s.strategy_type)+' — '+s.instrument+'</div></div>'+
+          '<button onclick="abToggle('+s.id+')" style="padding:4px 10px;border-radius:4px;border:1px solid '+(s.is_active?'rgba(0,212,170,0.4)':'rgba(239,68,68,0.3)')+';background:'+(s.is_active?'rgba(0,212,170,0.1)':'rgba(239,68,68,0.05)')+';color:'+(s.is_active?'#00d4aa':'#ef4444')+';font-size:9px;font-weight:700;cursor:pointer;font-family:inherit">'+(s.is_active?'\u25cf LIVE':'\u25cb OFF')+'</button>'+
+        '</div>'+
+        '<div style="display:flex;gap:12px;font-size:10px;color:var(--text3);flex-wrap:wrap">'+
+          (cfg.sl_points?'<span>SL: '+cfg.sl_points+'pts</span>':cfg.sl_pct?'<span>SL: '+cfg.sl_pct+'%</span>':'')+
+          (cfg.target_points?'<span>T: '+cfg.target_points+'pts</span>':cfg.target_pct?'<span>T: '+cfg.target_pct+'%</span>':'')+
+          '<span>Lots: '+(cfg.lots||1)+'</span>'+
+          '<span>Max Loss: '+Math.abs(risk.max_loss_day||0)+'/day</span>'+
+          '<span>Scan: '+(s.scan_interval_sec||300)/60+'min</span>'+
+        '</div>'+
+      '</div>';
+    }).join('');
+    abLoadSignals();
+    abLoadTrades();
+  }catch(e){console.error('AlphaBot refresh error:',e);}
+}
+async function abToggle(id){
+  try{await req('PUT','/api/alphabot/strategies/'+id+'/toggle');abRefresh();}catch(e){alert('Toggle failed: '+e.message);}
+}
+async function abRunEngine(){
+  try{
+    const r=await fetch('/dyor/api/alphabot/run',{method:'POST'});
+    const d=await r.json();
+    if(d.count>0){alert('Generated '+d.count+' signal(s)!');}
+    else{alert(d.status==='market_closed'?'Market is closed':'No signals generated');}
+    abRefresh();
+  }catch(e){alert('Engine error: '+e.message);}
+}
+async function abLoadSignals(){
+  try{
+    const r=await fetch('/dyor/api/alphabot/signals/active');
+    const signals=await r.json();
+    const el=document.getElementById('ab-signals');
+    if(!signals||signals.length===0){el.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">No active signals</div>';return;}
+    el.innerHTML='<table><thead><tr><th>TIME</th><th>STRATEGY</th><th>TYPE</th><th>INSTRUMENT</th><th>ENTRY</th><th>SL</th><th>TARGET</th><th>QTY</th><th>POTENTIAL</th></tr></thead><tbody>'+
+      signals.map(s=>{
+        const col=s.signal_type==='BUY'?'var(--green)':s.signal_type==='SHORT'?'var(--red)':'#f0c040';
+        const time=new Date(s.created_at||s.entry_time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+        return '<tr><td>'+time+'</td><td style="font-size:10px">'+(s.strategy_name||'--')+'</td><td style="color:'+col+';font-weight:700">'+s.signal_type+'</td>'+
+          '<td>'+s.symbol+' '+(s.strike||'')+' '+(s.instrument_type||'')+'</td>'+
+          '<td>'+s.entry_price+'</td><td style="color:var(--red)">'+s.stop_loss+'</td>'+
+          '<td style="color:var(--green)">'+s.target+'</td><td>'+s.quantity+'</td>'+
+          '<td style="color:var(--accent)">'+s.potential_pct+'%</td></tr>';
+      }).join('')+'</tbody></table>';
+  }catch(e){console.error(e);}
+}
+async function abLoadTrades(){
+  try{
+    const days=document.getElementById('ab-days')?.value||7;
+    const r=await fetch('/dyor/api/alphabot/signals?days='+days);
+    const trades=await r.json();
+    const el=document.getElementById('ab-trades');
+    const closed=trades.filter(t=>t.status!=='ACTIVE');
+    if(!closed||closed.length===0){el.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">No completed trades</div>';return;}
+    el.innerHTML='<table><thead><tr><th>DATE</th><th>STRATEGY</th><th>TYPE</th><th>INSTRUMENT</th><th>ENTRY</th><th>EXIT</th><th>P&L</th><th>STATUS</th></tr></thead><tbody>'+
+      closed.map(t=>{
+        const pnl=t.pnl||0;
+        const pnlCol=pnl>0?'var(--green)':pnl<0?'var(--red)':'var(--text3)';
+        const statusCol={TARGET_HIT:'var(--green)',SL_HIT:'var(--red)',AUTO_SQUAREOFF:'#f0c040'};
+        const dt=new Date(t.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+        return '<tr><td>'+dt+'</td><td style="font-size:10px">'+(t.strategy_name||'--')+'</td>'+
+          '<td>'+t.signal_type+'</td><td>'+t.symbol+' '+(t.strike||'')+' '+(t.instrument_type||'')+'</td>'+
+          '<td>'+t.entry_price+'</td><td>'+(t.exit_price||'--')+'</td>'+
+          '<td style="color:'+pnlCol+';font-weight:700">'+(pnl>0?'+':'')+Math.round(pnl)+'</td>'+
+          '<td style="color:'+(statusCol[t.status]||'var(--text3)')+';font-size:10px">'+t.status+'</td></tr>';
+      }).join('')+'</tbody></table>';
+  }catch(e){console.error(e);}
+}
+
 function nav(p,btn){
   document.querySelectorAll('.panel').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.nbtn').forEach(x=>x.classList.remove('on'));
   document.querySelectorAll('.page-guide.open').forEach(x=>x.classList.remove('open'));
   document.getElementById('p-'+p).classList.add('on');
   if(btn)btn.classList.add('on');
+  if(p==='alphabot'){abRefresh();}
   if(p==='dashboard')loadDash();
   if(p==='backtest')loadBtHist();
   if(p==='charts'){if(!chartLoaded)loadChart();}
