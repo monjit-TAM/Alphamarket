@@ -326,3 +326,21 @@
   .sidebar{display:none !important}
   .md\:flex{flex-direction:column !important}
 }
+
+
+/* ═══ MOBILE — Dashboard specific ═══ */
+@media(max-width:768px){
+  [data-sidebar]{display:none !important}
+  .flex.h-\[calc\(100vh-3\.5rem\)]{flex-direction:column !important}
+  main.flex-1{padding:8px !important}
+  .md\:p-6{padding:8px !important}
+  .grid.grid-cols-2{grid-template-columns:1fr !important}
+  .grid.grid-cols-3{grid-template-columns:1fr !important}
+  .grid.grid-cols-4{grid-template-columns:1fr !important}
+  .overflow-x-auto{-webkit-overflow-scrolling:touch}
+  .min-w-\[600px\],.min-w-\[700px\],.min-w-\[800px\]{min-width:100% !important}
+  .w-full.overflow-auto table{width:max-content;min-width:100%}
+  .space-y-6>*{margin-bottom:12px}
+  .text-2xl{font-size:1.25rem !important}
+  .text-3xl{font-size:1.5rem !important}
+}
