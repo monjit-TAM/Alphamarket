@@ -2931,6 +2931,57 @@ tr:last-child td{border-bottom:none}
   <div id="dcf-content"><div style="color:var(--text2);text-align:center;padding:40px">Enter a symbol and click CALCULATE</div></div>
 </div>
 
+<!-- ── ALPHABOT ── -->
+<div class="panel" id="p-alphabot" style="padding:16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <div style="font-size:20px;font-weight:700;color:#ff6b3d">🤖 ALPHABOT</div>
+      <div style="font-size:11px;color:var(--text3)">Automated Index F&O Signal Engine</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="ab-status" style="font-size:10px;padding:4px 10px;border-radius:12px;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.3)">INACTIVE</span>
+      <button class="btn" onclick="abRefresh()" style="font-size:10px;background:var(--bg3);color:var(--text1);border:1px solid var(--border)">REFRESH</button>
+    </div>
+  </div>
+
+  <!-- Dashboard Cards -->
+  <div id="ab-dash" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--accent)" id="ab-active">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">ACTIVE SIGNALS</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--green)" id="ab-today-pnl">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">TODAY P&L</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--text1)" id="ab-total-trades">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">TOTAL TRADES</div></div>
+    <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#f0c040" id="ab-winrate">0%</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">WIN RATE</div></div>
+  </div>
+
+  <!-- Strategies -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:var(--text1)">STRATEGIES</div>
+      <button class="btn btn-s" onclick="abRunEngine()" style="background:var(--accent);color:#fff;font-size:10px">▶ RUN SCAN NOW</button>
+    </div>
+    <div id="ab-strategies" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px"></div>
+  </div>
+
+  <!-- Active Signals -->
+  <div class="card" style="margin-bottom:16px">
+    <div style="font-size:13px;font-weight:700;color:var(--text1);margin-bottom:12px">ACTIVE SIGNALS</div>
+    <div id="ab-signals" style="font-size:11px;color:var(--text3)">No active signals</div>
+  </div>
+
+  <!-- Trade History -->
+  <div class="card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:700;color:var(--text1)">TRADE HISTORY</div>
+      <select id="ab-days" class="fi" style="width:100px" onchange="abLoadTrades()">
+        <option value="1">Today</option>
+        <option value="7" selected>7 Days</option>
+        <option value="30">30 Days</option>
+      </select>
+    </div>
+    <div id="ab-trades" style="font-size:11px;color:var(--text3)">No trades yet</div>
+  </div>
+</div>
+
+
 <div class="panel" id="p-dividends_tab">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <div style="font-size:20px;font-weight:700;color:#ef4444">💰 DIVIDEND TRACKER</div>
@@ -3080,56 +3131,6 @@ tr:last-child td{border-bottom:none}
           <div style="margin-top:12px;padding:10px;border-radius:6px;background:rgba(232,66,21,0.06);border:1px solid rgba(232,66,21,0.15)">
             <div style="font-size:12px;font-weight:700;color:var(--green);margin-bottom:4px">🎯 Who benefits most?</div>
             <div style="font-size:12px;color:var(--text2)"><b>Investors:</b> Quick daily health check — are my sectors performing? Any positions to review? &nbsp;|&nbsp; <b>Advisors:</b> Pre-call preparation — see market-wide positioning before generating morning briefs or making client recommendations.</div>
-          </div>
-        </div>
-
-        <!-- ── ALPHABOT ── -->
-        <div id="sec-alphabot" class="section" style="display:none">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-            <div>
-              <div style="font-size:20px;font-weight:700;color:#ff6b3d">🤖 ALPHABOT</div>
-              <div style="font-size:11px;color:var(--text3)">Automated Index F&O Signal Engine</div>
-            </div>
-            <div style="display:flex;gap:8px;align-items:center">
-              <span id="ab-status" style="font-size:10px;padding:4px 10px;border-radius:12px;background:rgba(239,68,68,0.1);color:#ef4444;border:1px solid rgba(239,68,68,0.3)">INACTIVE</span>
-              <button class="btn" onclick="abRefresh()" style="font-size:10px;background:var(--bg3);color:var(--text1);border:1px solid var(--border)">REFRESH</button>
-            </div>
-          </div>
-
-          <!-- Dashboard Cards -->
-          <div id="ab-dash" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
-            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--accent)" id="ab-active">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">ACTIVE SIGNALS</div></div>
-            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--green)" id="ab-today-pnl">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">TODAY P&L</div></div>
-            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:var(--text1)" id="ab-total-trades">0</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">TOTAL TRADES</div></div>
-            <div class="card" style="text-align:center;padding:14px"><div style="font-size:24px;font-weight:800;color:#f0c040" id="ab-winrate">0%</div><div style="font-size:9px;color:var(--text3);letter-spacing:1px">WIN RATE</div></div>
-          </div>
-
-          <!-- Strategies -->
-          <div class="card" style="margin-bottom:16px">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-size:13px;font-weight:700;color:var(--text1)">STRATEGIES</div>
-              <button class="btn btn-s" onclick="abRunEngine()" style="background:var(--accent);color:#fff;font-size:10px">▶ RUN SCAN NOW</button>
-            </div>
-            <div id="ab-strategies" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:10px"></div>
-          </div>
-
-          <!-- Active Signals -->
-          <div class="card" style="margin-bottom:16px">
-            <div style="font-size:13px;font-weight:700;color:var(--text1);margin-bottom:12px">ACTIVE SIGNALS</div>
-            <div id="ab-signals" style="font-size:11px;color:var(--text3)">No active signals</div>
-          </div>
-
-          <!-- Trade History -->
-          <div class="card">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-              <div style="font-size:13px;font-weight:700;color:var(--text1)">TRADE HISTORY</div>
-              <select id="ab-days" class="fi" style="width:100px" onchange="abLoadTrades()">
-                <option value="1">Today</option>
-                <option value="7" selected>7 Days</option>
-                <option value="30">30 Days</option>
-              </select>
-            </div>
-            <div id="ab-trades" style="font-size:11px;color:var(--text3)">No trades yet</div>
           </div>
         </div>
 
@@ -4194,7 +4195,7 @@ function openCurrentPageGuide(){
 // ═══ ALPHABOT ═══
 async function abRefresh(){
   try{
-    const d=await req('GET','/api/alphabot/dashboard');
+    const r0=await fetch('/dyor/api/alphabot/dashboard');const d=await r0.json();
     document.getElementById('ab-active').textContent=d.active_signals||0;
     const tp=d.today?.pnl||0;
     const tpEl=document.getElementById('ab-today-pnl');
@@ -4233,7 +4234,7 @@ async function abRefresh(){
   }catch(e){console.error('AlphaBot refresh error:',e);}
 }
 async function abToggle(id){
-  try{await req('PUT','/api/alphabot/strategies/'+id+'/toggle');abRefresh();}catch(e){alert('Toggle failed: '+e.message);}
+  try{await fetch('/dyor/api/alphabot/strategies/'+id+'/toggle',{method:'PUT'});abRefresh();}catch(e){alert('Toggle failed: '+e.message);}
 }
 async function abRunEngine(){
   try{
@@ -8856,6 +8857,9 @@ function copyMorningBrief(){
 
       {keys:['arbitrage','jobbing','scalping','f&o scanner','index futures','nifty futures','banknifty futures'],
        r:`<b>F&O Trading Scanners</b> — 3 specialized tools:\n\n<b>Arbitrage Scanner:</b> Spot-futures basis spreads across 120+ F&O stocks + indices. Shows annualized return %, lot size, capital required, and cost calculator.\n\n<b>Jobbing Scanner:</b> Ultra short-term spread trading (seconds to minutes). Scans bid-ask spreads, identifies tight-spread opportunities.\n\n<b>Scalping Scanner:</b> VWAP + momentum based, 5-30 min holds. Shows direction, entry/target/stop, R:R ratio, support/resistance.\n\n<b>NEW — Index F&O:</b> All three now include NIFTY, BANKNIFTY, FINNIFTY, and MIDCPNIFTY futures alongside stock futures!\n\n<b>Requires:</b> Kite broker connection (Settings → Connect Zerodha)\n\nAdvisors can publish any opportunity directly to AlphaMarket!`,chips:['Options Lab','How to connect Kite','Publish to AlphaMarket']},
+
+      {keys:['alphabot','algo','algo trading','automated trading','signal engine','bot','auto trade','index algo'],
+       r:\`<b>AlphaBot</b> is DYOR's automated signal engine for Index F&O:\n\n<b>4 Strategies:</b>\n• <b>Momentum Futures</b> — NIFTY/BANKNIFTY FUT long/short based on VWAP + price momentum\n• <b>Options Directional</b> — Buy ATM CE/PE based on momentum direction\n• <b>Options Writing</b> — Sell OTM Strangle on range-bound days with auto-adjustment\n• <b>Index Arbitrage</b> — Spot-futures basis capture when annualized return exceeds threshold\n\n<b>How it works:</b>\n1. Go to <code>ALPHABOT</code> section\n2. Toggle strategies ON/OFF\n3. Scheduler runs every 5 min during market hours (9:20-3:15)\n4. Signals generated with Entry, SL, Target, Rationale\n5. Position monitor checks SL/Target every 1 min\n6. Auto square-off at 3:10 PM\n\n<b>Risk controls:</b> Max loss/day, max signals/day per strategy. Each strategy independently configurable.\n\n<b>Coming soon:</b> Signals pushed to Upstox for auto-execution via POA.\`,chips:['Momentum strategy','Options writing','How to activate','Risk controls']},
 
       {keys:['health','health check','system status','data health','monitoring','api health','groww status'],
        r:`<b>System Health Monitoring</b> keeps DYOR data accurate 24/7:\n\n<b>Automated checks (every hour):</b>\n• Redis cache status\n• Database connectivity\n• Groww token validity (warns if < 2 hrs remaining)\n• Live prices for 5 benchmark stocks\n• Fundamentals data quality\n• Index quotes (NIFTY, BANKNIFTY)\n\n<b>Auto-fix:</b> If prices fall back to Yahoo, cache is auto-flushed to retry Groww\n\n<b>Check status:</b> Visit <code>/api/health</code> for real-time status — shows all checks, Groww token hours remaining, and last health log.\n\n<b>Data sources:</b> Primary = Groww (live, 5-sec cache), Fallback = Yahoo Finance`,chips:['What is Groww','Platform overview','Getting started']},
