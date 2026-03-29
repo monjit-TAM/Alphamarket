@@ -303,44 +303,19 @@
   }
 }
 
-/* ═══ MOBILE RESPONSIVE — Advisory & Portfolio ═══ */
+/* ═══ MOBILE RESPONSIVE ═══ */
 @media(max-width:768px){
   .container{max-width:100% !important;padding:0 12px !important}
   table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch}
   thead,tbody{display:table;width:100%}
   th,td{font-size:12px;padding:6px 8px;white-space:nowrap}
-  .grid-cols-2,.grid-cols-3,.grid-cols-4,.grid-cols-5,.grid-cols-6{grid-template-columns:1fr !important}
-  .md\:grid-cols-2,.md\:grid-cols-3,.md\:grid-cols-4{grid-template-columns:1fr !important}
-  .lg\:grid-cols-3,.lg\:grid-cols-4{grid-template-columns:1fr !important}
+  .grid-cols-2,.grid-cols-3,.grid-cols-4{grid-template-columns:1fr !important}
   .flex-row{flex-direction:column !important}
   .gap-6,.gap-8{gap:12px !important}
   .p-6,.p-8{padding:12px !important}
   .px-6,.px-8{padding-left:12px !important;padding-right:12px !important}
-  .text-3xl,.text-4xl{font-size:1.5rem !important}
-  .text-2xl{font-size:1.25rem !important}
-  .w-\[300px\],.w-\[400px\],.w-\[500px\]{width:100% !important}
-  .min-w-\[600px\],.min-w-\[700px\],.min-w-\[800px\]{min-width:100% !important}
   body{overflow-x:hidden}
-  main{overflow-x:hidden}
+  main{overflow-x:hidden;padding:8px !important}
   canvas{max-width:100% !important;height:auto !important}
-  .sidebar{display:none !important}
-  .md\:flex{flex-direction:column !important}
-}
-
-
-/* ═══ MOBILE — Dashboard specific ═══ */
-@media(max-width:768px){
   [data-sidebar]{display:none !important}
-  .flex.h-\[calc\(100vh-3\.5rem\)]{flex-direction:column !important}
-  main.flex-1{padding:8px !important}
-  .md\:p-6{padding:8px !important}
-  .grid.grid-cols-2{grid-template-columns:1fr !important}
-  .grid.grid-cols-3{grid-template-columns:1fr !important}
-  .grid.grid-cols-4{grid-template-columns:1fr !important}
-  .overflow-x-auto{-webkit-overflow-scrolling:touch}
-  .min-w-\[600px\],.min-w-\[700px\],.min-w-\[800px\]{min-width:100% !important}
-  .w-full.overflow-auto table{width:max-content;min-width:100%}
-  .space-y-6>*{margin-bottom:12px}
-  .text-2xl{font-size:1.25rem !important}
-  .text-3xl{font-size:1.5rem !important}
 }
