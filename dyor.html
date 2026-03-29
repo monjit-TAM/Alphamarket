@@ -486,6 +486,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('patterns',this)" style="color:#a855f7;font-weight:700">PATTERNS</button>
       <button class="nbtn" onclick="nav('heatmap_tab',this)" style="color:#22c55e;font-weight:700">HEATMAP</button>
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
+      <button class="nbtn" onclick="nav('screenbuilder',this)" style="color:#06b6d4;font-weight:700">SCREEN BUILDER</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
       <button class="nbtn" id="mnav" style="display:none;color:#3b82f6" onclick="loadMethodology()">METHODOLOGY</button>
@@ -2937,6 +2938,81 @@ tr:last-child td{border-bottom:none}
   <div id="div-content"><div style="color:var(--text2);text-align:center;padding:40px">Loading dividend data...</div></div>
 </div>
 
+
+<div class="panel" id="p-screenbuilder" style="padding:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:20px;font-weight:700;color:#06b6d4">🔬 SCREEN BUILDER</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select id="sb-asset" onchange="window.sbChangeAsset()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px">
+        <option value="stocks">Stocks</option>
+        <option value="futures">Futures</option>
+        <option value="options">Options</option>
+      </select>
+      <select id="sb-logic" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px">
+        <option value="AND">ALL filters (AND)</option>
+        <option value="OR">ANY filter (OR)</option>
+      </select>
+      <button class="btn btn-p" onclick="window.sbScan()" style="font-size:12px;padding:6px 14px">▶ RUN SCAN</button>
+      <button class="btn" onclick="window.sbSaveScreen()" style="font-size:12px;padding:6px 14px;background:var(--card);border:1px solid var(--border)">💾 SAVE</button>
+      <button class="btn" onclick="window.sbLoadScreens()" style="font-size:12px;padding:6px 14px;background:var(--card);border:1px solid var(--border)">📂 SAVED</button>
+    </div>
+  </div>
+
+  <!-- Filter Builder -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">ADD FILTER</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <select id="sb-cat" onchange="window.sbUpdateParams()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+        </select>
+        <select id="sb-param" onchange="window.sbUpdateOp()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+        </select>
+        <select id="sb-op" onchange="window.sbShowVals()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+          <option value="between">Between</option>
+          <option value="gte">≥ (Greater or equal)</option>
+          <option value="lte">≤ (Less or equal)</option>
+          <option value="gt">> (Greater than)</option>
+          <option value="lt">< (Less than)</option>
+          <option value="eq">= (Equal)</option>
+        </select>
+        <div id="sb-val-wrap" style="display:flex;gap:6px">
+          <input id="sb-val1" type="number" placeholder="Min" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+          <input id="sb-val2" type="number" placeholder="Max" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+        </div>
+        <button class="btn btn-p" onclick="window.sbAddFilter()" style="font-size:12px;padding:6px">+ ADD FILTER</button>
+      </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">ACTIVE FILTERS <span id="sb-filter-count" style="color:#06b6d4">(0)</span></div>
+      <div id="sb-filters-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">
+        <div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">No filters added yet</div>
+      </div>
+      <button class="btn" onclick="window.sbClearFilters()" style="margin-top:8px;font-size:11px;padding:4px 10px;background:var(--card);border:1px solid var(--border);width:100%">✕ CLEAR ALL</button>
+    </div>
+  </div>
+
+  <!-- Presets -->
+  <div style="margin-bottom:12px">
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">QUICK PRESETS:</div>
+    <div id="sb-presets" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="sb-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;min-height:18px"></div>
+  <div id="sb-results" style="overflow-x:auto"></div>
+
+  <!-- Saved Screens Modal -->
+  <div id="sb-saved-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;width:500px;max-width:90vw;max-height:80vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-weight:700;font-size:16px">📂 Saved Screens</div>
+        <button onclick="document.getElementById('sb-saved-modal').style.display='none'" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer">✕</button>
+      </div>
+      <div id="sb-saved-list"></div>
+    </div>
+  </div>
+</div>
+
 <div class="panel" id="p-guide">
       <div style="max-width:900px;margin:0 auto">
 
@@ -4046,6 +4122,7 @@ function nav(p,btn){
   if(p==='heatmap_tab')loadSectorHeatmap();
   if(p==='dcf_calc'){}
   if(p==='dividends_tab')loadDividends();
+  if(p==='screenbuilder')window.renderSB();
 }
 
 async function loadDash(){
@@ -11022,5 +11099,607 @@ function submitPublish(){
 </div>
 </div>
 </div>
+
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN BUILDER — DYOR Frontend JS
+// ═══════════════════════════════════════════════════════════════════════════
+(function(){
+  let SB_PARAMS = {};
+  let sbFilters = [];
+  const DYOR_API = '/dyor/api';
+
+  const SB_PRESETS = {
+    stocks: [
+      {label:"Oversold Bounce", filters:[{pid:"rsi",cat:"technical",op:"lte",vals:[35]}]},
+      {label:"Momentum", filters:[{pid:"rsi",cat:"technical",op:"between",vals:[55,70]},{pid:"rs_3m",cat:"technical",op:"gte",vals:[10]}]},
+      {label:"Near 52W Low", filters:[{pid:"w52_low_pct",cat:"technical",op:"between",vals:[0,10]}]},
+      {label:"High Volume", filters:[{pid:"vol_ratio",cat:"technical",op:"gte",vals:[2]}]},
+      {label:"Low PE Value", filters:[{pid:"pe_ratio",cat:"fundamental",op:"between",vals:[5,20]},{pid:"roe",cat:"fundamental",op:"gte",vals:[15]}]},
+      {label:"MACD Bullish", filters:[{pid:"macd_hist",cat:"technical",op:"gte",vals:[0]}]},
+    ],
+    futures: [
+      {label:"High Basis (Bullish)", filters:[{pid:"basis_ann",cat:"contract",op:"gte",vals:[8]}]},
+      {label:"Low Basis (Bearish)", filters:[{pid:"basis_ann",cat:"contract",op:"lte",vals:[2]}]},
+      {label:"Near Expiry", filters:[{pid:"expiry_days",cat:"contract",op:"lte",vals:[5]}]},
+    ],
+    options: [
+      {label:"High IV", filters:[{pid:"iv",cat:"volatility",op:"gte",vals:[30]}]},
+      {label:"Low PCR (Bearish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"lte",vals:[0.7]}]},
+      {label:"High PCR (Bullish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"gte",vals:[1.3]}]},
+    ],
+  };
+
+  async function sbFetchParams(assetType) {
+    try {
+      const r = await fetch(`${DYOR_API}/screener/params?asset_type=${assetType}`);
+      const d = await r.json();
+      SB_PARAMS = d.categories || {};
+    } catch(e) { SB_PARAMS = {}; }
+  }
+
+  window.sbChangeAsset = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbFilters = [];
+    sbRenderFilterList();
+    sbRenderCats();
+    sbRenderPresets();
+  };
+
+  function sbRenderCats() {
+    const catEl = document.getElementById('sb-cat');
+    catEl.innerHTML = '';
+    Object.keys(SB_PARAMS).forEach(cat => {
+      const o = document.createElement('option');
+      o.value = cat;
+      o.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+      catEl.appendChild(o);
+    });
+    window.sbUpdateParams();
+  }
+
+  window.sbUpdateParams = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const paramEl = document.getElementById('sb-param');
+    paramEl.innerHTML = '';
+    (SB_PARAMS[cat] || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.label + (p.unit ? ` (${p.unit})` : '');
+      paramEl.appendChild(o);
+    });
+    window.sbUpdateOp();
+  };
+
+  window.sbUpdateOp = function() {
+    window.sbShowVals();
+  };
+
+  window.sbShowVals = function() {
+    const op = document.getElementById('sb-op').value;
+    const v2 = document.getElementById('sb-val2');
+    v2.style.display = op === 'between' ? '' : 'none';
+    document.getElementById('sb-val1').placeholder = op === 'between' ? 'Min' : 'Value';
+  };
+
+  window.sbAddFilter = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const pid = document.getElementById('sb-param').value;
+    const op = document.getElementById('sb-op').value;
+    const v1 = document.getElementById('sb-val1').value;
+    const v2 = document.getElementById('sb-val2').value;
+    if (!v1 && v1 !== '0') { alert('Enter a value'); return; }
+    const vals = op === 'between' ? [parseFloat(v1), parseFloat(v2 || v1)] : [parseFloat(v1)];
+    const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === pid);
+    sbFilters.push({ pid, cat, op, vals, _label: paramDef ? paramDef.label : pid });
+    document.getElementById('sb-val1').value = '';
+    document.getElementById('sb-val2').value = '';
+    sbRenderFilterList();
+  };
+
+  function sbRenderFilterList() {
+    const el = document.getElementById('sb-filters-list');
+    document.getElementById('sb-filter-count').textContent = `(${sbFilters.length})`;
+    if (!sbFilters.length) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">No filters added yet</div>';
+      return;
+    }
+    el.innerHTML = sbFilters.map((f, i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+        <span style="color:#06b6d4;font-weight:600">${f._label}</span>
+        <span style="color:var(--text2);margin:0 6px">${f.op}</span>
+        <span style="color:var(--text)">${f.vals.join(' – ')}</span>
+        <button onclick="window.sbRemoveFilter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0 0 0 8px">✕</button>
+      </div>
+    `).join('');
+  }
+
+  window.sbRemoveFilter = function(i) {
+    sbFilters.splice(i, 1);
+    sbRenderFilterList();
+  };
+
+  window.sbClearFilters = function() {
+    sbFilters = [];
+    sbRenderFilterList();
+    document.getElementById('sb-results').innerHTML = '';
+    document.getElementById('sb-status').textContent = '';
+  };
+
+  function sbRenderPresets() {
+    const at = document.getElementById('sb-asset').value;
+    const presets = SB_PRESETS[at] || [];
+    const el = document.getElementById('sb-presets');
+    el.innerHTML = presets.map((p, i) => `
+      <button class="btn" onclick="window.sbApplyPreset(${i})"
+        style="font-size:11px;padding:4px 10px;background:var(--card);border:1px solid var(--border)">
+        ${p.label}
+      </button>
+    `).join('');
+  }
+
+  window.sbApplyPreset = function(i) {
+    const at = document.getElementById('sb-asset').value;
+    const preset = SB_PRESETS[at][i];
+    if (!preset) return;
+    sbFilters = preset.filters.map(f => {
+      const cat = f.cat;
+      const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+  };
+
+  window.sbScan = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter'); return; }
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    const statusEl = document.getElementById('sb-status');
+    const resultsEl = document.getElementById('sb-results');
+    statusEl.textContent = '⏳ Scanning...';
+    resultsEl.innerHTML = '';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/scan`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc' })
+      });
+      const d = await r.json();
+      if (d.error) { statusEl.textContent = '❌ ' + d.error; return; }
+      statusEl.textContent = `✅ ${d.count} results from ${d.scanned} scanned — ${d.scan_time_ms}ms`;
+      sbRenderResults(d.results, asset_type);
+    } catch(e) {
+      statusEl.textContent = '❌ Scan failed: ' + e.message;
+    }
+  };
+
+  function sbRenderResults(results, asset_type) {
+    const el = document.getElementById('sb-results');
+    if (!results.length) { el.innerHTML = '<div style="color:var(--text2);text-align:center;padding:30px">No stocks match your filters</div>'; return; }
+    let cols, rows;
+    if (asset_type === 'stocks') {
+      cols = ['Symbol','Price','Chg%','RSI','MACD','Vol Ratio','PE','ROE','Sector'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600;cursor:pointer" onclick="alphaView('${r.symbol}')">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        `<span style="color:${(r.change||0)>=0?'#22c55e':'#ef4444'}">${(r.change||0).toFixed(2)}%</span>`,
+        r.rsi?.toFixed(1) ?? '-',
+        r.macd_hist?.toFixed(2) ?? '-',
+        r.vol_ratio?.toFixed(2) ?? '-',
+        r.pe_ratio ? r.pe_ratio.toFixed(1) : '-',
+        r.roe ? r.roe.toFixed(1)+'%' : '-',
+        r.sector ?? '-',
+      ]);
+    } else if (asset_type === 'futures') {
+      cols = ['Symbol','Fut Price','Spot','Basis Ann%','OI','OI Chg','Lot Size','Expiry Days'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        r.spot?.toFixed(2) ?? '-',
+        r.basis_annualized?.toFixed(2)+'%' ?? '-',
+        r.oi ?? '-',
+        r.oi_change ?? '-',
+        r.lot_size ?? '-',
+        r.expiry_days ?? '-',
+      ]);
+    } else {
+      cols = ['Symbol','Spot','ATM IV','HV 20D','IV-HV','PCR','Max Pain Dist%','Delta','Theta'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.spot?.toFixed(2) ?? '-',
+        r.atm_iv?.toFixed(1)+'%' ?? '-',
+        r.hv_20?.toFixed(1)+'%' ?? '-',
+        r.iv_hv_spread?.toFixed(1)+'%' ?? '-',
+        r.pcr_oi?.toFixed(2) ?? '-',
+        r.max_pain_dist?.toFixed(2)+'%' ?? '-',
+        r.delta?.toFixed(3) ?? '-',
+        r.theta?.toFixed(2) ?? '-',
+      ]);
+    }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>${cols.map(c=>`<th style="text-align:left;padding:8px 10px;background:var(--card);border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row,i)=>`<tr style="background:${i%2?'var(--card)':'var(--bg)'}">${row.map(cell=>`<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap">${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    `;
+  }
+
+  window.sbSaveScreen = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter first'); return; }
+    const name = prompt('Screen name:');
+    if (!name) return;
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    try {
+      const r = await fetch(`${DYOR_API}/screener/save`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, asset_type, filters: sbFilters, logic, sort_by: 'alpha_rating' })
+      });
+      const d = await r.json();
+      if (d.error) { alert('Save failed: ' + d.error); return; }
+      alert(`Saved: "${name}"`);
+    } catch(e) { alert('Save failed'); }
+  };
+
+  window.sbLoadScreens = async function() {
+    const modal = document.getElementById('sb-saved-modal');
+    const listEl = document.getElementById('sb-saved-list');
+    modal.style.display = 'flex';
+    listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">Loading...</div>';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/saved`);
+      const d = await r.json();
+      const screens = d.screens || [];
+      if (!screens.length) { listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">No saved screens</div>'; return; }
+      listEl.innerHTML = screens.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg)">
+          <div>
+            <div style="font-weight:600;font-size:13px">${s.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${s.asset_type} • ${(s.filters||[]).length} filters • ${s.logic}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-p" onclick="window.sbApplySaved(${s.id})" style="font-size:11px;padding:4px 10px">LOAD</button>
+            <button class="btn" onclick="window.sbDeleteScreen(${s.id})" style="font-size:11px;padding:4px 10px;border:1px solid #ef4444;color:#ef4444;background:none">DEL</button>
+          </div>
+        </div>
+      `).join('');
+      window._sbSavedScreens = screens;
+    } catch(e) { listEl.innerHTML = '<div style="color:#ef4444;padding:20px">Failed to load</div>'; }
+  };
+
+  window.sbApplySaved = function(id) {
+    const s = (window._sbSavedScreens||[]).find(x=>x.id===id);
+    if (!s) return;
+    document.getElementById('sb-asset').value = s.asset_type;
+    document.getElementById('sb-logic').value = s.logic;
+    sbFilters = (s.filters||[]).map(f => {
+      const paramDef = (SB_PARAMS[f.cat]||[]).find(p=>p.id===f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+    document.getElementById('sb-saved-modal').style.display = 'none';
+  };
+
+  window.sbDeleteScreen = async function(id) {
+    if (!confirm('Delete this screen?')) return;
+    try {
+      await fetch(`${DYOR_API}/screener/saved/${id}`, {method:'DELETE'});
+      window.sbLoadScreens();
+    } catch(e) { alert('Delete failed'); }
+  };
+
+  window.renderSB = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbRenderCats();
+    sbRenderPresets();
+    window.sbShowVals();
+  };
+})();
+</script>
+
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN BUILDER — DYOR Frontend JS
+// ═══════════════════════════════════════════════════════════════════════════
+(function(){
+  let SB_PARAMS = {};
+  let sbFilters = [];
+  const DYOR_API = '/dyor/api';
+
+  const SB_PRESETS = {
+    stocks: [
+      {label:"Oversold Bounce", filters:[{pid:"rsi",cat:"technical",op:"lte",vals:[35]}]},
+      {label:"Momentum", filters:[{pid:"rsi",cat:"technical",op:"between",vals:[55,70]},{pid:"rs_3m",cat:"technical",op:"gte",vals:[10]}]},
+      {label:"Near 52W Low", filters:[{pid:"w52_low_pct",cat:"technical",op:"between",vals:[0,10]}]},
+      {label:"High Volume", filters:[{pid:"vol_ratio",cat:"technical",op:"gte",vals:[2]}]},
+      {label:"Low PE Value", filters:[{pid:"pe_ratio",cat:"fundamental",op:"between",vals:[5,20]},{pid:"roe",cat:"fundamental",op:"gte",vals:[15]}]},
+      {label:"MACD Bullish", filters:[{pid:"macd_hist",cat:"technical",op:"gte",vals:[0]}]},
+    ],
+    futures: [
+      {label:"High Basis (Bullish)", filters:[{pid:"basis_ann",cat:"contract",op:"gte",vals:[8]}]},
+      {label:"Low Basis (Bearish)", filters:[{pid:"basis_ann",cat:"contract",op:"lte",vals:[2]}]},
+      {label:"Near Expiry", filters:[{pid:"expiry_days",cat:"contract",op:"lte",vals:[5]}]},
+    ],
+    options: [
+      {label:"High IV", filters:[{pid:"iv",cat:"volatility",op:"gte",vals:[30]}]},
+      {label:"Low PCR (Bearish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"lte",vals:[0.7]}]},
+      {label:"High PCR (Bullish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"gte",vals:[1.3]}]},
+    ],
+  };
+
+  async function sbFetchParams(assetType) {
+    try {
+      const r = await fetch(`${DYOR_API}/screener/params?asset_type=${assetType}`);
+      const d = await r.json();
+      SB_PARAMS = d.categories || {};
+    } catch(e) { SB_PARAMS = {}; }
+  }
+
+  window.sbChangeAsset = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbFilters = [];
+    sbRenderFilterList();
+    sbRenderCats();
+    sbRenderPresets();
+  };
+
+  function sbRenderCats() {
+    const catEl = document.getElementById('sb-cat');
+    catEl.innerHTML = '';
+    Object.keys(SB_PARAMS).forEach(cat => {
+      const o = document.createElement('option');
+      o.value = cat;
+      o.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+      catEl.appendChild(o);
+    });
+    window.sbUpdateParams();
+  }
+
+  window.sbUpdateParams = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const paramEl = document.getElementById('sb-param');
+    paramEl.innerHTML = '';
+    (SB_PARAMS[cat] || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.label + (p.unit ? ` (${p.unit})` : '');
+      paramEl.appendChild(o);
+    });
+    window.sbUpdateOp();
+  };
+
+  window.sbUpdateOp = function() {
+    window.sbShowVals();
+  };
+
+  window.sbShowVals = function() {
+    const op = document.getElementById('sb-op').value;
+    const v2 = document.getElementById('sb-val2');
+    v2.style.display = op === 'between' ? '' : 'none';
+    document.getElementById('sb-val1').placeholder = op === 'between' ? 'Min' : 'Value';
+  };
+
+  window.sbAddFilter = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const pid = document.getElementById('sb-param').value;
+    const op = document.getElementById('sb-op').value;
+    const v1 = document.getElementById('sb-val1').value;
+    const v2 = document.getElementById('sb-val2').value;
+    if (!v1 && v1 !== '0') { alert('Enter a value'); return; }
+    const vals = op === 'between' ? [parseFloat(v1), parseFloat(v2 || v1)] : [parseFloat(v1)];
+    const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === pid);
+    sbFilters.push({ pid, cat, op, vals, _label: paramDef ? paramDef.label : pid });
+    document.getElementById('sb-val1').value = '';
+    document.getElementById('sb-val2').value = '';
+    sbRenderFilterList();
+  };
+
+  function sbRenderFilterList() {
+    const el = document.getElementById('sb-filters-list');
+    document.getElementById('sb-filter-count').textContent = `(${sbFilters.length})`;
+    if (!sbFilters.length) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">No filters added yet</div>';
+      return;
+    }
+    el.innerHTML = sbFilters.map((f, i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+        <span style="color:#06b6d4;font-weight:600">${f._label}</span>
+        <span style="color:var(--text2);margin:0 6px">${f.op}</span>
+        <span style="color:var(--text)">${f.vals.join(' – ')}</span>
+        <button onclick="window.sbRemoveFilter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0 0 0 8px">✕</button>
+      </div>
+    `).join('');
+  }
+
+  window.sbRemoveFilter = function(i) {
+    sbFilters.splice(i, 1);
+    sbRenderFilterList();
+  };
+
+  window.sbClearFilters = function() {
+    sbFilters = [];
+    sbRenderFilterList();
+    document.getElementById('sb-results').innerHTML = '';
+    document.getElementById('sb-status').textContent = '';
+  };
+
+  function sbRenderPresets() {
+    const at = document.getElementById('sb-asset').value;
+    const presets = SB_PRESETS[at] || [];
+    const el = document.getElementById('sb-presets');
+    el.innerHTML = presets.map((p, i) => `
+      <button class="btn" onclick="window.sbApplyPreset(${i})"
+        style="font-size:11px;padding:4px 10px;background:var(--card);border:1px solid var(--border)">
+        ${p.label}
+      </button>
+    `).join('');
+  }
+
+  window.sbApplyPreset = function(i) {
+    const at = document.getElementById('sb-asset').value;
+    const preset = SB_PRESETS[at][i];
+    if (!preset) return;
+    sbFilters = preset.filters.map(f => {
+      const cat = f.cat;
+      const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+  };
+
+  window.sbScan = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter'); return; }
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    const statusEl = document.getElementById('sb-status');
+    const resultsEl = document.getElementById('sb-results');
+    statusEl.textContent = '⏳ Scanning...';
+    resultsEl.innerHTML = '';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/scan`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc' })
+      });
+      const d = await r.json();
+      if (d.error) { statusEl.textContent = '❌ ' + d.error; return; }
+      statusEl.textContent = `✅ ${d.count} results from ${d.scanned} scanned — ${d.scan_time_ms}ms`;
+      sbRenderResults(d.results, asset_type);
+    } catch(e) {
+      statusEl.textContent = '❌ Scan failed: ' + e.message;
+    }
+  };
+
+  function sbRenderResults(results, asset_type) {
+    const el = document.getElementById('sb-results');
+    if (!results.length) { el.innerHTML = '<div style="color:var(--text2);text-align:center;padding:30px">No stocks match your filters</div>'; return; }
+    let cols, rows;
+    if (asset_type === 'stocks') {
+      cols = ['Symbol','Price','Chg%','RSI','MACD','Vol Ratio','PE','ROE','Sector'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600;cursor:pointer" onclick="alphaView('${r.symbol}')">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        `<span style="color:${(r.change||0)>=0?'#22c55e':'#ef4444'}">${(r.change||0).toFixed(2)}%</span>`,
+        r.rsi?.toFixed(1) ?? '-',
+        r.macd_hist?.toFixed(2) ?? '-',
+        r.vol_ratio?.toFixed(2) ?? '-',
+        r.pe_ratio ? r.pe_ratio.toFixed(1) : '-',
+        r.roe ? r.roe.toFixed(1)+'%' : '-',
+        r.sector ?? '-',
+      ]);
+    } else if (asset_type === 'futures') {
+      cols = ['Symbol','Fut Price','Spot','Basis Ann%','OI','OI Chg','Lot Size','Expiry Days'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        r.spot?.toFixed(2) ?? '-',
+        r.basis_annualized?.toFixed(2)+'%' ?? '-',
+        r.oi ?? '-',
+        r.oi_change ?? '-',
+        r.lot_size ?? '-',
+        r.expiry_days ?? '-',
+      ]);
+    } else {
+      cols = ['Symbol','Spot','ATM IV','HV 20D','IV-HV','PCR','Max Pain Dist%','Delta','Theta'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.spot?.toFixed(2) ?? '-',
+        r.atm_iv?.toFixed(1)+'%' ?? '-',
+        r.hv_20?.toFixed(1)+'%' ?? '-',
+        r.iv_hv_spread?.toFixed(1)+'%' ?? '-',
+        r.pcr_oi?.toFixed(2) ?? '-',
+        r.max_pain_dist?.toFixed(2)+'%' ?? '-',
+        r.delta?.toFixed(3) ?? '-',
+        r.theta?.toFixed(2) ?? '-',
+      ]);
+    }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>${cols.map(c=>`<th style="text-align:left;padding:8px 10px;background:var(--card);border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row,i)=>`<tr style="background:${i%2?'var(--card)':'var(--bg)'}">${row.map(cell=>`<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap">${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    `;
+  }
+
+  window.sbSaveScreen = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter first'); return; }
+    const name = prompt('Screen name:');
+    if (!name) return;
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    try {
+      const r = await fetch(`${DYOR_API}/screener/save`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, asset_type, filters: sbFilters, logic, sort_by: 'alpha_rating' })
+      });
+      const d = await r.json();
+      if (d.error) { alert('Save failed: ' + d.error); return; }
+      alert(`Saved: "${name}"`);
+    } catch(e) { alert('Save failed'); }
+  };
+
+  window.sbLoadScreens = async function() {
+    const modal = document.getElementById('sb-saved-modal');
+    const listEl = document.getElementById('sb-saved-list');
+    modal.style.display = 'flex';
+    listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">Loading...</div>';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/saved`);
+      const d = await r.json();
+      const screens = d.screens || [];
+      if (!screens.length) { listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">No saved screens</div>'; return; }
+      listEl.innerHTML = screens.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg)">
+          <div>
+            <div style="font-weight:600;font-size:13px">${s.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${s.asset_type} • ${(s.filters||[]).length} filters • ${s.logic}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-p" onclick="window.sbApplySaved(${s.id})" style="font-size:11px;padding:4px 10px">LOAD</button>
+            <button class="btn" onclick="window.sbDeleteScreen(${s.id})" style="font-size:11px;padding:4px 10px;border:1px solid #ef4444;color:#ef4444;background:none">DEL</button>
+          </div>
+        </div>
+      `).join('');
+      window._sbSavedScreens = screens;
+    } catch(e) { listEl.innerHTML = '<div style="color:#ef4444;padding:20px">Failed to load</div>'; }
+  };
+
+  window.sbApplySaved = function(id) {
+    const s = (window._sbSavedScreens||[]).find(x=>x.id===id);
+    if (!s) return;
+    document.getElementById('sb-asset').value = s.asset_type;
+    document.getElementById('sb-logic').value = s.logic;
+    sbFilters = (s.filters||[]).map(f => {
+      const paramDef = (SB_PARAMS[f.cat]||[]).find(p=>p.id===f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+    document.getElementById('sb-saved-modal').style.display = 'none';
+  };
+
+  window.sbDeleteScreen = async function(id) {
+    if (!confirm('Delete this screen?')) return;
+    try {
+      await fetch(`${DYOR_API}/screener/saved/${id}`, {method:'DELETE'});
+      window.sbLoadScreens();
+    } catch(e) { alert('Delete failed'); }
+  };
+
+  window.renderSB = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbRenderCats();
+    sbRenderPresets();
+    window.sbShowVals();
+  };
+})();
+</script>
 
 </body></html>

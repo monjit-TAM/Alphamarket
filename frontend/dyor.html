@@ -486,6 +486,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('patterns',this)" style="color:#a855f7;font-weight:700">PATTERNS</button>
       <button class="nbtn" onclick="nav('heatmap_tab',this)" style="color:#22c55e;font-weight:700">HEATMAP</button>
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
+      <button class="nbtn" onclick="nav('screenbuilder',this)" style="color:#06b6d4;font-weight:700">SCREEN BUILDER</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
       <button class="nbtn" id="mnav" style="display:none;color:#3b82f6" onclick="loadMethodology()">METHODOLOGY</button>
@@ -2937,6 +2938,81 @@ tr:last-child td{border-bottom:none}
   <div id="div-content"><div style="color:var(--text2);text-align:center;padding:40px">Loading dividend data...</div></div>
 </div>
 
+
+<div class="panel" id="p-screenbuilder" style="padding:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
+    <div style="font-size:20px;font-weight:700;color:#06b6d4">🔬 SCREEN BUILDER</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select id="sb-asset" onchange="window.sbChangeAsset()" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px">
+        <option value="stocks">Stocks</option>
+        <option value="futures">Futures</option>
+        <option value="options">Options</option>
+      </select>
+      <select id="sb-logic" style="background:var(--card);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:6px;font-size:13px">
+        <option value="AND">ALL filters (AND)</option>
+        <option value="OR">ANY filter (OR)</option>
+      </select>
+      <button class="btn btn-p" onclick="window.sbScan()" style="font-size:12px;padding:6px 14px">▶ RUN SCAN</button>
+      <button class="btn" onclick="window.sbSaveScreen()" style="font-size:12px;padding:6px 14px;background:var(--card);border:1px solid var(--border)">💾 SAVE</button>
+      <button class="btn" onclick="window.sbLoadScreens()" style="font-size:12px;padding:6px 14px;background:var(--card);border:1px solid var(--border)">📂 SAVED</button>
+    </div>
+  </div>
+
+  <!-- Filter Builder -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">ADD FILTER</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <select id="sb-cat" onchange="window.sbUpdateParams()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+        </select>
+        <select id="sb-param" onchange="window.sbUpdateOp()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+        </select>
+        <select id="sb-op" onchange="window.sbShowVals()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+          <option value="between">Between</option>
+          <option value="gte">≥ (Greater or equal)</option>
+          <option value="lte">≤ (Less or equal)</option>
+          <option value="gt">> (Greater than)</option>
+          <option value="lt">< (Less than)</option>
+          <option value="eq">= (Equal)</option>
+        </select>
+        <div id="sb-val-wrap" style="display:flex;gap:6px">
+          <input id="sb-val1" type="number" placeholder="Min" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+          <input id="sb-val2" type="number" placeholder="Max" style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:5px;font-size:12px">
+        </div>
+        <button class="btn btn-p" onclick="window.sbAddFilter()" style="font-size:12px;padding:6px">+ ADD FILTER</button>
+      </div>
+    </div>
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:8px;padding:12px">
+      <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px">ACTIVE FILTERS <span id="sb-filter-count" style="color:#06b6d4">(0)</span></div>
+      <div id="sb-filters-list" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto">
+        <div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">No filters added yet</div>
+      </div>
+      <button class="btn" onclick="window.sbClearFilters()" style="margin-top:8px;font-size:11px;padding:4px 10px;background:var(--card);border:1px solid var(--border);width:100%">✕ CLEAR ALL</button>
+    </div>
+  </div>
+
+  <!-- Presets -->
+  <div style="margin-bottom:12px">
+    <div style="font-size:11px;color:var(--text2);margin-bottom:6px;font-weight:600">QUICK PRESETS:</div>
+    <div id="sb-presets" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+  </div>
+
+  <!-- Results -->
+  <div id="sb-status" style="font-size:12px;color:var(--text2);margin-bottom:8px;min-height:18px"></div>
+  <div id="sb-results" style="overflow-x:auto"></div>
+
+  <!-- Saved Screens Modal -->
+  <div id="sb-saved-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center">
+    <div style="background:var(--card);border:1px solid var(--border);border-radius:10px;padding:20px;width:500px;max-width:90vw;max-height:80vh;overflow-y:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div style="font-weight:700;font-size:16px">📂 Saved Screens</div>
+        <button onclick="document.getElementById('sb-saved-modal').style.display='none'" style="background:none;border:none;color:var(--text);font-size:18px;cursor:pointer">✕</button>
+      </div>
+      <div id="sb-saved-list"></div>
+    </div>
+  </div>
+</div>
+
 <div class="panel" id="p-guide">
       <div style="max-width:900px;margin:0 auto">
 
@@ -3719,6 +3795,7 @@ let ptType='BUY';
     if(r.ok){
       me=await r.json();if(!me.name)me.name=me.email?me.email.split("@")[0]:"User";if(me.is_admin===undefined)me.is_admin=false;
       setTimeout(boot,100);
+      fetch('/dyor/api/bridge/check-permission',{credentials:'include'}).then(function(r){return r.json()}).then(function(p){window._isAmAdvisor=!!p.allowed;}).catch(function(){window._isAmAdvisor=false;});
     }else{
       document.getElementById('auth').style.display='block';
     }
@@ -3861,7 +3938,7 @@ async function initUniversalAutocomplete(){
   }catch(e){console.warn('Symbol cache failed:',e);}
 
   // Attach to all symbol input fields
-  const symInputs = ['bt-sym','ch-sym','pt-sym','mp-add-sym','wl-in','adv-add-sym','opt-sym','oi-sym'];
+  const symInputs = ['bt-sym','ch-sym','pt-sym','mp-add-sym','wl-in','adv-add-sym','opt-sym','oi-sym','dcf-sym','pat-sym','av-sym'];
   symInputs.forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -4045,6 +4122,7 @@ function nav(p,btn){
   if(p==='heatmap_tab')loadSectorHeatmap();
   if(p==='dcf_calc'){}
   if(p==='dividends_tab')loadDividends();
+  if(p==='screenbuilder')window.renderSB();
 }
 
 async function loadDash(){
@@ -4478,7 +4556,7 @@ function _capBadge(stock) {
       <td><span class="tag">${s.sector}</span></td>
       <td style="font-size:10px;color:var(--text2)">${s.industry||''}</td>
       <td style="color:${s.above_200dma?'var(--green)':'var(--red)'}">${s.above_200dma?'▲ YES':'▼ NO'}</td>
-      <td style="white-space:nowrap"><button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="openChart('${s.symbol}')">📈</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="addWatchSym('${s.symbol}')">+WATCH</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px;margin-left:2px" onclick="showFundamentals('${s.symbol}')">INFO</button> <button class="btn btn-s" style="font-size:10px;padding:3px 6px;margin-left:2px;color:var(--yellow)" onclick="quickRecommend('${s.symbol}',${s.price})">⚖REC</button></td>
+      <td style="white-space:nowrap"><button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="openChart('${s.symbol}')">📈</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="addWatchSym('${s.symbol}')">+WATCH</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px;margin-left:2px" onclick="showFundamentals('${s.symbol}')">INFO</button> <button class="btn btn-s" style="font-size:10px;padding:3px 6px;margin-left:2px;color:var(--yellow)" onclick="quickRecommend('${s.symbol}',${s.price})">⚖REC</button>${_pubBtn(s.symbol,s.price,'Screener: '+strat+' | RSI:'+s.rsi+' | '+s.sector)}</td>
     </tr>`).join('')}</tbody></table>`;
   }catch(e){toast(e.message,'er');el.innerHTML='<div class="empty">'+e.message+'</div>';}
 }
@@ -4624,6 +4702,8 @@ function showBtRes(bt){
     document.getElementById('bt-tlog').style.display='none';
   }
   document.getElementById('bt-res').scrollIntoView({behavior:'smooth'});
+  // Add publish button for advisors
+  if(window._isAmAdvisor){var _btPubDiv=document.createElement('div');_btPubDiv.style.cssText='margin-top:10px;text-align:right';_btPubDiv.innerHTML='<button onclick="openPublish(\''+bt.symbol+'\','+(r.entry_price||r.final_capital||0)+',\'Backtest: '+(bt.strategy||'')+' Return:'+(r.total_return_pct||0).toFixed(2)+'% WinRate:'+(r.win_rate||0).toFixed(1)+'% Sharpe:'+(r.sharpe_ratio||0).toFixed(2)+'\')" style="padding:6px 16px;background:var(--accent);color:#fff;border:none;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer">\u{1F4E4} PUBLISH TO ALPHAMARKET</button>';document.getElementById('bt-stats').appendChild(_btPubDiv);}
 }
 
 async function loadBtHist(){
@@ -5940,6 +6020,12 @@ async function calcPayoff(){
     const g = d.position_greeks;
     if(g){
       document.getElementById('opt-pos-greeks').style.display='block';
+      // Publish button for advisors
+      if(window._isAmAdvisor){var _epo=document.getElementById('opt-pub-wrap');if(_epo)_epo.remove();var _opb=document.createElement('div');_opb.id='opt-pub-wrap';_opb.style.cssText='margin-top:10px;text-align:center';var _sym=document.getElementById('opt-sym')?document.getElementById('opt-sym').value:'';
+      // Capture options legs
+      var _legs=[];try{var _legEls=document.querySelectorAll('#opt-legs .frow');_legEls.forEach(function(row){var selects=row.querySelectorAll('select');var inputs=row.querySelectorAll('input');if(selects.length>=2&&inputs.length>=3){_legs.push({type:selects[0].value,side:selects[1].value,strike:inputs[0].value,premium:inputs[1].value,qty:inputs[2].value});}});}catch(e){}
+      var _legsRat='Options Strategy: '+_sym+'\nLegs: '+_legs.map(function(l){return l.type+' '+l.side+' '+l.strike+' @'+l.premium+' x'+l.qty}).join(' | ')+'\nMax Profit: '+mp+' | Max Loss: '+ml+' | RR: 1:'+d.risk_reward+' | PoP: '+pop+'%';
+      _opb.innerHTML='<button onclick="window._pubOptionsLegs='+JSON.stringify(_legs).replace(/"/g,"&quot;")+';openPublish(\''+_sym+'\','+(d.net_premium||0)+',\''+_legsRat.replace(/'/g,'').replace(/\n/g,' | ')+'\')" style="padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">\u{1F4E4} PUBLISH TO ALPHAMARKET</button>';document.getElementById('opt-payoff-card').appendChild(_opb);}
       const dColor = g.delta>0?'var(--green)':g.delta<0?'var(--red)':'var(--text2)';
       const tColor = g.theta>0?'var(--green)':'var(--red)';
       document.getElementById('opt-greeks-grid').innerHTML=`
@@ -6808,7 +6894,7 @@ async function loadModelPortfolios(){
         <td style="font-size:11px">${p.weighting||'equal'}</td>
         <td style="font-size:11px">${p.rebalance_freq||'monthly'}</td>
         <td style="font-size:10px;color:var(--text3)">${p.updated_at?new Date(p.updated_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'}):'—'}</td>
-        <td><button class="btn btn-s" onclick="showMpDetail(${p.id})" style="font-size:10px">VIEW</button></td>
+        <td><button class="btn btn-s" onclick="showMpDetail(${p.id})" style="font-size:10px">VIEW</button>${window._isAmAdvisor?' <button class=\"btn btn-s\" onclick=\"event.stopPropagation();publishPortfolioAsBasket('+p.id+',\x27'+p.name+'\x27)\" style=\"font-size:10px;background:var(--accent);color:#fff\">📤 BASKET</button>':''}</td>
       </tr>`).join('')
     }</tbody></table>`;
   }catch(e){console.error(e);}
@@ -7128,7 +7214,7 @@ async function showFwdDetail(fwdId){
           <td>${p.bars_held||0}</td>
           <td style="font-size:11px;color:var(--text3)">${p.stop_loss?'₹'+p.stop_loss.toFixed(0):'—'}</td>
           <td style="font-size:11px;color:var(--text3)">${p.target?'₹'+p.target.toFixed(0):'—'}</td>
-          <td><button class="btn btn-s" onclick="closeFwdPos(${activeFwdId},${p.id})" style="font-size:10px;color:var(--red)">CLOSE</button></td>
+          <td><button class="btn btn-s" onclick="closeFwdPos(${activeFwdId},${p.id})" style="font-size:10px;color:var(--red)">CLOSE</button>${_pubBtn(p.symbol,(p.current_price||p.entry_price||0),'FwdTest: PnL '+(p.unrealized_pnl_pct||0).toFixed(2)+'%')}</td>
         </tr>`).join('')}</tbody></table>`;
     } else {
       document.getElementById('fwd-positions').innerHTML='<div style="padding:12px;color:var(--text3);font-size:12px">No open positions. Run a scan to generate signals.</div>';
@@ -7599,7 +7685,7 @@ function _mtfTable(stocks,selected){
       <td><div style="display:flex;flex-wrap:wrap;gap:2px;max-width:300px">${tags}</div></td>
       <td><span class="tag">${s.sector||'—'}</span></td>
       <td style="color:${s.above_200dma?'var(--green)':'var(--red)'};font-size:11px">${s.above_200dma?'▲':'▼'}</td>
-      <td style="white-space:nowrap"><button class="btn btn-s" style="font-size:9px;padding:2px 6px" onclick="event.stopPropagation();openChart('${s.symbol}')">📈</button> <button class="btn btn-s" style="font-size:9px;padding:2px 6px" onclick="event.stopPropagation();addWatchSym('${s.symbol}')">+W</button> <button class="btn btn-s" style="font-size:9px;padding:2px 6px;color:var(--yellow)" onclick="event.stopPropagation();quickRecommend('${s.symbol}',${s.price})">⚖</button></td></tr>`;
+      <td style="white-space:nowrap"><button class="btn btn-s" style="font-size:9px;padding:2px 6px" onclick="event.stopPropagation();openChart('${s.symbol}')">📈</button> <button class="btn btn-s" style="font-size:9px;padding:2px 6px" onclick="event.stopPropagation();addWatchSym('${s.symbol}')">+W</button> <button class="btn btn-s" style="font-size:9px;padding:2px 6px;color:var(--yellow)" onclick="event.stopPropagation();quickRecommend('${s.symbol}',${s.price})">⚖</button>${_pubBtn(s.symbol,s.price,'MTF: '+s.stratCount+' strategies '+s.tfCount+' timeframes | Sector:'+s.sector)}</td></tr>`;
   });
   return h+'</tbody></table>';
 }
@@ -8204,6 +8290,54 @@ const w=window.open('','_blank');w.document.write(`<!DOCTYPE html><html><head><t
     @media print{body{margin:0;padding:10px}@page{margin:12mm}}
   </style></head><body>${c}
 
+
+<!-- BASKET PUBLISH MODAL -->
+<div id="basket-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99998;overflow-y:auto;padding:20px">
+<div style="max-width:900px;margin:20px auto;background:var(--card);border-radius:12px;padding:24px;border:1px solid var(--border)">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+<div style="font-size:18px;font-weight:800;color:var(--accent)">Publish Basket to AlphaMarket</div>
+<span onclick="document.getElementById('basket-modal').style.display='none'" style="cursor:pointer;font-size:20px;color:var(--text2)">&times;</span>
+</div>
+<div id="bsk-loading" style="display:none;padding:20px;text-align:center;color:var(--text3)">Loading...</div>
+<div id="bsk-not-advisor" style="display:none;padding:20px;text-align:center;color:var(--red)"></div>
+<div id="bsk-form" style="display:none">
+<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+<div style="flex:2"><label style="font-size:10px;color:var(--text2)">Basket Name</label>
+<input id="bsk-name" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:14px;font-weight:700"></div>
+<div><label style="font-size:10px;color:var(--text2)">Strategy</label>
+<select id="bsk-strategy" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></select></div>
+<div><label style="font-size:10px;color:var(--text2)">Duration</label>
+<select id="bsk-duration" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px">
+<option value="1 Month">1 Month</option><option value="3 Months">3 Months</option><option value="6 Months" selected>6 Months</option><option value="1 Year">1 Year</option></select></div>
+</div>
+<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--text2)">Basket Description / Theme</label>
+<textarea id="bsk-desc" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:12px;resize:vertical" placeholder="e.g. Momentum stocks across sectors..."></textarea></div>
+<div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px;letter-spacing:0.5px">STOCKS IN BASKET <span id="bsk-count" style="color:var(--text3);font-weight:400"></span></div>
+<div style="overflow-x:auto;margin-bottom:12px">
+<table style="width:100%;border-collapse:collapse;font-size:12px" id="bsk-table">
+<thead><tr style="border-bottom:2px solid var(--border);text-align:left">
+<th style="padding:6px">#</th><th style="padding:6px">SYMBOL</th><th style="padding:6px">WEIGHT %</th>
+<th style="padding:6px">ENTRY ₹</th><th style="padding:6px">TARGET ₹</th><th style="padding:6px">SL ₹</th>
+<th style="padding:6px">SECTOR</th><th style="padding:6px;min-width:200px">RATIONALE</th><th style="padding:6px"></th>
+</tr></thead>
+<tbody id="bsk-tbody"></tbody>
+</table>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:16px">
+<input id="bsk-add-sym" placeholder="Add symbol..." style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg1);color:var(--text1);font-size:12px;width:140px;text-transform:uppercase">
+<button onclick="bskAddStock()" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">+ ADD STOCK</button>
+<button onclick="bskNormalize()" style="padding:6px 14px;background:var(--bg1);color:var(--text1);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer">NORMALIZE WEIGHTS</button>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:10px">
+<select id="bsk-mode" style="padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px">
+<option value="live">Live (notify subscribers)</option><option value="paper">Paper (silent)</option></select>
+</div>
+<div id="bsk-result" style="display:none;padding:10px;border-radius:6px;margin-bottom:10px;font-size:12px"></div>
+<button id="bsk-submit-btn" onclick="submitBasket()" style="width:100%;padding:14px;background:linear-gradient(135deg,#e84215,#ff6b3d);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:1px">PUBLISH BASKET TO ALPHAMARKET</button>
+</div>
+</div>
+</div>
+
 </body></html>`);
 w.document.close();
 setTimeout(()=>w.print(),500);
@@ -8431,7 +8565,7 @@ function copyMorningBrief(){
     topics: [
       // ── PLATFORM ──
       {keys:['what is alphalab','about alphalab','platform overview','features','capabilities','what can i do'],
-       r:`<b>AlphaLab</b> is a complete strategy research platform for Indian markets:\n\n• <b>Screener</b> — 34 strategies across 2200+ NSE/BSE stocks\n• <b>MTF Combiner</b> — Multi-timeframe confluence signals\n• <b>Backtest</b> — 40 strategies with 15+ risk metrics\n• <b>Options Lab</b> — 60 presets, Strategy Finder AI, OI Intelligence, Risk Heatmap\n• <b>Paper Trading</b> — Practice risk-free\n• <b>Forward Test</b> — Validate on live data\n• <b>Model Portfolios</b> — 23 pre-built + custom\n• <b>Advisory</b> — SEBI-compliant reports\n\nWant me to dive deeper into any of these?`,chips:['Screener help','Options Lab','Backtest guide','Getting started']},
+       r:`<b>AlphaLab DYOR</b> is a complete strategy research & advisory platform for Indian markets:\n\n• <b>Screener</b> — 34 strategies across 2200+ NSE stocks\n• <b>MTF Combiner</b> — Multi-timeframe confluence signals\n• <b>Backtest</b> — 40 strategies with 15+ risk metrics\n• <b>Options Lab</b> — 60 presets, Strategy Finder AI, OI Intelligence, Risk Heatmap\n• <b>Arbitrage/Jobbing/Scalping</b> — F&O scanners with Index support (NIFTY, BANKNIFTY)\n• <b>DCF Calculator</b> — Intrinsic value (EPS DCF + FCF DCF + Graham Number)\n• <b>Pattern Scanner</b> — 11 indicators + 8 chart patterns with auto-narrative\n• <b>Paper Trading</b> — Practice risk-free\n• <b>Forward Test</b> — Validate on live data\n• <b>Model Portfolios</b> — 23 pre-built + custom with Basket publishing\n• <b>Advisory</b> — SEBI-compliant reports with PDF export\n• <b>Publish to AlphaMarket</b> — Advisors can publish calls from any section\n• <b>Live Groww Prices</b> — Real-time data with hourly health monitoring\n\nWant me to dive deeper into any of these?`,chips:['Screener help','Options Lab','Publish to AlphaMarket','DCF Calculator']},
 
       {keys:['getting started','how to start','beginner','new user','first time','where do i start','tutorial','guide'],
        r:`Great question! Here's my recommended workflow:\n\n<b class="step">Step 1 — Screen:</b> Go to <code>SCREENER</code>, pick a strategy like "RSI Oversold" or "Momentum Breakout", and scan for opportunities\n\n<b class="step">Step 2 — Analyze:</b> Check the <code>CHARTS</code> with indicators for visual confirmation\n\n<b class="step">Step 3 — Backtest:</b> Run a <code>BACKTEST</code> to see historical performance and risk metrics\n\n<b class="step">Step 4 — Validate:</b> Set up a <code>FORWARD TEST</code> on live data\n\n<b class="step">Step 5 — Practice:</b> Use <code>PAPER TRADING</code> before real capital\n\nFor options traders, jump to <code>OPTIONS LAB</code> → use the Strategy Finder AI. Which step do you want to explore first?`,chips:['Screener help','Options Lab','How to backtest?','Strategy Finder AI']},
@@ -8519,6 +8653,25 @@ function copyMorningBrief(){
       {keys:['paper trad','paper trading','practice','virtual','simulate','demo'],r:`<b>Paper Trading</b> — practice risk-free!\n\n• Deploy from screener, charts, or Options Lab\n• Track live P&L with real market prices\n• Set stop-loss and targets\n• Close and review performance\n\n<b>My recommendation:</b> Paper trade every new strategy for at least 2 weeks before using real money. It builds confidence AND exposes strategy weaknesses you didn't see in backtests.`},
 
       {keys:['forward test','forward testing','live test','real time test','validate'],r:`<b>Forward Testing</b> — the final validation step:\n\n• Runs your strategy on <b>live market data</b> going forward\n• Proves if backtest results hold in real conditions\n• Catches overfitting — strategies that worked in past but fail live\n\n<b>Workflow:</b> Backtest → Good results? → Forward Test for 2-4 weeks → Confirms? → Go live with real capital.\n\nThis discipline separates profitable traders from those who blow up accounts.`},
+
+      // ── PUBLISH TO ALPHAMARKET ──
+      {keys:['publish','publish to alphamarket','how to publish','publish call','publish stock','alphamarket publish'],
+       r:`<b>Publish to AlphaMarket</b> lets advisors push calls from any DYOR section:\n\n<b>Available in ALL sections:</b>\n• Screener, Backtest, Forward Test, MTF Combiner\n• Arbitrage, Jobbing, Scalping (F&O auto-selected)\n• Options (multi-leg with strategy details)\n• DCF Calculator, Pattern Scanner\n• Model Portfolios (publish as Basket)\n\n<b>How it works:</b>\n1. Click the 📤 button next to any stock\n2. Select your strategy on AlphaMarket\n3. Set entry range, target, SL, duration\n4. Choose rationale type (Quantamental/Fundamental/Technical)\n5. Click PUBLISH — call appears on your advisor dashboard\n\n<b>Note:</b> Only visible to approved advisors. Request access via the publish modal.`,chips:['Basket publishing','How to get approved','Advisory reports']},
+
+      {keys:['basket','basket publish','model portfolio publish','publish portfolio','smallcase','basket order'],
+       r:`<b>Basket Publishing</b> lets you publish an entire Model Portfolio as a basket to AlphaMarket:\n\n<b>How to:</b>\n1. Go to <code>MODEL PORTFOLIOS</code>\n2. Click the red <b>📤 BASKET</b> button next to any portfolio\n3. Full editable table appears with all stocks\n4. Edit weight %, entry price, target, SL, rationale for each stock\n5. Add/remove stocks, normalize weights\n6. Click PUBLISH — all stocks go to your AlphaMarket strategy\n\n<b>Each stock gets:</b> Individual call entry with basket tag, weight, and custom rationale.\n\nThis is similar to how Smallcase works — your subscribers see the full basket with allocations!`,chips:['Model Portfolios','Publish to AlphaMarket','Advisory reports']},
+
+      {keys:['dcf','dcf calculator','intrinsic value','fair value','valuation','graham number','margin of safety'],
+       r:`<b>DCF Intrinsic Value Calculator</b> uses 3 methods to find fair value:\n\n<b>Method 1 — EPS DCF:</b> Projects EPS growth for 10 years + terminal value, discounted back\n<b>Method 2 — FCF DCF:</b> Same with Free Cash Flow per share\n<b>Method 3 — Graham Number:</b> √(22.5 × EPS × Book Value)\n\n<b>Output:</b> Fair value, margin of safety %, verdict (UNDERVALUED/OVERVALUED/FAIRLY VALUED)\n\n<b>How to:</b> Go to <code>DCF CALC</code> → Type symbol (autocomplete helps!) → Click CALCULATE\n\n<b>Tip:</b> Growth rate auto-detects from earnings history. You can override discount rate (default 12%) and terminal growth (default 3%).\n\nAdvisors can publish DCF findings directly to AlphaMarket!`,chips:['Pattern Scanner','AlphaView','Fundamental analysis']},
+
+      {keys:['pattern','patterns','pattern scanner','chart patterns','technical patterns','double bottom','head shoulders'],
+       r:`<b>Pattern Scanner</b> analyzes 11 indicators + 8 chart patterns:\n\n<b>Indicators:</b> SMA 20/50/200, RSI, MACD, Bollinger Bands, Stochastic, ADX, Supertrend, Williams %R, CCI, OBV\n\n<b>Chart Patterns:</b> Double Bottom/Top, Cup & Handle, Head & Shoulders, Ascending/Descending Triangle, Falling/Rising Wedge\n\n<b>Output:</b> Composite score (-100 to +100), support/resistance levels, pattern stages with targets, and auto-generated narrative\n\n<b>How to:</b> Go to <code>PATTERNS</code> → Type symbol → Click SCAN\n\nAdvisors can publish pattern analysis directly to AlphaMarket!`,chips:['DCF Calculator','Technical analysis','Publish to AlphaMarket']},
+
+      {keys:['arbitrage','jobbing','scalping','f&o scanner','index futures','nifty futures','banknifty futures'],
+       r:`<b>F&O Trading Scanners</b> — 3 specialized tools:\n\n<b>Arbitrage Scanner:</b> Spot-futures basis spreads across 120+ F&O stocks + indices. Shows annualized return %, lot size, capital required, and cost calculator.\n\n<b>Jobbing Scanner:</b> Ultra short-term spread trading (seconds to minutes). Scans bid-ask spreads, identifies tight-spread opportunities.\n\n<b>Scalping Scanner:</b> VWAP + momentum based, 5-30 min holds. Shows direction, entry/target/stop, R:R ratio, support/resistance.\n\n<b>NEW — Index F&O:</b> All three now include NIFTY, BANKNIFTY, FINNIFTY, and MIDCPNIFTY futures alongside stock futures!\n\n<b>Requires:</b> Kite broker connection (Settings → Connect Zerodha)\n\nAdvisors can publish any opportunity directly to AlphaMarket!`,chips:['Options Lab','How to connect Kite','Publish to AlphaMarket']},
+
+      {keys:['health','health check','system status','data health','monitoring','api health','groww status'],
+       r:`<b>System Health Monitoring</b> keeps DYOR data accurate 24/7:\n\n<b>Automated checks (every hour):</b>\n• Redis cache status\n• Database connectivity\n• Groww token validity (warns if < 2 hrs remaining)\n• Live prices for 5 benchmark stocks\n• Fundamentals data quality\n• Index quotes (NIFTY, BANKNIFTY)\n\n<b>Auto-fix:</b> If prices fall back to Yahoo, cache is auto-flushed to retry Groww\n\n<b>Check status:</b> Visit <code>/api/health</code> for real-time status — shows all checks, Groww token hours remaining, and last health log.\n\n<b>Data sources:</b> Primary = Groww (live, 5-sec cache), Fallback = Yahoo Finance`,chips:['What is Groww','Platform overview','Getting started']},
 
       // ── ADVISORY ──
       {keys:['advisory','sebi','report','sebi report','compliance','generate report','pdf report','client report'],r:`<b>Advisory Reports</b> — for SEBI-registered advisors:\n\n1. Go to <code>ADVISORY</code>\n2. Add BUY/SELL recommendations with Entry, Target, SL\n3. Auto-generates rationale (editable)\n4. Download professional PDF with:\n  — Advisor details & SEBI registration\n  — Timestamped recommendations\n  — Risk disclaimers\n  — Performance tracking\n\n<b>For advisors:</b> Saves hours of report creation. Clients get clean, regulation-compliant documents.`},
@@ -8651,7 +8804,7 @@ function copyMorningBrief(){
       {keys:['daily routine advisor','advisor workflow','sebi advisor daily','ria daily','ra daily','client reporting','advisor tips'],
        r:`<b>SEBI Advisor's Daily Routine</b> \ud83d\udccb\n\n<b>Pre-Market (8:00 AM):</b>\n1. \ud83c\udf05 <b>Morning Brief</b> → Generate \u2600\ufe0f Morning Brief for clients\n2. Review overnight global cues and their India impact\n\n<b>Research (9:00 - 10:00 AM):</b>\n3. \ud83d\udd0d <b>MTF Combiner</b> — find high-conviction multi-timeframe signals\n4. \ud83c\udfaf <b>AlphaView</b> — full analysis on top picks\n5. \ud83d\udcdd <b>Advisory</b> — create BUY/SELL recommendations with entry, target, SL\n\n<b>During Market (10:00 AM - 3:00 PM):</b>\n6. \ud83d\udcca <b>Forward Test</b> — monitor strategy performance for compliance evidence\n7. \ud83d\udd14 <b>Alerts</b> — check triggered alerts and update clients\n\n<b>Post-Market (3:30 PM):</b>\n8. Generate \ud83c\udf19 <b>Market Wrap Up</b> for clients\n9. Review <b>Model Portfolios</b> — track client portfolio P&L\n10. \ud83d\udcc4 <b>Advisory Reports</b> — generate PDF reports for compliance audit\n\n<b>Key:</b> All recommendations are timestamped and stored for SEBI audit trail.`,chips:['Generate Morning Brief','Create recommendation','Advisory reports','Model Portfolios']},
 
-            {keys:['who are you','your name','about you','ariv'],r:`I'm <b>Ariv</b>, the AlphaLab AI research assistant! 🙏\n\nI help advisors and investors make smarter decisions. I can:\n• Answer stock market questions (puts, calls, strategies, sectors)\n• Guide you through options trading step-by-step\n• Analyze your screener and backtest results\n• Review your model portfolio for diversification and risk\n• Suggest strategies based on your trading style\n• Explain any concept from RSI to Iron Condors\n\nI know every feature of AlphaLab inside-out. Try asking me anything!`},
+            {keys:['who are you','your name','about you','ariv'],r:`I'm <b>Ariv</b>, the AlphaLab DYOR AI research assistant! 🙏\n\nI help advisors and investors make smarter decisions. I can:\n• Answer stock market questions (puts, calls, strategies, sectors)\n• Guide you through options trading step-by-step\n• Analyze your screener and backtest results\n• Review your model portfolio for diversification and risk\n• Suggest strategies based on your trading style\n• Explain any concept from RSI to Iron Condors\n• Help publish calls to AlphaMarket (advisors only)\n• Guide DCF valuation and Pattern analysis\n• Explain Arbitrage, Jobbing & Scalping with index F&O\n\nI know every feature of AlphaLab inside-out — including the new Publish to AlphaMarket, Basket publishing, and live Groww data feeds. Try asking me anything!`},
     ],
 
     fallback: `I'm not sure about that specific query, but I can help with a lot! Try asking:\n\n• <b>Stock queries</b> — "What put option should I buy?", "Tell me about NIFTY options"\n• <b>Strategy help</b> — "Which strategy for swing trading?", "Bearish strategies"\n• <b>Portfolio</b> — "Review my portfolio", "How to build a portfolio"\n• <b>Options</b> — "Build an Iron Condor", "What is IV?", "Covered Call"\n• <b>Concepts</b> — "Explain RSI", "Support resistance", "Position sizing"\n• <b>Market</b> — "How to hedge?", "Earnings season strategy", "Sector rotation"\n• <b>Platform</b> — "How to backtest?", "Risk Heatmap", "OI Intelligence"\n\nPick a suggestion below or rephrase your question!`
@@ -9284,7 +9437,7 @@ function arbRender(){
     html+='<td style="padding:6px 10px;text-align:right;font-weight:600;color:'+npColor+'">'+(s.net_profit?'\u20b9'+s.net_profit:'-')+'</td>';
     html+='<td style="padding:6px 10px;text-align:center;font-size:10px">'+(s.sector||'-')+'</td>';
     html+='<td style="padding:6px 10px;text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:'+sigBg+';color:'+sigColor+';font-weight:600">'+s.signal.replace('_',' ')+'</span></td>';
-    html+='<td style="padding:6px 10px;text-align:center"><button onclick="event.stopPropagation();arbFillCalc('+s.spot+','+s.futures+')" style="font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg1);color:var(--text);cursor:pointer">Calc</button> <button onclick="event.stopPropagation();ptFromRow(this)" data-sym="'+s.symbol+'" data-price="'+s.spot+'" data-qty="'+(s.lot_size||1)+'" data-side="BUY" data-src="Arbitrage Spread" style="font-size:10px;padding:2px 8px;border:1px solid var(--green);border-radius:4px;background:var(--green);color:#fff;cursor:pointer">Trade</button></td>';
+    html+='<td style="padding:6px 10px;text-align:center"><button onclick="event.stopPropagation();arbFillCalc('+s.spot+','+s.futures+')" style="font-size:10px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg1);color:var(--text);cursor:pointer">Calc</button> <button onclick="event.stopPropagation();ptFromRow(this)" data-sym="'+s.symbol+'" data-price="'+s.spot+'" data-qty="'+(s.lot_size||1)+'" data-side="BUY" data-src="Arbitrage Spread" style="font-size:10px;padding:2px 8px;border:1px solid var(--green);border-radius:4px;background:var(--green);color:#fff;cursor:pointer">Trade</button>'+_pubBtn(s.symbol,s.spot,'Arbitrage: Basis '+s.basis_pct+'% Annualized '+s.annualized+'% Signal '+s.signal,true)+'</td>';
     html+='</tr>';
   });
   tb.innerHTML=html;
@@ -9380,7 +9533,7 @@ function filterJobbing(){
     h+='<td style="padding:6px 10px;text-align:center;font-size:10px">'+(x.sector||'-')+'</td>';
     h+='<td style="padding:6px 10px;text-align:center;font-weight:700;color:'+sc+'">'+x.score+'/10</td>';
     h+='<td style="padding:6px 10px;text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:'+sigBg+';color:'+sigC+';font-weight:600">'+x.signal+'</span></td>';
-    h+='<td style="padding:6px 10px;text-align:center"><button onclick="event.stopPropagation();ptFromRow(this)" data-sym="'+x.symbol+'" data-price="'+x.spot+'" data-qty="'+(x.lot_size||1)+'" data-side="BUY" data-src="Jobbing Scanner" style="font-size:9px;padding:2px 6px;border:none;border-radius:4px;background:var(--green);color:#fff;cursor:pointer">Trade</button></td>';
+    h+='<td style="padding:6px 10px;text-align:center"><button onclick="event.stopPropagation();ptFromRow(this)" data-sym="'+x.symbol+'" data-price="'+x.spot+'" data-qty="'+(x.lot_size||1)+'" data-side="BUY" data-src="Jobbing Scanner" style="font-size:9px;padding:2px 6px;border:none;border-radius:4px;background:var(--green);color:#fff;cursor:pointer">Trade</button>'+_pubBtn(x.symbol,x.spot,'Jobbing: Score '+x.score+'/10 Spread '+x.spread_pct+'%',true)+'</td>';
     h+='</tr>';
   });
   document.getElementById('job-tbody').innerHTML=h||'<tr><td colspan="14" style="padding:30px;text-align:center;color:var(--text2)">No data</td></tr>';
@@ -9453,7 +9606,7 @@ function filterScalping(){
     h+='<td style="padding:6px 10px;text-align:right;font-size:11px;color:var(--green)">'+(x.r1||'-')+'</td>';
     h+='<td style="padding:6px 10px;text-align:center;font-weight:700;color:'+sc+'">'+x.score+'/10</td>';
     h+='<td style="padding:6px 10px;text-align:center"><span style="font-size:10px;padding:2px 6px;border-radius:8px;background:'+sigBg+';color:'+sigC+';font-weight:600">'+x.signal+'</span></td>';
-    h+='<td style="padding:6px 10px;text-align:center"><button onclick="event.stopPropagation();ptFromRow(this)" data-sym="'+x.symbol+'" data-price="'+x.entry+'" data-qty="'+(x.lot_size||1)+'" data-side="'+(x.direction==='BEARISH'?'SELL':'BUY')+'" data-src="Scalping '+x.direction+'" style="font-size:9px;padding:2px 6px;border:none;border-radius:4px;background:var(--green);color:#fff;cursor:pointer">Trade</button></td>';
+    h+='<td style="padding:6px 10px;text-align:center"><button onclick="event.stopPropagation();ptFromRow(this)" data-sym="'+x.symbol+'" data-price="'+x.entry+'" data-qty="'+(x.lot_size||1)+'" data-side="'+(x.direction==='BEARISH'?'SELL':'BUY')+'" data-src="Scalping '+x.direction+'" style="font-size:9px;padding:2px 6px;border:none;border-radius:4px;background:var(--green);color:#fff;cursor:pointer">Trade</button>'+_pubBtn(x.symbol,x.entry,'Scalping: '+x.direction+' Score '+x.score+'/10 R:R '+x.reward_risk,true)+'</td>';
     h+='</tr>';
   });
   document.getElementById('scalp-tbody').innerHTML=h||'<tr><td colspan="14" style="padding:30px;text-align:center;color:var(--text2)">No data</td></tr>';
@@ -9698,6 +9851,7 @@ async function loadPatterns(){
       h+='</div>';
     }
     if(d.narrative){h+=`<div style="padding:12px;background:var(--bg1);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text2);line-height:1.6">${d.narrative}</div>`;}
+    if(window._isAmAdvisor){h+=`<div style="margin-top:12px;text-align:center"><button onclick="openPublish('${d.symbol}',${d.price||0},'Patterns: Score ${d.score} | ${d.verdict} | ${d.bullish_signals||0} bullish ${d.bearish_signals||0} bearish')" style="padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">\u{1F4E4} PUBLISH TO ALPHAMARKET</button></div>`;}
     el.innerHTML=h;
   }catch(e){el.innerHTML=`<div style="color:#ef4444;text-align:center;padding:20px">Error: ${e.message}</div>`;}
 }
@@ -9748,6 +9902,7 @@ async function loadDcf(){
     h+=`<div style="padding:8px;text-align:center;background:var(--bg1);border:1px solid var(--border);border-radius:6px"><div style="font-size:10px;color:var(--text2)">FCF/SHARE</div><div style="font-weight:700">${d.fcf_per_share}</div></div>`;
     h+=`<div style="padding:8px;text-align:center;background:var(--bg1);border:1px solid var(--border);border-radius:6px"><div style="font-size:10px;color:var(--text2)">GROWTH</div><div style="font-weight:700">${d.assumptions?.growth_rate}%</div></div>`;
     h+='</div>';
+    if(window._isAmAdvisor){h+='<div style="margin-top:12px;text-align:center"><button onclick="openPublish(\''+d.symbol+'\','+(d.price||0)+',\'DCF: Fair Value '+d.avg_intrinsic+' | Verdict: '+d.verdict+' | MoS: '+d.margin_of_safety+'%\')" style="padding:8px 20px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer">\u{1F4E4} PUBLISH TO ALPHAMARKET</button></div>';}
     el.innerHTML=h;
   }catch(e){el.innerHTML=`<div style="color:#ef4444;text-align:center;padding:20px">Error: ${e.message}</div>`;}
 }
@@ -10655,12 +10810,23 @@ function generateRationale(type){
 function updateRationale(){
   var type=document.querySelector('input[name="pub-rat-type"]:checked').value;
   if(type==='custom') return;
-  document.getElementById('pub-rationale').value=generateRationale(type);
+  var pubSym=(document.getElementById('pub-symbol').value||'').toUpperCase();
+  var d=window._lastAV;
+  var avMatch=d && d.symbol && pubSym && d.symbol.toUpperCase()===pubSym;
+  if(avMatch){
+    document.getElementById('pub-rationale').value=generateRationale(type);
+  } else {
+    // For non-AV stocks, show the original context rationale
+    document.getElementById('pub-rationale').value=(window._pubRat||'Published from DYOR Research Platform');
+  }
 }
 
-function openPublish(symbol,price,rationale){
+function _pubBtn(sym,price,rat,isFnO){if(!window._isAmAdvisor)return '';var s=(sym||'').replace(/'/g,'');var r=(rat||'').replace(/'/g,'').replace(/"/g,'');return ' <button onclick="event.stopPropagation();openPublish(\x27'+s+'\x27,'+price+',\x27'+r+'\x27,'+(isFnO?'true':'false')+')" style="font-size:9px;padding:2px 6px;border:none;border-radius:4px;background:var(--accent);color:#fff;cursor:pointer;margin-left:2px" title="Publish to AlphaMarket">\u{1F4E4}</button>';}
+function openPublish(symbol,price,rationale,isFnO){
+  window._pubOptionsLegs=null;var _oldLegs=document.getElementById('pub-legs-info');if(_oldLegs)_oldLegs.remove();
   window._pubSymbol=symbol;window._pubPrice=price;window._pubRat=rationale;
   document.getElementById('publish-modal').style.display='block';
+  if(isFnO){try{document.getElementById('pub-type').value='fno';toggleFnoFields();}catch(e){}}
   document.getElementById('pub-result').style.display='none';
   document.getElementById('pub-form').style.display='none';
   document.getElementById('pub-not-advisor').style.display='none';
@@ -10679,6 +10845,94 @@ function openPublish(symbol,price,rationale){
     document.getElementById('pub-not-advisor').innerHTML=msg;
     document.getElementById('pub-not-advisor').style.display='block';
   }).catch(function(){document.getElementById('pub-loading').style.display='none';document.getElementById('pub-not-advisor').innerHTML='<b>Could not check permission.</b>';document.getElementById('pub-not-advisor').style.display='block';});
+}
+function publishPortfolioAsBasket(mpId,mpName){
+  document.getElementById('basket-modal').style.display='block';
+  document.getElementById('bsk-form').style.display='none';
+  document.getElementById('bsk-not-advisor').style.display='none';
+  document.getElementById('bsk-loading').style.display='block';
+  document.getElementById('bsk-loading').textContent='Loading portfolio & checking permission...';
+  document.getElementById('bsk-result').style.display='none';
+  // Check permission first
+  fetch('/dyor/api/bridge/check-permission',{credentials:'include'}).then(function(r){return r.json()}).then(function(perm){
+    if(!perm.allowed){
+      document.getElementById('bsk-loading').style.display='none';
+      document.getElementById('bsk-not-advisor').innerHTML='<b>Permission Required:</b> '+(perm.reason||'Not authorized');
+      document.getElementById('bsk-not-advisor').style.display='block';
+      return;
+    }
+    // Load portfolio
+    fetch('/dyor/api/model-portfolio/'+mpId,{credentials:'include'}).then(function(r){return r.json()}).then(function(d){
+      var holdings=d.holdings||[];
+      if(!holdings.length){document.getElementById('bsk-loading').style.display='none';document.getElementById('bsk-not-advisor').innerHTML='Portfolio has no holdings.';document.getElementById('bsk-not-advisor').style.display='block';return;}
+      window._bskHoldings=holdings.map(function(h,i){return{symbol:h.symbol,weight:h.weight_pct||0,entry:h.entry_price||h.current_price||0,target:0,sl:0,sector:h.sector||'',rationale:'Momentum score: '+(h.signal_strength||0)+' | Signal: '+(h.signal_type||'BUY')};});
+      document.getElementById('bsk-name').value=mpName;
+      document.getElementById('bsk-desc').value=(d.portfolio.description||'')+'\nSectors: '+(Object.keys(d.summary.sectors||{}).join(', ')||'Mixed')+'\nTotal Value: \u20b9'+((d.summary.total_value||0).toLocaleString('en-IN'));
+      // Load strategies
+      fetch('/dyor/api/bridge/strategies',{credentials:'include'}).then(function(r){return r.json()}).then(function(d2){
+        document.getElementById('bsk-loading').style.display='none';
+        if(d2.error){document.getElementById('bsk-not-advisor').innerHTML='<b>Error:</b> '+d2.message;document.getElementById('bsk-not-advisor').style.display='block';return;}
+        var strats=d2.strategies||[];
+        document.getElementById('bsk-strategy').innerHTML=strats.map(function(s){return '<option value="'+s.id+'">'+s.name+' ('+s.type+')</option>'}).join('');
+        bskRender();
+        document.getElementById('bsk-form').style.display='block';
+      });
+    });
+  }).catch(function(e){document.getElementById('bsk-loading').style.display='none';document.getElementById('bsk-not-advisor').innerHTML='Error: '+e.message;document.getElementById('bsk-not-advisor').style.display='block';});
+}
+function bskRender(){
+  var h=window._bskHoldings||[];
+  document.getElementById('bsk-count').textContent='('+h.length+' stocks)';
+  document.getElementById('bsk-tbody').innerHTML=h.map(function(s,i){
+    return '<tr style="border-bottom:1px solid var(--border)">'+
+      '<td style="padding:6px;color:var(--text3)">'+(i+1)+'</td>'+
+      '<td style="padding:6px;font-weight:700;color:var(--accent)">'+s.symbol+'</td>'+
+      '<td style="padding:6px"><input type="number" value="'+(s.weight||0).toFixed(1)+'" step="0.5" min="0" max="100" onchange="window._bskHoldings['+i+'].weight=parseFloat(this.value)" style="width:60px;padding:4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text1);font-size:11px;text-align:center"></td>'+
+      '<td style="padding:6px"><input type="number" value="'+(s.entry||0).toFixed(2)+'" step="0.01" onchange="window._bskHoldings['+i+'].entry=parseFloat(this.value)" style="width:80px;padding:4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text1);font-size:11px"></td>'+
+      '<td style="padding:6px"><input type="number" value="'+(s.target||0)+'" step="0.01" onchange="window._bskHoldings['+i+'].target=parseFloat(this.value)" style="width:80px;padding:4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text1);font-size:11px" placeholder="0"></td>'+
+      '<td style="padding:6px"><input type="number" value="'+(s.sl||0)+'" step="0.01" onchange="window._bskHoldings['+i+'].sl=parseFloat(this.value)" style="width:80px;padding:4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text1);font-size:11px" placeholder="0"></td>'+
+      '<td style="padding:6px;font-size:10px;color:var(--text2)">'+s.sector+'</td>'+
+      '<td style="padding:6px"><input value="'+s.rationale.replace(/"/g,'&quot;')+'" onchange="window._bskHoldings['+i+'].rationale=this.value" style="width:100%;min-width:180px;padding:4px;border:1px solid var(--border);border-radius:3px;background:var(--bg);color:var(--text1);font-size:10px" placeholder="Rationale..."></td>'+
+      '<td style="padding:6px"><button onclick="window._bskHoldings.splice('+i+',1);bskRender()" style="padding:2px 6px;background:none;border:1px solid var(--red);border-radius:3px;color:var(--red);cursor:pointer;font-size:10px">\u2715</button></td></tr>';
+  }).join('');
+}
+function bskAddStock(){
+  var sym=document.getElementById('bsk-add-sym').value.trim().toUpperCase();
+  if(!sym)return;
+  window._bskHoldings=window._bskHoldings||[];
+  if(window._bskHoldings.find(function(h){return h.symbol===sym})){toast(sym+' already in basket','er');return;}
+  window._bskHoldings.push({symbol:sym,weight:0,entry:0,target:0,sl:0,sector:'',rationale:''});
+  document.getElementById('bsk-add-sym').value='';
+  bskRender();
+}
+function bskNormalize(){
+  var h=window._bskHoldings||[];if(!h.length)return;
+  var eq=parseFloat((100/h.length).toFixed(1));
+  h.forEach(function(s){s.weight=eq;});
+  bskRender();
+}
+function submitBasket(){
+  var btn=document.getElementById('bsk-submit-btn');
+  btn.textContent='Publishing...';btn.disabled=true;
+  var holdings=window._bskHoldings||[];
+  var stratId=document.getElementById('bsk-strategy').value;
+  var mode=document.getElementById('bsk-mode').value;
+  var promises=holdings.map(function(h){
+    return fetch('/dyor/api/bridge/publish-call',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy_id:stratId,publish_mode:mode,stock_name:h.symbol,action:'BUY',buy_range_start:h.entry?h.entry*0.98:null,buy_range_end:h.entry?h.entry*1.01:null,target_price:h.target||null,stop_loss:h.sl||null,rationale:'[BASKET: '+document.getElementById('bsk-name').value+'] '+h.rationale+' | Weight: '+h.weight+'%'})}).then(function(r){return r.json()});
+  });
+  Promise.all(promises).then(function(results){
+    var ok=results.filter(function(r){return r.success||r.id}).length;
+    var fail=results.length-ok;
+    var res=document.getElementById('bsk-result');
+    res.style.display='block';
+    res.style.background=fail?'rgba(239,68,68,0.1)':'rgba(34,197,94,0.1)';
+    res.style.color=fail?'var(--red)':'var(--green)';
+    res.innerHTML='<b>'+ok+'/'+results.length+' stocks published successfully!</b>'+(fail?' ('+fail+' failed)':'');
+    btn.textContent='PUBLISH BASKET TO ALPHAMARKET';btn.disabled=false;
+  }).catch(function(e){
+    var res=document.getElementById('bsk-result');res.style.display='block';res.style.background='rgba(239,68,68,0.1)';res.style.color='var(--red)';res.textContent='Error: '+e.message;
+    btn.textContent='PUBLISH BASKET TO ALPHAMARKET';btn.disabled=false;
+  });
 }
 function requestPublishAccess(){
   var btn=document.getElementById('req-access-btn');btn.textContent='Requesting...';btn.disabled=true;
@@ -10703,16 +10957,46 @@ function _loadPublishForm(symbol,price,rationale){
   document.getElementById('pub-loading').style.display='block';
   document.getElementById('pub-tsl-enabled').checked=false;
   document.getElementById('pub-tsl-fields').style.display='none';
-  // Auto-populate theme from AV data
+  // Auto-populate theme and rationale — only use AlphaView data if symbol matches
   var d=window._lastAV;
-  if(d){
+  var avMatch=d && d.symbol && symbol && d.symbol.toUpperCase()===symbol.toUpperCase();
+  if(avMatch){
     document.getElementById('pub-theme').value=(d.sector||'')+(d.industry?' / '+d.industry:'');
-    // Auto-generate rationale
     var type=document.querySelector('input[name="pub-rat-type"]:checked').value;
     if(type!=='custom') document.getElementById('pub-rationale').value=generateRationale(type);
     else document.getElementById('pub-rationale').value=rationale||'';
   } else {
-    document.getElementById('pub-rationale').value=rationale||'Published from DYOR';
+    // For non-AlphaView sections, use the passed rationale and fetch stock info
+    document.getElementById('pub-rationale').value=rationale||'Published from DYOR Research Platform';
+    document.getElementById('pub-theme').value='';
+    // Try to fetch basic info for the symbol
+    if(symbol && symbol.indexOf('BASKET')<0){
+      fetch('/dyor/api/stock/fundamentals/'+encodeURIComponent(symbol),{credentials:'include'}).then(function(r){return r.json()}).then(function(info){
+        if(info && !info.error){
+          if(!document.getElementById('pub-theme').value) document.getElementById('pub-theme').value=(info.sector||'')+(info.industry?' / '+info.industry:'');
+          // If rationale is short/generic, enhance with fetched data
+          var rat=document.getElementById('pub-rationale').value;
+          if(rat && rat.length<100){
+            var extra='\n--- '+symbol+' ---';
+            if(info.pe_trailing) extra+='\nP/E: '+info.pe_trailing;
+            if(info.roe) extra+='\nROE: '+info.roe+'%';
+            if(info.market_cap) extra+='\nMkt Cap: '+Number(info.market_cap).toLocaleString('en-IN');
+            if(info.dividend_yield) extra+='\nDiv Yield: '+info.dividend_yield+'%';
+            document.getElementById('pub-rationale').value=rat+extra;
+          }
+        }
+      }).catch(function(){});
+    }
+  }
+  // Options multi-leg data
+  if(window._pubOptionsLegs && window._pubOptionsLegs.length>0){
+    var legsHtml='<div id="pub-legs-info" style="margin-top:10px;padding:10px;background:var(--bg1);border:1px solid var(--border);border-radius:6px"><div style="font-size:10px;font-weight:700;color:var(--accent);margin-bottom:6px">OPTIONS STRATEGY LEGS</div><table style="width:100%;font-size:11px;border-collapse:collapse">';
+    legsHtml+='<tr style="border-bottom:1px solid var(--border)"><th style="text-align:left;padding:4px">Type</th><th>Side</th><th>Strike</th><th>Premium</th><th>Qty</th></tr>';
+    window._pubOptionsLegs.forEach(function(leg){
+      legsHtml+='<tr style="border-bottom:1px solid var(--border)"><td style="padding:4px;color:'+(leg.type==='Call'?'var(--green)':'var(--red)')+'">'+leg.type+'</td><td style="color:'+(leg.side==='Buy'?'var(--green)':'var(--red)')+'">'+leg.side+'</td><td>'+leg.strike+'</td><td>'+leg.premium+'</td><td>'+leg.qty+'</td></tr>';
+    });
+    legsHtml+='</table></div>';
+    setTimeout(function(){var pf=document.getElementById('pub-form');if(pf){var el=document.getElementById('pub-legs-info');if(el)el.remove();pf.insertAdjacentHTML('afterbegin',legsHtml);}},600);
   }
   fetch('/dyor/api/bridge/strategies',{credentials:'include'}).then(function(r){return r.json()}).then(function(d2){
     document.getElementById('pub-loading').style.display='none';
@@ -10766,6 +11050,656 @@ function submitPublish(){
     res.style.display='block';
   }).catch(function(){btn.textContent='PUBLISH TO ALPHAMARKET';btn.disabled=false;});
 }
+</script>
+
+
+<!-- BASKET PUBLISH MODAL -->
+<div id="basket-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:99998;overflow-y:auto;padding:20px">
+<div style="max-width:900px;margin:20px auto;background:var(--card);border-radius:12px;padding:24px;border:1px solid var(--border)">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+<div style="font-size:18px;font-weight:800;color:var(--accent)">Publish Basket to AlphaMarket</div>
+<span onclick="document.getElementById('basket-modal').style.display='none'" style="cursor:pointer;font-size:20px;color:var(--text2)">&times;</span>
+</div>
+<div id="bsk-loading" style="display:none;padding:20px;text-align:center;color:var(--text3)">Loading...</div>
+<div id="bsk-not-advisor" style="display:none;padding:20px;text-align:center;color:var(--red)"></div>
+<div id="bsk-form" style="display:none">
+<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+<div style="flex:2"><label style="font-size:10px;color:var(--text2)">Basket Name</label>
+<input id="bsk-name" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:14px;font-weight:700"></div>
+<div><label style="font-size:10px;color:var(--text2)">Strategy</label>
+<select id="bsk-strategy" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px"></select></div>
+<div><label style="font-size:10px;color:var(--text2)">Duration</label>
+<select id="bsk-duration" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px">
+<option value="1 Month">1 Month</option><option value="3 Months">3 Months</option><option value="6 Months" selected>6 Months</option><option value="1 Year">1 Year</option></select></div>
+</div>
+<div style="margin-bottom:12px"><label style="font-size:10px;color:var(--text2)">Basket Description / Theme</label>
+<textarea id="bsk-desc" rows="2" style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:12px;resize:vertical" placeholder="e.g. Momentum stocks across sectors..."></textarea></div>
+<div style="font-size:11px;font-weight:700;color:var(--accent);margin-bottom:8px;letter-spacing:0.5px">STOCKS IN BASKET <span id="bsk-count" style="color:var(--text3);font-weight:400"></span></div>
+<div style="overflow-x:auto;margin-bottom:12px">
+<table style="width:100%;border-collapse:collapse;font-size:12px" id="bsk-table">
+<thead><tr style="border-bottom:2px solid var(--border);text-align:left">
+<th style="padding:6px">#</th><th style="padding:6px">SYMBOL</th><th style="padding:6px">WEIGHT %</th>
+<th style="padding:6px">ENTRY ₹</th><th style="padding:6px">TARGET ₹</th><th style="padding:6px">SL ₹</th>
+<th style="padding:6px">SECTOR</th><th style="padding:6px;min-width:200px">RATIONALE</th><th style="padding:6px"></th>
+</tr></thead>
+<tbody id="bsk-tbody"></tbody>
+</table>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:16px">
+<input id="bsk-add-sym" placeholder="Add symbol..." style="padding:6px 10px;border:1px solid var(--border);border-radius:4px;background:var(--bg1);color:var(--text1);font-size:12px;width:140px;text-transform:uppercase">
+<button onclick="bskAddStock()" style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:700;cursor:pointer">+ ADD STOCK</button>
+<button onclick="bskNormalize()" style="padding:6px 14px;background:var(--bg1);color:var(--text1);border:1px solid var(--border);border-radius:4px;font-size:11px;cursor:pointer">NORMALIZE WEIGHTS</button>
+</div>
+<div style="display:flex;gap:8px;margin-bottom:10px">
+<select id="bsk-mode" style="padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);color:var(--text1);font-size:13px">
+<option value="live">Live (notify subscribers)</option><option value="paper">Paper (silent)</option></select>
+</div>
+<div id="bsk-result" style="display:none;padding:10px;border-radius:6px;margin-bottom:10px;font-size:12px"></div>
+<button id="bsk-submit-btn" onclick="submitBasket()" style="width:100%;padding:14px;background:linear-gradient(135deg,#e84215,#ff6b3d);color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;letter-spacing:1px">PUBLISH BASKET TO ALPHAMARKET</button>
+</div>
+</div>
+</div>
+
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN BUILDER — DYOR Frontend JS
+// ═══════════════════════════════════════════════════════════════════════════
+(function(){
+  let SB_PARAMS = {};
+  let sbFilters = [];
+  const DYOR_API = '/dyor/api';
+
+  const SB_PRESETS = {
+    stocks: [
+      {label:"Oversold Bounce", filters:[{pid:"rsi",cat:"technical",op:"lte",vals:[35]}]},
+      {label:"Momentum", filters:[{pid:"rsi",cat:"technical",op:"between",vals:[55,70]},{pid:"rs_3m",cat:"technical",op:"gte",vals:[10]}]},
+      {label:"Near 52W Low", filters:[{pid:"w52_low_pct",cat:"technical",op:"between",vals:[0,10]}]},
+      {label:"High Volume", filters:[{pid:"vol_ratio",cat:"technical",op:"gte",vals:[2]}]},
+      {label:"Low PE Value", filters:[{pid:"pe_ratio",cat:"fundamental",op:"between",vals:[5,20]},{pid:"roe",cat:"fundamental",op:"gte",vals:[15]}]},
+      {label:"MACD Bullish", filters:[{pid:"macd_hist",cat:"technical",op:"gte",vals:[0]}]},
+    ],
+    futures: [
+      {label:"High Basis (Bullish)", filters:[{pid:"basis_ann",cat:"contract",op:"gte",vals:[8]}]},
+      {label:"Low Basis (Bearish)", filters:[{pid:"basis_ann",cat:"contract",op:"lte",vals:[2]}]},
+      {label:"Near Expiry", filters:[{pid:"expiry_days",cat:"contract",op:"lte",vals:[5]}]},
+    ],
+    options: [
+      {label:"High IV", filters:[{pid:"iv",cat:"volatility",op:"gte",vals:[30]}]},
+      {label:"Low PCR (Bearish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"lte",vals:[0.7]}]},
+      {label:"High PCR (Bullish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"gte",vals:[1.3]}]},
+    ],
+  };
+
+  async function sbFetchParams(assetType) {
+    try {
+      const r = await fetch(`${DYOR_API}/screener/params?asset_type=${assetType}`);
+      const d = await r.json();
+      SB_PARAMS = d.categories || {};
+    } catch(e) { SB_PARAMS = {}; }
+  }
+
+  window.sbChangeAsset = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbFilters = [];
+    sbRenderFilterList();
+    sbRenderCats();
+    sbRenderPresets();
+  };
+
+  function sbRenderCats() {
+    const catEl = document.getElementById('sb-cat');
+    catEl.innerHTML = '';
+    Object.keys(SB_PARAMS).forEach(cat => {
+      const o = document.createElement('option');
+      o.value = cat;
+      o.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+      catEl.appendChild(o);
+    });
+    window.sbUpdateParams();
+  }
+
+  window.sbUpdateParams = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const paramEl = document.getElementById('sb-param');
+    paramEl.innerHTML = '';
+    (SB_PARAMS[cat] || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.label + (p.unit ? ` (${p.unit})` : '');
+      paramEl.appendChild(o);
+    });
+    window.sbUpdateOp();
+  };
+
+  window.sbUpdateOp = function() {
+    window.sbShowVals();
+  };
+
+  window.sbShowVals = function() {
+    const op = document.getElementById('sb-op').value;
+    const v2 = document.getElementById('sb-val2');
+    v2.style.display = op === 'between' ? '' : 'none';
+    document.getElementById('sb-val1').placeholder = op === 'between' ? 'Min' : 'Value';
+  };
+
+  window.sbAddFilter = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const pid = document.getElementById('sb-param').value;
+    const op = document.getElementById('sb-op').value;
+    const v1 = document.getElementById('sb-val1').value;
+    const v2 = document.getElementById('sb-val2').value;
+    if (!v1 && v1 !== '0') { alert('Enter a value'); return; }
+    const vals = op === 'between' ? [parseFloat(v1), parseFloat(v2 || v1)] : [parseFloat(v1)];
+    const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === pid);
+    sbFilters.push({ pid, cat, op, vals, _label: paramDef ? paramDef.label : pid });
+    document.getElementById('sb-val1').value = '';
+    document.getElementById('sb-val2').value = '';
+    sbRenderFilterList();
+  };
+
+  function sbRenderFilterList() {
+    const el = document.getElementById('sb-filters-list');
+    document.getElementById('sb-filter-count').textContent = `(${sbFilters.length})`;
+    if (!sbFilters.length) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">No filters added yet</div>';
+      return;
+    }
+    el.innerHTML = sbFilters.map((f, i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+        <span style="color:#06b6d4;font-weight:600">${f._label}</span>
+        <span style="color:var(--text2);margin:0 6px">${f.op}</span>
+        <span style="color:var(--text)">${f.vals.join(' – ')}</span>
+        <button onclick="window.sbRemoveFilter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0 0 0 8px">✕</button>
+      </div>
+    `).join('');
+  }
+
+  window.sbRemoveFilter = function(i) {
+    sbFilters.splice(i, 1);
+    sbRenderFilterList();
+  };
+
+  window.sbClearFilters = function() {
+    sbFilters = [];
+    sbRenderFilterList();
+    document.getElementById('sb-results').innerHTML = '';
+    document.getElementById('sb-status').textContent = '';
+  };
+
+  function sbRenderPresets() {
+    const at = document.getElementById('sb-asset').value;
+    const presets = SB_PRESETS[at] || [];
+    const el = document.getElementById('sb-presets');
+    el.innerHTML = presets.map((p, i) => `
+      <button class="btn" onclick="window.sbApplyPreset(${i})"
+        style="font-size:11px;padding:4px 10px;background:var(--card);border:1px solid var(--border)">
+        ${p.label}
+      </button>
+    `).join('');
+  }
+
+  window.sbApplyPreset = function(i) {
+    const at = document.getElementById('sb-asset').value;
+    const preset = SB_PRESETS[at][i];
+    if (!preset) return;
+    sbFilters = preset.filters.map(f => {
+      const cat = f.cat;
+      const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+  };
+
+  window.sbScan = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter'); return; }
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    const statusEl = document.getElementById('sb-status');
+    const resultsEl = document.getElementById('sb-results');
+    statusEl.textContent = '⏳ Scanning...';
+    resultsEl.innerHTML = '';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/scan`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc' })
+      });
+      const d = await r.json();
+      if (d.error) { statusEl.textContent = '❌ ' + d.error; return; }
+      statusEl.textContent = `✅ ${d.count} results from ${d.scanned} scanned — ${d.scan_time_ms}ms`;
+      sbRenderResults(d.results, asset_type);
+    } catch(e) {
+      statusEl.textContent = '❌ Scan failed: ' + e.message;
+    }
+  };
+
+  function sbRenderResults(results, asset_type) {
+    const el = document.getElementById('sb-results');
+    if (!results.length) { el.innerHTML = '<div style="color:var(--text2);text-align:center;padding:30px">No stocks match your filters</div>'; return; }
+    let cols, rows;
+    if (asset_type === 'stocks') {
+      cols = ['Symbol','Price','Chg%','RSI','MACD','Vol Ratio','PE','ROE','Sector'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600;cursor:pointer" onclick="alphaView('${r.symbol}')">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        `<span style="color:${(r.change||0)>=0?'#22c55e':'#ef4444'}">${(r.change||0).toFixed(2)}%</span>`,
+        r.rsi?.toFixed(1) ?? '-',
+        r.macd_hist?.toFixed(2) ?? '-',
+        r.vol_ratio?.toFixed(2) ?? '-',
+        r.pe_ratio ? r.pe_ratio.toFixed(1) : '-',
+        r.roe ? r.roe.toFixed(1)+'%' : '-',
+        r.sector ?? '-',
+      ]);
+    } else if (asset_type === 'futures') {
+      cols = ['Symbol','Fut Price','Spot','Basis Ann%','OI','OI Chg','Lot Size','Expiry Days'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        r.spot?.toFixed(2) ?? '-',
+        r.basis_annualized?.toFixed(2)+'%' ?? '-',
+        r.oi ?? '-',
+        r.oi_change ?? '-',
+        r.lot_size ?? '-',
+        r.expiry_days ?? '-',
+      ]);
+    } else {
+      cols = ['Symbol','Spot','ATM IV','HV 20D','IV-HV','PCR','Max Pain Dist%','Delta','Theta'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.spot?.toFixed(2) ?? '-',
+        r.atm_iv?.toFixed(1)+'%' ?? '-',
+        r.hv_20?.toFixed(1)+'%' ?? '-',
+        r.iv_hv_spread?.toFixed(1)+'%' ?? '-',
+        r.pcr_oi?.toFixed(2) ?? '-',
+        r.max_pain_dist?.toFixed(2)+'%' ?? '-',
+        r.delta?.toFixed(3) ?? '-',
+        r.theta?.toFixed(2) ?? '-',
+      ]);
+    }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>${cols.map(c=>`<th style="text-align:left;padding:8px 10px;background:var(--card);border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row,i)=>`<tr style="background:${i%2?'var(--card)':'var(--bg)'}">${row.map(cell=>`<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap">${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    `;
+  }
+
+  window.sbSaveScreen = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter first'); return; }
+    const name = prompt('Screen name:');
+    if (!name) return;
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    try {
+      const r = await fetch(`${DYOR_API}/screener/save`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, asset_type, filters: sbFilters, logic, sort_by: 'alpha_rating' })
+      });
+      const d = await r.json();
+      if (d.error) { alert('Save failed: ' + d.error); return; }
+      alert(`Saved: "${name}"`);
+    } catch(e) { alert('Save failed'); }
+  };
+
+  window.sbLoadScreens = async function() {
+    const modal = document.getElementById('sb-saved-modal');
+    const listEl = document.getElementById('sb-saved-list');
+    modal.style.display = 'flex';
+    listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">Loading...</div>';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/saved`);
+      const d = await r.json();
+      const screens = d.screens || [];
+      if (!screens.length) { listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">No saved screens</div>'; return; }
+      listEl.innerHTML = screens.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg)">
+          <div>
+            <div style="font-weight:600;font-size:13px">${s.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${s.asset_type} • ${(s.filters||[]).length} filters • ${s.logic}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-p" onclick="window.sbApplySaved(${s.id})" style="font-size:11px;padding:4px 10px">LOAD</button>
+            <button class="btn" onclick="window.sbDeleteScreen(${s.id})" style="font-size:11px;padding:4px 10px;border:1px solid #ef4444;color:#ef4444;background:none">DEL</button>
+          </div>
+        </div>
+      `).join('');
+      window._sbSavedScreens = screens;
+    } catch(e) { listEl.innerHTML = '<div style="color:#ef4444;padding:20px">Failed to load</div>'; }
+  };
+
+  window.sbApplySaved = function(id) {
+    const s = (window._sbSavedScreens||[]).find(x=>x.id===id);
+    if (!s) return;
+    document.getElementById('sb-asset').value = s.asset_type;
+    document.getElementById('sb-logic').value = s.logic;
+    sbFilters = (s.filters||[]).map(f => {
+      const paramDef = (SB_PARAMS[f.cat]||[]).find(p=>p.id===f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+    document.getElementById('sb-saved-modal').style.display = 'none';
+  };
+
+  window.sbDeleteScreen = async function(id) {
+    if (!confirm('Delete this screen?')) return;
+    try {
+      await fetch(`${DYOR_API}/screener/saved/${id}`, {method:'DELETE'});
+      window.sbLoadScreens();
+    } catch(e) { alert('Delete failed'); }
+  };
+
+  window.renderSB = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbRenderCats();
+    sbRenderPresets();
+    window.sbShowVals();
+  };
+})();
+</script>
+
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+// SCREEN BUILDER — DYOR Frontend JS
+// ═══════════════════════════════════════════════════════════════════════════
+(function(){
+  let SB_PARAMS = {};
+  let sbFilters = [];
+  const DYOR_API = '/dyor/api';
+
+  const SB_PRESETS = {
+    stocks: [
+      {label:"Oversold Bounce", filters:[{pid:"rsi",cat:"technical",op:"lte",vals:[35]}]},
+      {label:"Momentum", filters:[{pid:"rsi",cat:"technical",op:"between",vals:[55,70]},{pid:"rs_3m",cat:"technical",op:"gte",vals:[10]}]},
+      {label:"Near 52W Low", filters:[{pid:"w52_low_pct",cat:"technical",op:"between",vals:[0,10]}]},
+      {label:"High Volume", filters:[{pid:"vol_ratio",cat:"technical",op:"gte",vals:[2]}]},
+      {label:"Low PE Value", filters:[{pid:"pe_ratio",cat:"fundamental",op:"between",vals:[5,20]},{pid:"roe",cat:"fundamental",op:"gte",vals:[15]}]},
+      {label:"MACD Bullish", filters:[{pid:"macd_hist",cat:"technical",op:"gte",vals:[0]}]},
+    ],
+    futures: [
+      {label:"High Basis (Bullish)", filters:[{pid:"basis_ann",cat:"contract",op:"gte",vals:[8]}]},
+      {label:"Low Basis (Bearish)", filters:[{pid:"basis_ann",cat:"contract",op:"lte",vals:[2]}]},
+      {label:"Near Expiry", filters:[{pid:"expiry_days",cat:"contract",op:"lte",vals:[5]}]},
+    ],
+    options: [
+      {label:"High IV", filters:[{pid:"iv",cat:"volatility",op:"gte",vals:[30]}]},
+      {label:"Low PCR (Bearish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"lte",vals:[0.7]}]},
+      {label:"High PCR (Bullish)", filters:[{pid:"pcr_oi",cat:"sentiment",op:"gte",vals:[1.3]}]},
+    ],
+  };
+
+  async function sbFetchParams(assetType) {
+    try {
+      const r = await fetch(`${DYOR_API}/screener/params?asset_type=${assetType}`);
+      const d = await r.json();
+      SB_PARAMS = d.categories || {};
+    } catch(e) { SB_PARAMS = {}; }
+  }
+
+  window.sbChangeAsset = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbFilters = [];
+    sbRenderFilterList();
+    sbRenderCats();
+    sbRenderPresets();
+  };
+
+  function sbRenderCats() {
+    const catEl = document.getElementById('sb-cat');
+    catEl.innerHTML = '';
+    Object.keys(SB_PARAMS).forEach(cat => {
+      const o = document.createElement('option');
+      o.value = cat;
+      o.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+      catEl.appendChild(o);
+    });
+    window.sbUpdateParams();
+  }
+
+  window.sbUpdateParams = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const paramEl = document.getElementById('sb-param');
+    paramEl.innerHTML = '';
+    (SB_PARAMS[cat] || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.id;
+      o.textContent = p.label + (p.unit ? ` (${p.unit})` : '');
+      paramEl.appendChild(o);
+    });
+    window.sbUpdateOp();
+  };
+
+  window.sbUpdateOp = function() {
+    window.sbShowVals();
+  };
+
+  window.sbShowVals = function() {
+    const op = document.getElementById('sb-op').value;
+    const v2 = document.getElementById('sb-val2');
+    v2.style.display = op === 'between' ? '' : 'none';
+    document.getElementById('sb-val1').placeholder = op === 'between' ? 'Min' : 'Value';
+  };
+
+  window.sbAddFilter = function() {
+    const cat = document.getElementById('sb-cat').value;
+    const pid = document.getElementById('sb-param').value;
+    const op = document.getElementById('sb-op').value;
+    const v1 = document.getElementById('sb-val1').value;
+    const v2 = document.getElementById('sb-val2').value;
+    if (!v1 && v1 !== '0') { alert('Enter a value'); return; }
+    const vals = op === 'between' ? [parseFloat(v1), parseFloat(v2 || v1)] : [parseFloat(v1)];
+    const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === pid);
+    sbFilters.push({ pid, cat, op, vals, _label: paramDef ? paramDef.label : pid });
+    document.getElementById('sb-val1').value = '';
+    document.getElementById('sb-val2').value = '';
+    sbRenderFilterList();
+  };
+
+  function sbRenderFilterList() {
+    const el = document.getElementById('sb-filters-list');
+    document.getElementById('sb-filter-count').textContent = `(${sbFilters.length})`;
+    if (!sbFilters.length) {
+      el.innerHTML = '<div style="color:var(--text2);font-size:12px;text-align:center;padding:20px">No filters added yet</div>';
+      return;
+    }
+    el.innerHTML = sbFilters.map((f, i) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:6px 10px;font-size:12px">
+        <span style="color:#06b6d4;font-weight:600">${f._label}</span>
+        <span style="color:var(--text2);margin:0 6px">${f.op}</span>
+        <span style="color:var(--text)">${f.vals.join(' – ')}</span>
+        <button onclick="window.sbRemoveFilter(${i})" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:14px;padding:0 0 0 8px">✕</button>
+      </div>
+    `).join('');
+  }
+
+  window.sbRemoveFilter = function(i) {
+    sbFilters.splice(i, 1);
+    sbRenderFilterList();
+  };
+
+  window.sbClearFilters = function() {
+    sbFilters = [];
+    sbRenderFilterList();
+    document.getElementById('sb-results').innerHTML = '';
+    document.getElementById('sb-status').textContent = '';
+  };
+
+  function sbRenderPresets() {
+    const at = document.getElementById('sb-asset').value;
+    const presets = SB_PRESETS[at] || [];
+    const el = document.getElementById('sb-presets');
+    el.innerHTML = presets.map((p, i) => `
+      <button class="btn" onclick="window.sbApplyPreset(${i})"
+        style="font-size:11px;padding:4px 10px;background:var(--card);border:1px solid var(--border)">
+        ${p.label}
+      </button>
+    `).join('');
+  }
+
+  window.sbApplyPreset = function(i) {
+    const at = document.getElementById('sb-asset').value;
+    const preset = SB_PRESETS[at][i];
+    if (!preset) return;
+    sbFilters = preset.filters.map(f => {
+      const cat = f.cat;
+      const paramDef = (SB_PARAMS[cat] || []).find(p => p.id === f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+  };
+
+  window.sbScan = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter'); return; }
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    const statusEl = document.getElementById('sb-status');
+    const resultsEl = document.getElementById('sb-results');
+    statusEl.textContent = '⏳ Scanning...';
+    resultsEl.innerHTML = '';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/scan`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc' })
+      });
+      const d = await r.json();
+      if (d.error) { statusEl.textContent = '❌ ' + d.error; return; }
+      statusEl.textContent = `✅ ${d.count} results from ${d.scanned} scanned — ${d.scan_time_ms}ms`;
+      sbRenderResults(d.results, asset_type);
+    } catch(e) {
+      statusEl.textContent = '❌ Scan failed: ' + e.message;
+    }
+  };
+
+  function sbRenderResults(results, asset_type) {
+    const el = document.getElementById('sb-results');
+    if (!results.length) { el.innerHTML = '<div style="color:var(--text2);text-align:center;padding:30px">No stocks match your filters</div>'; return; }
+    let cols, rows;
+    if (asset_type === 'stocks') {
+      cols = ['Symbol','Price','Chg%','RSI','MACD','Vol Ratio','PE','ROE','Sector'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600;cursor:pointer" onclick="alphaView('${r.symbol}')">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        `<span style="color:${(r.change||0)>=0?'#22c55e':'#ef4444'}">${(r.change||0).toFixed(2)}%</span>`,
+        r.rsi?.toFixed(1) ?? '-',
+        r.macd_hist?.toFixed(2) ?? '-',
+        r.vol_ratio?.toFixed(2) ?? '-',
+        r.pe_ratio ? r.pe_ratio.toFixed(1) : '-',
+        r.roe ? r.roe.toFixed(1)+'%' : '-',
+        r.sector ?? '-',
+      ]);
+    } else if (asset_type === 'futures') {
+      cols = ['Symbol','Fut Price','Spot','Basis Ann%','OI','OI Chg','Lot Size','Expiry Days'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.price?.toFixed(2) ?? '-',
+        r.spot?.toFixed(2) ?? '-',
+        r.basis_annualized?.toFixed(2)+'%' ?? '-',
+        r.oi ?? '-',
+        r.oi_change ?? '-',
+        r.lot_size ?? '-',
+        r.expiry_days ?? '-',
+      ]);
+    } else {
+      cols = ['Symbol','Spot','ATM IV','HV 20D','IV-HV','PCR','Max Pain Dist%','Delta','Theta'];
+      rows = results.map(r => [
+        `<span style="color:#06b6d4;font-weight:600">${r.symbol}</span>`,
+        r.spot?.toFixed(2) ?? '-',
+        r.atm_iv?.toFixed(1)+'%' ?? '-',
+        r.hv_20?.toFixed(1)+'%' ?? '-',
+        r.iv_hv_spread?.toFixed(1)+'%' ?? '-',
+        r.pcr_oi?.toFixed(2) ?? '-',
+        r.max_pain_dist?.toFixed(2)+'%' ?? '-',
+        r.delta?.toFixed(3) ?? '-',
+        r.theta?.toFixed(2) ?? '-',
+      ]);
+    }
+    el.innerHTML = `
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr>${cols.map(c=>`<th style="text-align:left;padding:8px 10px;background:var(--card);border-bottom:1px solid var(--border);color:var(--text2);font-weight:600;white-space:nowrap">${c}</th>`).join('')}</tr></thead>
+        <tbody>${rows.map((row,i)=>`<tr style="background:${i%2?'var(--card)':'var(--bg)'}">${row.map(cell=>`<td style="padding:7px 10px;border-bottom:1px solid var(--border);white-space:nowrap">${cell}</td>`).join('')}</tr>`).join('')}</tbody>
+      </table>
+    `;
+  }
+
+  window.sbSaveScreen = async function() {
+    if (!sbFilters.length) { alert('Add at least one filter first'); return; }
+    const name = prompt('Screen name:');
+    if (!name) return;
+    const asset_type = document.getElementById('sb-asset').value;
+    const logic = document.getElementById('sb-logic').value;
+    try {
+      const r = await fetch(`${DYOR_API}/screener/save`, {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ name, asset_type, filters: sbFilters, logic, sort_by: 'alpha_rating' })
+      });
+      const d = await r.json();
+      if (d.error) { alert('Save failed: ' + d.error); return; }
+      alert(`Saved: "${name}"`);
+    } catch(e) { alert('Save failed'); }
+  };
+
+  window.sbLoadScreens = async function() {
+    const modal = document.getElementById('sb-saved-modal');
+    const listEl = document.getElementById('sb-saved-list');
+    modal.style.display = 'flex';
+    listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">Loading...</div>';
+    try {
+      const r = await fetch(`${DYOR_API}/screener/saved`);
+      const d = await r.json();
+      const screens = d.screens || [];
+      if (!screens.length) { listEl.innerHTML = '<div style="color:var(--text2);text-align:center;padding:20px">No saved screens</div>'; return; }
+      listEl.innerHTML = screens.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:10px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px;background:var(--bg)">
+          <div>
+            <div style="font-weight:600;font-size:13px">${s.name}</div>
+            <div style="font-size:11px;color:var(--text2)">${s.asset_type} • ${(s.filters||[]).length} filters • ${s.logic}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-p" onclick="window.sbApplySaved(${s.id})" style="font-size:11px;padding:4px 10px">LOAD</button>
+            <button class="btn" onclick="window.sbDeleteScreen(${s.id})" style="font-size:11px;padding:4px 10px;border:1px solid #ef4444;color:#ef4444;background:none">DEL</button>
+          </div>
+        </div>
+      `).join('');
+      window._sbSavedScreens = screens;
+    } catch(e) { listEl.innerHTML = '<div style="color:#ef4444;padding:20px">Failed to load</div>'; }
+  };
+
+  window.sbApplySaved = function(id) {
+    const s = (window._sbSavedScreens||[]).find(x=>x.id===id);
+    if (!s) return;
+    document.getElementById('sb-asset').value = s.asset_type;
+    document.getElementById('sb-logic').value = s.logic;
+    sbFilters = (s.filters||[]).map(f => {
+      const paramDef = (SB_PARAMS[f.cat]||[]).find(p=>p.id===f.pid);
+      return { ...f, _label: paramDef ? paramDef.label : f.pid };
+    });
+    sbRenderFilterList();
+    document.getElementById('sb-saved-modal').style.display = 'none';
+  };
+
+  window.sbDeleteScreen = async function(id) {
+    if (!confirm('Delete this screen?')) return;
+    try {
+      await fetch(`${DYOR_API}/screener/saved/${id}`, {method:'DELETE'});
+      window.sbLoadScreens();
+    } catch(e) { alert('Delete failed'); }
+  };
+
+  window.renderSB = async function() {
+    const at = document.getElementById('sb-asset').value;
+    await sbFetchParams(at);
+    sbRenderCats();
+    sbRenderPresets();
+    window.sbShowVals();
+  };
+})();
 </script>
 
 </body></html>
