@@ -3082,6 +3082,46 @@ tr:last-child td{border-bottom:none}
           </div>
         </div>
 
+        <!-- ── SCREEN BUILDER ── -->
+        <div class="card" id="guide-screenbuilder" style="margin-bottom:20px">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid #06b6d4">
+            <span style="font-size:28px">🔬</span>
+            <div><div style="font-size:18px;font-weight:800;color:#06b6d4">SCREEN BUILDER</div>
+            <div style="font-size:12px;color:var(--text3)">Custom scanner — 40+ filters across stocks, futures & options</div></div>
+          </div>
+          <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:14px">
+            Screen Builder lets you build fully custom scans using any combination of 40+ technical, fundamental, ownership, and alpha parameters. Unlike the preset Screener, you define every filter yourself — and it works across stocks, futures, and options universes.
+          </div>
+          <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use</div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
+            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+              <b>Step 1:</b> Click <b>SCREEN BUILDER</b> in the sidebar (highlighted in cyan).<br>
+              <b>Step 2:</b> Choose asset type — <b>Stocks</b> (923 NSE stocks), <b>Futures</b> (32 F&amp;O stocks + indices), or <b>Options</b> (31 F&amp;O stocks + indices).<br>
+              <b>Step 3:</b> In the left panel, pick a category (Technical / Fundamental / Alpha), select a parameter, set an operator (between, ≥, ≤, etc.) and enter values.<br>
+              <b>Step 4:</b> Click <b>+ ADD FILTER</b>. Repeat for multiple filters. Choose AND (all must match) or OR (any can match).<br>
+              <b>Step 5:</b> Click <b>▶ RUN SCAN</b>. First scan downloads live data (~2-3 min). Subsequent scans use Redis cache (~23ms).
+            </div>
+          </div>
+          <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">⚡ Quick Presets</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+            <span style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(6,182,212,0.1);border:1px solid #06b6d4;color:#06b6d4">Oversold Bounce (RSI ≤ 35)</span>
+            <span style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(6,182,212,0.1);border:1px solid #06b6d4;color:#06b6d4">Momentum (RSI 55-70 + RS 3M &gt; 10%)</span>
+            <span style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(6,182,212,0.1);border:1px solid #06b6d4;color:#06b6d4">Near 52W Low (within 10%)</span>
+            <span style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(6,182,212,0.1);border:1px solid #06b6d4;color:#06b6d4">High Volume (ratio &gt; 2x)</span>
+            <span style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(6,182,212,0.1);border:1px solid #06b6d4;color:#06b6d4">Low PE Value (PE 5-20 + ROE &gt; 15%)</span>
+            <span style="font-size:11px;padding:4px 10px;border-radius:4px;background:rgba(6,182,212,0.1);border:1px solid #06b6d4;color:#06b6d4">MACD Bullish</span>
+          </div>
+          <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">💡 Pro Tips</div>
+          <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
+            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+              • <b>Save your screens</b> — click 💾 SAVE to name and store your filter set. Load anytime from 📂 SAVED.<br>
+              • <b>Cache is warm after first scan</b> — share the tab with colleagues and their scans will be instant.<br>
+              • <b>Combine filters</b> — RSI Oversold + Volume Ratio &gt; 1.5 + MACD Bullish = high-conviction reversal setups.<br>
+              • <b>Futures basis scan</b> — filter Annualized Basis &gt; 8% to find arbitrage opportunities.<br>
+              • <b>Options IV scan</b> — filter ATM IV &gt; 30% to find high-volatility stocks worth selling premium on.
+            </div>
+          </div>
+        </div>
         <!-- ── 2. SCREENER ── -->
         <div class="card" id="guide-screener" style="margin-bottom:20px">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;padding-bottom:10px;border-bottom:2px solid var(--accent)">
@@ -8798,13 +8838,15 @@ function copyMorningBrief(){
       {keys:['help me use dividends','dividend tips','dividend guide','income investing guide','dividend strategy'],
        r:`<b>Dividends — Building a Passive Income Portfolio</b> \ud83d\udcb0\n\n<b>Stock Selection Criteria:</b>\n\u2022 <b>Yield 2-5%:</b> Sweet spot — sustainable and meaningful income\n\u2022 <b>Payout Ratio 30-60%:</b> Company retains enough for growth\n\u2022 <b>Consistent History:</b> Check if dividend has been paid for 5+ years consecutively\n\n<b>Red Flags to Avoid:</b>\n\u2022 Yield > 8% — likely stock price has crashed (value trap)\n\u2022 Payout Ratio > 80% — company paying more than it can sustain\n\u2022 One-time special dividends — don't build income strategy on these\n\n<b>Portfolio Construction:</b>\n1. Pick 10-15 stocks from the dividend list\n2. Diversify across sectors (don't put all in banking)\n3. Create a Model Portfolio with equal weight\n4. Reinvest dividends for compounding\n\n<b>Pro Tip:</b> Combine dividend yield with AlphaView's Quality Score. High yield + Quality Score > 50 = sustainable income stock.`,chips:['Show dividend stocks','Best yield stocks','Build income portfolio','Dividend + Quality']},
 
+      {keys:['screen builder','custom screener','build screen','filter stocks','create scan','how to use screen builder','screen builder guide','custom filter','scan stocks'],
+       r:`<b>Screen Builder — Custom Stock Scanner</b> \ud83d\udd2c\n\n<b>What it is:</b> Build your own scan using 40+ parameters across technical, fundamental, ownership, and alpha dimensions — for stocks, futures, and options.\n\n<b>Getting Started:</b>\n1. Click <b>SCREEN BUILDER</b> in the sidebar\n2. Choose asset type: <b>Stocks / Futures / Options</b>\n3. Add filters — pick a category, parameter, operator, and value\n4. Hit <b>RUN SCAN</b>\n\n<b>Quick Presets (one click):</b>\n\u2022 <b>Oversold Bounce</b> — RSI \u2264 35 (deeply oversold)\n\u2022 <b>Momentum</b> — RSI 55-70 + 3M RS > 10%\n\u2022 <b>Near 52W Low</b> — within 10% of 52-week low\n\u2022 <b>High Volume</b> — Volume ratio > 2x average\n\u2022 <b>Low PE Value</b> — PE 5-20 + ROE > 15%\n\u2022 <b>MACD Bullish</b> — MACD histogram positive\n\n<b>Performance:</b>\n\u2022 Cold scan (first run): ~2-3 minutes (downloads 923 stocks)\n\u2022 Warm scan (cached): ~23ms — essentially instant\n\u2022 Cache auto-refreshes every 4 hours\n\n<b>Futures and Options:</b> Switch asset type to access basis, OI, IV, Greeks filters.\n\n<b>Save your screens</b> — click SAVE to store your filter combo and reload anytime.\n\n<b>Pro Tip:</b> Combine RSI Oversold + Volume Ratio > 1.5 + MACD Bullish for a high-conviction reversal scan`,chips:['Run Oversold scan','Fundamental filters','Options scan','Save my screen']},
       {keys:['daily routine investor','what should i do daily','daily workflow','my daily routine','how to use platform daily','daily checklist'],
        r:`<b>Your Daily Routine on AlphaLab</b> \ud83d\udcc5\n\n<b>Pre-Market (8:30 - 9:15 AM):</b>\n1. \ud83c\udf05 <b>Morning Brief</b> — check global cues, sentiment, sector pulse\n2. \ud83c\udfaf <b>AlphaView</b> — quick scan of 2-3 stocks from yesterday's watchlist\n\n<b>Market Hours (9:15 AM - 3:30 PM):</b>\n3. \ud83d\udd0d <b>Screener</b> — run Momentum + Breakout for today's opportunities\n4. \ud83d\uddfa <b>Heatmap</b> — which sectors are moving? Focus there.\n5. \ud83d\udcca <b>AlphaView</b> — full analysis on screener's top 3 picks\n6. \u270d\ufe0f <b>Paper Trades</b> — enter positions for best ideas\n\n<b>Post-Market (3:30 - 5:00 PM):</b>\n7. \ud83d\udd04 <b>Forward Test</b> — check how your strategies performed today\n8. \ud83c\udfe6 <b>Model Portfolio</b> — review P&L\n9. \ud83d\udd14 <b>Alerts</b> — set alerts for tomorrow's key levels\n\n<b>Weekend:</b>\n10. \ud83e\uddea <b>Backtest</b> — test new strategy ideas\n11. \ud83d\udcc8 <b>AlphaView</b> — deep research on 5-10 stocks for next week`,chips:['Morning Brief','Run Screener','AlphaView help','Set alerts']},
 
       {keys:['daily routine advisor','advisor workflow','sebi advisor daily','ria daily','ra daily','client reporting','advisor tips'],
        r:`<b>SEBI Advisor's Daily Routine</b> \ud83d\udccb\n\n<b>Pre-Market (8:00 AM):</b>\n1. \ud83c\udf05 <b>Morning Brief</b> → Generate \u2600\ufe0f Morning Brief for clients\n2. Review overnight global cues and their India impact\n\n<b>Research (9:00 - 10:00 AM):</b>\n3. \ud83d\udd0d <b>MTF Combiner</b> — find high-conviction multi-timeframe signals\n4. \ud83c\udfaf <b>AlphaView</b> — full analysis on top picks\n5. \ud83d\udcdd <b>Advisory</b> — create BUY/SELL recommendations with entry, target, SL\n\n<b>During Market (10:00 AM - 3:00 PM):</b>\n6. \ud83d\udcca <b>Forward Test</b> — monitor strategy performance for compliance evidence\n7. \ud83d\udd14 <b>Alerts</b> — check triggered alerts and update clients\n\n<b>Post-Market (3:30 PM):</b>\n8. Generate \ud83c\udf19 <b>Market Wrap Up</b> for clients\n9. Review <b>Model Portfolios</b> — track client portfolio P&L\n10. \ud83d\udcc4 <b>Advisory Reports</b> — generate PDF reports for compliance audit\n\n<b>Key:</b> All recommendations are timestamped and stored for SEBI audit trail.`,chips:['Generate Morning Brief','Create recommendation','Advisory reports','Model Portfolios']},
 
-            {keys:['who are you','your name','about you','ariv'],r:`I'm <b>Ariv</b>, the AlphaLab DYOR AI research assistant! 🙏\n\nI help advisors and investors make smarter decisions. I can:\n• Answer stock market questions (puts, calls, strategies, sectors)\n• Guide you through options trading step-by-step\n• Analyze your screener and backtest results\n• Review your model portfolio for diversification and risk\n• Suggest strategies based on your trading style\n• Explain any concept from RSI to Iron Condors\n• Help publish calls to AlphaMarket (advisors only)\n• Guide DCF valuation and Pattern analysis\n• Explain Arbitrage, Jobbing & Scalping with index F&O\n\nI know every feature of AlphaLab inside-out — including the new Publish to AlphaMarket, Basket publishing, and live Groww data feeds. Try asking me anything!`},
+            {keys:['who are you','your name','about you','ariv'],r:`I'm <b>Ariv</b>, the AlphaLab DYOR AI research assistant! 🙏\n\nI help advisors and investors make smarter decisions. I can:\n• Answer stock market questions (puts, calls, strategies, sectors)\n• Guide you through options trading step-by-step\n• Analyze your screener and backtest results\n• Review your model portfolio for diversification and risk\n• Suggest strategies based on your trading style\n• Explain any concept from RSI to Iron Condors\n• Help publish calls to AlphaMarket (advisors only)\n• Guide DCF valuation and Pattern analysis\n• Explain Arbitrage, Jobbing & Scalping with index F&O\n\u2022 Guide you through the new <b>Screen Builder</b> — custom scans with 40+ filters across stocks, futures and options\n\nI know every feature of AlphaLab inside-out — including Screen Builder, Publish to AlphaMarket, Basket publishing, and live Groww data feeds. Try asking me anything!`},
     ],
 
     fallback: `I'm not sure about that specific query, but I can help with a lot! Try asking:\n\n• <b>Stock queries</b> — "What put option should I buy?", "Tell me about NIFTY options"\n• <b>Strategy help</b> — "Which strategy for swing trading?", "Bearish strategies"\n• <b>Portfolio</b> — "Review my portfolio", "How to build a portfolio"\n• <b>Options</b> — "Build an Iron Condor", "What is IV?", "Covered Call"\n• <b>Concepts</b> — "Explain RSI", "Support resistance", "Position sizing"\n• <b>Market</b> — "How to hedge?", "Earnings season strategy", "Sector rotation"\n• <b>Platform</b> — "How to backtest?", "Risk Heatmap", "OI Intelligence"\n\nPick a suggestion below or rephrase your question!`
