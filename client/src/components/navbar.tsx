@@ -231,7 +231,12 @@ export function Navbar() {
               { label: "Market Outlook", href: "/market-outlook", icon: TrendingUp },
               { label: "Learn", href: "/learn", icon: BookOpen },
               { label: "DYOR Research", href: "/dyor/app", icon: Activity, external: true },
-            ].map((item) => (
+            ].concat(
+              user ? [
+                { label: "My Dashboard", href: "/investor-dashboard", icon: LayoutDashboard },
+                ...(user.role === "advisor" ? [{ label: "Advisor Dashboard", href: "/dashboard", icon: ShieldCheck }] : []),
+              ] : []
+            ).map((item) => (
               <Link key={item.href} href={item.href}>
                 <button
                   className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm ${
