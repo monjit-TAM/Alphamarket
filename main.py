@@ -49,6 +49,8 @@ API_TAGS = [
     {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
     {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
     {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
+    {"name": "Basket Publisher", "description": "Advisor basket strategies — publish F&O/Equity intraday baskets, per-advisor API keys for broker polling, webhook registration, auto-squareoff at 3:20PM IST"},
+    {"name": "Upstox", "description": "Upstox OAuth integration, basket pre-fill from AlphaBot signals and Nifty50 movers, basket order placement"},
     {"name": "AlphaBot", "description": "Algorithmic signal generator for Index F&O. Automated strategies for NIFTY/BANKNIFTY futures, options directional, options writing (straddle/strangle), and index arbitrage. Signals pushed to Upstox/XTS for auto-execution."},
 ]
 
@@ -128,7 +130,7 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 - **Email**: hello@thealphamarket.com
 - **Website**: https://testalpha.in
 """,
-    version="2.7.0",
+    version="2.8.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
