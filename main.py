@@ -86,6 +86,8 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
 from routers.arbitrage import router as arbitrage_router
 from routers.trading_tools import router as trading_router
 from routers.alphabot import router as alphabot_router
+from routers.upstox import router as upstox_router
+from routers.basket_publisher import router as basket_router
 from routers.options_backtest import router as options_bt_router
 
 app = FastAPI(
@@ -149,6 +151,8 @@ app.openapi = custom_openapi
 app.include_router(arbitrage_router)
 app.include_router(trading_router)
 app.include_router(alphabot_router)
+app.include_router(upstox_router)
+app.include_router(basket_router)
 app.include_router(options_bt_router)
 
 # DYOR Auth Bridge — validate AlphaMarket session cookies

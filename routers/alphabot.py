@@ -12,6 +12,8 @@ Strategies:
 
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime, date, timedelta, time as dtime
+import pytz
+IST = pytz.timezone("Asia/Kolkata")
 from typing import Optional, List
 import asyncpg, asyncio, json, math, logging, traceback
 
@@ -100,20 +102,36 @@ async def fetch_kite_ltp(instruments: list) -> dict:
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPER: EXPIRY CALCULATION
 # ═══════════════════════════════════════════════════════════════════════════════
+def get_ist_today():
+    """Get current date in IST"""
+    return datetime.now(IST).date()
+
 def get_current_weekly_expiry():
-    """Get current week's Thursday expiry"""
-    today = date.today()
+    """Get current week's Thursday expiry (IST date)"""
+    today = get_ist_today()
     days_to_thursday = (3 - today.weekday()) % 7
-    if days_to_thursday == 0 and datetime.now().time() > dtime(15, 30):
+    if days_to_thursday == 0 and datetime.now(IST).time() > dtime(15, 30):
         days_to_thursday = 7
     return today + timedelta(days=days_to_thursday)
 
-def get_current_monthly_expiry():
-    """Get last Thursday of current month"""
-    today = date.today()
-    last_day = date(today.year, today.month + 1, 1) - timedelta(days=1) if today.month < 12 else date(today.year, 12, 31)
+def get_last_thursday(year, month):
+    """Get last Thursday of a given month"""
+    if month > 12:
+        month = 1
+        year += 1
+    last_day = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year, 12, 31)
     offset = (last_day.weekday() - 3) % 7
     return last_day - timedelta(days=offset)
+
+def get_current_monthly_expiry():
+    """Get last Thursday of current month, rolls to next month if already expired"""
+    today = get_ist_today()
+    exp = get_last_thursday(today.year, today.month)
+    if exp < today:
+        next_month = today.month + 1 if today.month < 12 else 1
+        next_year = today.year if today.month < 12 else today.year + 1
+        exp = get_last_thursday(next_year, next_month)
+    return exp
 
 def format_expiry(exp_date):
     """Format expiry as 26MAR or 03APR"""
@@ -445,9 +463,9 @@ STRATEGY_MAP = {
 # ═══════════════════════════════════════════════════════════════════════════════
 async def run_signal_engine():
     """Main engine: iterate active strategies, generate signals, store in DB"""
-    now = datetime.now()
-    market_open = now.replace(hour=9, minute=15, second=0)
-    market_close = now.replace(hour=15, minute=15, second=0)
+    now = datetime.now(IST)
+    market_open = now.replace(hour=9, minute=15, second=0, microsecond=0)
+    market_close = now.replace(hour=15, minute=15, second=0, microsecond=0)
     
     if not (market_open <= now <= market_close):
         return {"status": "market_closed", "signals": []}
@@ -534,6 +552,40 @@ async def run_signal_engine():
 # ═══════════════════════════════════════════════════════════════════════════════
 # POSITION MONITOR — Check SL/Target on active signals
 # ═══════════════════════════════════════════════════════════════════════════════
+async def fetch_current_price_for_signal(sig):
+    """Fetch correct current price based on instrument type.
+    FUT/spot -> fetch index spot price.
+    CE/PE options -> fetch option premium from data service."""
+    instrument_type = sig["instrument_type"]
+    symbol = sig["symbol"]
+
+    if instrument_type in ("CE", "PE"):
+        # Fetch option premium price from data service
+        try:
+            import urllib.request as urlreq
+            strike = sig["strike"]
+            expiry = sig["expiry"]
+            opt_symbol = f"{symbol}{int(strike)}{instrument_type}{expiry}"
+            req = urlreq.Request(
+                f"http://127.0.0.1:5004/data/equity/quote/{opt_symbol}",
+                headers={"Content-Type": "application/json"}
+            )
+            with urlreq.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+                price = data.get("ltp") or data.get("price")
+                if price and price > 0:
+                    return float(price)
+        except Exception as e:
+            logger.warning(f"Options price fetch failed for {symbol} {strike} {instrument_type}: {e}")
+        # Fallback: return entry price (no P&L change)
+        return float(sig["entry_price"])
+    else:
+        # FUT or spot — use index spot price
+        spot_data = await fetch_index_data(symbol)
+        if spot_data and spot_data.get("price"):
+            return float(spot_data["price"])
+        return float(sig["entry_price"])
+
 async def monitor_positions():
     """Check live prices against SL/Target for all active signals"""
     pool = await get_pool()
@@ -546,12 +598,10 @@ async def monitor_positions():
     results = []
     for sig in actives:
         try:
-            # Fetch current price
-            spot_data = await fetch_index_data(sig["symbol"])
-            if not spot_data or not spot_data.get("price"):
+            current = await fetch_current_price_for_signal(sig)
+            if not current:
                 continue
 
-            current = spot_data["price"]
             is_long = sig["signal_type"] in ("BUY",)
             is_short = sig["signal_type"] in ("SHORT", "WRITE")
 
@@ -589,14 +639,15 @@ async def monitor_positions():
         except Exception as e:
             logger.error(f"Monitor error for signal {sig['id']}: {e}")
 
-    # Auto square-off check (3:10 PM)
-    now = datetime.now()
-    if now.time() >= dtime(15, 10):
+    # Auto square-off check (3:20 PM IST)
+    now = datetime.now(IST)
+    if now.time() >= dtime(15, 20):
         async with pool.acquire() as conn:
             remaining = await conn.fetch("SELECT * FROM bot_signals WHERE status = 'ACTIVE'")
             for sig in remaining:
-                spot_data = await fetch_index_data(sig["symbol"])
-                current = spot_data.get("price", sig["entry_price"]) if spot_data else sig["entry_price"]
+                current = await fetch_current_price_for_signal(sig)
+                if not current:
+                    current = float(sig["entry_price"])
                 is_long = sig["signal_type"] in ("BUY",)
                 pnl_per = (current - sig["entry_price"]) if is_long else (sig["entry_price"] - current)
                 total_pnl = pnl_per * sig["quantity"]
@@ -608,7 +659,7 @@ async def monitor_positions():
 
                 await conn.execute("""
                     INSERT INTO bot_trade_log (signal_id, strategy_id, action, instrument, side, price, quantity, pnl, notes)
-                    VALUES ($1,$2,'AUTO_SQUAREOFF',$3,'EXIT',$4,$5,$6,'EOD auto square-off at 3:10 PM')
+                    VALUES ($1,$2,'AUTO_SQUAREOFF',$3,'EXIT',$4,$5,$6,'EOD auto square-off at 3:20 PM')
                 """, sig["id"], sig["strategy_id"], sig["symbol"], current, sig["quantity"], total_pnl)
 
                 results.append({"signal_id": sig["id"], "action": "AUTO_SQUAREOFF", "pnl": total_pnl})
@@ -688,7 +739,7 @@ async def get_signals(status: str = None, strategy_id: int = None, days: int = 7
     pool = await get_pool()
     async with pool.acquire() as conn:
         query = "SELECT s.*, st.name as strategy_name FROM bot_signals s LEFT JOIN bot_strategies st ON s.strategy_id=st.id WHERE s.created_at >= $1"
-        params = [datetime.now() - timedelta(days=days)]
+        params = [datetime.now(IST).replace(tzinfo=None) - timedelta(days=days)]
         idx = 2
         if status:
             query += f" AND s.status=${idx}"
@@ -716,7 +767,7 @@ async def get_trades(days: int = 7, strategy_id: int = None):
     pool = await get_pool()
     async with pool.acquire() as conn:
         query = "SELECT * FROM bot_trade_log WHERE created_at >= $1"
-        params = [datetime.now() - timedelta(days=days)]
+        params = [datetime.now(IST).replace(tzinfo=None) - timedelta(days=days)]
         if strategy_id:
             query += " AND strategy_id=$2"
             params.append(strategy_id)
@@ -742,7 +793,7 @@ async def get_performance(days: int = 30, strategy_id: int = None):
             LEFT JOIN bot_strategies st ON s.strategy_id=st.id
             WHERE s.status != 'ACTIVE' AND s.created_at >= $1
         """
-        params = [datetime.now() - timedelta(days=days)]
+        params = [datetime.now(IST).replace(tzinfo=None) - timedelta(days=days)]
         if strategy_id:
             query += " AND s.strategy_id=$2"
             params.append(strategy_id)

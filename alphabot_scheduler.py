@@ -23,7 +23,7 @@ MONITOR_INTERVAL = 60  # 1 minute (check SL/target more frequently)
 
 MARKET_OPEN = dtime(9, 20)
 MARKET_CLOSE = dtime(15, 15)
-SQUAREOFF_TIME = dtime(15, 10)
+SQUAREOFF_TIME = dtime(15, 20)
 
 _running = True
 
@@ -129,6 +129,15 @@ async def run_scheduler():
                 # ── POSITION MONITOR (every 1 min) ──
                 if now_ts - last_monitor >= MONITOR_INTERVAL:
                     result = await call_api(session, "monitor")
+                    # Also trigger basket auto-squareoff at 3:20 PM
+                    now_ist = datetime.now(IST)
+                    if now_ist.time() >= dtime(15, 20):
+                        try:
+                            async with session.post("http://127.0.0.1:8001/api/basket/auto-squareoff") as resp:
+                                sq = await resp.json()
+                                logger.info(f"Basket auto-squareoff: {sq.get('squared_off',0)} baskets closed")
+                        except Exception as e:
+                            logger.error(f"Basket squareoff error: {e}")
                     if result:
                         actions = result.get("results", [])
                         if actions:
