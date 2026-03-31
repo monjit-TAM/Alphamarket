@@ -8743,13 +8743,13 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
     r2 = pivot + (float(h.iloc[-1]) - float(l.iloc[-1]))
     s2 = pivot - (float(h.iloc[-1]) - float(l.iloc[-1]))
     # 52-week position
-    high_52w = info.get("fiftyTwoWeekHigh",0) or 0
-    low_52w = info.get("fiftyTwoWeekLow",0) or 0
-    from_high = round((c_price - high_52w)/high_52w*100,1) if high_52w else 0
-    from_low = round((c_price - low_52w)/low_52w*100,1) if low_52w else 0
-    if from_high > -5:
+    high_52w = info.get("fiftyTwoWeekHigh") or info.get("fifty_two_week_high") or info.get("high_52w") or float(cl.rolling(min(252,len(cl))).max().iloc[-1])
+    low_52w = info.get("fiftyTwoWeekLow") or info.get("fifty_two_week_low") or info.get("low_52w") or float(cl.rolling(min(252,len(cl))).min().iloc[-1])
+    from_high = round((c_price - high_52w)/high_52w*100,1) if high_52w and high_52w > 0 else None
+    from_low = round((c_price - low_52w)/low_52w*100,1) if low_52w and low_52w > 0 else None
+    if from_high is not None and from_high > -5:
         patterns.append({"pattern":"Near 52-Week High","type":"BULLISH","description":f"{from_high}% from 52W high - strength","reliability":"moderate"})
-    if from_low < 10:
+    if from_low is not None and from_low < 10:
         patterns.append({"pattern":"Near 52-Week Low","type":"BEARISH","description":f"{from_low}% from 52W low - weakness","reliability":"moderate"})
     # Stochastic
     stoch = ta.momentum.StochasticOscillator(h, l, cl, window=14, smooth_window=3)
