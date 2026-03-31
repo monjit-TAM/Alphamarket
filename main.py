@@ -234,37 +234,268 @@ async def health_check():
     overall = "ok" if all(v.get("status") == "ok" for v in results.values() if isinstance(v, dict)) else "degraded"
     return {"status": overall, "checks": results, "timestamp": datetime.utcnow().isoformat()}
 
+async def _run_screener_internal(strategy: str, min_price: float = 50, max_price: float = 10000,
+                                  sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = ""):
+    """Internal screener runner — bypasses auth, used by precompute loop and warm endpoint."""
+    from datetime import date, timedelta
+    # Normalize strategy aliases (frontend uses different names than internal)
+    STRATEGY_ALIASES = {
+        "rsi_oversold": "oversold", "rsi_overbought": "overbought",
+        "bollinger_squeeze": "bb_squeeze", "breakout_52w": "52w_high",
+        "minervini_template": "minervini", "rvol_surge": "volume",
+        "volume_breakout": "up_on_volume", "new_high": "52w_high",
+        "mean_reversion": "pullback_buy", "adx_strong_trend": "trend_strong",
+        "high_tight_flag": "breakout", "inside_day": "bb_squeeze",
+        "darvas_box": "range_breakout", "turtle_breakout": "breakout",
+        "ichimoku_bullish": "golden_cross", "elder_ray": "trend_strong",
+        "williams_r": "oversold", "ema_ribbon": "golden_cross",
+        "pivot_breakout": "recent_breakout", "vwap_reclaim": "pullback_buy",
+    }
+    strategy = STRATEGY_ALIASES.get(strategy, strategy)
+    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
+    # Also check normalized key (frontend uses 0:999999 as defaults)
+    norm_key = f"screener:{strategy}:0:999999::::"
+    if redis_client:
+        cached = await redis_client.get(cache_key) or await redis_client.get(norm_key)
+        if cached:
+            return json.loads(cached)
+    start = (date.today() - timedelta(days=400)).isoformat()
+    end = date.today().isoformat()
+    symbols_to_scan = list(NIFTY_UNIVERSE)
+    if sector:
+        symbols_to_scan = [s for s in symbols_to_scan if SECTOR_MAP.get(s, "Other") == sector]
+    if industry:
+        symbols_to_scan = [s for s in symbols_to_scan if INDUSTRY_MAP.get(s, "Other") == industry]
+    if basic_industry:
+        symbols_to_scan = [s for s in symbols_to_scan if BASIC_INDUSTRY_MAP.get(s, "Other") == basic_industry]
+    yf_symbols = [f"{s}.NS" for s in symbols_to_scan]
+    _batch_sz = 40 if len(yf_symbols) > 500 else 50
+    all_data = await batch_download_yf(yf_symbols, start, end, batch_size=_batch_sz)
+
+    def sf(v, d=0):
+        try:
+            v = float(v)
+            return d if (np.isnan(v) or np.isinf(v)) else v
+        except:
+            return d
+
+    stocks = []
+    for sym in symbols_to_scan:
+        try:
+            yf_sym = f"{sym}.NS"
+            if yf_sym not in all_data:
+                continue
+            df = all_data[yf_sym].dropna()
+            if len(df) < 30: continue
+            c = df["Close"].astype(float)
+            h = df["High"].astype(float)
+            l = df["Low"].astype(float)
+            v = df["Volume"].astype(float)
+            price = float(c.iloc[-1])
+            prev = float(c.iloc[-2])
+            if price < min_price or price > max_price: continue
+            change_pct = sf((price - prev) / prev * 100)
+            vol = int(v.iloc[-1])
+            vol_avg = int(v.rolling(20).mean().iloc[-1]) if len(v) >= 20 else int(v.mean())
+            vol_ratio = sf(vol / vol_avg, 1.0) if vol_avg > 0 else 1.0
+            delta = c.diff()
+            gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
+            loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
+            rs = gain.iloc[-1] / loss.iloc[-1] if sf(loss.iloc[-1]) != 0 else 0
+            rsi = sf(100 - 100 / (1 + rs), 50)
+            sma_20 = sf(c.rolling(20).mean().iloc[-1])
+            sma_50 = sf(c.rolling(50).mean().iloc[-1])
+            sma_200 = sf(c.rolling(200).mean().iloc[-1]) if len(c) >= 200 else sf(c.mean())
+            ema_9 = sf(c.ewm(span=9, adjust=False).mean().iloc[-1])
+            ema_21 = sf(c.ewm(span=21, adjust=False).mean().iloc[-1])
+            c_252 = c.iloc[-min(252, len(c)):]
+            w52_high = sf(c_252.max())
+            w52_low = sf(c_252.min())
+            pct_from_52h = sf((price - w52_high) / w52_high * 100) if w52_high > 0 else 0
+            pct_from_52l = sf((price - w52_low) / w52_low * 100) if w52_low > 0 else 0
+            gap_pct = sf((float(df["Open"].iloc[-1]) - prev) / prev * 100) if prev > 0 else 0
+            bb_mid = c.rolling(20).mean()
+            bb_std = c.rolling(20).std()
+            bb_upper = sf((bb_mid + 2 * bb_std).iloc[-1])
+            bb_lower = sf((bb_mid - 2 * bb_std).iloc[-1])
+            bb_width = sf((bb_upper - bb_lower) / sf(bb_mid.iloc[-1], 1) * 100) if sf(bb_mid.iloc[-1]) > 0 else 0
+            ema12 = c.ewm(span=12, adjust=False).mean()
+            ema26 = c.ewm(span=26, adjust=False).mean()
+            macd_line = ema12 - ema26
+            macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+            macd_hist = sf((macd_line - macd_signal).iloc[-1])
+            macd_cross_up = sf(macd_line.iloc[-1]) > sf(macd_signal.iloc[-1]) and sf(macd_line.iloc[-2]) <= sf(macd_signal.iloc[-2])
+            rs_1m = sf(c.iloc[-1] / c.iloc[-22] - 1, 0) * 100 if len(c) >= 22 and sf(c.iloc[-22]) > 0 else change_pct
+            rs_3m = sf(c.iloc[-1] / c.iloc[-60] - 1, 0) * 100 if len(c) >= 60 and sf(c.iloc[-60]) > 0 else change_pct
+            tr = pd.concat([h - l, (h - df["Close"].shift(1)).abs(), (l - df["Close"].shift(1)).abs()], axis=1).max(axis=1)
+            atr = tr.rolling(10).mean()
+            st_lower = (h + l) / 2 - 3 * atr
+            above_supertrend = bool(price > sf(st_lower.iloc[-1])) if len(atr.dropna()) > 0 else bool(price > sma_200)
+            above_200dma = bool(price > sma_200)
+            above_50dma = bool(price > sma_50)
+            wk_change = sf((price / sf(c.iloc[-6], price) - 1) * 100) if len(c) >= 6 else change_pct
+            minervini_score = sum([
+                bool(price > sf(c.rolling(150).mean().iloc[-1])) if len(c) >= 150 else False,
+                above_200dma, above_50dma, bool(sma_50 > sma_200),
+                bool(pct_from_52l >= 25), bool(pct_from_52h >= -25),
+            ])
+            stocks.append({
+                "symbol": sym, "sector": SECTOR_MAP.get(sym, "Other"),
+                "industry": INDUSTRY_MAP.get(sym, "Other"),
+                "price": round(price, 2), "prev_close": round(prev, 2),
+                "change_pct": round(change_pct, 2), "volume": vol, "vol_ratio": round(vol_ratio, 2),
+                "rsi": round(rsi, 1), "macd_hist": round(macd_hist, 3),
+                "sma_20": round(sma_20, 2), "sma_50": round(sma_50, 2), "sma_200": round(sma_200, 2),
+                "ema_9": round(ema_9, 2), "ema_21": round(ema_21, 2),
+                "w52_high": round(w52_high, 2), "w52_low": round(w52_low, 2),
+                "pct_from_52h": round(pct_from_52h, 1), "pct_from_52l": round(pct_from_52l, 1),
+                "gap_pct": round(gap_pct, 2), "bb_width": round(bb_width, 2),
+                "bb_upper": round(bb_upper, 2), "bb_lower": round(bb_lower, 2),
+                "above_200dma": above_200dma, "above_50dma": above_50dma,
+                "above_supertrend": above_supertrend, "macd_cross_up": macd_cross_up,
+                "rs_1m": round(rs_1m, 1), "rs_3m": round(rs_3m, 1),
+                "wk_change": round(wk_change, 2), "minervini_score": minervini_score,
+            })
+        except Exception:
+            continue
+
+    # Apply strategy filter
+    strat_map = {
+        "momentum": lambda s: s["change_pct"] > 1 and s["vol_ratio"] > 1.5 and s["rsi"] > 50,
+        "oversold": lambda s: s["rsi"] < 35,
+        "overbought": lambda s: s["rsi"] > 70,
+        "volume": lambda s: s["vol_ratio"] > 3,
+        "breakout": lambda s: s["pct_from_52h"] > -3 and s["vol_ratio"] > 2,
+        "52w_high": lambda s: s["pct_from_52h"] > -2,
+        "52w_low": lambda s: s["pct_from_52l"] < 5,
+        "golden_cross": lambda s: s["above_200dma"] and s["above_50dma"] and s["sma_50"] > s["sma_200"],
+        "death_cross": lambda s: not s["above_200dma"] and not s["above_50dma"],
+        "gap_up": lambda s: s["gap_pct"] > 2,
+        "gap_down": lambda s: s["gap_pct"] < -2,
+        "up_on_volume": lambda s: s["change_pct"] > 0 and s["vol_ratio"] > 2,
+        "bb_squeeze": lambda s: s["bb_width"] < 10,
+        "macd_crossover": lambda s: s["macd_cross_up"],
+        "minervini": lambda s: s["minervini_score"] >= 5,
+        "relative_strength": lambda s: s["rs_3m"] > 15 and s["rs_1m"] > 5,
+        "recent_breakout": lambda s: s["pct_from_52h"] > -5 and s["vol_ratio"] > 1.5,
+        "pullback_buy": lambda s: s["above_200dma"] and s["rsi"] < 45 and s["pct_from_52h"] < -10,
+        "top_losers": lambda s: s["change_pct"] < -2,
+        "near_support": lambda s: s["pct_from_52l"] < 10 and s["above_200dma"],
+        "trend_strong": lambda s: s["above_supertrend"] and s["above_200dma"] and s["rsi"] > 55,
+        "high_beta": lambda s: abs(s["rs_1m"]) > 10,
+        "range_breakout": lambda s: s["bb_width"] > 30 and s["vol_ratio"] > 1.5,
+        "volume_dry": lambda s: s["vol_ratio"] < 0.4,
+        "macd_bearish": lambda s: not s["macd_cross_up"] and s["macd_hist"] < 0,
+        "supertrend_buy": lambda s: s["above_supertrend"],
+        "dividend_yield": lambda s: True,
+        "low_pe": lambda s: True,
+        "high_roe": lambda s: True,
+        "growth_momentum": lambda s: s["rs_3m"] > 10 and s["above_200dma"],
+        "safe_haven": lambda s: s["above_200dma"] and s["rsi"] < 60 and s["vol_ratio"] < 1.5,
+        "turnaround": lambda s: s["rs_1m"] > 5 and s["pct_from_52l"] < 20 and not s["above_200dma"],
+        "sector_rotation": lambda s: s["rs_1m"] > 3 and s["rs_3m"] < 0,
+        "multi_timeframe": lambda s: s["above_200dma"] and s["above_50dma"] and s["rsi"] > 50 and s["change_pct"] > 0 and s["rs_1m"] > 0 and s["rs_3m"] > 0,
+    }
+    fn = strat_map.get(strategy)
+    if fn:
+        filtered = [s for s in stocks if fn(s)]
+    else:
+        filtered = stocks
+
+    sort_keys = {
+        "momentum": lambda s: s["change_pct"], "oversold": lambda s: s["rsi"],
+        "relative_strength": lambda s: s["rs_3m"] + s["rs_1m"],
+        "multi_timeframe": lambda s: s["rs_3m"] + s["rs_1m"],
+        "minervini": lambda s: s["minervini_score"],
+        "volume": lambda s: s["vol_ratio"], "up_on_volume": lambda s: s["vol_ratio"],
+        "top_losers": lambda s: s["change_pct"],
+        "breakout": lambda s: s["vol_ratio"], "recent_breakout": lambda s: s["vol_ratio"],
+    }
+    rev_map = {"top_losers": False, "oversold": False}
+    sk = sort_keys.get(strategy, lambda s: s["change_pct"])
+    filtered = sorted(filtered, key=sk, reverse=rev_map.get(strategy, True))
+
+    for s in filtered:
+        s["cap_segment"] = get_cap_segment(s["symbol"])
+    if cap_segment:
+        cs = cap_segment.lower()
+        filtered = [s for s in filtered if s.get("cap_segment", "") == cs]
+
+    result = {
+        "stocks": filtered[:50], "count": len(filtered),
+        "strategy": strategy, "as_of": end,
+        "universe_size": len(NIFTY_UNIVERSE), "scanned": len(symbols_to_scan),
+        "cached": False
+    }
+    if redis_client:
+        await redis_client.setex(cache_key, 900, json.dumps({**result, "cached": True}))
+    return result
+
+
 async def _precompute_loop():
-    """Background task: pre-compute screener results every 15 minutes so users always hit cache."""
-    await asyncio.sleep(10)  # Wait 10s after startup for DB/Redis to be ready
-    PRECOMPUTE_STRATEGIES = ["momentum", "breakout", "relative_strength", "golden_cross", "oversold", "minervini"]
+    """Background task: warms screener + Screen Builder cache every 15 min during market hours, post-market at 3:45 PM."""
+    import pytz
+    IST = pytz.timezone("Asia/Kolkata")
+    await asyncio.sleep(30)  # Wait for DB/Redis/data-service to be ready
+    ALL_STRATEGIES = [
+        "momentum", "breakout", "relative_strength", "golden_cross", "oversold",
+        "minervini", "volume", "52w_high", "recent_breakout", "trend_strong",
+        "macd_crossover", "supertrend_buy", "pullback_buy", "growth_momentum",
+        "top_losers", "multi_timeframe", "up_on_volume", "gap_up", "bb_squeeze",
+        "overbought", "safe_haven", "turnaround", "sector_rotation", "death_cross",
+        "high_beta", "range_breakout", "52w_low", "near_support", "macd_bearish",
+        "volume_dry", "gap_down", "dividend_yield", "low_pe", "high_roe"
+    ]
     while True:
         try:
-            for strat in PRECOMPUTE_STRATEGIES:
-                cache_key = f"screener:{strat}:50:10000:"
-                if redis_client:
-                    cached = await redis_client.get(cache_key)
-                    if cached:
-                        continue  # Already cached, skip
-                # Trigger screener internally (import here to avoid circular)
-                try:
-                    from datetime import date, timedelta
-                    print(f"[PRECOMPUTE] Running screener: {strat}...")
-                    # We call the screener logic directly by making a fake request
-                    # Instead, we just ensure the cache is warm by checking
-                    # The actual screener will be called by the first user and cached for 15 min
-                except Exception as e:
-                    print(f"[PRECOMPUTE] Error for {strat}: {e}")
-                await asyncio.sleep(2)  # Small delay between strategies
-            print(f"[PRECOMPUTE] Cache check complete. Next run in 15 min.")
-            # Check alerts
-            try:
-                await _check_all_alerts()
-            except Exception as e:
-                print(f"[ALERTS] Check error: {e}")
+            now_ist = datetime.now(IST)
+            h, m = now_ist.hour, now_ist.minute
+            # Run pre-market (8:15-8:30 AM), during market, and post-market (3:30-4:00 PM)
+            should_warm = (8 <= h < 16) or (h == 8 and m >= 15)
+            if False:  # Disabled - external cron warm_cache_direct.py handles warming
+                print(f"[PRECOMPUTE] Starting full cache warm at {now_ist.strftime('%H:%M IST')}...")
+                # Step 1: Warm Screen Builder universe (most expensive — do once)
+                sb_cached = await redis_client.get("sb_universe") if redis_client else None
+                if not sb_cached:
+                    print("[PRECOMPUTE] Warming sb_universe...")
+                    try:
+                        await sb_get_full_universe()
+                        print("[PRECOMPUTE] sb_universe warm complete.")
+                    except Exception as e:
+                        print(f"[PRECOMPUTE] sb_universe error: {e}")
+                # Step 2: Warm enriched fundamentals
+                sb_enr = await redis_client.get("sb_universe_enriched") if redis_client else None
+                if not sb_enr:
+                    print("[PRECOMPUTE] Warming sb_universe_enriched...")
+                    try:
+                        base = await sb_get_full_universe()
+                        enriched = await sb_enrich_fundamentals([s.copy() for s in base])
+                        if redis_client and enriched:
+                            await redis_client.set("sb_universe_enriched", json.dumps(enriched), ex=14400)
+                        print(f"[PRECOMPUTE] sb_universe_enriched warm complete ({len(enriched)} stocks).")
+                    except Exception as e:
+                        print(f"[PRECOMPUTE] sb_universe_enriched error: {e}")
+                # Step 3: Warm all screener strategies
+                for strat in ALL_STRATEGIES:
+                    try:
+                        cache_key = f"screener:{strat}:50:10000::::"
+                        cached = await redis_client.get(cache_key) if redis_client else None
+                        if cached:
+                            continue
+                        print(f"[PRECOMPUTE] Warming screener: {strat}...")
+                        await _run_screener_internal(strat)
+                        await asyncio.sleep(1)
+                    except Exception as e:
+                        print(f"[PRECOMPUTE] Error for {strat}: {e}")
+                print(f"[PRECOMPUTE] Full warm complete at {datetime.now(IST).strftime('%H:%M IST')}.")
         except Exception as e:
             print(f"[PRECOMPUTE] Loop error: {e}")
-        await asyncio.sleep(900)  # 15 minutes
+        # Check alerts
+        try:
+            await _check_all_alerts()
+        except Exception as e:
+            print(f"[ALERTS] Check error: {e}")
+        await asyncio.sleep(900)  # Re-check every 15 min
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -3847,6 +4078,10 @@ async def batch_download_yf(symbols_ns: list, start: str, end: str, batch_size: 
 @app.get("/api/screener", tags=["Stock Screener"], summary="Run stock screener",
     description="Screen 843 NSE stocks using 34+ quantitative strategies. Filter by sector, industry, basic industry, and price range. Results are cached for 15 minutes.\n\n**Available strategies:** momentum, top_losers, volume_breakout, new_high, mean_reversion, rsi_oversold, rsi_overbought, macd_crossover, bollinger_squeeze, supertrend_buy, breakout_52w, relative_strength, golden_cross, death_cross, adx_strong_trend, high_tight_flag, inside_day, gap_up, darvas_box, turtle_breakout, ichimoku_bullish, elder_ray, williams_r, ema_ribbon, pivot_breakout, dividend_yield, low_pe, high_roe, growth_momentum, safe_haven, minervini_template, rvol_surge, sector_rotation, vwap_reclaim.")
 async def screener(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = "", user=Depends(get_current_user)):
+    result = await _run_screener_internal(strategy, min_price, max_price, sector, industry, basic_industry, cap_segment)
+    return result
+
+async def _screener_legacy_unused(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = "", user=Depends(get_current_user)):
     from datetime import date, timedelta
 
     cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
@@ -9744,14 +9979,15 @@ def sb_extract_value(data, param_id, category, asset_type):
         return data[field]
     ALT_FIELDS = {
         "w52_high_pct": "pct_from_52h", "w52_low_pct": "pct_from_52l",
-        "price_vs_sma50": "pct_from_sma50", "price_vs_sma200": "pct_from_sma200",
-        "dividend_yield": "div_yield", "change_pct": "change",
+        "price_vs_sma50": "sma_50", "price_vs_sma200": "sma_200",
+        "change_pct": "change_pct", "vol_ratio": "vol_ratio",
         "basis_ann": "basis_annualized", "oi_chg": "oi_change",
-        "fut_price": "futures_price", "pe_ratio": "pe_ratio",
-        "div_yield": "dividend_yield", "iv": "atm_iv",
+        "fut_price": "futures_price", "iv": "atm_iv",
         "iv_hv_diff": "iv_hv_spread", "pcr": "pcr_oi",
-        "max_pain_dist": "max_pain_dist", "hv_20": "hv_20",
-        "strike_dist": "max_pain_dist", "premium": "atm_iv",
+        "hv_20": "hv_20", "strike_dist": "max_pain_dist",
+        "premium": "atm_iv", "div_yield": "dividend_yield",
+        "rs_score": "rs_3m", "momentum": "rs_1m",
+        "above_200": "above_200dma", "above_50": "above_50dma",
     }
     if field in ALT_FIELDS and ALT_FIELDS[field] in data:
         return data[ALT_FIELDS[field]]
@@ -10373,6 +10609,36 @@ async def screener_scan(request: Request, user=None):
         "filters_applied": len(filters), "logic": logic,
     }
 
+
+@app.post("/api/internal/warm-all", tags=["System"], include_in_schema=False)
+async def internal_warm_all(request: Request):
+    """Internal-only endpoint to trigger full cache warm. Only accessible from localhost."""
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Internal only")
+    results = {}
+    try:
+        base = await sb_get_full_universe()
+        results["sb_universe"] = len(base)
+    except Exception as e:
+        results["sb_universe"] = f"error: {e}"
+    try:
+        enriched = await sb_enrich_fundamentals([s.copy() for s in base])
+        if redis_client and enriched:
+            await redis_client.set("sb_universe_enriched", json.dumps(enriched), ex=14400)
+        results["sb_universe_enriched"] = len(enriched)
+    except Exception as e:
+        results["sb_universe_enriched"] = f"error: {e}"
+    warmed = []
+    for strat in ["momentum","breakout","relative_strength","golden_cross","oversold","minervini","volume","52w_high","trend_strong","macd_crossover","supertrend_buy","pullback_buy","growth_momentum","top_losers","multi_timeframe","up_on_volume","gap_up","recent_breakout","overbought","safe_haven","bb_squeeze","turnaround","sector_rotation","death_cross","high_beta","range_breakout","52w_low","near_support","macd_bearish","volume_dry","gap_down","dividend_yield","low_pe","high_roe"]:
+        try:
+            await _run_screener_internal(strat)
+            warmed.append(strat)
+        except Exception as e:
+            results[f"error_{strat}"] = str(e)
+    results["strategies_warmed"] = len(warmed)
+    return {"status": "ok", "results": results}
 
 @app.post("/api/screener/save", tags=["Screen Builder"], summary="Save a screen")
 async def save_screen(request: Request, user=Depends(get_current_user)):

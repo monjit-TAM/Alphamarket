@@ -29,7 +29,7 @@ ALPHAMARKET_DB_URL = "postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/
 PUBLIC_PATHS = {
     "/api/docs", "/api/openapi.json", "/api/redoc",
     "/docs", "/openapi.json", "/redoc",
-    "/api/health", "/health",
+    "/api/health", "/health", "/api/internal/warm-all",
     "/api/arbitrage/kite-callback", "/api/arbitrage/kite-status", "/api/arbitrage/kite-login",
     "/api/trading/jobbing/calculator", "/api/trading/scalping/calculator",
     "/api/screener/params", "/api/screener/scan",
