@@ -46,6 +46,8 @@ API_TAGS = [
     {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
     {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
     {"name": "Screen Builder", "description": "Custom stock/futures/options scanner for DYOR. Filter 923 NSE stocks by 40+ technical & fundamental parameters. Includes universe warm-up, F&O pipeline, and saved screens."},
+    {"name": "Alpha Signal", "description": "Automated Index F&O signal engine (AlphaBot). Strategies: Momentum Futures (VWAP + price action), Options Directional (ATM CE/PE), Options Writing (OTM Straddle/Strangle), Index Arbitrage (basis capture). Signals pushed to Upstox/XTS for auto-execution. Basket publishing for brokers."},
+    {"name": "F&O Trading", "description": "Cash-futures arbitrage scanner, jobbing (bid-ask spread) candidates, and scalping (VWAP + momentum) signals. Covers 31 F&O stocks + NIFTY/BANKNIFTY/FINNIFTY indices. Live prices via Groww API + Kite Connect."},
     {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
     {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
     {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
@@ -130,7 +132,7 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 - **Email**: hello@thealphamarket.com
 - **Website**: https://testalpha.in
 """,
-    version="2.9.0",
+    version="3.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
