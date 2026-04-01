@@ -1177,6 +1177,7 @@ export async function registerRoutes(
           notifyStrategySubscribers(req.params.id, strategy.name, "new_position", subPayload);
           const wlPayload = buildNewPositionWatchlistNotification(p, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_position_masked", wlPayload);
+          xtsHandleEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
         }
       }
       res.json(p);
@@ -1365,6 +1366,7 @@ export async function registerRoutes(
       notifyStrategySubscribers(pos.strategyId, strategy.name, "new_position", subPayload);
       const wlPayload = buildNewPositionWatchlistNotification(pos, strategy.name);
       notifyWatchlistUsers(pos.strategyId, strategy.name, "new_position_masked", wlPayload);
+      xtsHandleEvent("POSITION_CREATED", buildPositionEventData(pos, strategy), strategy.advisorId).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -6504,7 +6506,51 @@ export async function registerRoutes(
       }
 
       const result = await db.execute(sql.raw(
-        "SELECT id, env, published_at, day_month, advisor_id, advisor_name, advisor_company, advisor_email, advisor_sebi_reg_no, strategy_id, strategy_name, strategy_type, thematic_collection, horizon, call_id, message_id, call_status, call_type, symbol, exchange, exchange_instrument_id, series, product_type, order_side, buy_price, buy_price_range_start, buy_price_range_end, target_price, stop_loss, profit_booked_price, validity, badge, rationale, publish_status, error_message, retry_count FROM xts_call_log WHERE 1=1 " + dateFilter + " ORDER BY published_at DESC LIMIT 5000"
+        "SELECT " +
+        "  l.id, " +
+        "  l.published_at, " +
+        "  l.event_type, " +
+        "  l.call_type, " +
+        "  l.symbol, " +
+        "  l.advisor_id, " +
+        "  u.company_name AS advisor_name, " +
+        "  u.email AS advisor_email, " +
+        "  u.sebi_reg_number AS advisor_sebi_reg_no, " +
+        "  l.strategy_id, " +
+        "  s.name AS strategy_name, " +
+        "  s.type AS strategy_type, " +
+        "  l.message_id AS recommendation_id, " +
+        "  l.status AS publish_status, " +
+        "  l.error_message, " +
+        "  l.retry_count, " +
+        "  l.payload->>'strategyname' AS strategy_full_name, " +
+        "  l.payload->>'theory' AS rationale, " +
+        "  l.payload->>'badge' AS badge, " +
+        "  l.payload->>'validity' AS validity, " +
+        "  l.payload->>'thematicCollection' AS thematic_collection, " +
+        "  l.payload->>'exchangeInstrumentID' AS exchange_instrument_id, " +
+        "  l.payload->>'limitPrice' AS limit_price, " +
+        "  l.payload->>'targetPrice' AS target_price, " +
+        "  l.payload->>'stopLossPrice' AS stop_loss_price, " +
+        "  l.payload->>'profitBookedPrice' AS profit_booked_price, " +
+        "  l.payload->'orders'->0->>'series' AS series, " +
+        "  l.payload->'orders'->0->>'productType' AS product_type, " +
+        "  l.payload->'orders'->0->>'orderSide' AS order_side, " +
+        "  l.payload->'orders'->0->>'exchange' AS exchange, " +
+        "  l.payload->'orders'->0->>'legId' AS leg_id, " +
+        "  l.payload->'orders'->0->>'name' AS instrument_name, " +
+        "  l.payload->'orders'->0->>'orderQuantity' AS lots, " +
+        "  l.payload->'orders'->0->>'stopLoss' AS order_stop_loss, " +
+        "  l.payload->'orders'->0->>'target' AS order_target, " +
+        "  l.payload->'orders'->0->>'createdAt' AS call_date, " +
+        "  l.response->>'code' AS xts_response_code, " +
+        "  l.response->>'description' AS xts_response_description, " +
+        "  l.payload AS full_payload " +
+        "FROM xts_publish_log l " +
+        "LEFT JOIN users u ON u.id = l.advisor_id " +
+        "LEFT JOIN strategies s ON s.id = l.strategy_id " +
+        "WHERE 1=1 " + dateFilter + " " +
+        "ORDER BY l.published_at DESC LIMIT 5000"
       ));
 
       const rows = result.rows as any[];

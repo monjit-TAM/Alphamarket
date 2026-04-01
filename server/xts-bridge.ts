@@ -258,46 +258,97 @@ async function logPublishAttempt(connId:string,callId:string,callType:string,eve
 async function logEnrichedCallLog(
   connId: string, callId: string, strategyId: string, advisorId: string,
   payload: XTSPayload, xtsResponse: any, status: "success"|"error"|"skipped",
-  errorMessage: string|undefined, call: any, strategy: any, advisor: any, env: string = "uat"
+  errorMessage: string|undefined, rawData: any, strategy: any, advisor: any, env: string = "uat"
 ) {
   try {
     const now = new Date();
-    const dayMonth = `${String(now.getDate()).padStart(2,"0")}${String(now.getMonth()+1).padStart(2,"0")}`;
+    const d = now.getDate(); const m = now.getMonth()+1;
+    const dayMonth = String(d).padStart(2,"0") + String(m).padStart(2,"0");
     const order = payload.orders?.[0];
+    const isFnO = rawData.type === "FnO" || rawData.segment === "Option" || rawData.segment === "Future";
+
+    // Build equityCall block (matches reference format)
+    const equityCall = !isFnO ? {
+      exchange: order?.exchange || "NSE",
+      legId: order?.legId || null,
+      exchangeToken: payload.exchangeInstrumentID || null,
+      symbol: rawData.symbol || rawData.stockName || rawData.stock_name || null,
+      name: rawData.stockName || rawData.stock_name || rawData.symbol || null,
+      buyDate: rawData.callDate || rawData.call_date || rawData.createdAt || rawData.created_at || now,
+      buyPrice: parseFloat(rawData.entryPrice || rawData.entry_price || rawData.buyRangeStart || rawData.buy_range_start) || null,
+      buyPriceRangeStart: parseFloat(rawData.buyRangeStart || rawData.buy_range_start || rawData.entryPrice) || null,
+      buyPriceRangeEnd: parseFloat(rawData.buyRangeEnd || rawData.buy_range_end || rawData.entryPrice) || null,
+      callType: (rawData.action || rawData.callType || "BUY").toUpperCase(),
+      targetPriceRange: rawData.targetPrice || rawData.target_price || null,
+      profitGoal: rawData.profitGoal || rawData.profit_goal || null,
+      stopLoss: rawData.stopLoss || rawData.stop_loss || null,
+      status: status === "success" ? "PUBLISHED" : "FAILED",
+    } : null;
+
+    // Build fnoCall block
+    const fnoCall = isFnO ? {
+      exchange: order?.exchange || "NSE",
+      legId: order?.legId || null,
+      exchangeToken: payload.exchangeInstrumentID || null,
+      symbol: rawData.symbol || null,
+      segment: rawData.segment || null,
+      callPut: rawData.callPut || rawData.call_put || null,
+      buySell: rawData.buySell || rawData.buy_sell || "BUY",
+      expiry: rawData.expiry || null,
+      strikePrice: rawData.strikePrice || rawData.strike_price || null,
+      entryPrice: parseFloat(rawData.entryPrice || rawData.entry_price) || null,
+      lots: rawData.lots || 1,
+      target: rawData.target || rawData.targetPrice || null,
+      stopLoss: rawData.stopLoss || rawData.stop_loss || null,
+      exitPrice: rawData.exitPrice || rawData.exit_price || null,
+      series: order?.series || null,
+      productType: order?.productType || null,
+      status: status === "success" ? "PUBLISHED" : "FAILED",
+    } : null;
+
+    const sym = rawData.symbol || rawData.stockName || rawData.stock_name || null;
+    const callType = isFnO
+      ? (rawData.buySell || rawData.buy_sell || "BUY").toUpperCase()
+      : (rawData.action || "BUY").toUpperCase();
+
     await db.execute(sql`
       INSERT INTO xts_call_log (
-        advisor_id, call_id, strategy_id, broker_connection_id, message_id, env,
-        advisor_name, advisor_company, advisor_sebi_reg_no, advisor_email, advisor_profile_pic,
-        strategy_name, strategy_description, strategy_type, benchmark, horizon,
-        thematic_collection, management_style, volatility,
-        call_status, call_type, symbol, exchange, exchange_instrument_id, leg_id,
-        series, product_type, order_side,
-        buy_price, buy_price_range_start, buy_price_range_end,
-        target_price, stop_loss, profit_booked_price,
-        rationale, theme, badge, validity, duration, lots, call_date,
-        xts_payload, xts_response, publish_status, error_message, retry_count, day_month, published_at
+        advisor_id, client_id, env, call_status, day_month, symbol, call_type,
+        strategy_id, recommendation_id, rational, status, is_active,
+        theme, thematic_collection, management_style, volatility, horizon,
+        strategy_name, strategy_description, benchmark, strategy_type,
+        advisor_name, profile_pic, advisor_sebi_reg_no, advisor_email, advisor_company,
+        equity_call, fno_call, xts_payload, xts_response,
+        publish_status, error_message, retry_count, creation_date, published_at
       ) VALUES (
-        ${advisorId}, ${callId}, ${strategyId}, ${connId}, ${payload.messageID}, ${env},
-        ${advisor.username||null}, ${advisor.company_name||null}, ${advisor.sebi_reg_no||strategy.sebi_reg_no||null},
-        ${advisor.email||null}, ${advisor.profile_pic||strategy.profile_pic||null},
-        ${strategy.name||null}, ${strategy.description||null}, ${strategy.type||null},
-        ${strategy.benchmark||null}, ${strategy.horizon||null},
-        ${payload.thematicCollection||null}, ${strategy.management_style||null}, ${strategy.volatility||null},
-        ${status==="success"?"PUBLISHED":"FAILED"}, ${order?.orderSide||null},
-        ${payload.exchangeInstrumentID||null}, ${order?.exchange||"NSE"}, ${payload.exchangeInstrumentID||null},
-        ${order?.legId||null}, ${order?.series||null}, ${order?.productType||null}, ${order?.orderSide||null},
-        ${order?.limitPrice||null}, ${call.buyRangeStart||call.buy_range_start||order?.limitPrice||null},
-        ${call.buyRangeEnd||call.buy_range_end||order?.limitPrice||null},
-        ${payload.targetPrice||null}, ${payload.stopLossPrice||null}, ${payload.profitBookedPrice||null},
-        ${payload.theory||null}, ${payload.badge||null}, ${payload.badge||null},
-        ${payload.validity||null}, ${payload.validity||null},
-        ${order?.orderQuantity||1}, ${call.callDate||call.call_date||now},
-        ${JSON.stringify(payload)}::jsonb, ${JSON.stringify(xtsResponse||{})}::jsonb,
-        ${status}, ${errorMessage||null}, 0, ${dayMonth}, NOW()
+        ${advisorId}, 'XTS', ${env},
+        ${status === "success" ? "PUBLISHED" : "FAILED"},
+        ${dayMonth}, ${sym}, ${callType},
+        ${strategyId}, ${callId}, ${rawData.rationale || null},
+        ${status === "success" ? "SEND" : "FAILED"}, true,
+        ${JSON.stringify([rawData.theme || strategy.type || "Equity"])}::jsonb,
+        ${JSON.stringify([payload.thematicCollection || strategy.type || "Equity"])}::jsonb,
+        ${JSON.stringify(["Active"])}::jsonb,
+        ${JSON.stringify([strategy.volatility || "Medium"])}::jsonb,
+        ${JSON.stringify([strategy.horizon || payload.badge || "Short Term"])}::jsonb,
+        ${strategy.name || null}, ${strategy.description || null},
+        ${strategy.benchmark || "Nifty 50"}, ${strategy.type || null},
+        ${advisor.company_name || advisor.username || null},
+        ${advisor.profile_pic || strategy.profile_pic || null},
+        ${advisor.sebi_reg_number || strategy.sebi_reg_number || null},
+        ${advisor.email || null}, ${advisor.company_name || null},
+        ${equityCall ? JSON.stringify(equityCall) : null}::jsonb,
+        ${fnoCall ? JSON.stringify(fnoCall) : null}::jsonb,
+        ${JSON.stringify(payload)}::jsonb,
+        ${JSON.stringify(xtsResponse || {})}::jsonb,
+        ${status}, ${errorMessage || null}, 0, NOW(), NOW()
       )
     `);
-  } catch(err) { console.error("[XTS Bridge] Failed to write enriched call log:", err); }
+  } catch(err) {
+    console.error("[XTS Bridge] Failed to write enriched call log:", err);
+  }
 }
+
 
 // --- Main Event Handler ---
 export async function handleXTSEvent(event: string, data: Record<string,any>, advisorId: string) {
@@ -317,10 +368,10 @@ export async function handleXTSEvent(event: string, data: Record<string,any>, ad
       return;
     }
     const strategyMapping = await getStrategyMapping(conn.id, data.strategyId);
-    const strategyResult = await db.execute(sql`SELECT s.*,u.company_name,u.username FROM strategies s JOIN users u ON u.id=s.advisor_id WHERE s.id=${data.strategyId}`);
+    const strategyResult = await db.execute(sql`SELECT s.*,u.company_name,u.username,u.email,u.sebi_reg_number,u.sebi_cert_url FROM strategies s JOIN users u ON u.id=s.advisor_id WHERE s.id=${data.strategyId}`);
     const strategy = strategyResult.rows[0] as any;
     if (!strategy) { console.warn(`[XTS Bridge] Strategy ${data.strategyId} not found`); return; }
-    const advisor = { company_name: strategy.company_name, username: strategy.username };
+    const advisor = { company_name: strategy.company_name, username: strategy.username, email: strategy.email, sebi_reg_number: strategy.sebi_reg_number, profile_pic: strategy.sebi_cert_url };
     let payload: XTSPayload;
     let callType: string;
     if (isEquity) { callType = "EQUITY_CALL"; payload = mapEquityCallToXTS(data, strategy, advisor, strategyMapping); }

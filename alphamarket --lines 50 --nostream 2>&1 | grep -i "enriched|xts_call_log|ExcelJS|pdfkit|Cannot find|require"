@@ -1,0 +1,4 @@
+ advisor_id | advisor_name | advisor_sebi_reg_no | strategy_name | symbol | call_type | equity_call | fno_call | publish_status 
+------------+--------------+---------------------+---------------+--------+-----------+-------------+----------+----------------
+(0 rows)
+

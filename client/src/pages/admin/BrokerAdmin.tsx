@@ -8,6 +8,25 @@ const C={brand:"#CC2936",dark:"#1A1A2E",bg:"#F8F9FA",panel:"#FFFFFF",border:"#E2
 function Badge({label,color,bg}:{label:string;color:string;bg:string}){return <span style={{background:bg,color,padding:"2px 8px",borderRadius:4,fontSize:11,fontWeight:600}}>{label}</span>;}
 function Toggle({checked,onChange}:{checked:boolean;onChange:(v:boolean)=>void}){return(<div onClick={()=>onChange(!checked)} style={{width:40,height:22,borderRadius:11,cursor:"pointer",position:"relative",background:checked?C.green:"#CBD5E0",transition:"background 0.2s"}}><div style={{width:18,height:18,borderRadius:"50%",background:"#fff",position:"absolute",top:2,left:checked?20:2,transition:"left 0.2s"}}/></div>);}
 function Stat({label,value,color}:{label:string;value:string|number;color?:string}){return(<div style={{textAlign:"center",padding:"12px 16px",background:C.bg,borderRadius:8}}><div style={{fontSize:22,fontWeight:700,color:color||C.text}}>{value}</div><div style={{fontSize:11,color:C.muted,marginTop:2}}>{label}</div></div>);}
+
+function CustomDownload(){
+  const [from,setFrom]=useState("");
+  const [to,setTo]=useState("");
+  const [fmt,setFmt]=useState("csv");
+  const C2={blue:"#3182CE",border:"#E2E8F0",panel:"#FFFFFF",text:"#1A202C"};
+  const go=()=>{if(!from||!to)return;window.location.href=`/api/admin/xts-call-log/download?format=${fmt}&period=custom&from=${from}T00:00:00Z&to=${to}T23:59:59Z`;};
+  return(<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap" as any}}>
+    <span style={{fontSize:11,fontWeight:600,color:"#718096"}}>Custom:</span>
+    <input type="date" value={from} onChange={e=>setFrom(e.target.value)} style={{padding:"3px 6px",border:`1px solid ${C2.border}`,borderRadius:4,fontSize:11}}/>
+    <span style={{fontSize:11,color:"#718096"}}>to</span>
+    <input type="date" value={to} onChange={e=>setTo(e.target.value)} style={{padding:"3px 6px",border:`1px solid ${C2.border}`,borderRadius:4,fontSize:11}}/>
+    <select value={fmt} onChange={e=>setFmt(e.target.value)} style={{padding:"3px 6px",border:`1px solid ${C2.border}`,borderRadius:4,fontSize:11}}>
+      {["csv","xlsx","pdf"].map(f=><option key={f} value={f}>{f.toUpperCase()}</option>)}
+    </select>
+    <button onClick={go} disabled={!from||!to} style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C2.blue}`,background:C2.blue,color:"#fff",fontSize:11,fontWeight:600,cursor:from&&to?"pointer":"default",opacity:from&&to?1:0.5}}>Download</button>
+  </div>);
+}
+
 export default function BrokerAdmin(){
   const [brokers,setBrokers]=useState<BrokerConnection[]>([]);
   const [selected,setSelected]=useState<BrokerConnection|null>(null);
@@ -98,6 +117,20 @@ export default function BrokerAdmin(){
                 {strategyMappings.map(s=>{const on=s.mapping_id!==null&&s.mapping_enabled===true;return(<div key={s.id} style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12,opacity:on?1:0.7}}><Toggle checked={on} onChange={()=>toggleStrategy(s)}/><div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{s.name}</div><div style={{fontSize:11,color:C.muted}}>{s.advisor_name} · {s.type}</div>{s.custom_strategy_name&&<div style={{fontSize:11,color:C.blue}}>XTS: {s.custom_strategy_name}</div>}</div><Badge label={s.type} color={C.blue} bg={C.blueBg}/></div>);})}
               </div>)}
               {!loading&&tab==="log"&&(<div>
+                <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <span style={{fontSize:12,fontWeight:600,color:C.muted}}>Download:</span>
+                  {(["daily","weekly","monthly"] as const).map(p=>(
+                    <div key={p} style={{display:"flex",gap:4}}>
+                      {(["csv","xlsx","pdf"] as const).map(fmt=>(
+                        <a key={fmt} href={`/api/admin/xts-call-log/download?format=${fmt}&period=${p}`} download style={{padding:"4px 10px",borderRadius:5,border:`1px solid ${C.border}`,background:C.panel,color:C.text,fontSize:11,fontWeight:500,textDecoration:"none",cursor:"pointer"}}>
+                          {p.charAt(0).toUpperCase()+p.slice(1)} {fmt.toUpperCase()}
+                        </a>
+                      ))}
+                      <span style={{fontSize:11,color:C.border,alignSelf:"center"}}>|</span>
+                    </div>
+                  ))}
+                  <CustomDownload />
+                </div>
                 <div style={{display:"flex",gap:8,marginBottom:16}}>{["","success","error","skipped"].map(f=>(<button key={f} onClick={()=>setLogFilter(f)} style={{padding:"5px 12px",borderRadius:5,border:`1px solid ${logFilter===f?C.blue:C.border}`,background:logFilter===f?C.blueBg:"transparent",color:logFilter===f?C.blue:C.text,fontSize:12,cursor:"pointer"}}>{f===''?'All':f.charAt(0).toUpperCase()+f.slice(1)}</button>))}<div style={{flex:1}}/><div style={{fontSize:12,color:C.muted,alignSelf:"center"}}>Last 50 entries</div></div>
                 {publishLog.length===0?(<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:40}}>No publish events yet</div>):(
                   <div style={{background:C.panel,border:`1px solid ${C.border}`,borderRadius:8,overflow:"hidden"}}>
