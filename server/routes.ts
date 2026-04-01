@@ -12,6 +12,8 @@ import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, 
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements, appSettings } from "@shared/schema";
 import { db } from "./db";
+import { handleXTSEvent, buildCallEventData, buildPositionEventData } from "./webhook-dispatcher";
+import { handleXTSEvent as xtsHandleEvent } from "./xts-bridge";
 import { and, eq, desc, sql } from "drizzle-orm";
 import nseSymbols from "./data/nse-symbols.json";
 import { createCashfreeOrder, fetchCashfreeOrder, fetchCashfreePayments, verifyCashfreeWebhook } from "./cashfree";
@@ -1142,6 +1144,7 @@ export async function registerRoutes(
           notifyStrategySubscribers(req.params.id, strategy.name, "new_call", subPayload);
           const wlPayload = buildNewCallWatchlistNotification(c, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_call_masked", wlPayload);
+          xtsHandleEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
         }
       }
       res.json(c);
@@ -1333,6 +1336,7 @@ export async function registerRoutes(
       notifyStrategySubscribers(call.strategyId, strategy.name, "new_call", subPayload);
       const wlPayload = buildNewCallWatchlistNotification(call, strategy.name);
       notifyWatchlistUsers(call.strategyId, strategy.name, "new_call_masked", wlPayload);
+      xtsHandleEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -6462,7 +6466,7 @@ export async function registerRoutes(
       const conn=connResult.rows[0] as any;
       let pingStatus='error',pingError:string|null=null,token:string|null=null;
       try {
-        const response=await fetch(`${conn.base_url}/XTSAdvisory/sessiontoken`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendorCode:conn.vendor_code,vendorKey:conn.vendor_key}),signal:AbortSignal.timeout(10000)});
+        const response=await fetch(`${conn.base_url}/sessiontoken`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({vendorCode:conn.vendor_code,vendorKey:conn.vendor_key}),signal:AbortSignal.timeout(10000)});
         const data=await response.json() as any;
         token=data?.result?.token||data?.token||null;
         pingStatus=token?'ok':'error';
@@ -6476,6 +6480,113 @@ export async function registerRoutes(
       }
     } catch(err:any){res.status(500).send(err.message);}
   });
+
+
+
+  // XTS Call Log — Download (CSV / XLSX / PDF)
+  app.get("/api/admin/xts-call-log/download", requireAdmin, async (req, res) => {
+    try {
+      const format = ((req.query.format as string) || "csv").toLowerCase();
+      const period = req.query.period as string;
+      const from = req.query.from as string;
+      const to = req.query.to as string;
+      const now = new Date();
+
+      let dateFilter = "AND 1=1";
+      if (period === "daily") {
+        dateFilter = "AND published_at >= NOW() - INTERVAL '1 day'";
+      } else if (period === "weekly") {
+        dateFilter = "AND published_at >= NOW() - INTERVAL '7 days'";
+      } else if (period === "monthly") {
+        dateFilter = "AND published_at >= NOW() - INTERVAL '30 days'";
+      } else if (period === "custom" && from && to) {
+        dateFilter = "AND published_at >= '" + from + "'::timestamptz AND published_at <= '" + to + "'::timestamptz";
+      }
+
+      const result = await db.execute(sql.raw(
+        "SELECT id, env, published_at, day_month, advisor_id, advisor_name, advisor_company, advisor_email, advisor_sebi_reg_no, strategy_id, strategy_name, strategy_type, thematic_collection, horizon, call_id, message_id, call_status, call_type, symbol, exchange, exchange_instrument_id, series, product_type, order_side, buy_price, buy_price_range_start, buy_price_range_end, target_price, stop_loss, profit_booked_price, validity, badge, rationale, publish_status, error_message, retry_count FROM xts_call_log WHERE 1=1 " + dateFilter + " ORDER BY published_at DESC LIMIT 5000"
+      ));
+
+      const rows = result.rows as any[];
+      const filename = "xts_call_log_" + (period || "custom") + "_" + now.toISOString().slice(0, 10);
+
+      if (format === "csv") {
+        let csv = "";
+        if (rows.length === 0) {
+          csv = "No data";
+        } else {
+          const headers = Object.keys(rows[0]);
+          csv = headers.join(",") + "\n";
+          for (const row of rows) {
+            csv += headers.map((h) => {
+              const v = row[h] == null ? "" : String(row[h]).replace(/"/g, '""');
+              return '"' + v + '"';
+            }).join(",") + "\n";
+          }
+        }
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", 'attachment; filename="' + filename + '.csv"');
+        return res.send(csv);
+      }
+
+      if (format === "xlsx") {
+        const ExcelJS = require("exceljs");
+        const wb = new ExcelJS.Workbook();
+        const ws = wb.addWorksheet("XTS Call Log");
+        if (rows.length > 0) {
+          ws.columns = Object.keys(rows[0]).map((k: string) => ({ header: k, key: k, width: 22 }));
+          for (const row of rows) ws.addRow(row);
+          ws.getRow(1).font = { bold: true };
+          ws.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1a1a2e" } };
+          ws.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        }
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", 'attachment; filename="' + filename + '.xlsx"');
+        await wb.xlsx.write(res);
+        return res.end();
+      }
+
+      if (format === "pdf") {
+        const PDFDocument = require("pdfkit");
+        const doc = new PDFDocument({ margin: 30, size: "A4", layout: "landscape" });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", 'attachment; filename="' + filename + '.pdf"');
+        doc.pipe(res);
+        doc.fontSize(14).font("Helvetica-Bold").text("XTS Call Log — AlphaMarket", { align: "center" });
+        doc.fontSize(9).font("Helvetica").text("Period: " + (period || "custom") + " | Generated: " + now.toLocaleString("en-IN"), { align: "center" });
+        doc.moveDown(0.5);
+        const cols = ["published_at", "advisor_company", "strategy_name", "symbol", "call_type", "buy_price", "target_price", "stop_loss", "publish_status"];
+        const colW = 115;
+        let x = 30;
+        let y = doc.y;
+        doc.fontSize(7).font("Helvetica-Bold");
+        for (const c of cols) { doc.text(c, x, y, { width: colW, ellipsis: true }); x += colW; }
+        y += 14;
+        doc.font("Helvetica");
+        for (const row of rows.slice(0, 300)) {
+          if (y > 540) { doc.addPage({ layout: "landscape" }); y = 30; }
+          x = 30;
+          for (const c of cols) {
+            const v = row[c] == null ? "" : c === "published_at" ? new Date(row[c]).toLocaleString("en-IN") : String(row[c]);
+            doc.fontSize(6).text(v, x, y, { width: colW, ellipsis: true });
+            x += colW;
+          }
+          y += 11;
+        }
+        if (rows.length > 300) {
+          doc.fontSize(7).text("... and " + (rows.length - 300) + " more rows. Use CSV/XLSX for full export.", 30, y + 10);
+        }
+        doc.end();
+        return;
+      }
+
+      res.status(400).json({ error: "Invalid format. Use csv, xlsx, or pdf" });
+    } catch (err: any) {
+      console.error("[XTS Download]", err);
+      res.status(500).send(err.message);
+    }
+  });
+
   app.get("/api/admin/broker-connections/:id/advisor-mappings", requireAdmin, async (req, res) => {
     try {
       const result=await db.execute(sql`SELECT u.id,u.email,u.username,u.company_name as "companyName",u.role,u.is_approved as "isApproved",bam.id as mapping_id,bam.is_enabled as mapping_enabled,bam.push_equity_calls,bam.push_fno_positions,bam.push_basket,bam.thematic_collection_override FROM users u LEFT JOIN broker_advisor_mappings bam ON bam.advisor_id=u.id AND bam.broker_connection_id=${req.params.id} WHERE u.role='advisor' ORDER BY u.company_name`);

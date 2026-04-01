@@ -84,7 +84,7 @@ async function getXTSToken(conn: BrokerConnection): Promise<string> {
     }
   }
   console.log("[XTS Bridge] Fetching new session token...");
-  const response = await fetch(`${conn.base_url}/XTSAdvisory/sessiontoken`, {
+  const response = await fetch(`${conn.base_url}/sessiontoken`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ vendorCode: conn.vendor_code, vendorKey: conn.vendor_key }),
@@ -225,17 +225,17 @@ function mapPositionToXTS(pos: any, strategy: any, advisor: any, sm: StrategyMap
 // --- Publisher ---
 async function publishToXTS(conn: BrokerConnection, payload: XTSPayload): Promise<{success:boolean;response:any;error?:string}> {
   const token = await getXTSToken(conn);
-  const response = await fetch(`${conn.base_url}/XTSAdvisory/publishwebhook`, {
+  const response = await fetch(`${conn.base_url}/publishwebhook`, {
     method: "POST", headers: {"Content-Type":"application/json","Authorization":token},
     body: JSON.stringify(payload), signal: AbortSignal.timeout(15000),
   });
   const data = await response.json();
   if (data?.type === "success") return { success: true, response: data };
-  if (response.status === 401 || data?.code?.includes("token")) {
+  if (response.status === 401 || data?.code?.includes("token") || data?.code?.includes("session")) {
     console.log("[XTS Bridge] Token rejected, refreshing...");
     cachedToken = null;
     const freshToken = await getXTSToken(conn);
-    const r2 = await fetch(`${conn.base_url}/XTSAdvisory/publishwebhook`, {
+    const r2 = await fetch(`${conn.base_url}/publishwebhook`, {
       method:"POST",headers:{"Content-Type":"application/json","Authorization":freshToken},
       body:JSON.stringify(payload),signal:AbortSignal.timeout(15000),
     });
@@ -243,7 +243,7 @@ async function publishToXTS(conn: BrokerConnection, payload: XTSPayload): Promis
     if (d2?.type === "success") return {success:true,response:d2};
     return {success:false,response:d2,error:JSON.stringify(d2).slice(0,500)};
   }
-  return {success:false,response:data,error:JSON.stringify(data).slice(0,500)};
+  cachedToken = null; return {success:false,response:data,error:JSON.stringify(data).slice(0,500)};
 }
 
 // --- Audit Logger ---
@@ -251,6 +251,52 @@ async function logPublishAttempt(connId:string,callId:string,callType:string,eve
   try {
     await db.execute(sql`INSERT INTO xts_publish_log(broker_connection_id,call_id,call_type,event_type,message_id,symbol,advisor_id,strategy_id,payload,response,status,error_message,retry_count,published_at) VALUES(${connId},${callId},${callType},${eventType},${payload?.messageID||callId},${symbol},${advisorId},${strategyId},${JSON.stringify(payload||{})}::jsonb,${JSON.stringify(response||{})}::jsonb,${status},${errorMessage||null},0,NOW())`);
   } catch(err) { console.error("[XTS Bridge] Failed to write publish log:", err); }
+}
+
+
+// --- Enriched Call Logger ---
+async function logEnrichedCallLog(
+  connId: string, callId: string, strategyId: string, advisorId: string,
+  payload: XTSPayload, xtsResponse: any, status: "success"|"error"|"skipped",
+  errorMessage: string|undefined, call: any, strategy: any, advisor: any, env: string = "uat"
+) {
+  try {
+    const now = new Date();
+    const dayMonth = `${String(now.getDate()).padStart(2,"0")}${String(now.getMonth()+1).padStart(2,"0")}`;
+    const order = payload.orders?.[0];
+    await db.execute(sql`
+      INSERT INTO xts_call_log (
+        advisor_id, call_id, strategy_id, broker_connection_id, message_id, env,
+        advisor_name, advisor_company, advisor_sebi_reg_no, advisor_email, advisor_profile_pic,
+        strategy_name, strategy_description, strategy_type, benchmark, horizon,
+        thematic_collection, management_style, volatility,
+        call_status, call_type, symbol, exchange, exchange_instrument_id, leg_id,
+        series, product_type, order_side,
+        buy_price, buy_price_range_start, buy_price_range_end,
+        target_price, stop_loss, profit_booked_price,
+        rationale, theme, badge, validity, duration, lots, call_date,
+        xts_payload, xts_response, publish_status, error_message, retry_count, day_month, published_at
+      ) VALUES (
+        ${advisorId}, ${callId}, ${strategyId}, ${connId}, ${payload.messageID}, ${env},
+        ${advisor.username||null}, ${advisor.company_name||null}, ${advisor.sebi_reg_no||strategy.sebi_reg_no||null},
+        ${advisor.email||null}, ${advisor.profile_pic||strategy.profile_pic||null},
+        ${strategy.name||null}, ${strategy.description||null}, ${strategy.type||null},
+        ${strategy.benchmark||null}, ${strategy.horizon||null},
+        ${payload.thematicCollection||null}, ${strategy.management_style||null}, ${strategy.volatility||null},
+        ${status==="success"?"PUBLISHED":"FAILED"}, ${order?.orderSide||null},
+        ${payload.exchangeInstrumentID||null}, ${order?.exchange||"NSE"}, ${payload.exchangeInstrumentID||null},
+        ${order?.legId||null}, ${order?.series||null}, ${order?.productType||null}, ${order?.orderSide||null},
+        ${order?.limitPrice||null}, ${call.buyRangeStart||call.buy_range_start||order?.limitPrice||null},
+        ${call.buyRangeEnd||call.buy_range_end||order?.limitPrice||null},
+        ${payload.targetPrice||null}, ${payload.stopLossPrice||null}, ${payload.profitBookedPrice||null},
+        ${payload.theory||null}, ${payload.badge||null}, ${payload.badge||null},
+        ${payload.validity||null}, ${payload.validity||null},
+        ${order?.orderQuantity||1}, ${call.callDate||call.call_date||now},
+        ${JSON.stringify(payload)}::jsonb, ${JSON.stringify(xtsResponse||{})}::jsonb,
+        ${status}, ${errorMessage||null}, 0, ${dayMonth}, NOW()
+      )
+    `);
+  } catch(err) { console.error("[XTS Bridge] Failed to write enriched call log:", err); }
 }
 
 // --- Main Event Handler ---
@@ -290,6 +336,7 @@ export async function handleXTSEvent(event: string, data: Record<string,any>, ad
     console.log(`[XTS Bridge] Publishing ${event} for ${data.symbol} (${callType})...`);
     const result = await publishToXTS(conn, payload);
     await logPublishAttempt(conn.id,data.uid,callType,event,data.symbol,advisorId,data.strategyId,payload,result.response,result.success?"success":"error",result.error);
+    await logEnrichedCallLog(conn.id,data.uid,data.strategyId,advisorId,payload,result.response,result.success?"success":"error",result.error,data,strategy,advisor);
     if (result.success) console.log(`[XTS Bridge] ✓ Published ${event} for ${data.symbol}`);
     else console.error(`[XTS Bridge] ✗ Failed ${event} for ${data.symbol}: ${result.error}`);
   } catch(err:any) {

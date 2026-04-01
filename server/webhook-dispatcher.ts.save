@@ -1,6 +1,8 @@
+
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { createHmac } from "crypto";
+import { handleXTSEvent } from "./xts-bridge";
 import { handleXTSEvent } from "./xts-bridge";
 
 interface WebhookTarget {
@@ -80,9 +82,6 @@ export async function fireWebhookEvent(
 
     // Process queue
     processQueue();
-
-    // XTS Bridge — fire in parallel, never blocks webhook delivery
-    handleXTSEvent(event, data, advisorId || "").catch((err) => console.error("[XTS Bridge] Unhandled:", err));
   } catch (err) {
     console.error("[Webhook] Error firing event:", event, err);
   }

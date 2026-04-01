@@ -7,6 +7,7 @@ import { createServer } from "http";
 import { seed } from "./seed";
 import { startScheduler } from "./scheduler";
 import { loadPersistedGrowwToken } from "./groww";
+import { initXTSBridge } from "./xts-bridge";
 import { ensureBasketTables } from "./db";
 
 const app = express();
@@ -71,6 +72,7 @@ app.use((req, res, next) => {
   await ensureBasketTables().catch((err) => console.error("Basket tables error:", err));
   await seed().catch((err) => console.error("Seed error:", err));
   await loadPersistedGrowwToken();
+  initXTSBridge();
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
