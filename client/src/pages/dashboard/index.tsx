@@ -1,3 +1,4 @@
+import AdvisorWalkthrough from "@/components/advisor-walkthrough";
 import { useAuth } from "@/lib/auth";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -161,6 +162,7 @@ export default function Dashboard() {
             </main>
           </div>
         </div>
+      <AdvisorWalkthrough />
       </SidebarProvider>
     </div>
   );
