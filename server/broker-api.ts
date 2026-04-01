@@ -112,7 +112,7 @@ export function getSwaggerSpec() {
     info: {
       title: "AlphaMarket Broker API",
       version: "3.4.0",
-      description: "AlphaMarket API v3.4\n\nSEBI-registered investment advisor marketplace with full portfolio management, compliance, and financial planning.\n\n**v3.4 (17 Mar 2026):**\n- Admin Dashboard: Advisor analytics, dashboard stats, monetization config\n- PDF Reports: Donut charts, card-based stock layouts, top holdings bars\n- Portfolio UI: Sticky section nav, dark mode, mobile responsive\n- Monetization: Configurable pricing for DYOR, Stock/MF Analyzer, Portfolio Tool\n\n**v3.2 (Mar 2026):**\n- Portfolio Analyzer: 14 asset types, CSV/PDF import, live price sync\n- Suggestion Engine: 10 financial planning rules\n- Goal-Based Planning: 9 goal types with SIP projections\n- Advisor Recommendations: Action items + file attachments\n- Live Prices: Groww API (stocks) + mfapi.in (MF NAVs)\n- CAS/CAMS PDF Parser for mutual fund statements\n\n**v2.5:**\n- Advisor Microsite: 6-tab business config center\n- PMLA Verification: Bank account + name matching\n- Telegram Bot: 4-channel notification alerts\n\n**v2.3:**\n- Email/Push/In-app/Telegram notifications\n- Auto SL/Target + Trailing SL\n- Webhook events\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
+      description: "AlphaMarket API v3.5\n\n**v3.5 (1 Apr 2026):**\n- XTS Symphony Fintech Integration: Full advisory publishing pipeline\n- Broker Admin Module: Advisor/strategy mappings, publish audit log\n- XTS Call Log: Enriched call records with download (CSV/XLSX/PDF)\n- Token auto-refresh, session recovery, F&O position support\n\nSEBI-registered investment advisor marketplace with full portfolio management, compliance, and financial planning.\n\n**v3.4 (17 Mar 2026):**\n- Admin Dashboard: Advisor analytics, dashboard stats, monetization config\n- PDF Reports: Donut charts, card-based stock layouts, top holdings bars\n- Portfolio UI: Sticky section nav, dark mode, mobile responsive\n- Monetization: Configurable pricing for DYOR, Stock/MF Analyzer, Portfolio Tool\n\n**v3.2 (Mar 2026):**\n- Portfolio Analyzer: 14 asset types, CSV/PDF import, live price sync\n- Suggestion Engine: 10 financial planning rules\n- Goal-Based Planning: 9 goal types with SIP projections\n- Advisor Recommendations: Action items + file attachments\n- Live Prices: Groww API (stocks) + mfapi.in (MF NAVs)\n- CAS/CAMS PDF Parser for mutual fund statements\n\n**v2.5:**\n- Advisor Microsite: 6-tab business config center\n- PMLA Verification: Bank account + name matching\n- Telegram Bot: 4-channel notification alerts\n\n**v2.3:**\n- Email/Push/In-app/Telegram notifications\n- Auto SL/Target + Trailing SL\n- Webhook events\n\nAuthentication via x-api-key header. Optional HMAC-SHA256 signature for enhanced security.",
       contact: { email: "hello@alphamarket.co.in", name: "AlphaMarket Team", url: "https://alphamarket.co.in" },
     },
     servers: [{ url: "https://alphamarket.co.in/api/v1", description: "Production" }],
@@ -205,6 +205,77 @@ export function getSwaggerSpec() {
             currentSL: { type: "string", description: "Current computed stop loss price (read-only)" },
             highestPrice: { type: "string", description: "Highest price since entry (read-only)" },
             triggeredAt: { type: "number", nullable: true, description: "Price at which SL was triggered (null if active)" },
+          },
+        },
+        BrokerConnection: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            name: { type: "string", example: "XTS Symphony Fintech" },
+            broker_type: { type: "string", example: "XTS" },
+            base_url: { type: "string", example: "https://developers.symphonyfintech.in/xtstradeidea" },
+            vendor_code: { type: "string", example: "XTS_2" },
+            is_enabled: { type: "boolean", description: "Master kill switch for all publishing" },
+            last_ping_status: { type: "string", enum: ["ok", "error", null] },
+            last_ping_at: { type: "string", format: "date-time" },
+            total_published: { type: "integer" },
+            total_errors: { type: "integer" },
+            published_24h: { type: "integer" },
+          },
+        },
+        XTSPublishLog: {
+          type: "object",
+          properties: {
+            id: { type: "string", format: "uuid" },
+            event_type: { type: "string", enum: ["CALL_CREATED","CALL_MODIFIED","CALL_CLOSED","TARGET_ACHIEVED","STOPLOSS_TRIGGERED","TRAILING_SL_TRIGGERED","TRAILING_SL_UPDATED","POSITION_CREATED","POSITION_MODIFIED","POSITION_CLOSED"] },
+            call_type: { type: "string", enum: ["EQUITY_CALL","FNO_POSITION"] },
+            symbol: { type: "string" },
+            advisor_id: { type: "string" },
+            strategy_id: { type: "string" },
+            message_id: { type: "string", description: "XTS messageID = AlphaMarket call/position UUID" },
+            status: { type: "string", enum: ["success","error","skipped"] },
+            error_message: { type: "string", nullable: true },
+            retry_count: { type: "integer" },
+            payload: { type: "object", description: "Full XTS publishwebhook payload sent" },
+            response: { type: "object", description: "Full XTS API response received" },
+            published_at: { type: "string", format: "date-time" },
+          },
+        },
+        XTSPayload: {
+          type: "object",
+          description: "Payload sent to XTS /XTSAdvisory/publishwebhook",
+          properties: {
+            strategyname: { type: "string", example: "Equity Short Term | Front Wave Research LLP" },
+            messageID: { type: "string", format: "uuid", description: "AlphaMarket call/position UUID used as XTS messageID" },
+            limitPrice: { type: "number" },
+            targetPrice: { type: "number" },
+            stopLossPrice: { type: "number" },
+            profitBookedPrice: { type: "number", nullable: true },
+            badge: { type: "string", example: "Short Term" },
+            theory: { type: "string", description: "Rationale text" },
+            validity: { type: "string", example: "Until Further Notice" },
+            thematicCollection: { type: "string", enum: ["Equity","F&O","Basket"] },
+            exchangeInstrumentID: { type: "string", description: "XTS instrument ID or symbol fallback" },
+            orders: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  exchange: { type: "string", example: "NSE" },
+                  exchangeInstrumentID: { type: "string" },
+                  series: { type: "string", enum: ["EQ","OPTIDX","FUTIDX","FUTSTK"] },
+                  name: { type: "string", description: "Instrument name or F&O contract name" },
+                  productType: { type: "string", enum: ["CNC","MIS","NRML"] },
+                  orderType: { type: "string", enum: ["LIMIT","MARKET"] },
+                  orderSide: { type: "string", enum: ["BUY","SELL"] },
+                  limitPrice: { type: "number" },
+                  stopLoss: { type: "number" },
+                  target: { type: "number" },
+                  orderQuantity: { type: "integer" },
+                  legId: { type: "string" },
+                },
+              },
+            },
           },
         },
         WebhookPayload: {
@@ -310,6 +381,232 @@ export function getSwaggerSpec() {
           ],
           requestBody: { required: true, content: { "application/json": { schema: { "$ref": "#/components/schemas/PortfolioRecommendation" } } } },
           responses: { "200": { description: "Updated" } },
+        },
+      },
+
+      "/admin/broker-connections": {
+        get: {
+          tags: ["XTS Broker Admin"],
+          summary: "List all broker connections",
+          description: "Returns all broker integrations with stats. Admin only.",
+          security: [{ sessionCookie: [] }],
+          responses: {
+            "200": {
+              description: "List of broker connections with advisor/strategy counts and publish stats",
+              content: { "application/json": { schema: { type: "array", items: { "$ref": "#/components/schemas/BrokerConnection" } } } },
+            },
+          },
+        },
+        post: {
+          tags: ["XTS Broker Admin"],
+          summary: "Add a new broker connection",
+          security: [{ sessionCookie: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["name", "brokerType", "baseUrl", "vendorCode", "vendorKey"],
+                  properties: {
+                    name: { type: "string", example: "XTS Symphony Fintech" },
+                    brokerType: { type: "string", example: "XTS" },
+                    baseUrl: { type: "string", example: "https://developers.symphonyfintech.in/xtstradeidea" },
+                    vendorCode: { type: "string", example: "XTS_2" },
+                    vendorKey: { type: "string", example: "7ya*k&u$15" },
+                    notes: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "201": { description: "Broker connection created" } },
+        },
+      },
+      "/admin/broker-connections/{id}": {
+        patch: {
+          tags: ["XTS Broker Admin"],
+          summary: "Update broker connection settings",
+          security: [{ sessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string" },
+                    baseUrl: { type: "string" },
+                    vendorCode: { type: "string" },
+                    vendorKey: { type: "string" },
+                    isEnabled: { type: "boolean", description: "Master kill switch" },
+                    notes: { type: "string" },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "Updated" } },
+        },
+      },
+      "/admin/broker-connections/{id}/test": {
+        post: {
+          tags: ["XTS Broker Admin"],
+          summary: "Test XTS connection — fetch live JWT",
+          description: "Calls XTS sessiontoken endpoint live. Caches JWT on success. Returns token status.",
+          security: [{ sessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: {
+            "200": {
+              description: "Connection test result",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      status: { type: "string", enum: ["ok", "error"] },
+                      token: { type: "string", nullable: true, example: "received" },
+                      error: { type: "string", nullable: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/broker-connections/{id}/advisor-mappings": {
+        get: {
+          tags: ["XTS Broker Admin"],
+          summary: "List advisor mappings for a broker",
+          description: "Returns all advisors with their XTS enable status and call-type permissions.",
+          security: [{ sessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "Advisor mappings" } },
+        },
+        post: {
+          tags: ["XTS Broker Admin"],
+          summary: "Create or update advisor mapping",
+          security: [{ sessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["advisorId", "isEnabled"],
+                  properties: {
+                    advisorId: { type: "string" },
+                    isEnabled: { type: "boolean" },
+                    pushEquityCalls: { type: "boolean", default: true },
+                    pushFnoPositions: { type: "boolean", default: true },
+                    pushBasket: { type: "boolean", default: false },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "Mapping saved" } },
+        },
+      },
+      "/admin/broker-connections/{id}/strategy-mappings": {
+        get: {
+          tags: ["XTS Broker Admin"],
+          summary: "List strategy mappings for a broker",
+          security: [{ sessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          responses: { "200": { description: "Strategy mappings" } },
+        },
+        post: {
+          tags: ["XTS Broker Admin"],
+          summary: "Create or update strategy mapping",
+          security: [{ sessionCookie: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["strategyId", "isEnabled"],
+                  properties: {
+                    strategyId: { type: "string" },
+                    isEnabled: { type: "boolean" },
+                    customStrategyName: { type: "string", nullable: true, description: "Override name sent to XTS" },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "200": { description: "Mapping saved" } },
+        },
+      },
+      "/admin/broker-connections/{id}/publish-log": {
+        get: {
+          tags: ["XTS Broker Admin"],
+          summary: "Get XTS publish audit log",
+          description: "Returns last 50 publish attempts for a broker connection. Filter by status.",
+          security: [{ sessionCookie: [] }],
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string", format: "uuid" } },
+            { name: "status", in: "query", schema: { type: "string", enum: ["success", "error", "skipped"] }, description: "Filter by publish status" },
+          ],
+          responses: {
+            "200": {
+              description: "Publish log entries",
+              content: { "application/json": { schema: { type: "array", items: { "$ref": "#/components/schemas/XTSPublishLog" } } } },
+            },
+          },
+        },
+      },
+      "/admin/xts-call-log/download": {
+        get: {
+          tags: ["XTS Broker Admin"],
+          summary: "Download XTS call log",
+          description: "Download full enriched call log with advisor details, strategy info, instrument data, and XTS response. Supports daily/weekly/monthly/custom date ranges in CSV, XLSX, and PDF formats.",
+          security: [{ sessionCookie: [] }],
+          parameters: [
+            { name: "format", in: "query", required: true, schema: { type: "string", enum: ["csv", "xlsx", "pdf"] }, description: "Download format" },
+            { name: "period", in: "query", required: true, schema: { type: "string", enum: ["daily", "weekly", "monthly", "custom"] }, description: "Time period" },
+            { name: "from", in: "query", schema: { type: "string", format: "date-time", example: "2026-04-01T00:00:00Z" }, description: "Required when period=custom" },
+            { name: "to", in: "query", schema: { type: "string", format: "date-time", example: "2026-04-30T23:59:59Z" }, description: "Required when period=custom" },
+          ],
+          responses: {
+            "200": {
+              description: "File download. Contains: published_at, event_type, call_type, symbol, advisor_name, advisor_sebi_reg_no, strategy_name, strategy_type, recommendation_id (messageID), exchange_instrument_id, instrument_name, series, product_type, order_side, leg_id, limit_price, target_price, stop_loss_price, profit_booked_price, rationale, badge, thematic_collection, xts_response_code, xts_response_description",
+              content: {
+                "text/csv": { schema: { type: "string", format: "binary" } },
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": { schema: { type: "string", format: "binary" } },
+                "application/pdf": { schema: { type: "string", format: "binary" } },
+              },
+            },
+            "401": { description: "Unauthorized — admin session required" },
+          },
+        },
+      },
+      "/admin/xts-dashboard": {
+        get: {
+          tags: ["XTS Broker Admin"],
+          summary: "XTS dashboard stats",
+          description: "Returns aggregate publishing stats: total brokers, enabled count, 24h success/error counts.",
+          security: [{ sessionCookie: [] }],
+          responses: {
+            "200": {
+              description: "Dashboard stats",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      brokers: { type: "object", properties: { total: { type: "integer" }, enabled: { type: "integer" } } },
+                      publishing: { type: "object", properties: { success_24h: { type: "integer" }, error_24h: { type: "integer" } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
         },
       },
       "/alpha/live-calls": {
