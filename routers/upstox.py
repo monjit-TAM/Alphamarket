@@ -200,7 +200,7 @@ async def prefill_fno_basket(request: Request):
             FROM bot_signals s
             JOIN bot_strategies st ON s.strategy_id = st.id
             WHERE s.status = 'ACTIVE'
-            AND DATE(s.created_at AT TIME ZONE 'Asia/Kolkata') = CURRENT_DATE
+            AND DATE(s.created_at) = CURRENT_DATE
             ORDER BY s.created_at DESC
         """)
         legs = []

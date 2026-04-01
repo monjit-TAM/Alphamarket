@@ -135,7 +135,7 @@ def get_current_monthly_expiry():
 
 def format_expiry(exp_date):
     """Format expiry as 26MAR or 03APR"""
-    return exp_date.strftime("%d%b").upper()
+    return exp_date.strftime("%y%b").upper()
 
 def get_atm_strike(price, strike_gap):
     """Round to nearest strike"""

@@ -45,7 +45,7 @@ API_TAGS = [
     {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
     {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
     {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
-    {"name": "Screen Builder", "description": "Custom stock/futures/options scanner for DYOR. Filter 923 NSE stocks by 40+ technical & fundamental parameters. Includes universe warm-up, F&O pipeline, and saved screens."},
+    {"name": "Screen Builder", "description": "Custom stock/futures/options scanner for DYOR. Filter 923 NSE stocks by 50+ technical & fundamental parameters. AND/OR logic, save/load screens, CSV export. Includes universe warm-up, F&O pipeline, and saved screens."},
     {"name": "Alpha Signal", "description": "Automated Index F&O signal engine (AlphaBot). Strategies: Momentum Futures (VWAP + price action), Options Directional (ATM CE/PE), Options Writing (OTM Straddle/Strangle), Index Arbitrage (basis capture). Signals pushed to Upstox/XTS for auto-execution. Basket publishing for brokers."},
     {"name": "F&O Trading", "description": "Cash-futures arbitrage scanner, jobbing (bid-ask spread) candidates, and scalping (VWAP + momentum) signals. Covers 31 F&O stocks + NIFTY/BANKNIFTY/FINNIFTY indices. Live prices via Groww API + Kite Connect."},
     {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
@@ -103,7 +103,7 @@ app = FastAPI(
 AlphaLab provides institutional-grade quantitative tools for SEBI-registered Research Analysts (RA) and Investment Advisors (RIA) operating in Indian equity markets.
 
 ### Coverage
-- **843 NSE-listed stocks** across **49 sectors**
+- **923 NSE-listed stocks** across **49 sectors**
 - **34+ screener strategies** (momentum, mean reversion, breakout, fundamental, multi-factor)
 - **40+ backtest strategies** with full trade-by-trade analysis
 - **Real-time forward testing** with live signal generation
@@ -111,6 +111,7 @@ AlphaLab provides institutional-grade quantitative tools for SEBI-registered Res
 - **Options chain & payoff analysis** for stocks and indices
 - **Sector Relative Rotation Graphs (RRG)** with JdK RS-Ratio methodology
 - **SEBI-compliant advisory report generation** with PDF export
+- **Advisor onboarding walkthrough** — 9-step contextual tour guiding new advisors through profile, bank details, plans, strategies, content, reports and microsite
 
 ### Authentication
 All endpoints (except `/api/health`) require a Bearer token. Obtain one via `/api/auth/login`.
@@ -130,9 +131,9 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 
 ### Contact
 - **Email**: hello@thealphamarket.com
-- **Website**: https://testalpha.in
+- **Website**: https://alphamarket.co.in
 """,
-    version="3.0.0",
+    version="3.1.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
@@ -1943,7 +1944,7 @@ def simulate_trades_v2(df, signals, initial_capital, params, exit_type="signal")
 async def health():
     token_set = bool(await get_groww_token())
     return {
-        "status": "ok", "version": "2.6.0",
+        "status": "ok", "version": "3.1.0",
         "universe_size": len(NIFTY_UNIVERSE),
         "sectors": len(set(SECTOR_MAP.values())),
         "universe_source": "stock_universe.json" if _UNIVERSE_LOADED else "built-in (457)",
