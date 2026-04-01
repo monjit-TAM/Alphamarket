@@ -255,11 +255,11 @@ async def prefill_equity_basket(request: Request):
 
     # Sort by absolute % change, pick top 5 up + top 5 down
     movers = []
-    for sym, data in quotes.items():
+    for sym, data in quotes.get("quotes", {}).items():
         if isinstance(data, dict) and data.get("change_pct") is not None:
             movers.append({
                 "symbol": sym,
-                "ltp": data.get("ltp", 0),
+                "ltp": data.get("price", 0),
                 "change_pct": data.get("change_pct", 0)
             })
     movers.sort(key=lambda x: abs(x["change_pct"]), reverse=True)
