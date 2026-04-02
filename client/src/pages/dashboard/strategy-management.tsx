@@ -3176,17 +3176,21 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
 
   // Parse basket composition from rationale text
   // Format: "SELL SBIN x1 @ 980.65" or "BUY NIFTY x1 @ 100"
-  const parseRationaleLegs = (rationale: string | null): { symbol: string; action: string; qty: number; entryPrice: number }[] => {
+  const parseRationaleLegs = (rationale: string | null): { symbol: string; action: string; qty: number; entryPrice: number; label: string }[] => {
     if (!rationale) return [];
     return rationale.split("\n")
       .map((line) => line.trim())
-      .filter((line) => /^(BUY|SELL)\s+\S+\s+x\d/i.test(line))
+      .filter((line) => /^(BUY|SELL)\s+/i.test(line) && /@\s*[\d.]+/.test(line))
       .map((line) => {
-        const m = line.match(/^(BUY|SELL)\s+(\S+)\s+x(\d+(?:\.\d+)?)\s+@\s+([\d.]+)/i);
-        if (!m) return null;
-        return { action: m[1].toUpperCase(), symbol: m[2].toUpperCase(), qty: Number(m[3]), entryPrice: Number(m[4]) };
+        // Equity format: "SELL SBIN x1 @ 980.65"
+        const m1 = line.match(/^(BUY|SELL)\s+(\S+)\s+x(\d+(?:\.\d+)?)\s+@\s+([\d.]+)/i);
+        if (m1) return { action: m1[1].toUpperCase(), symbol: m1[2].toUpperCase(), qty: Number(m1[3]), entryPrice: Number(m1[4]), label: m1[2].toUpperCase() };
+        // F&O format: "BUY BANKNIFTY 50100 PE 26APR x15 @ 751.6"
+        const m2 = line.match(/^(BUY|SELL)\s+(\S+)\s+(\S+)\s+(CE|PE|CALL|PUT)\s+(\S+)\s+x(\d+(?:\.\d+)?)\s+@\s+([\d.]+)/i);
+        if (m2) return { action: m2[1].toUpperCase(), symbol: m2[2].toUpperCase(), qty: Number(m2[6]), entryPrice: Number(m2[7]), label: `${m2[2]} ${m2[3]} ${m2[4]} ${m2[5]}` };
+        return null;
       })
-      .filter(Boolean) as { symbol: string; action: string; qty: number; entryPrice: number }[];
+      .filter(Boolean) as { symbol: string; action: string; qty: number; entryPrice: number; label: string }[];
   };
 
   const allRationaleLegs = [
@@ -3246,7 +3250,7 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
                     const pnl = ltp ? (sub.action === "SELL" ? ((sub.entryPrice - ltp) / sub.entryPrice) * 100 : ((ltp - sub.entryPrice) / sub.entryPrice) * 100) : null;
                     return (
                       <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
-                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.symbol}</td>
+                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.label || sub.symbol}</td>
                         <td className="px-3 py-1 text-xs"><Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4">{sub.action}</Badge></td>
                         <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}{ltp ? ` → ₹${ltp.toFixed(2)}` : ""}</td>
                         <td className="px-3 py-1 text-right text-xs text-muted-foreground">x{sub.qty}</td>
@@ -3288,7 +3292,7 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
                     const pnl = ltp ? (sub.action === "SELL" ? ((sub.entryPrice - ltp) / sub.entryPrice) * 100 : ((ltp - sub.entryPrice) / sub.entryPrice) * 100) : null;
                     return (
                       <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
-                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.symbol}</td>
+                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.label || sub.symbol}</td>
                         <td className="px-3 py-1 text-xs"><Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4">{sub.action}</Badge></td>
                         <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}{ltp ? ` → ₹${ltp.toFixed(2)}` : ""}</td>
                         <td className={`px-3 py-1 text-right text-xs font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}</td>
@@ -3324,15 +3328,25 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
                     <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
                     <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}</td>
                   </tr>
-                  {parseRationaleLegs(leg.rationale || "").map((sub, si) => (
-                    <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
-                      <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.symbol} <Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4 ml-1">{sub.action}</Badge></td>
-                      <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}</td>
-                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">-</td>
-                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">x{sub.qty}</td>
-                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">-</td>
-                    </tr>
-                  ))}
+                  {parseRationaleLegs(leg.rationale || "").map((sub, si) => {
+                    const parentExitPct = leg.gainPercent != null ? Number(leg.gainPercent) : null;
+                    const subExitPrice = sub.entryPrice > 0 && parentExitPct != null
+                      ? sub.action === "SELL"
+                        ? sub.entryPrice * (1 - parentExitPct / 100)
+                        : sub.entryPrice * (1 + parentExitPct / 100)
+                      : null;
+                    return (
+                      <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
+                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.label || sub.symbol} <Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4 ml-1">{sub.action}</Badge></td>
+                        <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}</td>
+                        <td className="px-3 py-1 text-right text-xs">{subExitPrice ? `₹${subExitPrice.toFixed(2)}` : "-"}</td>
+                        <td className="px-3 py-1 text-right text-xs text-muted-foreground">x{sub.qty}</td>
+                        <td className={`px-3 py-1 text-right text-xs font-medium ${parentExitPct != null ? (parentExitPct >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>
+                          {parentExitPct != null ? `${parentExitPct >= 0 ? "+" : ""}${parentExitPct.toFixed(2)}%` : "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
                   </>
                 );
               })}
