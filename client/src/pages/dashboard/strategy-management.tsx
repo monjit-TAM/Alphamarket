@@ -1598,13 +1598,22 @@ function ClosePositionDialog({
   const { toast } = useToast();
   const [exitPrice, setExitPrice] = useState("");
   const [useManualPrice, setUseManualPrice] = useState(false);
+  const [lotsToClose, setLotsToClose] = useState("");
 
   useEffect(() => {
     if (position) {
       setExitPrice("");
       setUseManualPrice(false);
+      setLotsToClose(String(position.lots || ""));
     }
   }, [position]);
+
+  useEffect(() => {
+    if (position && currentLTP == null) {
+      const t = setTimeout(() => setUseManualPrice(true), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [position, currentLTP]);
 
   const isFnO = ["Option", "Future", "Index", "CommodityFuture"].includes(strategyType) ||
     !!(position?.strikePrice && position?.expiry);
@@ -1635,14 +1644,14 @@ function ClosePositionDialog({
         toast({ title: "Exit price required", description: "Please enter a valid exit price.", variant: "destructive" });
         return;
       }
-      mutation.mutate({ exitPrice: String(exitPrice) });
+      mutation.mutate({ exitPrice: String(exitPrice), lotsToClose: lotsToClose ? Number(lotsToClose) : undefined });
       return;
     }
     if (!currentLTP) {
       toast({ title: "Market price unavailable", description: "Please enter exit price manually or wait for live price.", variant: "destructive" });
       return;
     }
-    mutation.mutate({ exitPrice: String(currentLTP), closeAtMarket: true });
+    mutation.mutate({ exitPrice: String(currentLTP), closeAtMarket: true, lotsToClose: lotsToClose ? Number(lotsToClose) : undefined });
   };
 
   const symbolLabel = position
@@ -1688,11 +1697,28 @@ function ClosePositionDialog({
                   This F&O position will be closed at the prevailing market price.
                 </p>
               )}
+              {position?.lots && Number(position.lots) > 1 && (
+                <div className="space-y-1.5">
+                  <Label>Lots to Close (total: {position.lots})</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max={String(position.lots)}
+                    step="1"
+                    value={lotsToClose}
+                    onChange={(e) => setLotsToClose(e.target.value)}
+                    placeholder={"1 to " + position.lots}
+                  />
+                  {lotsToClose && Number(lotsToClose) < Number(position.lots) && (
+                    <p className="text-xs text-amber-600">Partial close: {lotsToClose} of {position.lots} lots. {Number(position.lots) - Number(lotsToClose)} lots stay active.</p>
+                  )}
+                </div>
+              )}
               <Button
                 className="w-full"
                 variant="destructive"
                 onClick={handleFnOClose}
-                disabled={mutation.isPending || (!useManualPrice && !currentLTP)}
+                disabled={mutation.isPending}
                 data-testid="button-confirm-close-position"
               >
                 {mutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}

@@ -24,7 +24,7 @@ async function autoSquareOffIntraday() {
     const hours = ist.getHours();
     const minutes = ist.getMinutes();
 
-    if (hours !== 15 || minutes < 25 || minutes > 30) return;
+    if (hours !== 15 || minutes < 20 || minutes > 25) return;
 
     const intradayStrategies = await db
       .select()

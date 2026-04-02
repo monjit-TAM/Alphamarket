@@ -1424,6 +1424,28 @@ export async function registerRoutes(
         const isSell = pos.buySell === "Sell";
         gainPercent = (isSell ? ((entryPx - exitPx) / entryPx) * 100 : ((exitPx - entryPx) / entryPx) * 100).toFixed(2);
       }
+
+      // Partial close: reduce lots on original, create closed record for exited portion
+      const totalLots = Number(pos.lots || 1);
+      const lotsToClose = req.body.lotsToClose ? Number(req.body.lotsToClose) : totalLots;
+      const isPartial = lotsToClose > 0 && lotsToClose < totalLots;
+
+      if (isPartial) {
+        await storage.updatePosition(pos.id, { lots: String(totalLots - lotsToClose) });
+        const { id: _id, createdAt: _c, updatedAt: _u, ...posData } = pos as any;
+        await db.insert(positions).values({
+          ...posData,
+          lots: String(lotsToClose),
+          status: "Closed",
+          exitPrice: exitPrice,
+          exitDate: new Date(),
+          gainPercent: gainPercent,
+          isPublished: false,
+          rationale: `Partial close of ${lotsToClose} lot(s) (original position: ${pos.id})`,
+        });
+        return res.json({ partial: true, closedLots: lotsToClose, remainingLots: totalLots - lotsToClose });
+      }
+
       const updated = await storage.updatePosition(pos.id, {
         status: "Closed",
         exitPrice: exitPrice,
