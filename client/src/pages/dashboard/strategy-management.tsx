@@ -3232,10 +3232,12 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
         <div className="border rounded-md overflow-hidden">
           <div className="bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">F&O Legs — Active ({activeFnO.length})</div>
           <table className="w-full text-xs">
-            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-left px-3 py-1.5">Side</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Lots</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
+            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-left px-3 py-1.5">Side</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Lots</th><th className="text-right px-3 py-1.5">Invested</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
             <tbody>
               {activeFnO.map((leg) => {
                 const entry = Number(leg.entryPrice || 0);
+                const lots = Number(leg.lots || 0);
+                const invested = entry > 0 && lots > 0 ? entry * lots : null;
                 return (
                   <>
                   <tr key={leg.id} className="border-t">
@@ -3243,6 +3245,7 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
                     <td className="px-3 py-1.5"><Badge variant={leg.buySell === "Buy" ? "default" : "secondary"} className="text-xs">{leg.buySell}</Badge></td>
                     <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{invested ? `₹${invested.toLocaleString("en-IN", {maximumFractionDigits: 0})}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right text-muted-foreground">Live</td>
                   </tr>
                   {parseRationaleLegs((leg as any).rationale).map((sub, si) => {
@@ -3269,7 +3272,7 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
         <div className="border rounded-md overflow-hidden">
           <div className="bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">Equity Legs — Active ({activeEquity.length})</div>
           <table className="w-full text-xs">
-            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-left px-3 py-1.5">Side</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
+            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-left px-3 py-1.5">Side</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Qty</th><th className="text-right px-3 py-1.5">Invested</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
             <tbody>
               {activeEquity.map((leg) => {
                 const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
@@ -3280,6 +3283,8 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
                     <td className="px-3 py-1.5 font-medium">{leg.stockName}</td>
                     <td className="px-3 py-1.5"><Badge variant={leg.action === "Buy" ? "default" : "secondary"} className="text-xs">{leg.action}</Badge></td>
                     <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{(leg as any).quantity || "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{entry > 0 && (leg as any).quantity ? `₹${(entry * Number((leg as any).quantity)).toLocaleString("en-IN", {maximumFractionDigits: 0})}` : "-"}</td>
                     {(() => {
                       const ltp = livePrices?.[leg.stockName]?.ltp;
                       const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
@@ -3313,7 +3318,7 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
             {avgGain != null && <span className={`text-xs font-semibold ${Number(avgGain) >= 0 ? "text-green-600" : "text-red-600"}`}>Avg P&L: {Number(avgGain) >= 0 ? "+" : ""}{avgGain}%</span>}
           </div>
           <table className="w-full text-xs">
-            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Exit</th><th className="text-right px-3 py-1.5">Lots</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
+            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Exit</th><th className="text-right px-3 py-1.5">Lots</th><th className="text-right px-3 py-1.5">Invested</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
             <tbody>
               {allClosed.map((leg: any) => {
                 const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
@@ -3326,7 +3331,11 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
                     <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right">{exit > 0 ? `₹${exit.toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
-                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{entry > 0 && leg.lots ? `₹${(entry * Number(leg.lots)).toLocaleString("en-IN", {maximumFractionDigits: 0})}` : "-"}</td>
+                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>
+                      {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}
+                      {pnl != null && entry > 0 && leg.lots ? <span className="block text-[10px] font-normal">{pnl >= 0 ? "+" : ""}₹{Math.abs((pnl/100) * entry * Number(leg.lots)).toLocaleString("en-IN", {maximumFractionDigits: 0})}</span> : null}
+                    </td>
                   </tr>
                   {parseRationaleLegs(leg.rationale || "").map((sub, si) => {
                     const parentExitPct = leg.gainPercent != null ? Number(leg.gainPercent) : null;

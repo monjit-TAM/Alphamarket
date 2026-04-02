@@ -160,7 +160,7 @@ async function checkStopLossAndTargets() {
     const allStrategies = await db.select().from(strategies);
 
     for (const strategy of allStrategies) {
-      if (strategy.horizon === "Intraday") continue;
+      if (strategy.horizon === "Intraday" && strategy.type === "Basket") continue;
 
       const activeCalls = await db.select().from(calls).where(
         and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active"), eq(calls.isPublished, true))
@@ -236,11 +236,14 @@ async function checkStopLossAndTargets() {
               notifyWatchlistUsers(call.strategyId, strategy.name, "call_closed_masked", wlPayload);
             }
           }
-        } catch (priceErr) {}
+        } catch (priceErr) {
+          console.error(`[Scheduler] Price fetch error for call ${call.stockName}:`, priceErr);
+        }
       }
 
       const activePositions = await db.select().from(positions).where(
-        and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active"), eq(positions.isPublished, true))
+        and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active"),
+          strategy.horizon === "Intraday" ? undefined : eq(positions.isPublished, true))
       );
 
       for (const pos of activePositions) {
@@ -278,11 +281,59 @@ async function checkStopLossAndTargets() {
             const wlPayload = buildPositionClosedWatchlistNotification(pos, gp, strategy.name);
             notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
           }
-        } catch (priceErr) {}
+        } catch (priceErr) {
+          console.error(`[Scheduler] Price fetch error for ${pos.symbol}:`, priceErr);
+        }
       }
     }
   } catch (err) {
     console.error("[Scheduler] Error in SL/Target check:", err);
+  }
+}
+
+async function recoverySquareOff() {
+  // Runs at 3:30 PM IST — closes any Intraday positions/calls missed by the 3:20 run
+  try {
+    const ist = getISTTime();
+    const hours = ist.getHours();
+    const minutes = ist.getMinutes();
+    if (hours !== 15 || minutes < 30 || minutes > 35) return;
+
+    const intradayStrategies = await db.select().from(strategies).where(eq(strategies.horizon, "Intraday"));
+    let recovered = 0;
+
+    for (const strategy of intradayStrategies) {
+      const staleCalls = await db.select().from(calls)
+        .where(and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active")));
+      for (const call of staleCalls) {
+        const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
+        await storage.updateCall(call.id, {
+          status: "Closed",
+          sellPrice: String(entryPrice.toFixed(2)),
+          gainPercent: "0.00",
+          exitDate: new Date(),
+        });
+        console.warn(`[Scheduler] Recovery close: call ${call.id} (${call.stockName}) closed at entry price fallback`);
+        recovered++;
+      }
+
+      const stalePositions = await db.select().from(positions)
+        .where(and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active")));
+      for (const pos of stalePositions) {
+        const entryPx = Number(pos.entryPrice || 0);
+        await storage.updatePosition(pos.id, {
+          status: "Closed",
+          exitPrice: String(entryPx.toFixed(2)),
+          gainPercent: "0.00",
+          exitDate: new Date(),
+        });
+        console.warn(`[Scheduler] Recovery close: position ${pos.id} (${pos.symbol}) closed at entry price fallback`);
+        recovered++;
+      }
+    }
+    if (recovered > 0) console.log(`[Scheduler] Recovery run: closed ${recovered} stale intraday position(s)`);
+  } catch (err) {
+    console.error("[Scheduler] Recovery square-off error:", err);
   }
 }
 
@@ -294,6 +345,7 @@ export function startScheduler() {
   schedulerInterval = setInterval(() => {
     autoSquareOffIntraday();
     checkStopLossAndTargets();
+    recoverySquareOff();
   }, 60 * 1000);
 
   console.log("[Scheduler] Started: Intraday auto-square-off + SL/Target monitoring (every minute)");

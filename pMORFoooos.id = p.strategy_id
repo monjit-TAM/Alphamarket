@@ -1,0 +1,4 @@
+ stock_name | action | entry_price | target_price | stop_loss | sell_price | gain_percent | exit_date | created_at | name | type | horizon 
+------------+--------+-------------+--------------+-----------+------------+--------------+-----------+------------+------+------+---------
+(0 rows)
+
