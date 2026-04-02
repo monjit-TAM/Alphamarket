@@ -3171,95 +3171,169 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
     },
   });
 
-  const activeLegs = [
-    ...(positions || []).filter((p) => p.status === "Active"),
-    ...(calls || []).filter((c) => c.status === "Active"),
+  const activeFnO = (positions || []).filter((p) => p.status === "Active" && p.strikePrice && p.expiry);
+  const activeEquity = (calls || []).filter((c) => c.status === "Active");
+
+  // Parse basket composition from rationale text
+  // Format: "SELL SBIN x1 @ 980.65" or "BUY NIFTY x1 @ 100"
+  const parseRationaleLegs = (rationale: string | null): { symbol: string; action: string; qty: number; entryPrice: number }[] => {
+    if (!rationale) return [];
+    return rationale.split("\n")
+      .map((line) => line.trim())
+      .filter((line) => /^(BUY|SELL)\s+\S+\s+x\d/i.test(line))
+      .map((line) => {
+        const m = line.match(/^(BUY|SELL)\s+(\S+)\s+x(\d+(?:\.\d+)?)\s+@\s+([\d.]+)/i);
+        if (!m) return null;
+        return { action: m[1].toUpperCase(), symbol: m[2].toUpperCase(), qty: Number(m[3]), entryPrice: Number(m[4]) };
+      })
+      .filter(Boolean) as { symbol: string; action: string; qty: number; entryPrice: number }[];
+  };
+
+  const allRationaleLegs = [
+    ...activeFnO.flatMap((p) => parseRationaleLegs((p as any).rationale)),
+    ...activeEquity.flatMap((c) => parseRationaleLegs((c as any).rationale)),
+    ...(positions || []).filter((p) => p.status === "Closed").flatMap((p) => parseRationaleLegs((p as any).rationale)),
+    ...(calls || []).filter((c) => c.status === "Closed").flatMap((c) => parseRationaleLegs((c as any).rationale)),
   ];
-  const closedLegs = [
+  const rationaleSymbols = [...new Set(allRationaleLegs.map((l) => l.symbol))];
+
+  const liveSymbols = [
+    ...activeFnO.filter((p) => p.symbol).map((p) => p.symbol!),
+    ...activeEquity.filter((c) => c.stockName).map((c) => c.stockName),
+    ...rationaleSymbols,
+  ];
+
+  const { data: livePrices } = useQuery<Record<string, { ltp: number; change: number; changePercent: number }>>({
+    queryKey: ["/api/live-prices", "basket-legs", strategy.id, liveSymbols.join(",")],
+    queryFn: async () => {
+      if (!liveSymbols.length) return {};
+      const res = await apiRequest("POST", "/api/live-prices/bulk", { symbols: liveSymbols });
+      return res.json();
+    },
+    enabled: liveSymbols.length > 0,
+    refetchInterval: 15000,
+  });
+  const allClosed = [
     ...(positions || []).filter((p) => p.status === "Closed"),
     ...(calls || []).filter((c) => c.status === "Closed"),
   ];
-
-  const totalGain = closedLegs.reduce((sum, l) => sum + Number((l as any).gainPercent || 0), 0);
-  const avgGain = closedLegs.length > 0 ? (totalGain / closedLegs.length).toFixed(2) : null;
+  const totalGain = allClosed.reduce((sum: number, l: any) => sum + Number(l.gainPercent || 0), 0);
+  const avgGain = allClosed.length > 0 ? (totalGain / allClosed.length).toFixed(2) : null;
 
   if (!positions && !calls) return <div className="py-4"><Skeleton className="h-20 w-full" /></div>;
 
   return (
     <div className="space-y-3">
-      {activeLegs.length > 0 && (
+      {activeFnO.length > 0 && (
         <div className="border rounded-md overflow-hidden">
-          <div className="bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
-            Active Legs ({activeLegs.length})
-          </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-t text-xs text-muted-foreground">
-                <th className="text-left px-3 py-1.5">Symbol</th>
-                <th className="text-left px-3 py-1.5">Side</th>
-                <th className="text-right px-3 py-1.5">Entry</th>
-                <th className="text-right px-3 py-1.5">Lots</th>
-                <th className="text-right px-3 py-1.5">P&L</th>
-              </tr>
-            </thead>
+          <div className="bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">F&O Legs — Active ({activeFnO.length})</div>
+          <table className="w-full text-xs">
+            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-left px-3 py-1.5">Side</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Lots</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
             <tbody>
-              {activeLegs.map((leg: any) => {
-                const symbol = leg.symbol || leg.stockName || "-";
-                const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
-                const pnl = leg.gainPercent != null ? Number(leg.gainPercent) : null;
+              {activeFnO.map((leg) => {
+                const entry = Number(leg.entryPrice || 0);
                 return (
+                  <>
                   <tr key={leg.id} className="border-t">
-                    <td className="px-3 py-1.5 font-medium">{symbol}{leg.expiry ? ` ${leg.expiry}` : ""}{leg.strikePrice ? ` ${leg.strikePrice}` : ""}{leg.callPut ? ` ${leg.callPut}` : ""}</td>
-                    <td className="px-3 py-1.5"><Badge variant={leg.buySell === "Buy" || leg.action === "Buy" ? "default" : "secondary"} className="text-xs">{leg.buySell || leg.action}</Badge></td>
+                    <td className="px-3 py-1.5 font-medium">{leg.symbol}{leg.expiry ? ` ${leg.expiry}` : ""}{leg.strikePrice ? ` ${leg.strikePrice}` : ""}{leg.callPut ? ` ${leg.callPut}` : ""}</td>
+                    <td className="px-3 py-1.5"><Badge variant={leg.buySell === "Buy" ? "default" : "secondary"} className="text-xs">{leg.buySell}</Badge></td>
                     <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
-                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400") : "text-muted-foreground"}`}>
-                      {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "Live"}
-                    </td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">Live</td>
                   </tr>
+                  {parseRationaleLegs((leg as any).rationale).map((sub, si) => {
+                    const ltp = livePrices?.[sub.symbol]?.ltp;
+                    const pnl = ltp ? (sub.action === "SELL" ? ((sub.entryPrice - ltp) / sub.entryPrice) * 100 : ((ltp - sub.entryPrice) / sub.entryPrice) * 100) : null;
+                    return (
+                      <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
+                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.symbol}</td>
+                        <td className="px-3 py-1 text-xs"><Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4">{sub.action}</Badge></td>
+                        <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}{ltp ? ` → ₹${ltp.toFixed(2)}` : ""}</td>
+                        <td className="px-3 py-1 text-right text-xs text-muted-foreground">x{sub.qty}</td>
+                        <td className={`px-3 py-1 text-right text-xs font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}</td>
+                      </tr>
+                    );
+                  })}
+                  </>
                 );
               })}
             </tbody>
           </table>
         </div>
       )}
-
-      {closedLegs.length > 0 && (
+      {activeEquity.length > 0 && (
+        <div className="border rounded-md overflow-hidden">
+          <div className="bg-emerald-50 dark:bg-emerald-950/30 px-3 py-2 text-xs font-medium text-emerald-700 dark:text-emerald-300">Equity Legs — Active ({activeEquity.length})</div>
+          <table className="w-full text-xs">
+            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-left px-3 py-1.5">Side</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
+            <tbody>
+              {activeEquity.map((leg) => {
+                const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
+                const pnl = leg.gainPercent != null ? Number(leg.gainPercent) : null;
+                return (
+                  <>
+                  <tr key={leg.id} className="border-t">
+                    <td className="px-3 py-1.5 font-medium">{leg.stockName}</td>
+                    <td className="px-3 py-1.5"><Badge variant={leg.action === "Buy" ? "default" : "secondary"} className="text-xs">{leg.action}</Badge></td>
+                    <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
+                    {(() => {
+                      const ltp = livePrices?.[leg.stockName]?.ltp;
+                      const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
+                      const livePnl = ltp && entry > 0 ? ((leg.action === "Sell" ? (entry - ltp) : (ltp - entry)) / entry * 100) : null;
+                      return <td className={`px-3 py-1.5 text-right font-medium ${livePnl != null ? (livePnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{livePnl != null ? `${livePnl >= 0 ? "+" : ""}${livePnl.toFixed(2)}% (₹${ltp!.toFixed(2)})` : "Live"}</td>;
+                    })()}
+                  </tr>
+                  {parseRationaleLegs((leg as any).rationale).map((sub, si) => {
+                    const ltp = livePrices?.[sub.symbol]?.ltp;
+                    const pnl = ltp ? (sub.action === "SELL" ? ((sub.entryPrice - ltp) / sub.entryPrice) * 100 : ((ltp - sub.entryPrice) / sub.entryPrice) * 100) : null;
+                    return (
+                      <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
+                        <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.symbol}</td>
+                        <td className="px-3 py-1 text-xs"><Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4">{sub.action}</Badge></td>
+                        <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}{ltp ? ` → ₹${ltp.toFixed(2)}` : ""}</td>
+                        <td className={`px-3 py-1 text-right text-xs font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}</td>
+                      </tr>
+                    );
+                  })}
+                  </>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {allClosed.length > 0 && (
         <div className="border rounded-md overflow-hidden">
           <div className="bg-muted/50 px-3 py-2 flex items-center justify-between">
-            <span className="text-xs font-medium text-muted-foreground">Closed Legs ({closedLegs.length})</span>
-            {avgGain != null && (
-              <span className={`text-xs font-semibold ${Number(avgGain) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                Avg P&L: {Number(avgGain) >= 0 ? "+" : ""}{avgGain}%
-              </span>
-            )}
+            <span className="text-xs font-medium text-muted-foreground">Closed Legs ({allClosed.length})</span>
+            {avgGain != null && <span className={`text-xs font-semibold ${Number(avgGain) >= 0 ? "text-green-600" : "text-red-600"}`}>Avg P&L: {Number(avgGain) >= 0 ? "+" : ""}{avgGain}%</span>}
           </div>
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-t text-xs text-muted-foreground">
-                <th className="text-left px-3 py-1.5">Symbol</th>
-                <th className="text-right px-3 py-1.5">Entry</th>
-                <th className="text-right px-3 py-1.5">Exit</th>
-                <th className="text-right px-3 py-1.5">Lots</th>
-                <th className="text-right px-3 py-1.5">P&L</th>
-              </tr>
-            </thead>
+          <table className="w-full text-xs">
+            <thead><tr className="border-t text-muted-foreground"><th className="text-left px-3 py-1.5">Symbol</th><th className="text-right px-3 py-1.5">Entry</th><th className="text-right px-3 py-1.5">Exit</th><th className="text-right px-3 py-1.5">Lots</th><th className="text-right px-3 py-1.5">P&L</th></tr></thead>
             <tbody>
-              {closedLegs.map((leg: any) => {
-                const symbol = leg.symbol || leg.stockName || "-";
+              {allClosed.map((leg: any) => {
                 const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
                 const exit = Number(leg.exitPrice || leg.sellPrice || 0);
                 const pnl = leg.gainPercent != null ? Number(leg.gainPercent) : null;
                 return (
+                  <>
                   <tr key={leg.id} className="border-t">
-                    <td className="px-3 py-1.5 font-medium">{symbol}{leg.expiry ? ` ${leg.expiry}` : ""}{leg.strikePrice ? ` ${leg.strikePrice}` : ""}{leg.callPut ? ` ${leg.callPut}` : ""}</td>
+                    <td className="px-3 py-1.5 font-medium">{leg.symbol || leg.stockName}{leg.expiry ? ` ${leg.expiry}` : ""}{leg.strikePrice ? ` ${leg.strikePrice}` : ""}{leg.callPut ? ` ${leg.callPut}` : ""}</td>
                     <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right">{exit > 0 ? `₹${exit.toFixed(2)}` : "-"}</td>
                     <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
-                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400") : "text-muted-foreground"}`}>
-                      {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}
-                    </td>
+                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600" : "text-red-600") : "text-muted-foreground"}`}>{pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}</td>
                   </tr>
+                  {parseRationaleLegs(leg.rationale || "").map((sub, si) => (
+                    <tr key={`${leg.id}-sub-${si}`} className="border-t bg-muted/20">
+                      <td className="px-3 py-1 pl-6 text-xs text-muted-foreground">↳ {sub.symbol} <Badge variant={sub.action === "BUY" ? "default" : "secondary"} className="text-[10px] h-4 ml-1">{sub.action}</Badge></td>
+                      <td className="px-3 py-1 text-right text-xs">₹{sub.entryPrice.toFixed(2)}</td>
+                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">-</td>
+                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">x{sub.qty}</td>
+                      <td className="px-3 py-1 text-right text-xs text-muted-foreground">-</td>
+                    </tr>
+                  ))}
+                  </>
                 );
               })}
             </tbody>
@@ -3267,7 +3341,7 @@ function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
         </div>
       )}
 
-      {activeLegs.length === 0 && closedLegs.length === 0 && (
+      {activeFnO.length === 0 && activeEquity.length === 0 && allClosed.length === 0 && (
         <div className="text-center py-6 border rounded-md bg-indigo-50/50 dark:bg-indigo-950/20">
           <Package className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
           <p className="text-sm text-muted-foreground">No basket composition yet.</p>
