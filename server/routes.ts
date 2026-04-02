@@ -10,7 +10,7 @@ import { promisify } from "util";
 import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail } from "./auth";
 import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, getOptionChainExpiries, getOptionChain } from "./groww";
 import type { Plan, BasketRebalance } from "@shared/schema";
-import { esignAgreements, appSettings } from "@shared/schema";
+import { esignAgreements, appSettings, calls, positions, strategies } from "@shared/schema";
 import { db } from "./db";
 import { handleXTSEvent, buildCallEventData, buildPositionEventData } from "./webhook-dispatcher";
 import { handleXTSEvent as xtsHandleEvent } from "./xts-bridge";
@@ -894,6 +894,51 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/strategies/:id/basket/close-all", requireAdvisor, async (req, res) => {
+    try {
+      const strategy = await storage.getStrategy(req.params.id);
+      if (!strategy || strategy.advisorId !== req.session.userId) return res.status(403).send("Not authorized");
+      const { exitPrice } = req.body;
+
+      const activePositions = await db.select().from(positions)
+        .where(and(eq(positions.strategyId, req.params.id), eq(positions.status, "Active")));
+      const activeCalls = await db.select().from(calls)
+        .where(and(eq(calls.strategyId, req.params.id), eq(calls.status, "Active")));
+
+      const results = { closedPositions: 0, closedCalls: 0 };
+      const now = new Date();
+
+      for (const pos of activePositions) {
+        const entryPx = Number(pos.entryPrice || 0);
+        const exitPx = Number(exitPrice || entryPx);
+        const isSell = pos.buySell === "Sell";
+        const gainPercent = entryPx > 0 && exitPx > 0
+          ? (isSell ? ((entryPx - exitPx) / entryPx) * 100 : ((exitPx - entryPx) / entryPx) * 100).toFixed(2)
+          : null;
+        await storage.updatePosition(pos.id, {
+          status: "Closed", exitPrice: String(exitPx), exitDate: now, gainPercent,
+        });
+        results.closedPositions++;
+      }
+
+      for (const call of activeCalls) {
+        const entryPx = Number(call.entryPrice || call.buyRangeStart || 0);
+        const exitPx = Number(exitPrice || entryPx);
+        const gainPercent = entryPx > 0 && exitPx > 0
+          ? (((exitPx - entryPx) / entryPx) * 100).toFixed(2) : null;
+        await storage.updateCall(call.id, {
+          status: "Closed", sellPrice: String(exitPx), exitDate: now, gainPercent: gainPercent || "0",
+        });
+        results.closedCalls++;
+      }
+
+      const subPayload = { strategyName: strategy.name, message: "Basket has been closed by advisor", exitPrice: exitPrice || "market" };
+      notifyStrategySubscribers(req.params.id, strategy.name, "basket_closed", subPayload);
+
+      res.json({ success: true, ...results });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
   app.get("/api/strategies/:id/basket/rebalances", async (req, res) => {
     try {
       const strategy = await storage.getStrategy(req.params.id);
@@ -1418,7 +1463,7 @@ export async function registerRoutes(
       }
       const exitPrice = req.body.exitPrice || req.body.sellPrice || null;
       const entryPx = Number(pos.entryPrice || 0);
-      const exitPx = Number(exitPrice || 0);
+      const exitPx = Number(exitPrice || entryPx || 0);
       let gainPercent: string | null = null;
       if (entryPx > 0 && exitPx > 0) {
         const isSell = pos.buySell === "Sell";
@@ -1437,7 +1482,7 @@ export async function registerRoutes(
           ...posData,
           lots: String(lotsToClose),
           status: "Closed",
-          exitPrice: exitPrice,
+          exitPrice: String(exitPx),
           exitDate: new Date(),
           gainPercent: gainPercent,
           isPublished: false,
@@ -1448,7 +1493,7 @@ export async function registerRoutes(
 
       const updated = await storage.updatePosition(pos.id, {
         status: "Closed",
-        exitPrice: exitPrice,
+        exitPrice: String(exitPx),
         exitDate: new Date(),
         gainPercent: gainPercent,
       });

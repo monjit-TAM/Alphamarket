@@ -463,12 +463,123 @@ export default function StrategyManagement() {
   );
 }
 
+function CloseBasketPanel({ activeCalls, activePositions, strategyId, onDone, onCancel }: {
+  activeCalls: Call[];
+  activePositions: Position[];
+  strategyId: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const { toast } = useToast();
+  const allIds = [
+    ...activeCalls.map((c) => ({ id: c.id, type: "call" as const, label: c.stockName })),
+    ...activePositions.map((p) => ({ id: p.id, type: "position" as const, label: `${p.symbol} ${p.expiry || ""} ${p.strikePrice || ""} ${p.callPut || ""}`.trim() })),
+  ];
+  const [selected, setSelected] = useState<Set<string>>(new Set(allIds.map((i) => i.id)));
+  const [exitPrices, setExitPrices] = useState<Record<string, string>>({});
+  const [globalPrice, setGlobalPrice] = useState("");
+
+  const toggle = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const allSelected = selected.size === allIds.length;
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const selectedCalls = activeCalls.filter((c) => selected.has(c.id));
+      const selectedPositions = activePositions.filter((p) => selected.has(p.id));
+      const results = await Promise.allSettled([
+        ...selectedCalls.map((c) =>
+          apiRequest("POST", `/api/calls/${c.id}/close`, { sellPrice: exitPrices[c.id] || globalPrice || undefined })
+        ),
+        ...selectedPositions.map((p) =>
+          apiRequest("POST", `/api/positions/${p.id}/close`, { exitPrice: exitPrices[p.id] || globalPrice || undefined })
+        ),
+      ]);
+      const failed = results.filter((r) => r.status === "rejected").length;
+      return { total: results.length, failed };
+    },
+    onSuccess: ({ total, failed }) => {
+      toast({ title: failed === 0 ? `${total} leg(s) closed successfully` : `${total - failed} closed, ${failed} failed` });
+      onDone();
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="mb-3 p-3 rounded-lg border border-destructive/40 bg-destructive/5 space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-destructive">Select legs to close</p>
+        <button className="text-xs underline text-muted-foreground" onClick={() =>
+          setSelected(allSelected ? new Set() : new Set(allIds.map((i) => i.id)))
+        }>
+          {allSelected ? "Deselect All" : "Select All"}
+        </button>
+      </div>
+      <div className="space-y-1.5">
+        {allIds.map((item) => (
+          <div key={item.id} className="flex items-center gap-2">
+            <Checkbox checked={selected.has(item.id)} onCheckedChange={() => toggle(item.id)} />
+            <span className="text-xs flex-1 truncate">{item.label}</span>
+            <Input
+              type="number"
+              step="0.01"
+              value={exitPrices[item.id] || ""}
+              onChange={(e) => setExitPrices((prev) => ({ ...prev, [item.id]: e.target.value }))}
+              placeholder="Exit price"
+              className="w-28 h-7 text-xs"
+            />
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 pt-1 border-t border-destructive/20">
+        <span className="text-xs text-muted-foreground">Apply one price to all:</span>
+        <Input
+          type="number"
+          step="0.01"
+          value={globalPrice}
+          onChange={(e) => setGlobalPrice(e.target.value)}
+          placeholder="Global exit price"
+          className="w-36 h-7 text-xs"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <Button size="sm" variant="destructive" onClick={() => mutation.mutate()} disabled={mutation.isPending || selected.size === 0}>
+          {mutation.isPending ? <Loader2 className="w-3 h-3 animate-spin mr-1" /> : null}
+          Close {selected.size} Leg(s)
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
 function StrategyCallsPanel({ strategy }: { strategy: Strategy }) {
   const { toast } = useToast();
   const [editingCall, setEditingCall] = useState<Call | null>(null);
   const [editingPosition, setEditingPosition] = useState<Position | null>(null);
   const [closingCall, setClosingCall] = useState<Call | null>(null);
   const [closingPosition, setClosingPosition] = useState<Position | null>(null);
+  const [showCloseBasket, setShowCloseBasket] = useState(false);
+  const [closeBasketPrice, setCloseBasketPrice] = useState("");
+
+  const closeAllMutation = useMutation({
+    mutationFn: async (exitPrice: string) => {
+      const res = await apiRequest("POST", `/api/strategies/${strategy.id}/basket/close-all`, { exitPrice: exitPrice || undefined });
+      if (!res.ok) { const msg = await res.text(); throw new Error(msg); }
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/advisor/strategies", strategy.id, "positions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/advisor/strategies", strategy.id, "calls"] });
+      setShowCloseBasket(false);
+      setCloseBasketPrice("");
+      toast({ title: `Basket closed: ${data.closedPositions + data.closedCalls} leg(s) squared off` });
+    },
+    onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
 
   const { data: calls, isLoading: callsLoading } = useQuery<Call[]>({
     queryKey: ["/api/advisor/strategies", strategy.id, "calls"],
@@ -584,6 +695,26 @@ function StrategyCallsPanel({ strategy }: { strategy: Strategy }) {
         </TabsList>
 
         <TabsContent value="active" className="mt-3">
+          {strategy.type === "Basket" && (activeCalls.length > 0 || activePositions.length > 0) && (
+            <div className="mb-3">
+              <Button variant="destructive" size="sm" onClick={() => setShowCloseBasket(true)}>
+                <X className="w-3 h-3 mr-1" /> Close Entire Basket
+              </Button>
+            </div>
+          )}
+          {showCloseBasket && (
+            <CloseBasketPanel
+              activeCalls={activeCalls}
+              activePositions={activePositions}
+              strategyId={strategy.id}
+              onDone={() => {
+                setShowCloseBasket(false);
+                queryClient.invalidateQueries({ queryKey: ["/api/advisor/strategies", strategy.id, "positions"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/advisor/strategies", strategy.id, "calls"] });
+              }}
+              onCancel={() => setShowCloseBasket(false)}
+            />
+          )}
           {activeCalls.length === 0 && activePositions.length === 0 ? (
             <p className="text-sm text-muted-foreground py-2">No active published calls</p>
           ) : (
@@ -1603,17 +1734,12 @@ function ClosePositionDialog({
   useEffect(() => {
     if (position) {
       setExitPrice("");
-      setUseManualPrice(false);
+      // Default to manual for F&O basket positions since option chain may be rate-limited
+      const isFnOPos = !!(position.strikePrice && position.expiry);
+      setUseManualPrice(isFnOPos);
       setLotsToClose(String(position.lots || ""));
     }
   }, [position]);
-
-  useEffect(() => {
-    if (position && currentLTP == null) {
-      const t = setTimeout(() => setUseManualPrice(true), 2000);
-      return () => clearTimeout(t);
-    }
-  }, [position, currentLTP]);
 
   const isFnO = ["Option", "Future", "Index", "CommodityFuture"].includes(strategyType) ||
     !!(position?.strikePrice && position?.expiry);
@@ -1622,6 +1748,13 @@ function ClosePositionDialog({
       ? getOptionPremiumLTP(position)
       : (position.symbol ? livePrices?.[position.symbol]?.ltp : undefined)
   ) : undefined;
+
+  useEffect(() => {
+    if (position && currentLTP == null) {
+      const t = setTimeout(() => setUseManualPrice(true), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [position, currentLTP]);
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
@@ -3020,6 +3153,131 @@ function AddBasketStockSheet({
   );
 }
 
+function BasketLegsFromPositions({ strategy }: { strategy: Strategy }) {
+  const { data: positions } = useQuery<Position[]>({
+    queryKey: ["/api/advisor/strategies", strategy.id, "positions"],
+    queryFn: async () => {
+      const res = await fetch(`/api/advisor/strategies/${strategy.id}/positions`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const { data: calls } = useQuery<Call[]>({
+    queryKey: ["/api/advisor/strategies", strategy.id, "calls"],
+    queryFn: async () => {
+      const res = await fetch(`/api/advisor/strategies/${strategy.id}/calls`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const activeLegs = [
+    ...(positions || []).filter((p) => p.status === "Active"),
+    ...(calls || []).filter((c) => c.status === "Active"),
+  ];
+  const closedLegs = [
+    ...(positions || []).filter((p) => p.status === "Closed"),
+    ...(calls || []).filter((c) => c.status === "Closed"),
+  ];
+
+  const totalGain = closedLegs.reduce((sum, l) => sum + Number((l as any).gainPercent || 0), 0);
+  const avgGain = closedLegs.length > 0 ? (totalGain / closedLegs.length).toFixed(2) : null;
+
+  if (!positions && !calls) return <div className="py-4"><Skeleton className="h-20 w-full" /></div>;
+
+  return (
+    <div className="space-y-3">
+      {activeLegs.length > 0 && (
+        <div className="border rounded-md overflow-hidden">
+          <div className="bg-indigo-50 dark:bg-indigo-950/30 px-3 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300">
+            Active Legs ({activeLegs.length})
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-t text-xs text-muted-foreground">
+                <th className="text-left px-3 py-1.5">Symbol</th>
+                <th className="text-left px-3 py-1.5">Side</th>
+                <th className="text-right px-3 py-1.5">Entry</th>
+                <th className="text-right px-3 py-1.5">Lots</th>
+                <th className="text-right px-3 py-1.5">P&L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeLegs.map((leg: any) => {
+                const symbol = leg.symbol || leg.stockName || "-";
+                const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
+                const pnl = leg.gainPercent != null ? Number(leg.gainPercent) : null;
+                return (
+                  <tr key={leg.id} className="border-t">
+                    <td className="px-3 py-1.5 font-medium">{symbol}{leg.expiry ? ` ${leg.expiry}` : ""}{leg.strikePrice ? ` ${leg.strikePrice}` : ""}{leg.callPut ? ` ${leg.callPut}` : ""}</td>
+                    <td className="px-3 py-1.5"><Badge variant={leg.buySell === "Buy" || leg.action === "Buy" ? "default" : "secondary"} className="text-xs">{leg.buySell || leg.action}</Badge></td>
+                    <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
+                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400") : "text-muted-foreground"}`}>
+                      {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "Live"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {closedLegs.length > 0 && (
+        <div className="border rounded-md overflow-hidden">
+          <div className="bg-muted/50 px-3 py-2 flex items-center justify-between">
+            <span className="text-xs font-medium text-muted-foreground">Closed Legs ({closedLegs.length})</span>
+            {avgGain != null && (
+              <span className={`text-xs font-semibold ${Number(avgGain) >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                Avg P&L: {Number(avgGain) >= 0 ? "+" : ""}{avgGain}%
+              </span>
+            )}
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-t text-xs text-muted-foreground">
+                <th className="text-left px-3 py-1.5">Symbol</th>
+                <th className="text-right px-3 py-1.5">Entry</th>
+                <th className="text-right px-3 py-1.5">Exit</th>
+                <th className="text-right px-3 py-1.5">Lots</th>
+                <th className="text-right px-3 py-1.5">P&L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {closedLegs.map((leg: any) => {
+                const symbol = leg.symbol || leg.stockName || "-";
+                const entry = Number(leg.entryPrice || leg.buyRangeStart || 0);
+                const exit = Number(leg.exitPrice || leg.sellPrice || 0);
+                const pnl = leg.gainPercent != null ? Number(leg.gainPercent) : null;
+                return (
+                  <tr key={leg.id} className="border-t">
+                    <td className="px-3 py-1.5 font-medium">{symbol}{leg.expiry ? ` ${leg.expiry}` : ""}{leg.strikePrice ? ` ${leg.strikePrice}` : ""}{leg.callPut ? ` ${leg.callPut}` : ""}</td>
+                    <td className="px-3 py-1.5 text-right">{entry > 0 ? `₹${entry.toFixed(2)}` : "-"}</td>
+                    <td className="px-3 py-1.5 text-right">{exit > 0 ? `₹${exit.toFixed(2)}` : "-"}</td>
+                    <td className="px-3 py-1.5 text-right text-muted-foreground">{leg.lots || "-"}</td>
+                    <td className={`px-3 py-1.5 text-right font-medium ${pnl != null ? (pnl >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400") : "text-muted-foreground"}`}>
+                      {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(2)}%` : "-"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeLegs.length === 0 && closedLegs.length === 0 && (
+        <div className="text-center py-6 border rounded-md bg-indigo-50/50 dark:bg-indigo-950/20">
+          <Package className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">No basket composition yet.</p>
+          <p className="text-xs text-muted-foreground">Publish from AlphaBot or click "Create Basket" to add stocks.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function BasketBuilderPanel({ strategy }: { strategy: Strategy }) {
   const { toast } = useToast();
   const csvInputRef = useRef<HTMLInputElement>(null);
@@ -3259,11 +3517,7 @@ function BasketBuilderPanel({ strategy }: { strategy: Strategy }) {
       )}
 
       {(!currentConstituents || currentConstituents.length === 0) && !showRebalance && (
-        <div className="text-center py-6 border rounded-md bg-indigo-50/50 dark:bg-indigo-950/20">
-          <Package className="w-8 h-8 text-indigo-400 mx-auto mb-2" />
-          <p className="text-sm text-muted-foreground">No basket composition yet.</p>
-          <p className="text-xs text-muted-foreground">Click "Create Basket" to add stocks with their weights.</p>
-        </div>
+        <BasketLegsFromPositions strategy={strategy} />
       )}
 
       {rebalances && rebalances.length > 0 && (
