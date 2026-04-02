@@ -1282,6 +1282,22 @@ export default function DashboardHome() {
                             ) : (
                               <span className="w-16 text-center text-xs font-medium text-primary">No</span>
                             )}
+                            {sub.pmlaDone ? (
+                              <button
+                                onClick={() => setPmlaSubId(sub.id)}
+                                className="w-16 text-center text-xs font-medium text-accent underline cursor-pointer"
+                              >
+                                View
+                              </button>
+                            ) : (
+                              <span className="w-16 text-center text-xs font-medium text-primary">No</span>
+                            )}
+                            <button
+                              onClick={() => navigate(`/dashboard/subscriber/${sub.userId}/portfolio`)}
+                              className="w-16 text-center text-xs font-medium text-accent underline cursor-pointer"
+                            >
+                              View
+                            </button>
                           </div>
                         </div>
                       ))
