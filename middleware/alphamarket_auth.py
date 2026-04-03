@@ -25,6 +25,27 @@ logger = logging.getLogger("dyor.auth_bridge")
 
 ALPHAMARKET_DB_URL = "postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db"
 
+# Connection pool
+_am_pool = None
+def _get_pool():
+    global _am_pool
+    if _am_pool is None:
+        from psycopg2 import pool as pgpool
+        _am_pool = pgpool.ThreadedConnectionPool(2, 10, ALPHAMARKET_DB_URL)
+    return _am_pool
+
+# Session cache (60s TTL) — avoids DB hit on every request
+import time as _time
+_sess_cache: dict = {}
+_SESS_TTL = 60
+def _cache_get(sid):
+    e = _sess_cache.get(sid)
+    return e["u"] if e and _time.time()-e["t"] < _SESS_TTL else None
+def _cache_set(sid, u):
+    _sess_cache[sid] = {"u": u, "t": _time.time()}
+    if len(_sess_cache) > 500:
+        for k in list(_sess_cache)[:100]: del _sess_cache[k]
+
 # Routes that don't require authentication
 PUBLIC_PATHS = {
     "/api/docs", "/api/openapi.json", "/api/redoc",
@@ -50,11 +71,16 @@ def parse_connect_sid(raw_cookie: str) -> str | None:
 
 def get_alphamarket_user(session_id: str) -> dict | None:
     """Validate session and return AlphaMarket user info."""
+    # Check session cache first
+    cached = _cache_get(session_id)
+    if cached is not None:
+        return cached
+
+    conn = None
     try:
-        conn = psycopg2.connect(ALPHAMARKET_DB_URL)
+        conn = _get_pool().getconn()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Look up session (table is 'sessions' plural)
         cur.execute(
             "SELECT sess FROM sessions WHERE sid = %s AND expire > NOW()",
             (session_id,)
@@ -62,34 +88,36 @@ def get_alphamarket_user(session_id: str) -> dict | None:
         row = cur.fetchone()
         if not row:
             cur.close()
-            conn.close()
+            _cache_set(session_id, False)
             return None
 
         sess_data = row["sess"]
         if isinstance(sess_data, str):
             sess_data = json.loads(sess_data)
 
-        # Extract userId from session (format: {"cookie": {...}, "userId": "uuid"})
         user_id = sess_data.get("userId")
         if not user_id:
             cur.close()
-            conn.close()
+            _cache_set(session_id, False)
             return None
 
-        # Look up user details
         cur.execute(
             "SELECT id, email, username FROM users WHERE id = %s",
             (user_id,)
         )
         user = cur.fetchone()
         cur.close()
-        conn.close()
-
-        return dict(user) if user else None
+        result = dict(user) if user else None
+        _cache_set(session_id, result)
+        return result
 
     except psycopg2.Error as e:
         logger.error(f"Auth bridge DB error: {e}")
         return None
+    finally:
+        if conn:
+            try: _get_pool().putconn(conn)
+            except: pass
 
 
 def find_or_create_dyor_user(am_user: dict, dyor_db_url: str) -> dict | None:

@@ -9,7 +9,7 @@ async def main():
     import pandas as pd
     from datetime import date, timedelta
 
-    redis_client = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
+    redis_client = await aioredis.from_url("redis://localhost:6379/0", decode_responses=True)
     print(f"[{time.strftime('%H:%M:%S')}] Redis connected")
 
     # ── Step 1: Fetch all 923 stocks OHLCV in parallel batches of 30 ──
@@ -72,27 +72,8 @@ async def main():
 
     def get_cap(sym):
         # Simple cap classification
-        large = ['RELIANCE','TCS','HDFCBANK','ICICIBANK','INFY','HDFC','KOTAKBANK','LT','AXISBANK','HINDUNILVR',
-                 'SBIN','BAJFINANCE','BHARTIARTL','ASIANPAINT','MARUTI','TITAN','SUNPHARMA','ULTRACEMCO',
-                 'NESTLEIND','WIPRO','ONGC','NTPC','POWERGRID','TATAMOTORS','BAJAJFINSV','HCLTECH','TECHM',
-                 'DRREDDY','CIPLA','GRASIM','DIVISLAB','ADANIENT','ADANIPORTS','ADANIGREEN','COALINDIA',
-                 'BPCL','IOC','HEROMOTOCO','EICHERMOT','TATACONSUM','BRITANNIA','GODREJCP','ITC','APOLLOHOSP',
-                 'JSWSTEEL','TATASTEEL','HINDALCO','VEDL','INDUSINDBK','BANKBARODA','CANBK','PNB','RECLTD',
-                 'PFC','NHPC','IRFC','HAL','BEL','BHEL','IRCTC','ZOMATO','PAYTM','DELHIVERY','NYKAA',
-                 'POLICYBZR','DLF','LODHA','TRENT','MANKIND','MAXHEALTH','PIIND','SHRIRAMFIN','CHOLAFIN',
-                 'MUTHOOTFIN','BAJAJ-AUTO','M&M','BOSCHLTD','ABB','SIEMENS','HAVELLS','VOLTAS','TORNTPHARM',
-                 'LUPIN','AUROPHARMA','BIOCON','LICI','SBILIFE','HDFCLIFE','ICICIPRULI','ICICIGI','SBICARD',
-                 'INDUSTOWER','TATAPOWER','ADANIPOWER','JSWENERGY','CUMMINSIND','TATAELXSI','LTIM','PERSISTENT',
-                 'COFORGE','MPHASIS']
-        mid = ['PIDILITIND','BERGEPAINT','DABUR','MARICO','COLPAL','LTTS','ASTRAL','ATUL','DEEPAKNTR',
-               'PAGEIND','RELAXO','BATAINDIA','VBL','RAJESHEXPO','METROPOLIS','DMART','POLYCAB',
-               'KPITTECH','SONACOMS','KAYNES','CLEAN','HAPPSTMNDS','ROUTE','LATENTVIEW','MAPMYINDIA',
-               'ZYDUSLIFE','GLENMARK','IPCALAB','LAURUSLABS','NATCOPHARM','ALKEM','AJANTPHARM',
-               'FEDERALBNK','IDFCFIRSTB','BANDHANBNK','RBLBANK','MANAPPURAM','LICHSGFIN','CANFINHOME',
-               'SRF','AARTI','SUMICHEM','SUDARSCHEM','FINEORG','CARBORUNIV','GRINDWELL','TIMKEN',
-               'SCHAEFFLER','SKFINDIA','THERMAX','AIAENG','CGPOWER','RATNAMANI','APLAPOLLO','STARHEALTH',
-               'NIACL','GICRE','OBEROIRLTY','PRESTIGE','BRIGADE','SOBHA','PHOENIXLTD','CROMPTON',
-               'WHIRLPOOL','BLUESTARCO','AMBER','DIXON','HONAUT','3MINDIA','GILLETTE','PGHH']
+        large = ['RELIANCE','TCS','HDFCBANK','ICICIBANK','INFY','HDFC','KOTAKBANK','LT','AXISBANK','HINDUNILVR','SBIN','BAJFINANCE','BHARTIARTL','ASIANPAINT','MARUTI','TITAN','SUNPHARMA','ULTRACEMCO','NESTLEIND','WIPRO','ONGC','NTPC','POWERGRID','TATAMOTORS','BAJAJFINSV']
+        mid = ['GODREJCP','MCDOWELL-N','PIDILITIND','SIEMENS','BERGEPAINT','HAVELLS','DABUR','MARICO','COLPAL','MPHASIS','LTTS','PERSISTENT','COFORGE']
         if sym in large: return 'large'
         if sym in mid: return 'mid'
         return 'small'
@@ -227,13 +208,6 @@ async def main():
                   "as_of":today,"universe_size":len(universe),"scanned":len(stocks),"cached":True}
         cache_key = f"screener:{strat}:50:10000::::"
         await redis_client.setex(cache_key, 43200, json.dumps(result))
-        # Also cache the norm_key format used by dashboard (min=0, max=999999)
-        norm_key = f"screener:{strat}:0:999999::::"
-        await redis_client.setex(norm_key, 43200, json.dumps(result))
-        alt_key = f"screener:{strat}:0:999999::::"
-        data_json = json.dumps(result)
-        await redis_client.setex(cache_key, 43200, data_json)
-        await redis_client.setex(alt_key, 43200, data_json)
         print(f"[{time.strftime('%H:%M:%S')}] Cached: {strat} ({len(filtered)} matches)")
 
     print(f"[{time.strftime('%H:%M:%S')}] ALL DONE! {len(strategies)} strategies cached.")
