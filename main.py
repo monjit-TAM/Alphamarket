@@ -261,7 +261,21 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
     if redis_client:
         cached = await redis_client.get(cache_key) or await redis_client.get(norm_key)
         if cached:
-            return json.loads(cached)
+            result = json.loads(cached)
+            stocks = result.get("stocks", [])
+            if sector:
+                stocks = [s for s in stocks if s.get("sector","").lower() == sector.lower()]
+            if industry:
+                stocks = [s for s in stocks if s.get("industry","").lower() == industry.lower()]
+            if basic_industry:
+                stocks = [s for s in stocks if s.get("basic_industry","").lower() == basic_industry.lower()]
+            if cap_segment:
+                stocks = [s for s in stocks if s.get("cap_segment","").lower() == cap_segment.lower()]
+            if int(min_price) > 0 or int(max_price) < 999999:
+                stocks = [s for s in stocks if min_price <= s.get("price",0) <= max_price]
+            result["stocks"] = stocks
+            result["count"] = len(stocks)
+            return result
         else:
             # Cache miss — return empty instead of blocking for 2+ min Yahoo download
             # Background cron (warm_cache_direct.py) will fill cache every 2 hours

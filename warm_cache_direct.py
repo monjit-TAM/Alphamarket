@@ -9,7 +9,7 @@ async def main():
     import pandas as pd
     from datetime import date, timedelta
 
-    redis_client = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
+    redis_client = await aioredis.from_url("redis://localhost:6379/2", decode_responses=True)
     print(f"[{time.strftime('%H:%M:%S')}] Redis connected")
 
     # ── Step 1: Fetch all 923 stocks OHLCV in parallel batches of 30 ──
