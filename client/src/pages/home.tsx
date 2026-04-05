@@ -49,8 +49,8 @@ export default function Home() {
   const filtered = (strategies || []).filter((s) => {
     if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.advisor?.companyName || "").toLowerCase().includes(search.toLowerCase())) return false;
     if (themeFilter && themeFilter !== "all" && !(s.theme || []).some((t) => t.toLowerCase().includes(themeFilter.toLowerCase()))) return false;
-    if (volatilityFilter && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
-    if (horizonFilter && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
+    if (volatilityFilter && volatilityFilter !== "all" && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
+    if (horizonFilter && horizonFilter !== "all" && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
     return true;
   });
 
@@ -209,15 +209,15 @@ export default function Home() {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Media</p>
                 <div className="space-y-2">
                   {[
-                    { name: "Business India", url: "https://businessindia.co/magazine/market-news/blending-analysis-with-action", logo: "/media/business-india.png" },
-                    { name: "Wealth & Finance", url: "https://wealthandfinance.digital/winners/edhaz-financial-services-private-limited/", logo: "/media/wealth-finance.png" },
-                    { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/", logo: "/media/business-connect.png" },
-                    { name: "Startup Times", url: "https://startuptimes.net/building-the-bridge-between-investors-advisors-and-brokers-the-alphamarket-story", logo: "/media/startup-times.png" },
+                    { name: "Business India", url: "https://businessindia.co/magazine/market-news/blending-analysis-with-action", logo: "/media/business-india.png", bg: "#D32F2F" },
+                    { name: "Wealth & Finance", url: "https://wealthandfinance.digital/winners/edhaz-financial-services-private-limited/", logo: "/media/wealth-finance.png", bg: "#1a1a2e" },
+                    { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/", logo: "/media/business-connect.png", bg: "#fff" },
+                    { name: "Startup Times", url: "https://startuptimes.net/building-the-bridge-between-investors-advisors-and-brokers-the-alphamarket-story", logo: "/media/startup-times.png", bg: "#fff" },
                   ].map((m) => (
                     <a key={m.name} href={m.url} target="_blank" rel="noopener noreferrer" className="block">
                       <Card className="hover-elevate">
                         <CardContent className="p-2 flex items-center gap-2">
-                          <img src={m.logo} alt={m.name} className="w-8 h-8 rounded-md object-contain flex-shrink-0" />
+                          <img src={m.logo} alt={m.name} className="w-8 h-8 rounded-md object-contain flex-shrink-0" style={{background: m.bg}} />
                           <span className="text-xs font-medium truncate">{m.name}</span>
                         </CardContent>
                       </Card>

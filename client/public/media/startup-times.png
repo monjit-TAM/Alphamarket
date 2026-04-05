@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=5, user-scalable=1" name="viewport" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+
+        <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800&family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" type="text/css">
+
+    <style>
+    :root {
+        --primary-color: #ff9900 !important;
+        --secondary-color: rgb(0, 0, 0) !important;
+        --tertiary-color: inerit !important;
+        --header-text-color: rgb(255, 255, 255) !important;
+        --color-primary: #ff9900 !important;
+        --color-heading: #181823 !important;
+        --text-color: rgb(0, 0, 0) !important;
+        --footer-background-color: rgb(0, 0, 0) !important;
+        --footer-heading-color: #fff !important;
+        --footer-text-color: #fff !important;
+        --primary-font: 'Roboto', sans-serif;
+        --heading-font: 'Poppins', sans-serif;
+        --primary-heading: 'Poppins', sans-serif;
+        --gradient-color: linear-gradient(126deg, #9F68F5 14.85%, #BEE44F 86.39%) !important;
+    }
+</style>
+
+
+    <title>404 - Not found</title>
+<meta name="description" content="Discover inspiring entrepreneurial journeys, startup success stories, and the latest business insights at Startup Times. Your go-to platform for everything about startup and business ecosystem!">
+<meta property="og:site_name" content="Startup Times: Inspiring Entrepreneurial Journeys">
+<meta property="og:type" content="website">
+<meta property="og:title" content="404 - Not found">
+<meta property="og:image" content="https://startuptimes.net/storage/empowering-the-unsung-heroes-of-business-1-1.webp">
+<meta name="twitter:title" content="404 - Not found">
+
+    <link rel="icon" type="image/jpeg" href="https://startuptimes.net/storage/categories-images/292796012-419620276845941-7123051876407247280-n.jpg">
+
+
+
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "Startup Times: Inspiring Entrepreneurial Journeys",
+  "url": "https://startuptimes.net"
+}
+</script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;600;700&display=swap" rel="stylesheet" type="text/css"><style>:root{--primary-font: "Roboto", sans-serif;}</style>
+
+
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/vendor/core/plugins/language/css/language-public.css?v=2.2.0">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/plugins/bootstrap/bootstrap.min.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/plugins/magnific-popup/magnific-popup.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/plugins/magnify-popup/magnify-popup.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/plugins/metismenu/metismenu.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/plugins/swiper/swiper.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/css/fontawesome-5.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo/css/style.css">
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo-sports/css/style.css">
+
+
+
+
+
+<link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/themes/echo-sports/css/style.integration.css?v=1773809528"><link media="all" type="text/css" rel="stylesheet" href="https://startuptimes.net/vendor/core/plugins/announcement/css/announcement.css?v=1.4.0">
+
+<script>
+    window.siteUrl = "https://startuptimes.net";
+</script>
+
+</head>
+
+<body  class="home-five inner-page">
+    <div id="side-bar" class="side-bar header-one" data-bb-toggle="menu-sidebar-content" data-url="https://startuptimes.net/ajax/menu-sidebar">
+    <div class="menu-sidebar-loading-wrapper">
+        <div class="backdrop"></div>
+        <div class="loading"></div>
+    </div>
+</div>
+
+
+<header class="echo-header-area header-five no-absolute">
+    <div class="echo-home-1-menu header-five">
+    <div class="echo-site-main-logo-menu-social">
+        <div class="hm-5-container">
+            <div class="d-flex align-items-center justify-content-between echo-home-2-menu-full-contetn">
+                <div class="logo-header-sidebar">
+                    <div class="echo-site-logo ">
+                    <a href="https://startuptimes.net">
+                <img src="https://startuptimes.net/storage/0f50e85f-c037-487d-9166-1688ffcfc0f1.png" data-bb-lazy="true" style="height: 70px !important" alt="Startup Times: Inspiring Entrepreneurial Journeys">
+            </a>
+            </div>
+
+                </div>
+
+                <div class="echo-home-1-menu d-none d-lg-flex justify-content-center">
+                    <ul  class="list-unstyled echo-desktop-menu">
+            <li class="menu-item">
+            <a
+                class="echo-dropdown-main-element"
+                href="https://startuptimes.net/"
+                title="Homepage"
+                            >
+                Homepage
+            </a>
+                    </li>
+            <li class="menu-item">
+            <a
+                class="echo-dropdown-main-element"
+                href="https://startuptimes.net/startup-stories"
+                title="Startup Stories"
+                            >
+                Startup Stories
+            </a>
+                    </li>
+            <li class="menu-item">
+            <a
+                class="echo-dropdown-main-element"
+                href="https://startuptimes.net/news"
+                title="News"
+                            >
+                News
+            </a>
+                    </li>
+            <li class="menu-item">
+            <a
+                class="echo-dropdown-main-element"
+                href="https://startuptimes.net/about-us"
+                title="About us"
+                            >
+                About us
+            </a>
+                    </li>
+            <li class="menu-item">
+            <a
+                class="echo-dropdown-main-element"
+                href="https://startuptimes.net/team"
+                title="Team"
+                            >
+                Team
+            </a>
+                    </li>
+            <li class="menu-item">
+            <a
+                class="echo-dropdown-main-element"
+                href="https://startuptimes.net/contact"
+                title="Contact"
+                            >
+                Contact
+            </a>
+                    </li>
+    </ul>
+
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center">
+                                            
+                    
+                    <div class="sign-in-area">
+                    <a href="https://startuptimes.net/login" class="sign-in-btn">
+                <i class="fa-regular fa-user"></i>
+                Login
+            </a>
+            </div>
+
+
+                    <div class="ms-3">
+                        <div class="d-flex action-buttons-content gap-4 justify-content-end">
+        
+        <div class="action-buttons-inner d-flex align-items-center">
+            
+                            <div class="position-relative header-action">
+                    <div class="echo-header-top-social-media">
+                        <a id="search" class="echo-header-top-search-btn search-icon action-item icon">
+                            <svg width="19" height="19" viewBox="0 0 19 19" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path
+                                    d="M9.11544 16.961C13.3484 16.961 16.7798 13.5296 16.7798 9.29665C16.7798 5.06373 13.3484 1.63226 9.11544 1.63226C4.88251 1.63226 1.45105 5.06373 1.45105 9.29665C1.45105 13.5296 4.88251 16.961 9.11544 16.961Z"
+                                    stroke="currentColor" stroke-width="1.5" stroke-linecap="round"
+                                    stroke-linejoin="round"/>
+                                <path d="M14.4461 15.0254L17.451 18.0225" stroke="currentColor" stroke-width="1.5"
+                                      stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </a>
+
+                        <div class="search-input-area">
+                            <div class="container">
+                                <form action="https://startuptimes.net/search" class="search-input-inner">
+                                    <div class="input-div">
+                                        <input id="searchInput1" class="search-input" name="q" type="text" placeholder="Search by keyword">
+                                    </div>
+                                    <div class="search-close-icon"><i class="fa-regular fa-xmark-large rt-xmark"></i></div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            
+                            <div class="echo-header-top-menu-bar menu-btn">
+    <button data-bb-toggle="menu-sidebar" type="button">
+        <span class="sr-only">Toggle Sidebar Menu</span>
+        <svg xmlns="http://www.w3.org/2000/svg" width="26" height="24" viewBox="0 0 26 24" fill="none">
+            <path d="M18.5572 20.3354V23.1139H3.27555V20.3354H18.5572ZM25.5034 10.6107V13.3892H0.49707V10.6107H25.5034ZM22.7249 0.885986V3.66447H7.44328V0.885986H22.7249Z" fill="currentColor"></path>
+        </svg>
+    </button>
+</div>
+                    </div>
+    </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+</header>
+
+
+
+<main>
+        <div class="echo-404-page">
+        <section class="echo-404-area">
+            <div class="echo-container">
+                <div class="echo-error-content">
+                    <div class="echo-error">
+                        <div class="echo-error-heading">
+                            <h1>404</h1>
+                        </div>
+                        <div class="echo-error-sub-heading">
+                            <h3>Page not found</h3>
+                        </div>
+                        <div class="echo-error-pera">
+                            <p>Sorry, the page you seems looking for,<br> has been moved, redirected or moved permanently.</p>
+                        </div>
+                        <div class="error-btn">
+                            <a href="https://startuptimes.net" class="text-capitalize">Go back home</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+</main>
+
+<script>
+    'use strict';
+
+    window.siteConfig = {};
+</script>
+
+<footer class="echo-footer-area4" id="footer"
+    style="background-color: rgb(0, 0, 0) !important;"
+>
+    <div class="container">
+    <div class="footer-top">
+        <div class="footer-top-inner">
+            <div class="footer-top-left">
+            <h3 class="content">Get the business world News &amp; Stories into your inbox</h3>
+        </div>
+    
+    <div class="footer-top-right">
+        <div class="echo-subscribe-box-button">
+            <form method="POST" action="https://startuptimes.net/newsletter/subscribe" accept-charset="UTF-8" id="botble-newsletter-forms-fronts-newsletter-form" class="subscribe-form dirty-check"><input name="_token" type="hidden">
+
+    
+
+            
+        
+            
+        <div class="input-group mb-3">
+
+                
+                            
+            
+                            
+        
+            
+        <div class="echo-subscribe-input-fill"><svg width="15" height="13" viewBox="0 0 15 13" fill="none" xmlns="http://www.w3.org/2000/svg"><path opacity="0.8" d="M14.4414 11.6674C14.4402 11.8345 14.3734 11.9944 14.2553 12.1127C14.1371 12.2309 13.9773 12.2979 13.8101 12.2993H2.34541C2.17792 12.2991 2.01736 12.2325 1.89899 12.114C1.78062 11.9955 1.71413 11.8348 1.71413 11.6674V11.0265H13.1687V3.58109L8.07777 8.16291L1.71413 2.43564V1.48109C1.71413 1.31232 1.78118 1.15045 1.90052 1.03111C2.01986 0.911772 2.18172 0.844727 2.3505 0.844727H13.805C13.9738 0.844727 14.1357 0.911772 14.255 1.03111C14.3744 1.15045 14.4414 1.31232 14.4414 1.48109V11.6674ZM3.26304 2.11745L8.07777 6.45109L12.8925 2.11745H3.26304ZM0.441406 8.48109H5.53232V9.75382H0.441406V8.48109ZM0.441406 5.29927H3.62322V6.572H0.441406V5.29927Z" fill="white"></path></svg>
+
+                
+                            
+            
+                            
+        
+            
+        <input class="form-control" placeholder="Enter Your Email" id="newsletter-email" required="required" name="email" type="email">
+
+                
+                            
+            
+                            
+        
+            
+        <p class="desc">By subscribing, you accepted the our Policy.</p></div>
+
+                
+                            
+            
+                            
+        
+            
+        
+            
+        </div>
+
+                
+                            
+            
+                            
+        
+            
+        <div class="newsletter-message newsletter-success-message" style="display: none"></div>
+    <div class="newsletter-message newsletter-error-message" style="display: none"></div>
+
+                
+                            
+            
+                            
+        
+            
+        
+            
+        <button class="btn btn-primary echo-footer-area-subscribe-button" type="submit">Subscribe</button>
+
+        
+    
+    
+
+    </form>
+
+    
+        </div>
+    </div>
+</div>
+            
+    </div>
+    <div class="footer-main">
+        <div class="footer-main-inner">
+                            <div class="logo-area">
+                    <a href="https://startuptimes.net">
+                        <img src="https://startuptimes.net/storage/93f776d2-abb9-47c5-aecf-67bb6e68d4d5.png" data-bb-lazy="true" loading="lazy" alt="Startup Times: Inspiring Entrepreneurial Journeys">
+                    </a>
+                </div>
+                        <ul class="social-area">
+        <li class="social-icon">
+        <a  title="Facebook"  target="_blank" href="https://www.facebook.com/startuptimes.official/">
+            <svg class="icon  svg-icon-ti-ti-brand-facebook"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  >
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <path d="M7 10v4h3v7h4v-7h3l1 -4h-4v-2a1 1 0 0 1 1 -1h3v-4h-3a5 5 0 0 0 -5 5v2h-3" />
+</svg>
+        </a>
+    </li>
+    
+    
+    <li class="social-icon">
+        <a  title="Instagram"  target="_blank" href="https://www.instagram.com/startuptimesofficial/">
+            <svg class="icon  svg-icon-ti-ti-brand-instagram"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  >
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <path d="M4 8a4 4 0 0 1 4 -4h8a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-8a4 4 0 0 1 -4 -4z" />
+  <path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" />
+  <path d="M16.5 7.5v.01" />
+</svg>
+        </a>
+    </li>
+    
+    
+    <li class="social-icon">
+        <a  title="Twitter"  target="_blank" href="https://x.com/startuptimes2">
+            <svg class="icon  svg-icon-ti-ti-brand-x"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  >
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <path d="M4 4l11.733 16h4.267l-11.733 -16z" />
+  <path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772" />
+</svg>
+        </a>
+    </li>
+    
+    
+    <li class="social-icon">
+        <a  title="YouTube"  target="_blank" href="https://www.youtube.com/@startuptimesofficial">
+            <svg class="icon  svg-icon-ti-ti-brand-youtube"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  >
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <path d="M2 8a4 4 0 0 1 4 -4h12a4 4 0 0 1 4 4v8a4 4 0 0 1 -4 4h-12a4 4 0 0 1 -4 -4v-8z" />
+  <path d="M10 9l5 3l-5 3z" />
+</svg>
+        </a>
+    </li>
+    
+    
+    <li class="social-icon">
+        <a  title="Pinterest"  target="_blank" href="https://in.pinterest.com/startup_times/">
+            <svg class="icon  svg-icon-ti-ti-brand-pinterest"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  >
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <path d="M8 20l4 -9" />
+  <path d="M10.7 14c.437 1.263 1.43 2 2.55 2c2.071 0 3.75 -1.554 3.75 -4a5 5 0 1 0 -9.7 1.7" />
+  <path d="M12 12m-9 0a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+</svg>
+        </a>
+    </li>
+    </ul>
+            
+<ul class="footer-menu-area">
+                                    <li class="menu-item">
+                    <a
+                        href="https://startuptimes.net/team"
+                        
+                    >
+                        Team
+                    </a>
+                </li>
+                                                <li class="menu-item">
+                    <a
+                        href="https://startuptimes.net/privacy-policy"
+                        
+                    >
+                        Privacy Policy
+                    </a>
+                </li>
+                                                <li class="menu-item">
+                    <a
+                        href="https://startuptimes.net/terms-of-use"
+                        
+                    >
+                        Terms of Use
+                    </a>
+                </li>
+                        </ul>
+
+        </div>
+    </div>
+
+            <div class="footer-copyright-area">
+            <div class="copyright-area-inner">
+                <div class="title">All Rights Reserved. © Startup Times</div>
+            </div>
+        </div>
+    </div>
+
+
+</footer>
+
+
+
+    <button class="scroll-top-btn" aria-label="Scroll to Top">
+        <i class="fa-regular fa-angles-up"></i>
+    </button>
+
+<div id="anywhere-home"></div>
+
+
+
+<script data-pagespeed-no-defer="1" src="https://startuptimes.net/themes/echo/plugins/jquery.min.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/bootstrap/bootstrap.bundle.min.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/magnific-popup/magnific-popup.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/magnify-popup/magnify-popup.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/metismenu/metisMenu.min.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/swiper/swiper.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/counter-up.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/isotop.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/resize-sensor.min.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/theia-sticky-sidebar.min.js"></script>
+<script src="https://startuptimes.net/themes/echo/plugins/audio.js"></script>
+<script src="https://startuptimes.net/themes/echo/js/script.js"></script>
+<script src="https://startuptimes.net/themes/echo/js/main.js"></script>
+<script src="https://startuptimes.net/vendor/core/core/js-validation/js/js-validation.js?v=1.0.1"></script>
+<script>
+    jQuery(document).ready(function() {
+        'use strict';
+        $("#botble-newsletter-forms-fronts-newsletter-form").each(function() {
+            $(this).validate({
+                errorElement: 'div',
+                errorClass: 'invalid-feedback',
+
+                errorPlacement: function(error, element) {
+                    if (element.closest('[data-bb-toggle="tree-checkboxes"]').length) {
+                        error.insertAfter(element.closest('[data-bb-toggle="tree-checkboxes"]'));
+                    } else if (element.parent('.input-group').length || element.prop('type') === 'checkbox' || element.prop('type') === 'radio') {
+                        error.insertAfter(element.parent());
+                    } else if ($(element).data('select2')) {
+                        error.insertAfter(element.next('span'));
+                    } else {
+                        error.insertAfter(element);
+                    }
+                },
+
+                highlight: function(element) {
+                    $(element).closest('.form-control').removeClass('is-valid').addClass('is-invalid');
+                },
+
+                
+                unhighlight: function(element) {
+                    $(element).closest('.form-control').removeClass('is-invalid').addClass('is-valid');
+                },
+
+                success: function(element) {
+                    $(element).closest('.form-control').removeClass('is-invalid').addClass('is-valid');
+                },
+
+                focusInvalid: false,
+                
+                rules: JSON.parse('{\u0022email\u0022:{\u0022laravelValidation\u0022:[[\u0022Required\u0022,[],\u0022The email field is required.\u0022,true],[\u0022Email\u0022,[],\u0022The email must be a valid email address.\u0022,false]],\u0022laravelValidationRemote\u0022:[[\u0022Unique\u0022,[\u0022email\u0022,\u0022eyJpdiI6IkM4elN4enpLWjRhTjlndGM4SXMyeEE9PSIsInZhbHVlIjoieGRmSk5hcStkb2pncDB4VEUxUlB0dz09IiwibWFjIjoiMzA2YThlNzQxNGE4MDUxOGUxMDYyNWI3ZGUzY2MzYTQzY2YzYTMzYTgwNDU5YzY2ZmY1YjZmNTdlN2QwYWRiZCIsInRhZyI6IiJ9\u0022,false],\u0022The email has already been taken.\u0022,false]]},\u0022status\u0022:{\u0022laravelValidation\u0022:[[\u0022In\u0022,[\u0022subscribed\u0022,\u0022unsubscribed\u0022],\u0022The selected status is invalid.\u0022,false]]}}')
+            });
+        });
+    });
+</script>
+<script src="https://startuptimes.net/vendor/core/plugins/language/js/language-public.js?v=2.2.0"></script>
+<script defer src="https://startuptimes.net/vendor/core/packages/theme/plugins/lazyload.min.js?v=1.4.0"></script>
+
+
+
+<!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-H56MZ6Y4C0"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'G-H56MZ6Y4C0');
+  </script>
+
+<script src="https://startuptimes.net/vendor/core/packages/theme/js/toast.js"></script>
+
+        <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            window.Theme = window.Theme || {};
+
+            Theme.lazyLoadInstance = new LazyLoad({
+                elements_selector: '[data-bb-lazy="true"]:not(.loaded)',
+            });
+        });
+
+        document.addEventListener('shortcode.loaded', function () {
+            Theme.lazyLoadInstance.update()
+        });
+    </script><script src="https://startuptimes.net/vendor/core/plugins/announcement/js/announcement.js?v=1.4.0"></script>
+
+
+</body>
+
+</html>
