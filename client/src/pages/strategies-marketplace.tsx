@@ -15,7 +15,7 @@ import type { Strategy, User } from "@shared/schema";
 
 type StrategyWithMeta = Strategy & { advisor?: Partial<User>; liveCalls?: number };
 
-const themeOptions = ["Equity", "F&O", "Growth", "Value", "SwingTrade", "Momentum", "Basket", "Commodity", "Dividend Stocks", "Shorting", "ETF"];
+const themeOptions = ["Equity", "F&O", "Growth", "Value", "SwingTrade", "Momentum", "Basket", "Commodity", "Dividend", "Shorting", "ETF"];
 const typeOptions = ["Equity", "Basket", "Future", "Commodity", "CommodityFuture", "Option"];
 const volatilityOptions = ["Low", "Medium", "High"];
 const horizonOptions = ["Intraday", "Swing", "Positional", "Long Term"];

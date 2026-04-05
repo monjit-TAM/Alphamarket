@@ -28,7 +28,7 @@ const liveCallCategories = [
   { key: "Basket", label: "Basket" },
 ];
 
-const themeOptions = ["Equity", "F&O", "Growth", "Value", "SwingTrade", "Momentum", "Basket", "Commodity", "Dividend Stocks", "Shorting", "ETF"];
+const themeOptions = ["Equity", "F&O", "Growth", "Value", "SwingTrade", "Momentum", "Basket", "Commodity", "Dividend", "Shorting", "ETF"];
 const volatilityOptions = ["Low", "Medium", "High"];
 const horizonOptions = ["Intraday", "Swing", "Positional", "Long Term"];
 
@@ -48,7 +48,7 @@ export default function Home() {
 
   const filtered = (strategies || []).filter((s) => {
     if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.advisor?.companyName || "").toLowerCase().includes(search.toLowerCase())) return false;
-    if (themeFilter && !(s.theme || []).some((t) => t.toLowerCase().includes(themeFilter.toLowerCase()))) return false;
+    if (themeFilter && themeFilter !== "all" && !(s.theme || []).some((t) => t.toLowerCase().includes(themeFilter.toLowerCase()))) return false;
     if (volatilityFilter && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
     if (horizonFilter && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
     return true;
