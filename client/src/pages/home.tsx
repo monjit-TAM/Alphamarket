@@ -209,10 +209,10 @@ export default function Home() {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Media</p>
                 <div className="space-y-2">
                   {[
-                    { name: "Business India", url: "https://businessindia.co/magazine/market-news/blending-analysis-with-action", logo: "/media/business-india.png", bg: "#D32F2F" },
-                    { name: "Wealth & Finance", url: "https://wealthandfinance.digital/winners/edhaz-financial-services-private-limited/", logo: "/media/wealth-finance.png", bg: "#1a1a2e" },
-                    { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/", logo: "/media/business-connect.png", bg: "#fff" },
-                    { name: "Startup Times", url: "https://startuptimes.net/building-the-bridge-between-investors-advisors-and-brokers-the-alphamarket-story", logo: "/media/startup-times.png", bg: "#fff" },
+                    { name: "Business India", url: "https://businessindia.co/magazine/market-news/blending-analysis-with-action", logo: "https://www.google.com/s2/favicons?domain=businessindia.co&sz=64", bg: "#D32F2F" },
+                    { name: "Wealth & Finance", url: "https://wealthandfinance.digital/winners/edhaz-financial-services-private-limited/", logo: "https://www.google.com/s2/favicons?domain=wealthandfinance.digital&sz=64", bg: "#1a1a2e" },
+                    { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/", logo: "https://www.google.com/s2/favicons?domain=businessconnectindia.in&sz=64", bg: "#fff" },
+                    { name: "Startup Times", url: "https://startuptimes.net/building-the-bridge-between-investors-advisors-and-brokers-the-alphamarket-story", logo: "https://www.google.com/s2/favicons?domain=startuptimes.net&sz=64", bg: "#fff" },
                   ].map((m) => (
                     <a key={m.name} href={m.url} target="_blank" rel="noopener noreferrer" className="block">
                       <Card className="hover-elevate">
