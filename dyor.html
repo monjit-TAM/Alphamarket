@@ -907,7 +907,11 @@ tr:last-child td{border-bottom:none}
           <select class="fi" id="sc-basic-industry" style="width:180px">
             <option value="">All Sub-Industries</option>
           </select>
-          <button class="btn btn-g" onclick="scan()">▶ SCAN MARKET</button>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-g" onclick="scan(false)" id="sc-scan-btn">▶ SCAN (CACHED)</button>
+          <button class="btn" onclick="scan(true)" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)" title="Fetches live data — takes 3-4 minutes">🔄 LIVE SCAN</button>
+          <span id="sc-cache-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(0,212,170,0.1);color:#00d4aa;border:1px solid rgba(0,212,170,0.3);display:none">● CACHED</span>
+        </div>
           <div id="sc-asof" style="font-size:10px;color:var(--text3);align-self:center"></div>
         </div>
         <div id="scr-res"><div class="empty">Click SCAN MARKET to begin</div></div>
@@ -929,7 +933,7 @@ tr:last-child td{border-bottom:none}
         </div>
         <div class="page-guide-body">
       <div class="pg-section-text" style="margin-bottom:14px">
-        The most powerful screening tool on AlphaLab. Instead of running one strategy at a time, it runs <b>multiple strategies across three timeframes</b> (short, medium, long-term) simultaneously, then finds stocks where multiple signals converge. More strategies agreeing = higher conviction.
+        The most powerful screening tool on AlphaLab. Instead of running one strategy at a time, it runs <b>multiple strategies across four timeframes</b> (short, medium, long-term + fundamental) simultaneously, then finds stocks where multiple signals converge. Powered by a dedicated server-side engine (<code>/api/mtf-scan</code>) that scans all 919 stocks in under 1 second using pre-cached data. More strategies agreeing = higher conviction.
       </div>
       <div class="pg-section" style="margin-bottom:12px">
         <div class="pg-section-title">📌 How to Use — Step by Step</div>
@@ -1072,7 +1076,9 @@ tr:last-child td{border-bottom:none}
           <button class="btn btn-s" onclick="mtfPreset('value')" style="font-size:9px;padding:3px 8px;color:#ab47bc">💎 VALUE</button>
           <button class="btn btn-s" onclick="mtfPreset('all')" style="font-size:9px;padding:3px 8px">📋 ALL</button>
           <div style="flex:1"></div>
-          <button class="btn btn-g" onclick="runMtfCombiner()" id="mtf-run" style="height:38px;font-size:13px;padding:0 28px">⏱ RUN COMBINER</button>
+          <button class="btn btn-g" onclick="runMtfCombiner(false)" id="mtf-run" style="height:38px;font-size:13px;padding:0 28px">⏱ RUN COMBINER (CACHED)</button>
+          <button class="btn" onclick="runMtfCombiner(true)" style="height:38px;font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)" title="Fetches live data — 3-4 min">🔄 LIVE</button>
+          <span id="mtf-cache-badge" style="font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(0,212,170,0.1);color:#00d4aa;border:1px solid rgba(0,212,170,0.3);display:none">● CACHED</span>
         </div>
 
         <!-- Summary Stats -->
@@ -3069,7 +3075,7 @@ tr:last-child td{border-bottom:none}
   </div>
 
   <!-- Trade History -->
-  <div class="card">
+  <div class="card" style="margin-bottom:16px">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <div style="font-size:13px;font-weight:700;color:var(--text1)">TRADE HISTORY</div>
       <select id="ab-days" class="fi" style="width:100px" onchange="abLoadTrades()">
@@ -3079,6 +3085,101 @@ tr:last-child td{border-bottom:none}
       </select>
     </div>
     <div id="ab-trades" style="font-size:11px;color:var(--text3)">No trades yet</div>
+  </div>
+
+  <!-- ── BASKET BUILDER ── -->
+  <div class="card" id="ab-basket-section">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:var(--text1)">🧺 BASKET STRATEGIES</div>
+        <div style="font-size:10px;color:var(--text3)">Publish F&O or Equity intraday baskets. Brokers (Upstox/XTS) pull via your API.</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn" onclick="showBasketApiKey()" style="font-size:10px;background:var(--bg3);border:1px solid var(--border)">🔑 API KEY</button>
+        <button class="btn" onclick="showWebhookManager()" style="font-size:10px;background:var(--bg3);border:1px solid var(--border)">🔗 WEBHOOKS</button>
+      </div>
+    </div>
+
+    <!-- API Key Panel -->
+    <div id="basket-apikey-panel" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--text1);margin-bottom:8px">🔑 Your Broker Poll API</div>
+      <div style="font-size:10px;color:var(--text3);margin-bottom:8px">Share this URL with Upstox/XTS. They poll it to get your active baskets.</div>
+      <div id="basket-apikey-display" style="font-size:11px;color:var(--text2);margin-bottom:10px">Loading...</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-p" onclick="generateApiKey()" style="font-size:11px">GENERATE NEW KEY</button>
+        <button class="btn" onclick="document.getElementById('basket-apikey-panel').style.display='none'" style="font-size:11px;background:var(--bg3);border:1px solid var(--border)">CLOSE</button>
+      </div>
+    </div>
+
+    <!-- Webhook Panel -->
+    <div id="basket-webhook-panel" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:14px">
+      <div style="font-size:12px;font-weight:700;color:var(--text1);margin-bottom:8px">🔗 Broker Webhooks</div>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <input id="webhook-url-input" class="fi" placeholder="https://broker.com/webhook" style="flex:1;font-size:11px">
+        <input id="webhook-broker-input" class="fi" placeholder="Broker name" style="width:130px;font-size:11px">
+        <button class="btn btn-p" onclick="addWebhook()" style="font-size:11px">ADD</button>
+      </div>
+      <div id="webhook-list" style="font-size:11px;color:var(--text3)">Loading...</div>
+      <button class="btn" onclick="document.getElementById('basket-webhook-panel').style.display='none'" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);margin-top:8px">CLOSE</button>
+    </div>
+
+    <!-- Basket Tabs -->
+    <div style="display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:10px;flex-wrap:wrap">
+      <button id="bstab-fno" class="btn btn-p" onclick="switchBasketTab('fno')" style="font-size:11px">F&amp;O BASKET</button>
+      <button id="bstab-equity" class="btn" onclick="switchBasketTab('equity')" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)">EQUITY BASKET</button>
+      <button id="bstab-active" class="btn" onclick="switchBasketTab('active')" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)">ACTIVE BASKETS</button>
+      <button id="bstab-history" class="btn" onclick="switchBasketTab('history')" style="font-size:11px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)">HISTORY</button>
+    </div>
+
+    <!-- F&O Basket Builder -->
+    <div id="bspanel-fno">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text3)">Pre-filled from AlphaBot signals. Edit then publish.</div>
+        <button class="btn" onclick="prefillFnoBasket()" style="font-size:10px;background:var(--bg3);border:1px solid var(--border)">🔄 REFRESH SIGNALS</button>
+      </div>
+      <div id="fno-legs-table" style="margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="fno-order-type" class="fi" style="width:110px;font-size:11px">
+          <option value="LIMIT">LIMIT</option>
+          <option value="MARKET">MARKET</option>
+        </select>
+        <input id="fno-basket-name" class="fi" placeholder="Basket name" style="width:180px;font-size:11px">
+        <input id="fno-basket-desc" class="fi" placeholder="Description (optional)" style="width:200px;font-size:11px">
+        <button class="btn btn-p" id="btn-publish-fno" onclick="openBasketPublish('FNO')" style="font-size:11px;background:#16a34a">📤 PUBLISH F&amp;O BASKET</button>
+      </div>
+    </div>
+
+    <!-- Equity Basket Builder -->
+    <div id="bspanel-equity" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text3)">Top Nifty50 movers pre-filled. Edit qty/price then publish.</div>
+        <button class="btn" onclick="prefillEquityBasket()" style="font-size:10px;background:var(--bg3);border:1px solid var(--border)">🔄 REFRESH MOVERS</button>
+      </div>
+      <div id="equity-legs-table" style="margin-bottom:12px"></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <select id="equity-order-type" class="fi" style="width:110px;font-size:11px">
+          <option value="LIMIT">LIMIT</option>
+          <option value="MARKET">MARKET</option>
+        </select>
+        <input id="equity-basket-name" class="fi" placeholder="Basket name" style="width:180px;font-size:11px">
+        <input id="equity-basket-desc" class="fi" placeholder="Description (optional)" style="width:200px;font-size:11px">
+        <button class="btn btn-p" id="btn-publish-equity" onclick="openBasketPublish('EQUITY')" style="font-size:11px;background:#16a34a">📤 PUBLISH EQUITY BASKET</button>
+      </div>
+    </div>
+
+    <!-- Active Baskets -->
+    <div id="bspanel-active" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:11px;color:var(--text3)">Live baskets. Brokers are pulling these. Auto-closes at 3:20 PM.</div>
+        <button class="btn" onclick="loadMyBaskets()" style="font-size:10px;background:var(--bg3);border:1px solid var(--border)">🔄 REFRESH</button>
+      </div>
+      <div id="active-baskets-table" style="font-size:11px;color:var(--text3)">Loading...</div>
+    </div>
+
+    <!-- History -->
+    <div id="bspanel-history" style="display:none">
+      <div id="basket-history-table" style="font-size:11px;color:var(--text3)">Loading...</div>
+    </div>
   </div>
 </div>
 
@@ -3105,7 +3206,8 @@ tr:last-child td{border-bottom:none}
         <option value="AND">ALL filters (AND)</option>
         <option value="OR">ANY filter (OR)</option>
       </select>
-      <button class="btn btn-p" onclick="window.sbScan()" style="font-size:12px;padding:6px 14px">▶ RUN SCAN</button>
+      <button class="btn btn-p" onclick="window.sbScan(false)" style="font-size:12px;padding:6px 14px">▶ RUN SCAN (CACHED)</button>
+      <button class="btn" onclick="window.sbScan(true)" style="font-size:12px;padding:6px 14px;background:var(--bg3);border:1px solid var(--border);color:var(--text2)" title="Live — 2-3 min">🔄 LIVE</button>
       <button class="btn" onclick="window.sbSaveScreen()" style="font-size:12px;padding:6px 14px;background:var(--card);border:1px solid var(--border)">💾 SAVE</button>
       <button class="btn" onclick="window.sbLoadScreens()" style="font-size:12px;padding:6px 14px;background:var(--card);border:1px solid var(--border)">📂 SAVED</button>
     </div>
@@ -3999,8 +4101,13 @@ setInterval(()=>{const el=document.getElementById('clock');if(el)el.textContent=
 
 async function req(method,path,body){
   const h={'Content-Type':'application/json'};
-  // Auth via session cookie (credentials:'include')
   const r=await fetch(API+path,{method,headers:h,credentials:'include',body:body?JSON.stringify(body):undefined});
+  const ct=r.headers.get('content-type')||'';
+  if(!ct.includes('application/json')){
+    if(r.status===401)throw new Error('Not authenticated. Please log in.');
+    if(r.status===504||r.status===502)throw new Error('Scan timed out. Try LIVE SCAN or select fewer filters.');
+    throw new Error('Server error ('+r.status+'). Please try again.');
+  }
   const d=await r.json();
   if(!r.ok)throw new Error(d.detail||'Error');
   return d;
@@ -4355,7 +4462,7 @@ async function abLoadSignals(){
     el.innerHTML='<table><thead><tr><th>TIME</th><th>STRATEGY</th><th>TYPE</th><th>INSTRUMENT</th><th>ENTRY</th><th>SL</th><th>TARGET</th><th>QTY</th><th>POTENTIAL</th></tr></thead><tbody>'+
       signals.map(s=>{
         const col=s.signal_type==='BUY'?'var(--green)':s.signal_type==='SHORT'?'var(--red)':'#f0c040';
-        const time=new Date(s.created_at||s.entry_time).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+        const _dt=(s.created_at||s.entry_time||'').replace(' ','T').replace(/Z?$/,'Z');const _d=new Date(_dt);const time=_d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',timeZone:'Asia/Kolkata'})+' '+_d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});
         return '<tr><td>'+time+'</td><td style="font-size:10px">'+(s.strategy_name||'--')+'</td><td style="color:'+col+';font-weight:700">'+s.signal_type+'</td>'+
           '<td>'+s.symbol+' '+(s.strike||'')+' '+(s.instrument_type||'')+'</td>'+
           '<td>'+s.entry_price+'</td><td style="color:var(--red)">'+s.stop_loss+'</td>'+
@@ -4377,7 +4484,7 @@ async function abLoadTrades(){
         const pnl=t.pnl||0;
         const pnlCol=pnl>0?'var(--green)':pnl<0?'var(--red)':'var(--text3)';
         const statusCol={TARGET_HIT:'var(--green)',SL_HIT:'var(--red)',AUTO_SQUAREOFF:'#f0c040'};
-        const dt=new Date(t.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+        const _dt2=(t.created_at||'').replace(' ','T').replace(/Z?$/,'Z');const dt=new Date(_dt2).toLocaleDateString('en-IN',{day:'2-digit',month:'short',timeZone:'Asia/Kolkata'});
         return '<tr><td>'+dt+'</td><td style="font-size:10px">'+(t.strategy_name||'--')+'</td>'+
           '<td>'+t.signal_type+'</td><td>'+t.symbol+' '+(t.strike||'')+' '+(t.instrument_type||'')+'</td>'+
           '<td>'+t.entry_price+'</td><td>'+(t.exit_price||'--')+'</td>'+
@@ -4385,6 +4492,363 @@ async function abLoadTrades(){
           '<td style="color:'+(statusCol[t.status]||'var(--text3)')+';font-size:10px">'+t.status+'</td></tr>';
       }).join('')+'</tbody></table>';
   }catch(e){console.error(e);}
+}
+
+// ═══ BASKET PUBLISHER ═══
+
+function renderLegsTable(legs, containerId, type){
+  var el=document.getElementById(containerId);
+  if(!legs||legs.length===0){
+    el.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">No signals available. Click Refresh.</div>';
+    return;
+  }
+  window['_basketLegs_'+type]=JSON.parse(JSON.stringify(legs));
+  var rows='';
+  legs.forEach(function(l,i){
+    var sideCol=l.side==='BUY'?'var(--green)':'var(--red)';
+    var sym=l.symbol+(l.strike?' '+l.strike:'')+(l.instrument_type&&l.instrument_type!=='EQ'?' '+l.instrument_type:'')+(l.expiry?' '+l.expiry:'');
+    rows+='<tr>'+
+      '<td style="font-weight:700">'+sym+'</td>'+
+      '<td>'+l.instrument_type+'</td>'+
+      '<td style="color:'+sideCol+';font-weight:700">'+
+        '<select data-type="'+type+'" data-idx="'+i+'" data-field="side" onchange="updateBasketLegEl(this)" style="background:var(--bg3);border:1px solid var(--border);color:'+sideCol+';font-size:10px;padding:2px 4px">'+
+          '<option value="BUY"'+(l.side==='BUY'?' selected':'')+'>BUY</option>'+
+          '<option value="SELL"'+(l.side==='SELL'?' selected':'')+'>SELL</option>'+
+        '</select></td>'+
+      '<td><input type="number" value="'+l.quantity+'" min="1" data-type="'+type+'" data-idx="'+i+'" data-field="quantity" onchange="updateBasketLegEl(this)" style="width:55px;background:var(--bg3);border:1px solid var(--border);color:var(--text1);font-size:10px;padding:2px 4px;border-radius:4px"></td>'+
+      '<td><input type="number" value="'+l.price+'" step="0.05" data-type="'+type+'" data-idx="'+i+'" data-field="price" onchange="updateBasketLegEl(this)" style="width:75px;background:var(--bg3);border:1px solid var(--border);color:var(--text1);font-size:10px;padding:2px 4px;border-radius:4px"></td>'+
+      '<td style="color:var(--red)">'+l.stop_loss+'</td>'+
+      '<td style="color:var(--green)">'+l.target+'</td>'+
+      '<td><select data-type="'+type+'" data-idx="'+i+'" data-field="order_type" onchange="updateBasketLegEl(this)" style="background:var(--bg3);border:1px solid var(--border);color:var(--text1);font-size:10px;padding:2px 4px">'+
+          '<option value="LIMIT"'+(l.order_type==='LIMIT'?' selected':'')+'>LIMIT</option>'+
+          '<option value="MARKET"'+(l.order_type==='MARKET'?' selected':'')+'>MARKET</option>'+
+        '</select></td>'+
+      '<td><button data-type="'+type+'" data-idx="'+i+'" onclick="removeBasketLegEl(this)" style="background:rgba(239,68,68,0.1);border:none;color:#ef4444;cursor:pointer;border-radius:4px;padding:2px 6px;font-size:11px">x</button></td>'+
+    '</tr>';
+  });
+  el.innerHTML='<div style="overflow-x:auto"><table style="width:100%;font-size:11px"><thead><tr>'+
+    '<th>SYMBOL</th><th>TYPE</th><th>SIDE</th><th>QTY</th><th>PRICE</th><th>SL</th><th>TARGET</th><th>ORDER</th><th>REMOVE</th>'+
+    '</tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+
+function updateBasketLegEl(el){
+  var type=el.dataset.type,idx=parseInt(el.dataset.idx),field=el.dataset.field;
+  var val=field==='quantity'||field==='price'?parseFloat(el.value):el.value;
+  if(window['_basketLegs_'+type]) window['_basketLegs_'+type][idx][field]=val;
+}
+
+function removeBasketLegEl(el){
+  var type=el.dataset.type,idx=parseInt(el.dataset.idx);
+  if(window['_basketLegs_'+type]){
+    window['_basketLegs_'+type].splice(idx,1);
+    renderLegsTable(window['_basketLegs_'+type],type==='FNO'?'fno-legs-table':'equity-legs-table',type);
+  }
+}
+
+async function prefillFnoBasket(){
+  document.getElementById('fno-legs-table').innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">Loading signals...</div>';
+  try{
+    var r=await fetch('/dyor/api/upstox/basket/prefill/fno');
+    var d=await r.json();
+    renderLegsTable(d.legs,'fno-legs-table','FNO');
+  }catch(e){document.getElementById('fno-legs-table').innerHTML='<div style="color:var(--red);padding:10px">Error: '+e.message+'</div>';}
+}
+
+async function prefillEquityBasket(){
+  document.getElementById('equity-legs-table').innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">Loading Nifty50 movers...</div>';
+  try{
+    var r=await fetch('/dyor/api/upstox/basket/prefill/equity');
+    var d=await r.json();
+    renderLegsTable(d.legs,'equity-legs-table','EQUITY');
+  }catch(e){document.getElementById('equity-legs-table').innerHTML='<div style="color:var(--red);padding:10px">Error: '+e.message+'</div>';}
+}
+
+function switchBasketTab(tab){
+  ['fno','equity','active','history'].forEach(function(t){
+    var p=document.getElementById('bspanel-'+t);
+    var b=document.getElementById('bstab-'+t);
+    if(p) p.style.display=t===tab?'block':'none';
+    if(b){
+      if(t===tab){b.style.background='var(--accent)';b.style.color='#fff';b.style.border='none';}
+      else{b.style.background='var(--bg3)';b.style.color='var(--text2)';b.style.border='1px solid var(--border)';}
+    }
+  });
+  if(tab==='active'||tab==='history') loadMyBaskets();
+  if(tab==='fno') prefillFnoBasket();
+  if(tab==='equity') prefillEquityBasket();
+}
+
+// ── API KEY ──
+async function showBasketApiKey(){
+  var p=document.getElementById('basket-apikey-panel');
+  p.style.display=p.style.display==='none'?'block':'none';
+  if(p.style.display==='block'){
+    var r=await fetch('/dyor/api/basket/apikey/status');
+    var d=await r.json();
+    var el=document.getElementById('basket-apikey-display');
+    if(d.has_key){
+      el.innerHTML='<div style="margin-bottom:6px"><b>API Key:</b> <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:10px">'+d.api_key+'</code></div>'+
+        '<div style="margin-bottom:4px"><b>Poll URL:</b> <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:10px;word-break:break-all">'+d.poll_url+'</code></div>'+
+        '<div style="font-size:10px;color:var(--text3)">Last used: '+(d.last_used_at?new Date(d.last_used_at).toLocaleString('en-IN'):'Never')+'</div>';
+    } else {
+      el.innerHTML='<div style="color:var(--text3)">No API key yet. Generate one to share with your broker.</div>';
+    }
+  }
+}
+
+async function generateApiKey(){
+  var r=await fetch('/dyor/api/basket/apikey/generate',{method:'POST'});
+  var d=await r.json();
+  if(d.api_key){
+    alert('New API Key generated!\n\n' + d.api_key + '\n\nPoll URL:\n' + d.poll_url);
+    showBasketApiKey();
+  }
+}
+
+async function showWebhookManager(){
+  var p=document.getElementById('basket-webhook-panel');
+  p.style.display=p.style.display==='none'?'block':'none';
+  if(p.style.display==='block') loadWebhooks();
+}
+
+async function loadWebhooks(){
+  var r=await fetch('/dyor/api/basket/webhook/list');
+  var d=await r.json();
+  var el=document.getElementById('webhook-list');
+  if(!d.webhooks||d.webhooks.length===0){el.innerHTML='No webhooks registered yet.';return;}
+  el.innerHTML='<table style="width:100%;font-size:11px"><thead><tr><th>BROKER</th><th>URL</th><th>ACTION</th></tr></thead><tbody>'+
+    d.webhooks.map(function(w){
+      return '<tr><td>'+w.broker_name+'</td><td style="word-break:break-all">'+w.webhook_url+'</td>'+
+        '<td><button onclick="deleteWebhook('+w.id+')" style="background:rgba(239,68,68,0.1);border:none;color:#ef4444;cursor:pointer;border-radius:4px;padding:2px 6px;font-size:10px">DELETE</button></td></tr>';
+    }).join('')+'</tbody></table>';
+}
+
+async function addWebhook(){
+  var url=document.getElementById('webhook-url-input').value.trim();
+  var broker=document.getElementById('webhook-broker-input').value.trim();
+  if(!url){alert('Please enter a webhook URL');return;}
+  var r=await fetch('/dyor/api/basket/webhook/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({webhook_url:url,broker_name:broker})});
+  var d=await r.json();
+  if(d.status==='registered'){
+    document.getElementById('webhook-url-input').value='';
+    document.getElementById('webhook-broker-input').value='';
+    loadWebhooks();
+  }
+}
+
+async function deleteWebhook(id){
+  if(!confirm('Delete this webhook?'))return;
+  await fetch('/dyor/api/basket/webhook/'+id,{method:'DELETE'});
+  loadWebhooks();
+}
+
+// ── BASKET PUBLISH ──
+async function openBasketPublish(type){
+  var legs=window['_basketLegs_'+type];
+  if(!legs||legs.length===0){alert('No legs to publish. Please refresh signals first.');return;}
+  var orderType=document.getElementById(type==='FNO'?'fno-order-type':'equity-order-type').value;
+  var nameEl=document.getElementById(type==='FNO'?'fno-basket-name':'equity-basket-name');
+  var basketName=nameEl.value.trim()||('AlphaBot '+type+' '+(new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})));
+  window._pendingBasket={type:type,legs:legs,orderType:orderType,basketName:basketName};
+  // Build legs summary for rationale
+  var legsSummary=legs.map(function(l){
+    return l.side+' '+l.symbol+(l.strike?' '+l.strike:'')+(l.instrument_type&&l.instrument_type!=='EQ'?' '+l.instrument_type:'')+(l.expiry?' '+l.expiry:'')+' x'+l.quantity+' @ '+l.price;
+  }).join('\n');
+  var rationale=type+' Intraday Basket\n'+legsSummary;
+  var isFno=type==='FNO';
+  var firstLeg=legs[0];
+  // Open modal via openPublish
+  if(typeof openPublish==='function'){
+    openPublish(firstLeg.symbol, firstLeg.price||0, rationale, isFno);
+    // Customize modal for basket mode
+    setTimeout(function(){
+      // Update title
+      var titleEl=document.querySelector('#publish-modal [style*="font-size:18px"]');
+      if(titleEl) titleEl.textContent='Publish Basket to AlphaMarket';
+      // Set basket name as symbol display
+      var symEl=document.getElementById('pub-symbol');
+      if(symEl){symEl.value=basketName;symEl.readOnly=false;}
+      // Pre-fill entry/sl/target from first leg
+      var el=document.getElementById('pub-entry');if(el)el.value=firstLeg.price||'';
+      var el2=document.getElementById('pub-entry2');if(el2)el2.value=firstLeg.price||'';
+      var slEl=document.getElementById('pub-sl');if(slEl)slEl.value=firstLeg.stop_loss||'';
+      var tgEl=document.getElementById('pub-target');if(tgEl)tgEl.value=firstLeg.target||'';
+      // Set duration to Intraday
+      var dur=document.getElementById('pub-duration');
+      if(dur){for(var i=0;i<dur.options.length;i++){if(dur.options[i].text==='Intraday'){dur.selectedIndex=i;break;}}}
+      // Set instrument type
+      var instType=document.getElementById('pub-type');
+      if(instType&&isFno){
+        for(var i=0;i<instType.options.length;i++){if(instType.options[i].value==='fno'){instType.selectedIndex=i;break;}}
+        if(typeof toggleFnoFields==='function')toggleFnoFields();
+        // Fill F&O details from first leg
+        var seg=document.getElementById('pub-segment');
+        if(seg&&firstLeg.instrument_type){
+          for(var i=0;i<seg.options.length;i++){if(seg.options[i].value===firstLeg.instrument_type||seg.options[i].text===firstLeg.instrument_type){seg.selectedIndex=i;break;}}
+        }
+        var strike=document.getElementById('pub-strike');if(strike&&firstLeg.strike)strike.value=firstLeg.strike;
+        var lots=document.getElementById('pub-lots');if(lots)lots.value=firstLeg.quantity||1;
+        var expiry=document.getElementById('pub-expiry');
+        if(expiry&&firstLeg.expiry){
+          // Convert 02APR to date format
+          try{
+            var mn={'JAN':'01','FEB':'02','MAR':'03','APR':'04','MAY':'05','JUN':'06','JUL':'07','AUG':'08','SEP':'09','OCT':'10','NOV':'11','DEC':'12'};
+            var day=firstLeg.expiry.substring(0,2);
+            var mon=mn[firstLeg.expiry.substring(2,5)];
+            var yr=new Date().getFullYear();
+            if(mon)expiry.value=yr+'-'+mon+'-'+day;
+          }catch(ex){}
+        }
+      }
+      // Add basket legs summary below rationale
+      var ratEl=document.getElementById('pub-rationale');
+      if(ratEl)ratEl.value=rationale;
+      // Customize field labels and visibility for basket mode
+      // Rename Symbol label to Basket Name
+      var symLabel=document.querySelector('label[for="pub-symbol"],label+#pub-symbol');
+      var allLabels=document.querySelectorAll('#pub-form label');
+      allLabels.forEach(function(l){
+        if(l.textContent.trim()==='Symbol') l.textContent='Basket Name';
+        if(l.textContent.trim()==='Buy Range Start') l.textContent='Entry Price (First Leg)';
+        if(l.textContent.trim()==='Buy Range End') l.parentNode.style.display='none';
+        if(l.textContent.trim()==='Action') l.parentNode.style.display='none';
+      });
+      // Pre-fill SL and Target from first leg
+      var slEl2=document.getElementById('pub-sl');if(slEl2&&!slEl2.value)slEl2.value=firstLeg.stop_loss||'';
+      var tgEl2=document.getElementById('pub-target');if(tgEl2&&!tgEl2.value)tgEl2.value=firstLeg.target||'';
+      // Add basket tag to theme
+      var themeEl=document.getElementById('pub-theme');if(themeEl&&!themeEl.value)themeEl.value=type==='FNO'?'Index F&O Basket':'Equity Basket';
+      // Add cleanup on modal close
+      document.querySelector('#publish-modal [style*="cursor:pointer;font-size:20px"]').addEventListener('click',function(){
+        // Reset labels on close
+        allLabels.forEach(function(l){
+          if(l.textContent.trim()==='Basket Name') l.textContent='Symbol';
+          if(l.textContent.trim()==='Entry Price (First Leg)') l.textContent='Buy Range Start';
+          if(l.parentNode.style.display==='none') l.parentNode.style.display='';
+        });
+        var s=document.getElementById('basket-legs-summary');if(s)s.remove();
+        window._pendingBasket=null;
+      },{once:true});
+      // Add legs summary card if not exists
+      var existing=document.getElementById('basket-legs-summary');
+      if(!existing){
+        var summary=document.createElement('div');
+        summary.id='basket-legs-summary';
+        summary.style.cssText='margin-bottom:12px;padding:10px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;font-size:11px';
+        summary.innerHTML='<div style="font-weight:700;color:var(--text1);margin-bottom:6px">🧺 Basket Legs ('+legs.length+')</div>'+
+          legs.map(function(l){
+            var c=l.side==='BUY'?'var(--green)':'var(--red)';
+            return '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid var(--border)">'+
+              '<span style="color:'+c+';font-weight:700">'+l.side+'</span>'+
+              '<span>'+l.symbol+(l.strike?' '+l.strike:'')+(l.instrument_type&&l.instrument_type!=='EQ'?' '+l.instrument_type:'')+(l.expiry?' '+l.expiry:'')+'</span>'+
+              '<span>x'+l.quantity+'</span>'+
+              '<span>@ '+l.price+'</span>'+
+              '<span style="color:var(--red)">SL: '+l.stop_loss+'</span>'+
+              '<span style="color:var(--green)">T: '+l.target+'</span>'+
+            '</div>';
+          }).join('');
+        ratEl.parentNode.insertBefore(summary, ratEl);
+      }
+    }, 200);
+  }
+}
+
+async function publishBasket(type){
+  var legs=window['_basketLegs_'+type];
+  if(!legs||legs.length===0){alert('No legs to publish. Please refresh signals first.');return;}
+  var orderType=document.getElementById(type==='FNO'?'fno-order-type':'equity-order-type').value;
+  var nameEl=document.getElementById(type==='FNO'?'fno-basket-name':'equity-basket-name');
+  var descEl=document.getElementById(type==='FNO'?'fno-basket-desc':'equity-basket-desc');
+  var basketName=nameEl.value.trim()||('AlphaBot '+type+' '+(new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})));
+  var desc=descEl?descEl.value.trim():'';
+  if(!confirm('Publish '+legs.length+' leg '+type+' basket: "'+basketName+'"?\n\nBrokers will immediately see this basket via your API.'))return;
+  var btn=document.getElementById(type==='FNO'?'btn-publish-fno':'btn-publish-equity');
+  if(btn){btn.disabled=true;btn.textContent='Publishing...';}
+  try{
+    var r=await fetch('/dyor/api/basket/publish',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({basket_type:type,basket_name:basketName,description:desc,legs:legs,order_type:orderType,source:'MANUAL'})
+    });
+    var d=await r.json();
+    if(d.status==='published'){
+      alert('Basket published! ID: '+d.basket_id+'\nBrokers can now pull it via your API.');
+      nameEl.value='';
+      if(descEl)descEl.value='';
+      switchBasketTab('active');
+    } else {
+      alert('Publish failed: '+JSON.stringify(d));
+    }
+  }catch(e){alert('Error: '+e.message);}
+  finally{if(btn){btn.disabled=false;btn.innerHTML='📤 PUBLISH '+type+' BASKET';}}
+}
+
+// ── ACTIVE BASKETS ──
+async function loadMyBaskets(){
+  var activeEl=document.getElementById('active-baskets-table');
+  var histEl=document.getElementById('basket-history-table');
+  try{
+    var r=await fetch('/dyor/api/basket/my');
+    var d=await r.json();
+    var active=d.baskets.filter(function(b){return b.status==='ACTIVE';});
+    var closed=d.baskets.filter(function(b){return b.status!=='ACTIVE';});
+
+    if(activeEl){
+      if(active.length===0){activeEl.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">No active baskets. Publish one above.</div>';}
+      else{
+        activeEl.innerHTML='<div style="overflow-x:auto"><table style="width:100%;font-size:11px"><thead><tr>'+
+          '<th>TIME</th><th>NAME</th><th>TYPE</th><th>LEGS</th><th>ORDER</th><th>SOURCE</th><th>ACTION</th></tr></thead><tbody>'+
+          active.map(function(b){
+            var dt=new Date(b.published_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+            var legs=Array.isArray(b.legs)?b.legs:JSON.parse(b.legs||'[]');
+            return '<tr>'+
+              '<td>'+dt+'</td>'+
+              '<td style="font-weight:700">'+b.basket_name+'</td>'+
+              '<td><span style="background:var(--bg3);padding:2px 6px;border-radius:4px">'+b.basket_type+'</span></td>'+
+              '<td>'+legs.length+' legs</td>'+
+              '<td>'+b.order_type+'</td>'+
+              '<td style="font-size:10px;color:var(--text3)">'+b.source+'</td>'+
+              '<td><button onclick="closeBasket('+b.id+')" style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.3);color:#ef4444;cursor:pointer;border-radius:4px;padding:2px 8px;font-size:10px">CLOSE</button></td>'+
+            '</tr>';
+          }).join('')+'</tbody></table></div>';
+      }
+    }
+
+    if(histEl){
+      if(closed.length===0){histEl.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">No closed baskets yet.</div>';}
+      else{
+        histEl.innerHTML='<div style="overflow-x:auto"><table style="width:100%;font-size:11px"><thead><tr>'+
+          '<th>DATE</th><th>NAME</th><th>TYPE</th><th>STATUS</th><th>REASON</th><th>CLOSED</th></tr></thead><tbody>'+
+          closed.map(function(b){
+            var statusCol={CLOSED:'var(--text2)',SQUAREDOFF:'#f0c040'}[b.status]||'var(--text3)';
+            var pub=new Date(b.published_at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+            var cls=b.closed_at?new Date(b.closed_at).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'}):'--';
+            return '<tr>'+
+              '<td>'+pub+'</td>'+
+              '<td style="font-weight:600">'+b.basket_name+'</td>'+
+              '<td>'+b.basket_type+'</td>'+
+              '<td style="color:'+statusCol+';font-weight:700">'+b.status+'</td>'+
+              '<td style="font-size:10px;color:var(--text3)">'+( b.close_reason||'--')+'</td>'+
+              '<td>'+cls+'</td>'+
+            '</tr>';
+          }).join('')+'</tbody></table></div>';
+      }
+    }
+  }catch(e){
+    if(activeEl)activeEl.innerHTML='<div style="color:var(--red);padding:10px">Error: '+e.message+'</div>';
+  }
+}
+
+async function closeBasket(id){
+  if(!confirm('Close this basket? Brokers will be notified.'))return;
+  var r=await fetch('/dyor/api/basket/'+id+'/close',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({reason:'MANUAL'})});
+  var d=await r.json();
+  if(d.status==='closed'){loadMyBaskets();}
+  else{alert('Error closing basket: '+JSON.stringify(d));}
+}
+
+function basketCheckOnLoad(){
+  // Pre-fill FNO on tab open
 }
 
 // ═══ DYOR Mobile Navigation ═══
@@ -4416,7 +4880,7 @@ function nav(p,btn){
   document.querySelectorAll('.page-guide.open').forEach(x=>x.classList.remove('open'));
   document.getElementById('p-'+p).classList.add('on');
   if(btn)btn.classList.add('on');
-  if(p==='alphabot'){abRefresh();}
+  if(p==='alphabot'){abRefresh();prefillFnoBasket();}
   if(p==='dashboard')loadDash();
   if(p==='backtest')loadBtHist();
   if(p==='charts'){if(!chartLoaded)loadChart();}
@@ -4781,12 +5245,16 @@ function showRRGDetail(idx){
   `;
 }
 
-async function scan(){
+async function scan(forceLive=false){
   const el=document.getElementById('scr-res');
   const strat=document.getElementById('sc-strat').value;
   const fundStrats = ['dividend_yield','low_pe','high_roe','growth_momentum','safe_haven'];
+  const badge=document.getElementById('sc-cache-badge');
+  if(badge)badge.style.display='none';
+  if(forceLive && !confirm('Live scan fetches fresh data for 923 stocks.\n\nThis takes 3-4 minutes. Continue?'))return;
 // Market Cap classification badge — uses API data if available, falls back to market_cap value
 function _capBadge(stock) {
+  if(!stock) return '<span style="font-size:9px;color:var(--text3)">—</span>';
   const cap = stock.cap_segment || stock.market_cap_segment || '';
   if (!cap && !stock.market_cap) return '<span style="font-size:9px;color:var(--text3)">—</span>';
   let label = cap;
@@ -4808,10 +5276,14 @@ function _capBadge(stock) {
   return `<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;color:${color};background:${bg};letter-spacing:0.5px">${label}</span>`;
 }
 
-  const loadMsg = fundStrats.includes(strat)
-    ? 'Scanning stocks + fetching fundamental data — may take 60-90 seconds...'
-    : 'Scanning NSE stocks (1-year data) — first run takes 1-3 min, then cached 15 min...';
+  const loadMsg = forceLive
+    ? 'Live scan in progress — fetching fresh data for 923 stocks (3-4 minutes)...'
+    : fundStrats.includes(strat)
+      ? 'Loading cached fundamental data...'
+      : 'Loading cached screener data...';
   el.innerHTML=`<div style="padding:16px;color:var(--text3)"><span class="spin"></span>${loadMsg}</div>`;
+  const scBtn=document.getElementById('sc-scan-btn');
+  if(scBtn){scBtn.disabled=true;scBtn.textContent='⏳ LOADING...';}
   try{
     const mn=document.getElementById('sc-min').value,mx=document.getElementById('sc-max').value;
     const sec=document.getElementById('sc-sector').value;
@@ -4823,20 +5295,19 @@ function _capBadge(stock) {
     const capFilter=document.getElementById('sc-cap').value;
     if(capFilter && d.stocks){
       d.stocks=d.stocks.filter(s=>{
-        const c=(function(stock){
-          const cap=stock.cap_segment||stock.market_cap_segment||'';
-          if(cap==='large') return 'L';
-          if(cap==='mid') return 'M';
-          if(cap==='small') return 'S';
-          if(cap==='micro') return 'μ';
-          return '';
-        })(s);
-        return c.label.toLowerCase()===capFilter;
+        const cap=(s.cap_segment||s.market_cap_segment||'').toLowerCase();
+        return cap===capFilter;
       });
       d.count=d.stocks.length;
     }
     if(d.as_of)document.getElementById('sc-asof').textContent='Data as of '+d.as_of;
     window._alScreenerData={stocks:d.stocks,strategy:strat,count:d.count,ts:Date.now()};
+    if(badge){
+      if(d.cached){badge.textContent='● CACHED';badge.style.color='#00d4aa';badge.style.borderColor='rgba(0,212,170,0.3)';}
+      else{badge.textContent='⚡ LIVE';badge.style.color='#f0c040';badge.style.borderColor='rgba(240,192,64,0.3)';}
+      badge.style.display='inline';
+    }
+    if(scBtn){scBtn.disabled=false;scBtn.textContent='▶ SCAN (CACHED)';}
     document.getElementById('sc-count').textContent=`${d.count} matches / ${d.universe_size||'2200+'} stocks${d.scanned && d.scanned < d.universe_size ? ' ('+d.scanned+' in sector)' : ''}${capFilter?' · '+capFilter+' cap only':''}`;
     if(!d.stocks.length){el.innerHTML='<div class="empty">No stocks match current criteria</div>';return;}
 
@@ -4851,12 +5322,12 @@ function _capBadge(stock) {
 
     let extraH='', extraFn;
     if(showFund){ extraH='<th>P/E</th><th>ROE %</th><th>Div Yld %</th>'; extraFn=s=>`<td>${s.pe_ratio?s.pe_ratio.toFixed(1):'—'}</td><td>${s.roe?s.roe.toFixed(1):'—'}</td><td>${s.dividend_yield?s.dividend_yield.toFixed(1):'—'}</td>`; }
-    else if(show52){ extraH='<th>52W HIGH</th><th>FROM 52H</th>'; extraFn=s=>`<td>₹${s.w52_high}</td><td class="${s.pct_from_52h>=0?'up':'dn'}">${s.pct_from_52h}%</td>`; }
-    else if(showGap){ extraH='<th>GAP %</th><th>52W HIGH</th>'; extraFn=s=>`<td class="${s.gap_pct>=0?'up':'dn'}">${s.gap_pct>=0?'+':''}${s.gap_pct}%</td><td>₹${s.w52_high}</td>`; }
-    else if(showRS){ extraH='<th>1M RS</th><th>3M RS</th>'; extraFn=s=>`<td class="${s.rs_1m>=0?'up':'dn'}">${s.rs_1m>=0?'+':''}${s.rs_1m}%</td><td class="${s.rs_3m>=0?'up':'dn'}">${s.rs_3m>=0?'+':''}${s.rs_3m}%</td>`; }
-    else if(showBB){ extraH='<th>BB WIDTH</th><th>BB LOWER</th>'; extraFn=s=>`<td>${s.bb_width}%</td><td>₹${s.bb_lower}</td>`; }
-    else if(showMACD){ extraH='<th>MACD HIST</th><th>3M RS</th>'; extraFn=s=>`<td class="${s.macd_hist>=0?'up':'dn'}">${s.macd_hist}</td><td class="${s.rs_3m>=0?'up':'dn'}">${s.rs_3m}%</td>`; }
-    else { extraH='<th>VOL RATIO</th>'; extraFn=s=>`<td style="color:${s.vol_ratio>2?'var(--green)':s.vol_ratio>1.5?'var(--yellow)':'var(--text2)'}">${s.vol_ratio}x</td>`; }
+    else if(show52){ extraH='<th>52W HIGH</th><th>FROM 52H</th>'; extraFn=s=>`<td>₹${(s.w52_high||0).toFixed(2)}</td><td class="${(s.pct_from_52h||0)>=0?'up':'dn'}">${(s.pct_from_52h||0).toFixed(1)}%</td>`; }
+    else if(showGap){ extraH='<th>GAP %</th><th>52W HIGH</th>'; extraFn=s=>`<td class="${(s.gap_pct||0)>=0?'up':'dn'}">${(s.gap_pct||0)>=0?'+':''}${(s.gap_pct||0).toFixed(2)}%</td><td>₹${s.w52_high||0}</td>`; }
+    else if(showRS){ extraH='<th>1M RS</th><th>3M RS</th>'; extraFn=s=>`<td class="${(s.rs_1m||0)>=0?'up':'dn'}">${(s.rs_1m||0)>=0?'+':''}${(s.rs_1m||0).toFixed(1)}%</td><td class="${(s.rs_3m||0)>=0?'up':'dn'}">${(s.rs_3m||0)>=0?'+':''}${(s.rs_3m||0).toFixed(1)}%</td>`; }
+    else if(showBB){ extraH='<th>BB WIDTH</th><th>BB LOWER</th>'; extraFn=s=>`<td>${(s.bb_width||0).toFixed(1)}%</td><td>₹${(s.bb_lower||0).toFixed(2)}</td>`; }
+    else if(showMACD){ extraH='<th>MACD HIST</th><th>3M RS</th>'; extraFn=s=>`<td class="${(s.macd_hist||0)>=0?'up':'dn'}">${(s.macd_hist||0).toFixed(2)}</td><td class="${(s.rs_3m||0)>=0?'up':'dn'}">${(s.rs_3m||0).toFixed(1)}%</td>`; }
+    else { extraH='<th>VOL RATIO</th>'; extraFn=s=>`<td style="color:${(s.vol_ratio||0)>2?'var(--green)':(s.vol_ratio||0)>1.5?'var(--yellow)':'var(--text2)'}">${(s.vol_ratio||0).toFixed(2)}x</td>`; }
 
     el.innerHTML=`<div style="font-size:10px;color:var(--text3);margin-bottom:8px">${d.count} matches from ${d.scanned||d.universe_size||'2200+'} stocks scanned · <span onclick="toggleAlChat();setTimeout(()=>{document.getElementById('al-q').value='Analyze my results';alSend();},300)" style="color:var(--accent);cursor:pointer;text-decoration:underline">💡 Ask Ariv to pick the best</span></div><table><thead><tr><th>SYMBOL</th><th>PRICE</th><th>CHANGE</th><th>CAP</th><th>RSI</th>${extraH}<th>SECTOR</th><th>INDUSTRY</th><th>200DMA</th><th></th></tr></thead><tbody>${d.stocks.map(s=>`<tr>
       <td style="font-weight:500;color:var(--accent)">${s.symbol}</td>
@@ -4865,10 +5336,10 @@ function _capBadge(stock) {
       <td>${_capBadge(s)}</td>
       <td class="${s.rsi>70?'dn':s.rsi<30?'up':''}">${s.rsi}</td>
       ${extraFn(s)}
-      <td><span class="tag">${s.sector}</span></td>
-      <td style="font-size:10px;color:var(--text2)">${s.industry||''}</td>
+      <td><span class="tag">${(s.sector||'').replace(/&/g,'&amp;')}</span></td>
+      <td style="font-size:10px;color:var(--text2)">${(s.industry||'').replace(/&/g,'&amp;')}</td>
       <td style="color:${s.above_200dma?'var(--green)':'var(--red)'}">${s.above_200dma?'▲ YES':'▼ NO'}</td>
-      <td style="white-space:nowrap"><button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="openChart('${s.symbol}')">📈</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="addWatchSym('${s.symbol}')">+WATCH</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px;margin-left:2px" onclick="showFundamentals('${s.symbol}')">INFO</button> <button class="btn btn-s" style="font-size:10px;padding:3px 6px;margin-left:2px;color:var(--yellow)" onclick="quickRecommend('${s.symbol}',${s.price})">⚖REC</button>${_pubBtn(s.symbol,s.price,'Screener: '+strat+' | RSI:'+s.rsi+' | '+s.sector)}</td>
+      <td style="white-space:nowrap"><button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="openChart('${s.symbol}')">📈</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px" onclick="addWatchSym('${s.symbol}')">+WATCH</button> <button class="btn btn-s" style="font-size:10px;padding:3px 9px;margin-left:2px" onclick="showFundamentals('${s.symbol}')">INFO</button> <button class="btn btn-s" style="font-size:10px;padding:3px 6px;margin-left:2px;color:var(--yellow)" onclick="quickRecommend('${s.symbol}',${s.price})">⚖REC</button>${_pubBtn(s.symbol,s.price,'Screener: '+strat+' | RSI:'+s.rsi+' | '+(s.sector||'').replace(/&/g,'and'))}</td>
     </tr>`).join('')}</tbody></table>`;
   }catch(e){toast(e.message,'er');el.innerHTML='<div class="empty">'+e.message+'</div>';}
 }
@@ -7901,16 +8372,18 @@ function mtfPreset(p){
 
 function _mtfGetTF(strat){for(const[tf,cfg] of Object.entries(MTF_STRATEGY_MAP)){if(cfg.strategies.includes(strat))return tf;}return'short';}
 
-async function runMtfCombiner(){
+async function runMtfCombiner(forceLive=false){
   const res=document.getElementById('mtf-res'),btn=document.getElementById('mtf-run');
   const selected=[...document.querySelectorAll('.mtf-chk:checked')].map(c=>({value:c.value,tf:c.dataset.tf}));
   if(selected.length<2){toast('Select at least 2 strategies','er');return;}
+  if(forceLive && !confirm('Live scan fetches fresh data for 923 stocks.\n\nThis takes 3-4 minutes per strategy. Continue?'))return;
   const mn=document.getElementById('mtf-min').value,mx=document.getElementById('mtf-max').value;
   const sec=document.getElementById('mtf-sector').value,minConf=parseInt(document.getElementById('mtf-minconf').value);
   btn.disabled=true;btn.textContent='⏱ SCANNING...';
   const total=selected.length;let done=0;
   document.getElementById('mtf-status').textContent=`0/${total}`;
-  res.innerHTML=`<div style="padding:20px;text-align:center;color:var(--text3)"><span class="spin"></span> Running ${total} strategies in parallel across 843+ NSE stocks...<div id="mtf-prog" style="margin-top:10px;font-size:10px"></div></div>`;
+  const modeLabel=forceLive?'Fetching live data':'Loading cached data';
+  res.innerHTML=`<div style="padding:20px;text-align:center;color:var(--text3)"><span class="spin"></span> ${modeLabel} for ${total} strategies across 923 NSE stocks...<div id="mtf-prog" style="margin-top:10px;font-size:10px"></div></div>`;
 
   try{
     const promises=selected.map(async s=>{
@@ -7928,7 +8401,7 @@ async function runMtfCombiner(){
     results.forEach(r=>{r.stocks.forEach(st=>{
       const sym=st.symbol||st.s;if(!sym)return;
       if(!smap[sym])smap[sym]={symbol:sym,price:st.price||0,change:st.change_pct||0,rsi:st.rsi||0,sector:st.sector||'',industry:st.industry||'',above_200dma:st.above_200dma,strategies:[],timeframes:new Set(),tfDetails:{short:[],medium:[],long:[],fundamental:[]},rs_1m:st.rs_1m||0,rs_3m:st.rs_3m||0,vol_ratio:st.vol_ratio||0,cap_segment:st.cap_segment||'',market_cap:st.market_cap||0,market_cap_segment:st.market_cap_segment||''};
-      smap[sym].strategies.push(r.strategy);smap[sym].timeframes.add(r.timeframe);smap[sym].tfDetails[r.timeframe].push(r.strategy);
+      smap[sym].strategies.push(r.strategy);smap[sym].timeframes.add(r.timeframe);smap[sym].tfDetails[r.timeframe].push(r.strategy);if(st.cap_segment)smap[sym].cap_segment=st.cap_segment;
       if(st.price&&st.price>smap[sym].price)smap[sym].price=st.price;if(st.rsi)smap[sym].rsi=st.rsi;if(st.change_pct)smap[sym].change=st.change_pct;
     });});
 
@@ -7985,12 +8458,13 @@ function _mtfTable(stocks,selected){
     });
     const tags=s.strategies.map(st=>{const tf=_mtfGetTF(st);const c=MTF_STRATEGY_MAP[tf]?.color||'var(--accent)';return`<span style="font-size:9px;padding:1px 5px;border-radius:2px;background:${c}18;color:${c};border:1px solid ${c}33;white-space:nowrap">${MTF_NAMES[st]||st}</span>`;}).join(' ');
     const conv=s.stratCount>=6?'🔥🔥':s.stratCount>=4?'🔥':s.stratCount>=3?'⭐':'✓';
+    const _cb=s=>{const c=(s.cap_segment||'').toLowerCase();if(c==='large')return '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;color:#1565c0;background:rgba(21,101,192,0.1)">LARGE</span>';if(c==='mid')return '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;color:#00897b;background:rgba(0,137,123,0.1)">MID</span>';if(c==='small')return '<span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;color:#f57c00;background:rgba(245,124,0,0.1)">SMALL</span>';return '<span style="font-size:9px;color:var(--text3)">—</span>';};
     h+=`<tr style="cursor:pointer" onclick="mtfDetail('${s.symbol}')">
       <td style="font-weight:700;color:${i<3?'#ffa726':i<10?'var(--accent)':'var(--text2)'}">${i+1}</td>
       <td style="font-weight:700;color:var(--accent)">${s.symbol}</td>
       <td>₹${Number(s.price).toLocaleString('en-IN',{maximumFractionDigits:2})}</td>
       <td class="${s.change>=0?'up':'dn'}">${s.change>=0?'+':''}${Number(s.change).toFixed(1)}%</td>
-      <td>${_capBadge(s)}</td>
+      <td>${_cb(s)}</td>
       <td style="color:${s.rsi>70?'var(--red)':s.rsi<30?'var(--green)':'var(--text2)'}">${s.rsi||'—'}</td>
       <td><div style="display:flex;align-items:center;gap:6px"><div style="font-size:11px;font-weight:700">${s.stratCount}/${selS.length}</div><div style="flex:1;background:var(--bg3);border-radius:3px;height:6px;min-width:40px"><div class="mtf-bar" style="width:${barPct}%;background:${barClr}"></div></div></div><div style="font-size:9px;color:var(--text3)">${conv} ${s.tfCount} TF</div></td>
       <td style="white-space:nowrap">${tfH}</td>
@@ -9121,7 +9595,10 @@ function copyMorningBrief(){
       {keys:['daily routine advisor','advisor workflow','sebi advisor daily','ria daily','ra daily','client reporting','advisor tips'],
        r:`<b>SEBI Advisor's Daily Routine</b> \ud83d\udccb\n\n<b>Pre-Market (8:00 AM):</b>\n1. \ud83c\udf05 <b>Morning Brief</b> → Generate \u2600\ufe0f Morning Brief for clients\n2. Review overnight global cues and their India impact\n\n<b>Research (9:00 - 10:00 AM):</b>\n3. \ud83d\udd0d <b>MTF Combiner</b> — find high-conviction multi-timeframe signals\n4. \ud83c\udfaf <b>AlphaView</b> — full analysis on top picks\n5. \ud83d\udcdd <b>Advisory</b> — create BUY/SELL recommendations with entry, target, SL\n\n<b>During Market (10:00 AM - 3:00 PM):</b>\n6. \ud83d\udcca <b>Forward Test</b> — monitor strategy performance for compliance evidence\n7. \ud83d\udd14 <b>Alerts</b> — check triggered alerts and update clients\n\n<b>Post-Market (3:30 PM):</b>\n8. Generate \ud83c\udf19 <b>Market Wrap Up</b> for clients\n9. Review <b>Model Portfolios</b> — track client portfolio P&L\n10. \ud83d\udcc4 <b>Advisory Reports</b> — generate PDF reports for compliance audit\n\n<b>Key:</b> All recommendations are timestamped and stored for SEBI audit trail.`,chips:['Generate Morning Brief','Create recommendation','Advisory reports','Model Portfolios']},
 
-            {keys:['who are you','your name','about you','ariv'],r:`I'm <b>Ariv</b>, the AlphaLab DYOR AI research assistant! 🙏\n\nI help advisors and investors make smarter decisions. I can:\n• Answer stock market questions (puts, calls, strategies, sectors)\n• Guide you through options trading step-by-step\n• Analyze your screener and backtest results\n• Review your model portfolio for diversification and risk\n• Suggest strategies based on your trading style\n• Explain any concept from RSI to Iron Condors\n• Help publish calls to AlphaMarket (advisors only)\n• Guide DCF valuation and Pattern analysis\n• Explain Arbitrage, Jobbing & Scalping with index F&O\n\u2022 Guide you through the new <b>Screen Builder</b> — custom scans with 40+ filters across stocks, futures and options\n\nI know every feature of AlphaLab inside-out — including Screen Builder, Publish to AlphaMarket, Basket publishing, and live Groww data feeds. Try asking me anything!`},
+      {keys:['mtf combiner','mtf','multi timeframe','confluence','mtf scan','multi-timeframe','run combiner','mtf guide','timeframe combiner'],
+       r:`<b>MTF Strategy Combiner</b> \u23f1\n\nThe most powerful screening tool on DYOR. Runs <b>multiple strategies across 4 timeframes</b> in a single pass and finds stocks where signals converge.\n\n<b>How it works:</b>\n1. Select 2+ strategies from Short / Medium / Long / Fundamental timeframes\n2. Set minimum confluence (how many strategies must agree)\n3. Click <b>RUN COMBINER</b> — results load instantly from cached data\n4. Stocks are scored by: timeframe diversity (10pts/TF) + strategy count (3pts each) + above 200DMA bonus (5pts)\n\n<b>4 Timeframes:</b>\n\u2022 <b>\u26a1 Short (1-5 days):</b> Momentum, MACD Crossover, Gap Up, Supertrend, Volume Spike\n\u2022 <b>\ud83d\udcca Medium (5-20 days):</b> Breakout, Relative Strength, Pullback Buy, BB Squeeze\n\u2022 <b>\ud83c\udfd7 Long (20+ days):</b> Golden Cross, Minervini, Growth Momentum, Safe Haven\n\u2022 <b>\ud83d\udcb0 Fundamental:</b> Low PE, High ROE, Dividend Yield\n\n<b>Presets:</b> Bull Market, Bear Market, Swing Trading, Value Investing, or select ALL 29 strategies.\n\n<b>Performance:</b> Powered by server-side /api/mtf-scan endpoint — scans 919 stocks across all selected strategies in under 1 second using pre-cached data.\n\n<b>Pro Tip:</b> Start with the Bull preset (12 strategies), set confluence to 3+, and look for stocks hitting across all 3 timeframes — these are the highest conviction ideas.`,chips:['Run Bull preset','Explain confluence','Best MTF settings','Compare with Screener']},
+
+            {keys:['who are you','your name','about you','ariv'],r:`I'm <b>Ariv</b>, the AlphaLab DYOR AI research assistant! 🙏\n\nI help advisors and investors make smarter decisions. I can:\n• Answer stock market questions (puts, calls, strategies, sectors)\n• Guide you through options trading step-by-step\n• Analyze your screener and backtest results\n• Review your model portfolio for diversification and risk\n• Suggest strategies based on your trading style\n• Explain any concept from RSI to Iron Condors\n• Help publish calls to AlphaMarket (advisors only)\n• Guide DCF valuation and Pattern analysis\n• Explain Arbitrage, Jobbing & Scalping with index F&O\n\u2022 Guide you through the new <b>Screen Builder</b> — custom scans with 40+ filters across stocks, futures and options\n\nI know every feature of AlphaLab inside-out — including MTF Combiner (multi-timeframe confluence scanner), Screen Builder, Publish to AlphaMarket, Basket publishing, and live Groww data feeds. Try asking me anything!`},
     ],
 
     fallback: `I'm not sure about that specific query, but I can help with a lot! Try asking:\n\n• <b>Stock queries</b> — "What put option should I buy?", "Tell me about NIFTY options"\n• <b>Strategy help</b> — "Which strategy for swing trading?", "Bearish strategies"\n• <b>Portfolio</b> — "Review my portfolio", "How to build a portfolio"\n• <b>Options</b> — "Build an Iron Condor", "What is IV?", "Covered Call"\n• <b>Concepts</b> — "Explain RSI", "Support resistance", "Position sizing"\n• <b>Market</b> — "How to hedge?", "Earnings season strategy", "Sector rotation"\n• <b>Platform</b> — "How to backtest?", "Risk Heatmap", "OI Intelligence"\n\nPick a suggestion below or rephrase your question!`
@@ -11362,6 +11839,18 @@ function submitPublish(){
   fetch(url,{method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(function(r){return r.json()}).then(function(d2){
     var res=document.getElementById('pub-result');
     btn.textContent='PUBLISH TO ALPHAMARKET';btn.disabled=false;
+    // If this was triggered from basket builder, also save to basket strategies
+    if(window._pendingBasket){
+      var pb=window._pendingBasket;
+      fetch('/dyor/api/basket/publish',{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({basket_type:pb.type,basket_name:pb.basketName,legs:pb.legs,order_type:pb.orderType,source:'ALPHABOT'})
+      }).then(function(r){return r.json();}).then(function(d){
+        if(d.status==='published'){console.log('Basket saved: ID '+d.basket_id);}
+      }).catch(function(e){console.error('Basket save error:',e);});
+      window._pendingBasket=null;
+    }
     if(d2.success){res.style.background='rgba(16,185,129,0.15)';res.style.color='var(--green)';res.textContent='Published successfully! Call ID: '+(d2.call_id||d2.position_id);
     }else{res.style.background='rgba(239,68,68,0.15)';res.style.color='var(--red)';res.textContent='Error: '+(d2.error||'Unknown error');}
     res.style.display='block';
@@ -11569,23 +12058,25 @@ function submitPublish(){
     sbRenderFilterList();
   };
 
-  window.sbScan = async function() {
+  window.sbScan = async function(forceLive=false) {
     if (!sbFilters.length) { alert('Add at least one filter'); return; }
+    if(forceLive && !confirm('Live scan fetches fresh data for 923 stocks.\n\nThis takes 2-3 minutes. Continue?')) return;
     const asset_type = document.getElementById('sb-asset').value;
     const logic = document.getElementById('sb-logic').value;
     const statusEl = document.getElementById('sb-status');
     const resultsEl = document.getElementById('sb-results');
-    statusEl.textContent = '⏳ Scanning...';
+    statusEl.textContent = forceLive ? '⏳ Live scan in progress (2-3 min)...' : '⏳ Loading from cache...';
     resultsEl.innerHTML = '';
     try {
       const r = await fetch(`${DYOR_API}/screener/scan`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc' })
+        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc', force_live: forceLive })
       });
       const d = await r.json();
       if (d.error) { statusEl.textContent = '❌ ' + d.error; return; }
-      statusEl.textContent = `✅ ${d.count} results from ${d.scanned} scanned — ${d.scan_time_ms}ms`;
+      const cacheLabel = d.scan_time_ms < 500 ? ' ● CACHED' : ' ⚡ LIVE';
+      statusEl.textContent = '✅ ' + d.count + ' results from ' + d.scanned + ' scanned — ' + d.scan_time_ms + 'ms' + cacheLabel;
       sbRenderResults(d.results, asset_type);
     } catch(e) {
       statusEl.textContent = '❌ Scan failed: ' + e.message;
@@ -11870,23 +12361,25 @@ function submitPublish(){
     sbRenderFilterList();
   };
 
-  window.sbScan = async function() {
+  window.sbScan = async function(forceLive=false) {
     if (!sbFilters.length) { alert('Add at least one filter'); return; }
+    if(forceLive && !confirm('Live scan fetches fresh data for 923 stocks.\n\nThis takes 2-3 minutes. Continue?')) return;
     const asset_type = document.getElementById('sb-asset').value;
     const logic = document.getElementById('sb-logic').value;
     const statusEl = document.getElementById('sb-status');
     const resultsEl = document.getElementById('sb-results');
-    statusEl.textContent = '⏳ Scanning...';
+    statusEl.textContent = forceLive ? '⏳ Live scan in progress (2-3 min)...' : '⏳ Loading from cache...';
     resultsEl.innerHTML = '';
     try {
       const r = await fetch(`${DYOR_API}/screener/scan`, {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
-        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc' })
+        body: JSON.stringify({ asset_type, filters: sbFilters, logic, limit: 100, sort_by: 'alpha_rating', sort_order: 'desc', force_live: forceLive })
       });
       const d = await r.json();
       if (d.error) { statusEl.textContent = '❌ ' + d.error; return; }
-      statusEl.textContent = `✅ ${d.count} results from ${d.scanned} scanned — ${d.scan_time_ms}ms`;
+      const cacheLabel = d.scan_time_ms < 500 ? ' ● CACHED' : ' ⚡ LIVE';
+      statusEl.textContent = '✅ ' + d.count + ' results from ' + d.scanned + ' scanned — ' + d.scan_time_ms + 'ms' + cacheLabel;
       sbRenderResults(d.results, asset_type);
     } catch(e) {
       statusEl.textContent = '❌ Scan failed: ' + e.message;
