@@ -209,15 +209,15 @@ export default function Home() {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Media</p>
                 <div className="space-y-2">
                   {[
-                    { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/" },
-                    { name: "Startup Times", url: "https://startuptimes.net/building-the-bridge-between-investors-advisors-and-brokers-the-alphamarket-story" },
+                    { name: "Business India", url: "https://businessindia.co/magazine/market-news/blending-analysis-with-action", logo: "/media/business-india.png" },
+                    { name: "Wealth & Finance", url: "https://wealthandfinance.digital/winners/edhaz-financial-services-private-limited/", logo: "/media/wealth-finance.png" },
+                    { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/", logo: "/media/business-connect.png" },
+                    { name: "Startup Times", url: "https://startuptimes.net/building-the-bridge-between-investors-advisors-and-brokers-the-alphamarket-story", logo: "/media/startup-times.png" },
                   ].map((m) => (
                     <a key={m.name} href={m.url} target="_blank" rel="noopener noreferrer" className="block">
                       <Card className="hover-elevate">
                         <CardContent className="p-2 flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-md bg-muted flex items-center justify-center flex-shrink-0">
-                            <Eye className="w-4 h-4 text-muted-foreground" />
-                          </div>
+                          <img src={m.logo} alt={m.name} className="w-8 h-8 rounded-md object-contain flex-shrink-0" />
                           <span className="text-xs font-medium truncate">{m.name}</span>
                         </CardContent>
                       </Card>
