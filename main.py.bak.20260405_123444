@@ -10129,7 +10129,6 @@ async def sb_get_full_universe() -> list:
             macd_line = ema12 - ema26
             macd_signal_line = macd_line.ewm(span=9, adjust=False).mean()
             macd_hist = sf((macd_line - macd_signal_line).iloc[-1])
-            macd_cross_up = sf(macd_line.iloc[-1]) > sf(macd_signal_line.iloc[-1]) and sf(macd_line.iloc[-2]) <= sf(macd_signal_line.iloc[-2])
             rs_3m = sf(c.iloc[-1] / c.iloc[-60] - 1, 0) * 100 if len(c) >= 60 and sf(c.iloc[-60]) > 0 else change_pct
             rs_1m = sf(c.iloc[-1] / c.iloc[-22] - 1, 0) * 100 if len(c) >= 22 and sf(c.iloc[-22]) > 0 else change_pct
             sma50_s = c.rolling(50).mean()
@@ -10159,7 +10158,7 @@ async def sb_get_full_universe() -> list:
                 "gap_pct": round(gap_pct, 2), "wk_change": round(wk_change, 2),
                 "above_200dma": bool(price > sma_200), "above_50dma": bool(price > sma_50),
                 "golden_cross": golden_cross, "above_supertrend": above_supertrend,
-                "macd_cross_up": macd_cross_up, "minervini_score": minervini_score,
+                "minervini_score": minervini_score,
                 "sector": SECTOR_MAP.get(sym, "Other"), "industry": INDUSTRY_MAP.get(sym, "Other"),
                 "cap_segment": get_cap_segment(sym),
                 "pe_ratio": 0, "roe": 0, "dividend_yield": 0, "debt_equity": 0,
@@ -10171,164 +10170,6 @@ async def sb_get_full_universe() -> list:
     if redis_client and stocks:
         await redis_client.set("sb_universe", json.dumps(stocks), ex=14400)
     return stocks
-
-
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# MTF COMBINER (server-side) — reads sb_universe from Redis, applies multiple
-# strategy filters in one pass, returns confluence-scored results.
-# ══════════════════════════════════════════════════════════════════════════════
-
-MTF_TF_MAP = {
-    "short": ["momentum", "up_on_volume", "gap_up", "bb_squeeze", "macd_crossover", "supertrend_buy", "volume", "overbought", "top_losers", "volume_dry", "gap_down"],
-    "medium": ["breakout", "pullback_buy", "relative_strength", "recent_breakout", "range_breakout", "oversold", "near_support", "high_beta", "macd_bearish", "trend_strong", "turnaround", "sector_rotation"],
-    "long": ["golden_cross", "death_cross", "52w_high", "52w_low", "minervini", "multi_timeframe", "growth_momentum", "safe_haven"],
-    "fundamental": ["low_pe", "high_roe", "dividend_yield"],
-}
-
-MTF_STRAT_MAP = {
-    "momentum": lambda s: s.get("change_pct", 0) > 1 and s.get("vol_ratio", 0) > 1.5 and s.get("rsi", 0) > 50,
-    "oversold": lambda s: s.get("rsi", 50) < 35,
-    "overbought": lambda s: s.get("rsi", 50) > 70,
-    "volume": lambda s: s.get("vol_ratio", 0) > 3,
-    "breakout": lambda s: s.get("pct_from_52h", -100) > -3 and s.get("vol_ratio", 0) > 2,
-    "52w_high": lambda s: s.get("pct_from_52h", -100) > -2,
-    "52w_low": lambda s: s.get("pct_from_52l", 100) < 5,
-    "golden_cross": lambda s: s.get("above_200dma") and s.get("above_50dma") and s.get("sma_50", 0) > s.get("sma_200", 0),
-    "death_cross": lambda s: not s.get("above_200dma") and not s.get("above_50dma"),
-    "gap_up": lambda s: s.get("gap_pct", 0) > 2,
-    "gap_down": lambda s: s.get("gap_pct", 0) < -2,
-    "up_on_volume": lambda s: s.get("change_pct", 0) > 0 and s.get("vol_ratio", 0) > 2,
-    "bb_squeeze": lambda s: s.get("bb_width", 100) < 10,
-    "macd_crossover": lambda s: s.get("macd_cross_up", False),
-    "minervini": lambda s: s.get("minervini_score", 0) >= 5,
-    "relative_strength": lambda s: s.get("rs_3m", 0) > 15 and s.get("rs_1m", 0) > 5,
-    "recent_breakout": lambda s: s.get("pct_from_52h", -100) > -5 and s.get("vol_ratio", 0) > 1.5,
-    "pullback_buy": lambda s: s.get("above_200dma") and s.get("rsi", 50) < 45 and s.get("pct_from_52h", 0) < -10,
-    "top_losers": lambda s: s.get("change_pct", 0) < -2,
-    "near_support": lambda s: s.get("pct_from_52l", 100) < 10 and s.get("above_200dma"),
-    "trend_strong": lambda s: s.get("above_supertrend") and s.get("above_200dma") and s.get("rsi", 0) > 55,
-    "high_beta": lambda s: abs(s.get("rs_1m", 0)) > 10,
-    "range_breakout": lambda s: s.get("bb_width", 0) > 30 and s.get("vol_ratio", 0) > 1.5,
-    "volume_dry": lambda s: s.get("vol_ratio", 1) < 0.4,
-    "macd_bearish": lambda s: not s.get("macd_cross_up", False) and s.get("macd_hist", 0) < 0,
-    "supertrend_buy": lambda s: s.get("above_supertrend"),
-    "dividend_yield": lambda s: True,
-    "low_pe": lambda s: True,
-    "high_roe": lambda s: True,
-    "growth_momentum": lambda s: s.get("rs_3m", 0) > 10 and s.get("above_200dma"),
-    "safe_haven": lambda s: s.get("above_200dma") and s.get("rsi", 50) < 60 and s.get("vol_ratio", 1) < 1.5,
-    "turnaround": lambda s: s.get("rs_1m", 0) > 5 and s.get("pct_from_52l", 100) < 20 and not s.get("above_200dma"),
-    "sector_rotation": lambda s: s.get("rs_1m", 0) > 3 and s.get("rs_3m", 0) < 0,
-    "multi_timeframe": lambda s: s.get("above_200dma") and s.get("above_50dma") and s.get("rsi", 0) > 50 and s.get("change_pct", 0) > 0 and s.get("rs_1m", 0) > 0 and s.get("rs_3m", 0) > 0,
-}
-
-def _mtf_get_tf(strat: str) -> str:
-    for tf, strats in MTF_TF_MAP.items():
-        if strat in strats:
-            return tf
-    return "short"
-
-
-@app.get("/api/mtf-scan", tags=["MTF Combiner"], summary="Multi-timeframe strategy combiner",
-    description="Run multiple strategies in one pass against the cached stock universe. Returns stocks with confluence scoring — how many strategies each stock passes and across how many timeframes. Much faster than calling /api/screener N times.")
-async def mtf_scan(
-    strategies: str = "momentum,breakout,golden_cross,relative_strength",
-    min_price: float = 0, max_price: float = 999999,
-    sector: str = "", min_confluence: int = 2,
-    user=Depends(get_current_user)
-):
-    selected = [s.strip() for s in strategies.split(",") if s.strip()]
-    if len(selected) < 2:
-        return {"error": "Select at least 2 strategies (comma-separated)"}
-
-    # Load universe from Redis cache (pre-computed by warm_cache / sb_get_full_universe)
-    stocks = []
-    if redis_client:
-        cached = await redis_client.get("sb_universe")
-        if cached:
-            stocks = json.loads(cached)
-    if not stocks:
-        return {"stocks": [], "count": 0, "cached": False,
-                "message": "Universe cache is empty. Please wait for cache warm to complete or trigger POST /api/screener/warm-all."}
-
-    # Pre-filter by price and sector
-    if int(min_price) > 0 or int(max_price) < 999999:
-        stocks = [s for s in stocks if min_price <= s.get("price", 0) <= max_price]
-    if sector:
-        stocks = [s for s in stocks if s.get("sector", "").lower() == sector.lower()]
-
-    # Run all strategies in one pass
-    per_strat_results = {}
-    for strat in selected:
-        fn = MTF_STRAT_MAP.get(strat)
-        if not fn:
-            continue
-        tf = _mtf_get_tf(strat)
-        hits = []
-        for s in stocks:
-            try:
-                if fn(s):
-                    hits.append(s["symbol"])
-            except Exception:
-                continue
-        per_strat_results[strat] = {"timeframe": tf, "hits": set(hits), "count": len(hits)}
-
-    # Combine & score
-    smap = {}
-    for strat, info in per_strat_results.items():
-        tf = info["timeframe"]
-        for sym in info["hits"]:
-            if sym not in smap:
-                # Find the stock data
-                sd = next((s for s in stocks if s["symbol"] == sym), None)
-                if not sd:
-                    continue
-                smap[sym] = {
-                    "symbol": sym, "name": sd.get("name", sym),
-                    "price": sd.get("price", 0), "change_pct": sd.get("change_pct", 0),
-                    "rsi": sd.get("rsi", 0), "vol_ratio": sd.get("vol_ratio", 0),
-                    "sector": sd.get("sector", ""), "industry": sd.get("industry", ""),
-                    "cap_segment": sd.get("cap_segment", ""),
-                    "above_200dma": sd.get("above_200dma", False),
-                    "rs_1m": sd.get("rs_1m", 0), "rs_3m": sd.get("rs_3m", 0),
-                    "market_cap": sd.get("market_cap", 0),
-                    "strategies": [], "timeframes": set(),
-                    "tf_details": {"short": [], "medium": [], "long": [], "fundamental": []},
-                }
-            smap[sym]["strategies"].append(strat)
-            smap[sym]["timeframes"].add(tf)
-            smap[sym]["tf_details"][tf].append(strat)
-
-    # Filter by min confluence & score
-    result_stocks = []
-    for sym, data in smap.items():
-        if len(data["strategies"]) < min_confluence:
-            continue
-        tf_count = len(data["timeframes"])
-        strat_count = len(data["strategies"])
-        score = tf_count * 10 + strat_count * 3 + (5 if data["above_200dma"] else 0)
-        result_stocks.append({
-            **{k: v for k, v in data.items() if k not in ("timeframes", "tf_details")},
-            "strat_count": strat_count,
-            "tf_count": tf_count,
-            "score": score,
-            "timeframes": list(data["timeframes"]),
-            "tf_details": {k: v for k, v in data["tf_details"].items() if v},
-        })
-
-    result_stocks.sort(key=lambda x: (x["score"], x["strat_count"]), reverse=True)
-
-    return {
-        "stocks": result_stocks,
-        "count": len(result_stocks),
-        "total_universe": len(stocks),
-        "total_unique_hits": len(smap),
-        "strategies_run": len(per_strat_results),
-        "per_strategy": {k: {"timeframe": v["timeframe"], "count": v["count"]} for k, v in per_strat_results.items()},
-        "cached": True,
-    }
 
 
 async def sb_enrich_fundamentals(stocks: list) -> list:
