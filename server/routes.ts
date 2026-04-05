@@ -434,6 +434,18 @@ export async function registerRoutes(
         if (segment === "Index") return s.segment === "Index";
         return true;
       });
+      // Sort: exact match first, then symbol prefix, then name prefix, then rest
+      filtered.sort((a: any, b: any) => {
+        const aSymL = a.symbol.toLowerCase(), bSymL = b.symbol.toLowerCase();
+        const aNameL = a.name.toLowerCase(), bNameL = b.name.toLowerCase();
+        const aExact = aSymL === q ? 0 : 1, bExact = bSymL === q ? 0 : 1;
+        if (aExact !== bExact) return aExact - bExact;
+        const aPrefix = aSymL.startsWith(q) ? 0 : 1, bPrefix = bSymL.startsWith(q) ? 0 : 1;
+        if (aPrefix !== bPrefix) return aPrefix - bPrefix;
+        const aNamePfx = aNameL.startsWith(q) ? 0 : 1, bNamePfx = bNameL.startsWith(q) ? 0 : 1;
+        if (aNamePfx !== bNamePfx) return aNamePfx - bNamePfx;
+        return aSymL.localeCompare(bSymL);
+      });
       res.json(filtered.slice(0, 20));
     } catch (err: any) {
       res.status(500).send(err.message);
