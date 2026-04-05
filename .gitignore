@@ -10,3 +10,6 @@ node_modules/
 dist/
 uploads/
 *.bak.*
+*.bak
+*.bak.*
+.env.bak
