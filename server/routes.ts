@@ -3804,7 +3804,7 @@ export async function registerRoutes(
       const row = (result as any).rows?.[0];
       if (!row) return res.status(404).json({ error: "Microsite not found" });
 
-      const strategies = await storage.getStrategiesByAdvisor(row.advisor_id);
+      const strategies = await storage.getStrategies(row.advisor_id);
       const publishedStrategies = strategies.filter((s: any) => s.status === "Published");
 
       const plans = await storage.getPlans(row.advisor_id);
