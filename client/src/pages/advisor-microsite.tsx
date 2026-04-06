@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState } from "react";
-import { TrendingUp, MapPin, Phone, Mail, Globe, ExternalLink, ShieldCheck, BarChart3, Briefcase, Star, MessageCircle, HelpCircle, ChevronRight, ArrowRight, Building2, Users, Award } from "lucide-react";
+import { MapPin, Phone, Mail, Globe, ExternalLink, ShieldCheck, BarChart3, Briefcase, Star, HelpCircle, ChevronRight, ArrowRight, Building2 } from "lucide-react";
 
 export default function AdvisorMicrosite() {
   const params = useParams<{ slug: string }>();
@@ -24,12 +24,12 @@ export default function AdvisorMicrosite() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen bg-white flex items-center justify-center">
         <div className="w-full max-w-4xl px-4 space-y-6">
-          <Skeleton className="h-56 w-full rounded-2xl bg-slate-800" />
-          <Skeleton className="h-8 w-64 bg-slate-800" />
+          <Skeleton className="h-48 w-full rounded-2xl" />
+          <Skeleton className="h-8 w-64" />
           <div className="grid grid-cols-3 gap-4">
-            <Skeleton className="h-32 bg-slate-800" /><Skeleton className="h-32 bg-slate-800" /><Skeleton className="h-32 bg-slate-800" />
+            <Skeleton className="h-32" /><Skeleton className="h-32" /><Skeleton className="h-32" />
           </div>
         </div>
       </div>
@@ -38,14 +38,14 @@ export default function AdvisorMicrosite() {
 
   if (error || !data) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center text-white">
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center">
         <div className="text-center px-4">
-          <div className="w-16 h-16 rounded-full bg-slate-800 flex items-center justify-center mx-auto mb-6">
-            <Building2 className="w-8 h-8 text-slate-500" />
+          <div className="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-6">
+            <Building2 className="w-8 h-8 text-gray-400" />
           </div>
-          <h1 className="text-2xl font-bold mb-2">Advisor Not Found</h1>
-          <p className="text-slate-400 mb-6">This advisor page does not exist or is not active.</p>
-          <Link href="/advisors"><Button className="bg-red-600 hover:bg-red-700">Browse Advisors</Button></Link>
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Advisor Not Found</h1>
+          <p className="text-gray-500 mb-6">This advisor page does not exist or is not active.</p>
+          <Link href="/advisors"><Button className="bg-red-600 hover:bg-red-700 text-white">Browse Advisors</Button></Link>
         </div>
       </div>
     );
@@ -69,85 +69,84 @@ export default function AdvisorMicrosite() {
   ].filter(t => t.show);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white" style={{ "--tc": tc } as any}>
+    <div className="min-h-screen bg-white">
       {/* ═══ HERO HEADER ═══ */}
-      <div className="relative overflow-hidden">
-        {ms.bannerImageUrl ? (
-          <div className="absolute inset-0">
-            <img src={ms.bannerImageUrl} alt="" className="w-full h-full object-cover" />
-            <div className="absolute inset-0 bg-gradient-to-b from-slate-950/70 via-slate-950/80 to-slate-950" />
-          </div>
-        ) : (
-          <div className="absolute inset-0" style={{ background: "linear-gradient(135deg, " + tc + "22, " + tc + "08, transparent 60%)" }} />
-        )}
-        <div className="relative max-w-5xl mx-auto px-6 pt-10 pb-8">
-          {/* Top bar — minimal branding */}
-          <div className="flex items-center justify-between mb-10">
+      <div style={{ background: "linear-gradient(135deg, " + tc + "10, " + tc + "05, #fafafa)" }}>
+        <div className="max-w-5xl mx-auto px-6 pt-8 pb-10">
+          {/* Top bar */}
+          <div className="flex items-center justify-between mb-8">
             <div className="flex items-center gap-3">
-              {ms.logoUrl && <img src={ms.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-white/20" />}
-              <span className="text-sm font-semibold text-white/80">{advisor.companyName}</span>
+              {ms.logoUrl && <img src={ms.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover border border-gray-200 shadow-sm" />}
+              <span className="text-sm font-semibold text-gray-600">{advisor.companyName}</span>
             </div>
             <div className="flex items-center gap-3">
               {(ms.socialLinkedin || ms.socialTwitter || ms.socialYoutube || ms.socialTelegram) && (
-                <div className="flex gap-2">
-                  {ms.socialLinkedin && <a href={ms.socialLinkedin} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs text-white/70 hover:bg-white/20 hover:text-white transition-colors">in</a>}
-                  {ms.socialTwitter && <a href={ms.socialTwitter} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs text-white/70 hover:bg-white/20 hover:text-white transition-colors">X</a>}
-                  {ms.socialYoutube && <a href={ms.socialYoutube} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs text-white/70 hover:bg-white/20 hover:text-white transition-colors">YT</a>}
-                  {ms.socialTelegram && <a href={ms.socialTelegram} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-xs text-white/70 hover:bg-white/20 hover:text-white transition-colors">TG</a>}
+                <div className="flex gap-1.5">
+                  {ms.socialLinkedin && <a href={ms.socialLinkedin} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs text-gray-500 hover:bg-gray-200 transition-colors">in</a>}
+                  {ms.socialTwitter && <a href={ms.socialTwitter} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs text-gray-500 hover:bg-gray-200 transition-colors">X</a>}
+                  {ms.socialYoutube && <a href={ms.socialYoutube} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs text-gray-500 hover:bg-gray-200 transition-colors">YT</a>}
+                  {ms.socialTelegram && <a href={ms.socialTelegram} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs text-gray-500 hover:bg-gray-200 transition-colors">TG</a>}
                 </div>
               )}
-              <a href="/" className="text-[10px] text-white/30 hover:text-white/60 transition-colors border border-white/10 rounded px-2 py-1">AlphaMarket</a>
+              <a href="/" className="text-[10px] text-gray-300 hover:text-gray-500 transition-colors border border-gray-200 rounded px-2 py-1">AlphaMarket</a>
             </div>
           </div>
 
+          {/* Banner image */}
+          {ms.bannerImageUrl && (
+            <div className="rounded-2xl overflow-hidden mb-8 shadow-sm border border-gray-100">
+              <img src={ms.bannerImageUrl} alt="" className="w-full h-48 md:h-56 object-cover" />
+            </div>
+          )}
+
           {/* Hero content */}
           <div className="max-w-3xl">
-            <h1 className="text-4xl md:text-5xl font-bold tracking-tight leading-tight">{advisor.companyName}</h1>
-            {ms.tagline && <p className="text-xl text-white/60 mt-3 leading-relaxed">{ms.tagline}</p>}
-            <div className="flex items-center gap-3 mt-5 flex-wrap">
+            <h1 className="text-3xl md:text-4xl font-bold text-gray-900 tracking-tight">{advisor.companyName}</h1>
+            {ms.tagline && <p className="text-lg text-gray-500 mt-2">{ms.tagline}</p>}
+            <div className="flex items-center gap-2.5 mt-4 flex-wrap">
               {advisor.sebiRegNumber && (
-                <div className="flex items-center gap-1.5 text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+                <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200 shadow-sm">
                   <ShieldCheck className="w-3.5 h-3.5" style={{ color: tc }} /> SEBI: {advisor.sebiRegNumber}
-                </div>
+                </span>
               )}
               {advisor.activeSince && (
-                <div className="text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+                <span className="text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200 shadow-sm">
                   Since {new Date(advisor.activeSince).getFullYear()}
-                </div>
+                </span>
               )}
               {strategies.length > 0 && (
-                <div className="text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5 border border-white/10">
+                <span className="text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200 shadow-sm">
                   <BarChart3 className="w-3 h-3 inline mr-1" />{strategies.length} Strategies
-                </div>
+                </span>
               )}
             </div>
             {(advisor.themes || []).length > 0 && (
               <div className="flex gap-2 mt-4 flex-wrap">
                 {(advisor.themes || []).map((t: string) => (
-                  <span key={t} className="text-xs font-medium px-3 py-1 rounded-full" style={{ background: tc + "20", color: tc }}>{t}</span>
+                  <span key={t} className="text-xs font-medium px-3 py-1 rounded-full border" style={{ background: tc + "10", color: tc, borderColor: tc + "30" }}>{t}</span>
                 ))}
               </div>
             )}
           </div>
 
           {/* Quick stats */}
-          <div className="flex gap-6 mt-8 flex-wrap">
+          <div className="flex gap-8 mt-8">
             {strategies.length > 0 && (
-              <div className="text-center">
+              <div>
                 <div className="text-2xl font-bold" style={{ color: tc }}>{strategies.length}</div>
-                <div className="text-[11px] text-white/40 mt-0.5">Strategies</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">Strategies</div>
               </div>
             )}
             {data.plans?.length > 0 && (
-              <div className="text-center">
+              <div>
                 <div className="text-2xl font-bold" style={{ color: tc }}>{data.plans.length}</div>
-                <div className="text-[11px] text-white/40 mt-0.5">Plans</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">Plans</div>
               </div>
             )}
             {enabledServices.length > 0 && (
-              <div className="text-center">
+              <div>
                 <div className="text-2xl font-bold" style={{ color: tc }}>{enabledServices.length}</div>
-                <div className="text-[11px] text-white/40 mt-0.5">Services</div>
+                <div className="text-[11px] text-gray-400 mt-0.5">Services</div>
               </div>
             )}
           </div>
@@ -155,15 +154,15 @@ export default function AdvisorMicrosite() {
       </div>
 
       {/* ═══ TAB NAVIGATION ═══ */}
-      <div className="sticky top-0 z-20 bg-slate-950/95 backdrop-blur-md border-b border-white/10">
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 shadow-sm">
         <div className="max-w-5xl mx-auto px-6">
-          <div className="flex gap-1 overflow-x-auto scrollbar-none py-1">
+          <div className="flex gap-1 overflow-x-auto py-0.5">
             {tabs.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 className={"px-4 py-3 text-sm font-medium transition-colors whitespace-nowrap border-b-2 " +
                   (activeTab === tab.id
-                    ? "border-current text-white"
-                    : "border-transparent text-white/40 hover:text-white/70")}
+                    ? "border-current text-gray-900"
+                    : "border-transparent text-gray-400 hover:text-gray-600")}
                 style={activeTab === tab.id ? { color: tc, borderColor: tc } : {}}>
                 {tab.label}
               </button>
@@ -177,13 +176,13 @@ export default function AdvisorMicrosite() {
 
         {/* ABOUT */}
         {activeTab === "about" && ms.showAbout && ms.about && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">About Us</h2>
-            <div className="bg-slate-900/50 rounded-2xl p-8 border border-white/5">
-              <p className="text-white/70 leading-relaxed whitespace-pre-line text-[15px]">{ms.about}</p>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">About Us</h2>
+            <div className="bg-gray-50 rounded-2xl p-8 border border-gray-100">
+              <p className="text-gray-600 leading-relaxed whitespace-pre-line text-[15px]">{ms.about}</p>
             </div>
             {ms.websiteUrl && (
-              <a href={ms.websiteUrl} target="_blank" rel="noopener" className="inline-flex items-center gap-2 mt-6 text-sm hover:underline" style={{ color: tc }}>
+              <a href={ms.websiteUrl} target="_blank" rel="noopener" className="inline-flex items-center gap-2 mt-5 text-sm font-medium hover:underline" style={{ color: tc }}>
                 <Globe className="w-4 h-4" /> Visit our website <ExternalLink className="w-3 h-3" />
               </a>
             )}
@@ -192,16 +191,16 @@ export default function AdvisorMicrosite() {
 
         {/* SERVICES */}
         {activeTab === "services" && enabledServices.length > 0 && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">Our Services</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">Our Services</h2>
             <div className="grid gap-4 md:grid-cols-2">
               {enabledServices.map((svc: any, i: number) => (
-                <div key={i} className="bg-slate-900/50 rounded-xl p-6 border border-white/5 hover:border-white/10 transition-colors">
-                  <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-4" style={{ background: tc + "20" }}>
+                <div key={i} className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-md transition-shadow">
+                  <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-4" style={{ background: tc + "12" }}>
                     <Briefcase className="w-5 h-5" style={{ color: tc }} />
                   </div>
-                  <h3 className="font-semibold text-white mb-1">{svc.name}</h3>
-                  {svc.description && <p className="text-sm text-white/50 leading-relaxed">{svc.description}</p>}
+                  <h3 className="font-semibold text-gray-900 mb-1">{svc.name}</h3>
+                  {svc.description && <p className="text-sm text-gray-500 leading-relaxed">{svc.description}</p>}
                 </div>
               ))}
             </div>
@@ -210,21 +209,21 @@ export default function AdvisorMicrosite() {
 
         {/* STRATEGIES */}
         {activeTab === "strategies" && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">Strategies ({strategies.length})</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">Strategies ({strategies.length})</h2>
             {strategies.length === 0 ? (
-              <p className="text-white/40">No published strategies yet.</p>
+              <p className="text-gray-400">No published strategies yet.</p>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {strategies.map((s: any) => (
                   <Link key={s.id} href={"/strategies/" + s.id}>
-                    <div className="bg-slate-900/50 rounded-xl p-6 border border-white/5 hover:border-white/15 transition-all cursor-pointer group">
+                    <div className="bg-white rounded-xl p-6 border border-gray-200 hover:shadow-md hover:border-gray-300 transition-all cursor-pointer group">
                       <div className="flex items-start justify-between mb-3">
-                        <h3 className="font-semibold text-white group-hover:underline">{s.name}</h3>
-                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ background: tc + "20", color: tc }}>{s.type}</span>
+                        <h3 className="font-semibold text-gray-900 group-hover:underline">{s.name}</h3>
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded-full" style={{ background: tc + "12", color: tc }}>{s.type}</span>
                       </div>
-                      {s.description && <p className="text-sm text-white/40 line-clamp-2 mb-3">{s.description}</p>}
-                      <div className="flex items-center gap-4 text-xs text-white/30">
+                      {s.description && <p className="text-sm text-gray-400 line-clamp-2 mb-3">{s.description}</p>}
+                      <div className="flex items-center gap-4 text-xs text-gray-400">
                         {s.horizon && <span>Horizon: {s.horizon}</span>}
                         {s.riskLevel && <span>Risk: {s.riskLevel}</span>}
                         {s.cagr && <span className="font-medium" style={{ color: tc }}>CAGR: {s.cagr}%</span>}
@@ -243,19 +242,20 @@ export default function AdvisorMicrosite() {
 
         {/* PLANS */}
         {activeTab === "plans" && data.plans?.length > 0 && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">Plans & Pricing</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">Plans & Pricing</h2>
             <div className="grid gap-4 md:grid-cols-3">
               {data.plans.map((plan: any, i: number) => (
-                <div key={plan.id} className={"rounded-xl p-6 border text-center transition-all " + (i === 0 ? "bg-slate-900/80 border-white/15 scale-[1.02]" : "bg-slate-900/40 border-white/5")}>
+                <div key={plan.id} className={"rounded-xl p-6 border text-center transition-all hover:shadow-md " + (i === 0 ? "border-2 shadow-sm" : "border-gray-200")}
+                  style={i === 0 ? { borderColor: tc } : {}}>
                   {i === 0 && <div className="text-[10px] font-bold uppercase tracking-wider mb-3" style={{ color: tc }}>Most Popular</div>}
-                  <p className="font-semibold text-white/80 mb-2">{plan.name}</p>
-                  <div className="text-4xl font-bold mb-1" style={{ color: i === 0 ? tc : "white" }}>
+                  <p className="font-semibold text-gray-700 mb-2">{plan.name}</p>
+                  <div className="text-4xl font-bold mb-1" style={{ color: i === 0 ? tc : "#1a1a1a" }}>
                     {"\u20B9"}{plan.amount.toLocaleString("en-IN")}
                   </div>
-                  {plan.durationDays && <p className="text-xs text-white/30 mb-5">{plan.durationDays} days</p>}
+                  {plan.durationDays && <p className="text-xs text-gray-400 mb-5">{plan.durationDays} days</p>}
                   <Link href={"/strategies"}>
-                    <Button size="sm" className="w-full" style={i === 0 ? { background: tc, color: "white" } : { background: "transparent", border: "1px solid rgba(255,255,255,0.15)", color: "white" }}>
+                    <Button size="sm" className="w-full text-white" style={i === 0 ? { background: tc } : { background: "#374151" }}>
                       Subscribe <ArrowRight className="w-3 h-3 ml-1" />
                     </Button>
                   </Link>
@@ -264,24 +264,24 @@ export default function AdvisorMicrosite() {
             </div>
 
             {/* Compliance badges */}
-            <div className="mt-8 p-5 bg-slate-900/30 rounded-xl border border-white/5">
-              <p className="text-xs text-white/40 mb-3 font-medium">Compliance Requirements</p>
-              <div className="flex gap-3 flex-wrap">
-                <div className="flex items-center gap-1.5 text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5">
+            <div className="mt-8 p-5 bg-gray-50 rounded-xl border border-gray-100">
+              <p className="text-xs text-gray-400 mb-3 font-medium">Compliance Requirements</p>
+              <div className="flex gap-2.5 flex-wrap">
+                <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200">
                   <ShieldCheck className="w-3 h-3" style={{ color: tc }} /> eKYC (Aadhaar + PAN)
-                </div>
-                <div className="flex items-center gap-1.5 text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5">
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200">
                   <ShieldCheck className="w-3 h-3" style={{ color: tc }} /> eSign Agreement
-                </div>
+                </span>
                 {advisor.requireRiskProfiling && (
-                  <div className="flex items-center gap-1.5 text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200">
                     <ShieldCheck className="w-3 h-3" style={{ color: tc }} /> Risk Profiling
-                  </div>
+                  </span>
                 )}
                 {advisor.requirePmla && (
-                  <div className="flex items-center gap-1.5 text-xs text-white/50 bg-white/5 rounded-full px-3 py-1.5">
+                  <span className="inline-flex items-center gap-1.5 text-xs text-gray-500 bg-white rounded-full px-3 py-1.5 border border-gray-200">
                     <ShieldCheck className="w-3 h-3" style={{ color: tc }} /> PMLA Verification
-                  </div>
+                  </span>
                 )}
               </div>
             </div>
@@ -290,14 +290,14 @@ export default function AdvisorMicrosite() {
 
         {/* TESTIMONIALS */}
         {activeTab === "testimonials" && hasTestimonials && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">What Our Clients Say</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">What Our Clients Say</h2>
             <div className="grid gap-4 md:grid-cols-2">
               {ms.testimonials.map((t: any, i: number) => (
-                <div key={i} className="bg-slate-900/50 rounded-xl p-6 border border-white/5">
-                  <div className="flex gap-1 mb-3">{[1,2,3,4,5].map(s => <Star key={s} className="w-3.5 h-3.5" style={{ color: tc, fill: tc }} />)}</div>
-                  <p className="text-sm text-white/60 italic leading-relaxed">"{t.text}"</p>
-                  <p className="text-xs font-medium text-white/80 mt-4">— {t.name}</p>
+                <div key={i} className="bg-white rounded-xl p-6 border border-gray-200">
+                  <div className="flex gap-0.5 mb-3">{[1,2,3,4,5].map(s => <Star key={s} className="w-3.5 h-3.5" style={{ color: tc, fill: tc }} />)}</div>
+                  <p className="text-sm text-gray-500 italic leading-relaxed">"{t.text}"</p>
+                  <p className="text-xs font-medium text-gray-700 mt-4">\u2014 {t.name}</p>
                 </div>
               ))}
             </div>
@@ -306,16 +306,16 @@ export default function AdvisorMicrosite() {
 
         {/* FAQ */}
         {activeTab === "faq" && hasFaq && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">Frequently Asked Questions</h2>
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">Frequently Asked Questions</h2>
             <div className="space-y-3">
               {ms.faq.map((item: any, i: number) => (
-                <div key={i} className="bg-slate-900/50 rounded-xl p-6 border border-white/5">
+                <div key={i} className="bg-white rounded-xl p-6 border border-gray-200">
                   <div className="flex items-start gap-3">
                     <HelpCircle className="w-5 h-5 mt-0.5 shrink-0" style={{ color: tc }} />
                     <div>
-                      <p className="font-medium text-white mb-2">{item.question}</p>
-                      <p className="text-sm text-white/50 leading-relaxed">{item.answer}</p>
+                      <p className="font-medium text-gray-900 mb-2">{item.question}</p>
+                      <p className="text-sm text-gray-500 leading-relaxed">{item.answer}</p>
                     </div>
                   </div>
                 </div>
@@ -326,51 +326,51 @@ export default function AdvisorMicrosite() {
 
         {/* CONTACT */}
         {activeTab === "contact" && hasContact && (
-          <div className="animate-in fade-in duration-300">
-            <h2 className="text-2xl font-bold mb-6">Get in Touch</h2>
-            <div className="bg-slate-900/50 rounded-2xl p-8 border border-white/5 max-w-2xl">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 mb-5">Get in Touch</h2>
+            <div className="bg-gray-50 rounded-2xl p-8 border border-gray-100 max-w-2xl">
               <div className="space-y-5">
                 {ms.address && (
                   <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "15" }}>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "10" }}>
                       <MapPin className="w-5 h-5" style={{ color: tc }} />
                     </div>
                     <div>
-                      <p className="text-xs text-white/40 mb-1">Address</p>
-                      <p className="text-sm text-white/80">{[ms.address, ms.city, ms.state, ms.pincode].filter(Boolean).join(", ")}</p>
+                      <p className="text-xs text-gray-400 mb-1">Address</p>
+                      <p className="text-sm text-gray-700">{[ms.address, ms.city, ms.state, ms.pincode].filter(Boolean).join(", ")}</p>
                     </div>
                   </div>
                 )}
                 {ms.contactPhone && (
                   <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "15" }}>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "10" }}>
                       <Phone className="w-5 h-5" style={{ color: tc }} />
                     </div>
                     <div>
-                      <p className="text-xs text-white/40 mb-1">Phone</p>
-                      <a href={"tel:" + ms.contactPhone} className="text-sm text-white/80 hover:underline">{ms.contactPhone}</a>
+                      <p className="text-xs text-gray-400 mb-1">Phone</p>
+                      <a href={"tel:" + ms.contactPhone} className="text-sm text-gray-700 hover:underline">{ms.contactPhone}</a>
                     </div>
                   </div>
                 )}
                 {ms.contactEmail && (
                   <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "15" }}>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "10" }}>
                       <Mail className="w-5 h-5" style={{ color: tc }} />
                     </div>
                     <div>
-                      <p className="text-xs text-white/40 mb-1">Email</p>
-                      <a href={"mailto:" + ms.contactEmail} className="text-sm text-white/80 hover:underline">{ms.contactEmail}</a>
+                      <p className="text-xs text-gray-400 mb-1">Email</p>
+                      <a href={"mailto:" + ms.contactEmail} className="text-sm text-gray-700 hover:underline">{ms.contactEmail}</a>
                     </div>
                   </div>
                 )}
                 {ms.websiteUrl && (
                   <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "15" }}>
+                    <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ background: tc + "10" }}>
                       <Globe className="w-5 h-5" style={{ color: tc }} />
                     </div>
                     <div>
-                      <p className="text-xs text-white/40 mb-1">Website</p>
-                      <a href={ms.websiteUrl} target="_blank" rel="noopener" className="text-sm text-white/80 hover:underline">{ms.websiteUrl}</a>
+                      <p className="text-xs text-gray-400 mb-1">Website</p>
+                      <a href={ms.websiteUrl} target="_blank" rel="noopener" className="text-sm text-gray-700 hover:underline">{ms.websiteUrl}</a>
                     </div>
                   </div>
                 )}
@@ -381,10 +381,10 @@ export default function AdvisorMicrosite() {
       </div>
 
       {/* ═══ MINIMAL FOOTER ═══ */}
-      <div className="border-t border-white/5 py-6">
-        <div className="max-w-5xl mx-auto px-6 flex items-center justify-between text-[11px] text-white/20">
-          <span>© {new Date().getFullYear()} {advisor.companyName}. All rights reserved.</span>
-          <a href="/" className="hover:text-white/40 transition-colors">Powered by AlphaMarket</a>
+      <div className="border-t border-gray-100 py-6 bg-gray-50">
+        <div className="max-w-5xl mx-auto px-6 flex items-center justify-between text-[11px] text-gray-300">
+          <span>\u00A9 {new Date().getFullYear()} {advisor.companyName}. All rights reserved.</span>
+          <a href="/" className="hover:text-gray-500 transition-colors">Powered by AlphaMarket</a>
         </div>
       </div>
     </div>
