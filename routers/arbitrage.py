@@ -141,7 +141,9 @@ def _get_kite_headers():
 
 
 def _is_kite_connected():
-    """Check if Kite session is active"""
+    """Check if Kite session is active. Auto-reloads from DB if token missing (multi-worker safe)."""
+    if not _kite_store["access_token"]:
+        _load_kite_token()  # Re-check DB — another worker may have set it
     if not _kite_store["access_token"]:
         return False
     if _kite_store["expires_at"] and datetime.now() > _kite_store["expires_at"]:
