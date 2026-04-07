@@ -588,6 +588,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('heatmap_tab',this)" style="color:#22c55e;font-weight:700">HEATMAP</button>
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('screenbuilder',this)" style="color:#06b6d4;font-weight:700">SCREEN BUILDER</button>
+      <button class="nbtn" onclick="nav('alphaintel',this)" style="color:#22d3ee;font-weight:700">◆ ALPHA INTEL</button>
       <button class="nbtn" onclick="nav('alphabot',this)" style="color:#ff6b3d;font-weight:700">🤖 ALPHABOT</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
@@ -3268,6 +3269,210 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+
+<div class="panel" id="p-alphaintel" style="padding:16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div>
+      <div style="font-size:11px;color:var(--text3)">AlphaScore™ · Confluence Engine™ · Smart Money Flow™ — Patent Pending</div>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button class="lbtn" onclick="aiLoadTab('alphascore')" id="ai-tab-alphascore" style="background:rgba(34,211,238,0.15);color:#22d3ee;font-weight:700;font-size:11px;padding:6px 14px;border:1px solid rgba(34,211,238,0.3);border-radius:4px">◆ AlphaScore™</button>
+      <button class="lbtn" onclick="aiLoadTab('confluence')" id="ai-tab-confluence" style="font-size:11px;padding:6px 14px;border:1px solid var(--border);border-radius:4px">◈ Confluence™</button>
+      <button class="lbtn" onclick="aiLoadTab('smartmoney')" id="ai-tab-smartmoney" style="font-size:11px;padding:6px 14px;border:1px solid var(--border);border-radius:4px">◉ Smart Money™</button>
+    </div>
+  </div>
+  <div id="ai-content" style="min-height:400px">
+    <div style="text-align:center;padding:60px 0;color:var(--text3)">Loading...</div>
+  </div>
+  <!-- Info Modal -->
+  <div id="ai-info-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);display:none;align-items:center;justify-content:center" onclick="this.style.display='none'">
+    <div onclick="event.stopPropagation()" style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;max-width:600px;width:90%;max-height:80vh;overflow:auto;padding:28px;box-shadow:0 0 60px rgba(34,211,238,0.1)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+        <div id="ai-info-title" style="font-size:18px;font-weight:700;color:#22d3ee"></div>
+        <button onclick="document.getElementById('ai-info-modal').style.display='none'" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer">✕</button>
+      </div>
+      <div id="ai-info-body" style="font-size:13px;color:var(--text2);line-height:1.7"></div>
+      <div style="text-align:center;margin-top:16px;padding-top:12px;border-top:1px solid var(--border);font-size:10px;color:var(--text3)">AlphaMarket™ Proprietary Intelligence · Patent Pending</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Alpha Intelligence Frontend ──────────────────────────────────────
+let _aiTab = 'alphascore';
+let _aiCache = {};
+
+function aiLoadTab(tab) {
+  _aiTab = tab;
+  ['alphascore','confluence','smartmoney'].forEach(t => {
+    const btn = document.getElementById('ai-tab-'+t);
+    if(t===tab) { btn.style.background='rgba(34,211,238,0.15)'; btn.style.color='#22d3ee'; btn.style.borderColor='rgba(34,211,238,0.3)'; btn.style.fontWeight='700'; }
+    else { btn.style.background='transparent'; btn.style.color='var(--text2)'; btn.style.borderColor='var(--border)'; btn.style.fontWeight='400'; }
+  });
+  if(_aiCache[tab]) { _aiRender(tab, _aiCache[tab]); return; }
+  document.getElementById('ai-content').innerHTML = '<div style="text-align:center;padding:60px 0;color:var(--text3)">⟳ Loading '+tab+'...</div>';
+  const endpoint = tab==='smartmoney' ? 'smart-money' : tab;
+  fetch('/dyor/api/alpha-intel/'+endpoint+'/top?n=30').then(r=>r.json()).then(data => {
+    _aiCache[tab] = data;
+    _aiRender(tab, data);
+  }).catch(e => {
+    document.getElementById('ai-content').innerHTML = '<div style="text-align:center;padding:60px;color:var(--red)">Error: '+e.message+'</div>';
+  });
+}
+
+function _aiRender(tab, data) {
+  const stocks = data.stocks || [];
+  if(tab==='alphascore') _aiRenderAlphaScore(stocks);
+  else if(tab==='confluence') _aiRenderConfluence(stocks);
+  else _aiRenderSmartMoney(stocks);
+}
+
+function _aiGradeColor(grade) {
+  const m = {'A+':'#00C853','A':'#4CAF50','B+':'#8BC34A','B':'#FFC107','C':'#FF9800','D':'#FF5722','F':'#F44336'};
+  return m[grade] || '#999';
+}
+function _aiConvColor(c) {
+  const m = {'VERY_HIGH':'#00C853','HIGH':'#4CAF50','MODERATE':'#FFC107','LOW':'#FF9800','VERY_LOW':'#F44336'};
+  return m[c] || '#999';
+}
+function _aiVerdictColor(v) {
+  const m = {'STRONG_ACCUMULATION':'#00C853','ACCUMULATION':'#4CAF50','NEUTRAL':'#FFC107','DISTRIBUTION':'#FF9800','STRONG_DISTRIBUTION':'#F44336'};
+  return m[v] || '#999';
+}
+
+function _aiBar(val, max=100) {
+  const pct = (val/max)*100;
+  const c = val>=70?'#22c55e':val>=50?'#f59e0b':'#ef4444';
+  return '<div style="display:flex;align-items:center;gap:4px"><div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="width:'+pct+'%;height:100%;background:'+c+';border-radius:2px"></div></div><span style="font-size:10px;color:var(--text3);width:22px;text-align:right">'+Math.round(val)+'</span></div>';
+}
+
+function _aiRenderAlphaScore(stocks) {
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-size:12px;color:var(--text3)">'+stocks.length+' stocks ranked by AlphaScore™</span><button onclick="aiShowInfo(\'alphascore\')" style="width:20px;height:20px;border-radius:50%;border:1.5px solid #22d3ee;background:rgba(34,211,238,0.1);color:#22d3ee;font-size:11px;font-style:italic;font-family:Georgia;cursor:pointer;font-weight:700" title="What is AlphaScore?">i</button></div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;text-transform:uppercase">';
+  h += '<th style="text-align:left;padding:8px 6px">STOCK</th><th>SECTOR</th><th>PRICE</th><th>CHG%</th><th style="width:60px">TECH</th><th style="width:60px">FUND</th><th style="width:60px">OWN</th><th style="width:60px">MOM</th><th style="width:60px">RISK</th><th>SIGNAL</th><th style="text-align:center">SCORE</th></tr></thead><tbody>';
+  stocks.forEach((s,i) => {
+    const gc = _aiGradeColor(s.grade);
+    const chgC = (s.change_pct||0)>=0?'#22c55e':'#ef4444';
+    h += '<tr style="border-bottom:1px solid var(--border);cursor:pointer" onmouseover="this.style.background=\'rgba(34,211,238,0.05)\'" onmouseout="this.style.background=\'transparent\'" onclick="aiDrillStock(\''+s.symbol+'\')">';
+    h += '<td style="padding:8px 6px"><div style="font-weight:700;font-family:monospace">'+s.symbol+'</div><div style="font-size:9px;color:var(--text3)">'+((s.name||'').substring(0,18))+'</div></td>';
+    h += '<td style="text-align:center;font-size:9px;color:var(--text3)">'+(s.sector||'-').substring(0,10)+'</td>';
+    h += '<td style="text-align:center;font-family:monospace">₹'+(s.price||0).toLocaleString('en-IN',{maximumFractionDigits:1})+'</td>';
+    h += '<td style="text-align:center;color:'+chgC+';font-family:monospace">'+(s.change_pct>=0?'+':'')+((s.change_pct||0).toFixed(1))+'%</td>';
+    h += '<td>'+_aiBar(s.dimensions.technical)+'</td>';
+    h += '<td>'+_aiBar(s.dimensions.fundamental)+'</td>';
+    h += '<td>'+_aiBar(s.dimensions.ownership)+'</td>';
+    h += '<td>'+_aiBar(s.dimensions.momentum)+'</td>';
+    h += '<td>'+_aiBar(s.dimensions.risk_alpha)+'</td>';
+    h += '<td style="text-align:center"><span style="font-size:9px;padding:2px 6px;border-radius:3px;background:'+gc+'20;color:'+gc+';font-weight:700">'+s.signal.replace(/_/g,' ')+'</span></td>';
+    h += '<td style="text-align:center"><div style="font-size:20px;font-weight:800;color:'+gc+';font-family:monospace">'+s.alphascore.toFixed(0)+'</div><div style="font-size:8px;color:'+gc+'">'+s.grade+'</div></td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('ai-content').innerHTML = h;
+}
+
+function _aiRenderConfluence(stocks) {
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-size:12px;color:var(--text3)">'+stocks.length+' stocks with active signal confluence</span><button onclick="aiShowInfo(\'confluence\')" style="width:20px;height:20px;border-radius:50%;border:1.5px solid #22d3ee;background:rgba(34,211,238,0.1);color:#22d3ee;font-size:11px;font-style:italic;font-family:Georgia;cursor:pointer;font-weight:700">i</button></div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;text-transform:uppercase">';
+  h += '<th style="text-align:left;padding:8px 6px">STOCK</th><th>SIGNALS</th><th>CATEGORIES</th><th>ACTIVE SIGNALS</th><th>BACKTESTED MATCH</th><th>EST. RETURN</th><th>HOLD</th><th>CONVICTION</th><th style="text-align:center">PROB</th></tr></thead><tbody>';
+  stocks.forEach(s => {
+    const cc = _aiConvColor(s.conviction);
+    const sigPills = (s.active_signals||[]).map(sig => {
+      const catC = {technical:'#22d3ee',fundamental:'#a78bfa',ownership:'#22c55e',sentiment:'#f59e0b'}[sig.category]||'#999';
+      return '<span style="display:inline-block;padding:1px 5px;border-radius:8px;font-size:8px;border:1px solid '+catC+'40;color:'+catC+';margin:1px">'+sig.name+'</span>';
+    }).join('');
+    const combo = s.best_combination ? '<span style="color:#22c55e;font-size:10px">'+s.best_combination.hit_rate+'% hit · '+s.best_combination.sample_size+' samples</span>' : '<span style="color:var(--text3);font-size:10px">—</span>';
+    h += '<tr style="border-bottom:1px solid var(--border)" onmouseover="this.style.background=\'rgba(34,211,238,0.05)\'" onmouseout="this.style.background=\'transparent\'">';
+    h += '<td style="padding:8px 6px"><div style="font-weight:700;font-family:monospace">'+s.symbol+'</div><div style="font-size:9px;color:var(--text3)">'+(s.sector||'')+'</div></td>';
+    h += '<td style="text-align:center;font-weight:700">'+s.active_signal_count+'</td>';
+    h += '<td style="text-align:center;font-size:10px">'+s.category_diversity+'/4</td>';
+    h += '<td style="max-width:250px">'+sigPills+'</td>';
+    h += '<td>'+combo+'</td>';
+    h += '<td style="text-align:center;color:#22c55e;font-weight:700">+'+s.estimated_return+'%</td>';
+    h += '<td style="text-align:center;font-size:10px">'+s.holding_period_days+'d</td>';
+    h += '<td style="text-align:center"><span style="font-size:9px;padding:2px 6px;border-radius:3px;background:'+cc+'20;color:'+cc+';font-weight:700">'+s.conviction.replace(/_/g,' ')+'</span></td>';
+    h += '<td style="text-align:center"><div style="font-size:20px;font-weight:800;color:'+cc+';font-family:monospace">'+s.probability.toFixed(0)+'%</div></td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('ai-content').innerHTML = h;
+}
+
+function _aiRenderSmartMoney(stocks) {
+  let h = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-size:12px;color:var(--text3)">'+stocks.length+' stocks ranked by Smart Money Flow™</span><button onclick="aiShowInfo(\'smartmoney\')" style="width:20px;height:20px;border-radius:50%;border:1.5px solid #22d3ee;background:rgba(34,211,238,0.1);color:#22d3ee;font-size:11px;font-style:italic;font-family:Georgia;cursor:pointer;font-weight:700">i</button></div>';
+  h += '<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="border-bottom:1px solid var(--border);color:var(--text3);font-size:10px;text-transform:uppercase">';
+  h += '<th style="text-align:left;padding:8px 6px">STOCK</th><th style="width:55px">ACCUM</th><th style="width:55px">MINERV</th><th style="width:55px">VOL Q</th><th style="width:55px">FUND</th><th style="width:55px">MOM</th><th style="width:55px">TREND</th><th>SIGNALS</th><th>VERDICT</th><th style="text-align:center">SCORE</th></tr></thead><tbody>';
+  stocks.forEach(s => {
+    const vc = _aiVerdictColor(s.verdict);
+    const c = s.components||{};
+    const posSigs = (s.positive_signals||[]).slice(0,2).map(sig => '<div style="font-size:9px;color:#22c55e;padding:1px 0">✓ '+(sig.text.length>45?sig.text.substring(0,45)+'…':sig.text)+'</div>').join('');
+    const riskSigs = (s.risk_flags||[]).slice(0,1).map(sig => '<div style="font-size:9px;color:#ef4444;padding:1px 0">⚠ '+(sig.text.length>45?sig.text.substring(0,45)+'…':sig.text)+'</div>').join('');
+    h += '<tr style="border-bottom:1px solid var(--border)" onmouseover="this.style.background=\'rgba(34,211,238,0.05)\'" onmouseout="this.style.background=\'transparent\'">';
+    h += '<td style="padding:8px 6px"><div style="font-weight:700;font-family:monospace">'+s.symbol+'</div><div style="font-size:9px;color:var(--text3)">'+(s.sector||'')+'</div></td>';
+    h += '<td>'+_aiBar(c.accumulation||0)+'</td>';
+    h += '<td>'+_aiBar(c.minervini||0)+'</td>';
+    h += '<td>'+_aiBar(c.volume_quality||0)+'</td>';
+    h += '<td>'+_aiBar(c.fundamental||0)+'</td>';
+    h += '<td>'+_aiBar(c.momentum_conf||0)+'</td>';
+    h += '<td>'+_aiBar(c.trend_strength||0)+'</td>';
+    h += '<td style="max-width:250px">'+posSigs+riskSigs+'</td>';
+    h += '<td style="text-align:center"><span style="font-size:9px;padding:2px 6px;border-radius:3px;background:'+vc+'20;color:'+vc+';font-weight:700">'+s.verdict.replace(/_/g,' ')+'</span></td>';
+    h += '<td style="text-align:center"><div style="font-size:20px;font-weight:800;color:'+vc+';font-family:monospace">'+s.smart_money_score.toFixed(0)+'</div></td>';
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  document.getElementById('ai-content').innerHTML = h;
+}
+
+function aiShowInfo(type) {
+  const info = {
+    alphascore: {
+      title: 'AlphaScore™ — Composite Stock Intelligence Rating',
+      body: '<p style="margin-bottom:12px">A single <b>0-100 score</b> blending <b>40+ factors</b> across 5 weighted dimensions into one actionable number.</p>'+
+        '<div style="margin-bottom:10px"><b style="color:#22d3ee">Technical Strength (25%)</b> — 12 factors: RSI, MACD, SMA 50/200, Bollinger Bands, Supertrend, volume ratio, 52-week proximity, gap analysis</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#a78bfa">Fundamental Quality (25%)</b> — PE ratio, ROE, Debt/Equity, dividend yield, market cap stability</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#22c55e">Ownership Conviction (20%)</b> — Accumulation patterns, Minervini template, volume-price analysis</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#f59e0b">Momentum & Sentiment (15%)</b> — 1M/3M relative strength, weekly momentum, sentiment indicators</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#ef4444">Risk-Adjusted Alpha (15%)</b> — Alpha rating, trend score, drawdown, recovery, volatility</div>'+
+        '<div style="margin-top:16px;padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border)"><b>Grades:</b> A+ (80-100) STRONG BUY · A (70-79) BUY · B+ (60-69) ACCUMULATE · B (50-59) HOLD · C (40-49) WATCH · D (30-39) REDUCE · F (0-29) AVOID</div>'+
+        '<div style="margin-top:12px;font-size:11px;color:var(--text3)"><b>How to use:</b> Compare within same sector · Track changes over time · Pre-filter at 60+ · Drill into dimensions to find WHY</div>'
+    },
+    confluence: {
+      title: 'Confluence Engine™ — Cross-Signal Intelligence',
+      body: '<p style="margin-bottom:12px">A <b>conviction probability model</b> backtested across 5 years of Nifty 500 data. When independent signals agree, the probability of a big move skyrockets.</p>'+
+        '<div style="margin-bottom:10px"><b>22 signals</b> tracked across 4 categories: Technical, Fundamental, Ownership, Sentiment</div>'+
+        '<div style="margin-bottom:10px"><b>16 backtested combinations</b> with known hit rates, average returns, and sample sizes</div>'+
+        '<div style="margin-bottom:10px"><b>Category diversity bonus</b> — signals from different categories boost conviction</div>'+
+        '<div style="margin-top:16px;padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border)"><b>Example:</b> RSI Oversold + MACD Cross + Volume Spike + Accumulation + Momentum = <span style="color:#00C853;font-weight:700">84% probability</span> of 10%+ move in 30 days (31 samples)</div>'+
+        '<div style="margin-top:12px;font-size:11px;color:var(--text3)"><b>How to use:</b> Focus on VERY HIGH/HIGH conviction · Check sample size · Category diversity > signal count · Use holding period as trade guide</div>'
+    },
+    smartmoney: {
+      title: 'Smart Money Flow™ — Institutional Conviction Tracker',
+      body: '<p style="margin-bottom:12px">Track where <b>big money is moving</b> before it shows up in price. Combines 6 institutional data dimensions into a 0-100 Accumulation Score.</p>'+
+        '<div style="margin-bottom:10px"><b style="color:#22d3ee">Accumulation (25%)</b> — Price-volume accumulation/distribution pattern analysis</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#a78bfa">Minervini Template (20%)</b> — 8-point institutional quality checklist for Stage 2 uptrends</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#22c55e">Volume Quality (20%)</b> — Volume ratio + price-volume correlation = buying conviction</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#f59e0b">Fundamental Strength (15%)</b> — ROE, leverage, fundamental score — institutions avoid weak balance sheets</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#ef4444">Momentum Confirm (10%)</b> — Relative strength vs market, sustained outperformance</div>'+
+        '<div style="margin-bottom:10px"><b style="color:#3b82f6">Trend Structure (10%)</b> — Supertrend, 52-week high proximity</div>'+
+        '<div style="margin-top:16px;padding:10px;background:var(--bg);border-radius:6px;border:1px solid var(--border)"><b>Verdicts:</b> STRONG ACCUMULATION (75+) · ACCUMULATION (60-74) · NEUTRAL (45-59) · DISTRIBUTION (30-44) · STRONG DISTRIBUTION (0-29)</div>'+
+        '<div style="margin-top:12px;font-size:11px;color:var(--text3)"><b>Pro Tip:</b> Combine with AlphaScore™ — Smart Money tells WHO is buying, AlphaScore tells if it DESERVES buying</div>'
+    }
+  };
+  const i = info[type];
+  document.getElementById('ai-info-title').innerHTML = i.title;
+  document.getElementById('ai-info-body').innerHTML = i.body;
+  document.getElementById('ai-info-modal').style.display = 'flex';
+}
+
+function aiDrillStock(symbol) {
+  // Switch to AlphaView and load this stock
+  document.getElementById('av-input').value = symbol;
+  nav('alphaview', document.querySelector('[onclick*="alphaview"]'));
+  if(typeof avLoad === 'function') avLoad(symbol);
+}
+</script>
+
 <div class="panel" id="p-guide">
       <div style="max-width:900px;margin:0 auto">
 
@@ -4899,6 +5104,7 @@ function nav(p,btn){
   if(p==='dcf_calc'){}
   if(p==='dividends_tab')loadDividends();
   if(p==='screenbuilder')window.renderSB();
+  if(p==='alphaintel')aiLoadTab(_aiTab||'alphascore');
 }
 
 async function loadDash(){

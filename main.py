@@ -54,6 +54,7 @@ API_TAGS = [
     {"name": "Basket Publisher", "description": "Advisor basket strategies — publish F&O/Equity intraday baskets, per-advisor API keys for broker polling, webhook registration, auto-squareoff at 3:20PM IST"},
     {"name": "Upstox", "description": "Upstox OAuth integration, basket pre-fill from AlphaBot signals and Nifty50 movers, basket order placement"},
     {"name": "AlphaBot", "description": "Algorithmic signal generator for Index F&O. Automated strategies for NIFTY/BANKNIFTY futures, options directional, options writing (straddle/strangle), and index arbitrage. Signals pushed to Upstox/XTS for auto-execution."},
+    {"name": "Alpha Intelligence", "description": "AlphaScore™ (0-100 composite rating), Confluence Engine™ (cross-signal conviction probability), Smart Money Flow™ (institutional accumulation tracker). Patent pending."},
 ]
 
 # ══ Alpha Data Service (centralized data layer on port 5004) ══
@@ -93,6 +94,7 @@ from routers.alphabot import router as alphabot_router
 from routers.upstox import router as upstox_router
 from routers.basket_publisher import router as basket_router
 from routers.options_backtest import router as options_bt_router
+from routers.alpha_intelligence import router as alpha_intel_router
 
 app = FastAPI(
     root_path="/dyor",
@@ -159,6 +161,7 @@ app.include_router(alphabot_router)
 app.include_router(upstox_router)
 app.include_router(basket_router)
 app.include_router(options_bt_router)
+app.include_router(alpha_intel_router)
 
 # DYOR Auth Bridge — validate AlphaMarket session cookies
 from middleware.alphamarket_auth import AlphaMarketAuthMiddleware
