@@ -3275,12 +3275,18 @@ tr:last-child td{border-bottom:none}
     <div>
       <div style="font-size:11px;color:var(--text3)">AlphaScore™ · Confluence Engine™ · Smart Money Flow™ — Patent Pending</div>
     </div>
+    <div style="margin:12px 0;display:flex;gap:8px;align-items:center">
+      <input type="text" id="ai-search" placeholder="Enter symbol (e.g. RELIANCE)" style="padding:8px 14px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);font-size:13px;font-family:monospace;width:220px" onkeydown="if(event.key===&quot;Enter&quot;)aiSearchStock()">
+      <button onclick="aiSearchStock()" style="padding:8px 16px;border-radius:4px;border:1px solid #22d3ee;background:rgba(34,211,238,0.15);color:#22d3ee;font-weight:700;font-size:12px;cursor:pointer">ANALYZE</button>
+      <span id="ai-search-status" style="font-size:11px;color:var(--text3)"></span>
+    </div>
     <div style="display:flex;gap:6px">
       <button class="lbtn" onclick="aiLoadTab('alphascore')" id="ai-tab-alphascore" style="background:rgba(34,211,238,0.15);color:#22d3ee;font-weight:700;font-size:11px;padding:6px 14px;border:1px solid rgba(34,211,238,0.3);border-radius:4px">◆ AlphaScore™</button>
       <button class="lbtn" onclick="aiLoadTab('confluence')" id="ai-tab-confluence" style="font-size:11px;padding:6px 14px;border:1px solid var(--border);border-radius:4px">◈ Confluence™</button>
       <button class="lbtn" onclick="aiLoadTab('smartmoney')" id="ai-tab-smartmoney" style="font-size:11px;padding:6px 14px;border:1px solid var(--border);border-radius:4px">◉ Smart Money™</button>
     </div>
   </div>
+  <div id="ai-search-result" style="display:none"></div>
   <div id="ai-content" style="min-height:400px">
     <div style="text-align:center;padding:60px 0;color:var(--text3)">Loading...</div>
   </div>
@@ -3465,6 +3471,49 @@ function aiShowInfo(type) {
   document.getElementById('ai-info-modal').style.display = 'flex';
 }
 
+function _aiNarrative(sym,a,c,s){
+var n='<div style="margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">';
+n+='<div style="font-size:13px;font-weight:700;color:#22d3ee;margin-bottom:10px">\u{1F4CA} What This Means for '+sym+'</div>';
+var asc=a.alphascore,d=a.dimensions;
+n+='<div style="margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.7">';
+n+='<b style="color:var(--text)">Overall Health (AlphaScore '+asc.toFixed(0)+'/100):</b> ';
+if(asc>=70)n+=sym+' is in <b style="color:#22c55e">strong shape</b> across most dimensions. Solid technicals, good fundamentals, and institutional interest. Worth researching for potential entry. ';
+else if(asc>=60)n+=sym+' shows <b style="color:#8BC34A">above-average</b> characteristics. Most dimensions positive, though some areas need monitoring. Consider accumulating on dips. ';
+else if(asc>=50)n+=sym+' is in <b style="color:#FFC107">neutral territory</b>. Mixed signals \u2014 some strengths offset by weaknesses. Hold if you own it, wait for clarity before adding. ';
+else if(asc>=40)n+=sym+' is showing <b style="color:#FF9800">weakness</b> across multiple dimensions. Caution \u2014 risk/reward may not favor new positions. ';
+else n+=sym+' is in <b style="color:#ef4444">poor shape</b>. Multiple dimensions flashing red. Avoid new positions, consider reducing exposure. ';
+var best=Object.keys(d).reduce(function(a,b){return d[a]>d[b]?a:b});
+var worst=Object.keys(d).reduce(function(a,b){return d[a]<d[b]?a:b});
+var dn={technical:"Technical Strength",fundamental:"Fundamental Quality",ownership:"Ownership Conviction",momentum:"Momentum",risk_alpha:"Risk Profile"};
+n+='Strongest: <b style="color:#22c55e">'+dn[best]+' ('+d[best].toFixed(0)+')</b>. Weakest: <b style="color:#ef4444">'+dn[worst]+' ('+d[worst].toFixed(0)+')</b> \u2014 needs improvement.';
+n+='</div>';
+n+='<div style="margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.7">';
+n+='<b style="color:var(--text)">Signal Confluence ('+c.probability.toFixed(0)+'% conviction):</b> ';
+if(c.probability>=70)n+='<b style="color:#22c55e">Multiple independent signals firing simultaneously</b> \u2014 high-conviction setup. '+c.active_signal_count+' signals across '+c.category_diversity+' categories. ';
+else if(c.probability>=50)n+='<b style="color:#FFC107">Moderate signal alignment</b>. '+c.active_signal_count+' signals active but not enough cross-category confirmation. Monitor for more. ';
+else if(c.probability>0)n+='Signal confluence is <b style="color:#FF9800">weak</b>. Only '+c.active_signal_count+' signal(s). Wait for more alignment. ';
+else n+='<b style="color:var(--text3)">No signals active</b>. Stock in quiet phase. ';
+if(c.best_combination)n+='<span style="color:#22c55e">Matches backtested pattern: '+c.best_combination.hit_rate+'% hit rate, '+c.best_combination.sample_size+' samples, +'+c.best_combination.avg_return+'% avg return in '+c.best_combination.holding_days+' days.</span> ';
+n+='</div>';
+n+='<div style="margin-bottom:8px;font-size:12px;color:var(--text2);line-height:1.7">';
+n+='<b style="color:var(--text)">Institutional Activity (Smart Money '+s.smart_money_score.toFixed(0)+'/100):</b> ';
+if(s.smart_money_score>=70)n+='<b style="color:#22c55e">Institutions actively accumulating</b>. Volume quality, trend structure, and momentum confirm smart money building positions. ';
+else if(s.smart_money_score>=55)n+='<b style="color:#8BC34A">Some institutional interest</b>. On radar but conviction not yet strong. Watch for increasing volume quality. ';
+else if(s.smart_money_score>=40)n+='Institutional activity is <b style="color:#FFC107">mixed</b>. No clear accumulation or distribution. Smart money appears neutral. ';
+else n+='Smart money <b style="color:#ef4444">reducing exposure</b>. Low institutional conviction. Be cautious. ';
+var pC=s.positive_signals?s.positive_signals.length:0,rC=s.risk_flags?s.risk_flags.length:0;
+if(pC>0)n+=pC+' positive signal'+(pC>1?'s':'')+'. ';
+if(rC>0)n+='<span style="color:#ef4444">'+rC+' risk flag'+(rC>1?'s':'')+'.</span> ';
+n+='</div>';
+n+='<div style="padding:10px;background:rgba(34,211,238,0.05);border:1px solid rgba(34,211,238,0.2);border-radius:6px;font-size:11px;color:var(--text2);line-height:1.6">';
+n+='<b style="color:#22d3ee">\u{1F3AF} Action Guide:</b> ';
+if(asc>=60&&c.probability>=60)n+='Strong stock + high confluence \u2014 <b style="color:#22c55e">consider entering</b> with proper sizing and stop loss.';
+else if(asc>=60&&c.probability<40)n+='Fundamentally strong, no confluence trigger \u2014 <b style="color:#FFC107">add to watchlist</b>, wait for signal alignment.';
+else if(asc<50&&c.probability>=60)n+='Weak stock + reversal signals \u2014 <b style="color:#FF9800">potential bounce but risky</b>. Only for experienced traders with tight stops.';
+else if(asc<40)n+='Weak across metrics \u2014 <b style="color:#ef4444">avoid new positions</b>. Consider reducing on any bounce.';
+else n+='Mixed signals \u2014 <b style="color:#FFC107">wait for clarity</b>. Monitor for changes.';
+n+='</div></div>';return n}
+function aiSearchStock(){var sym=document.getElementById('ai-search').value.trim().toUpperCase();if(!sym)return;document.getElementById('ai-search-status').innerHTML='<span style="color:#22d3ee">Analyzing '+sym+'...</span>';fetch('/dyor/api/alpha-intel/'+sym).then(function(r){return r.json()}).then(function(d){if(d.detail){document.getElementById('ai-search-status').innerHTML='<span style="color:#ef4444">'+d.detail+'</span>';return}var a=d.alphascore,c=d.confluence,s=d.smart_money;var gc=_aiGradeColor(a.grade);var cc=_aiConvColor(c.conviction);var vc=_aiVerdictColor(s.verdict);var h='<div style="margin:16px 0;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">';h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-size:18px;font-weight:800;font-family:monospace;color:var(--text)">'+sym+'</div><button onclick="document.getElementById(\x27ai-search-result\x27).style.display=\x27none\x27" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer">\u2715</button></div>';h+='<div style="display:flex;gap:16px;flex-wrap:wrap">';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">AlphaScore\u2122</div><div style="font-size:36px;font-weight:800;color:'+gc+';font-family:monospace">'+a.alphascore.toFixed(0)+'</div><div style="font-size:11px;color:'+gc+';font-weight:700;margin-bottom:8px">'+a.grade+' \u2022 '+a.signal.replace(/_/g," ")+'</div>';h+='<div style="text-align:left;font-size:11px">'+_aiBar(a.dimensions.technical)+'<span style="font-size:9px;color:var(--text3)">Technical</span>'+_aiBar(a.dimensions.fundamental)+'<span style="font-size:9px;color:var(--text3)">Fundamental</span>'+_aiBar(a.dimensions.ownership)+'<span style="font-size:9px;color:var(--text3)">Ownership</span>'+_aiBar(a.dimensions.momentum)+'<span style="font-size:9px;color:var(--text3)">Momentum</span>'+_aiBar(a.dimensions.risk_alpha)+'<span style="font-size:9px;color:var(--text3)">Risk Alpha</span></div></div>';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Confluence Engine\u2122</div><div style="font-size:36px;font-weight:800;color:'+cc+';font-family:monospace">'+c.probability.toFixed(0)+'%</div><div style="font-size:11px;color:'+cc+';font-weight:700;margin-bottom:8px">'+c.conviction.replace(/_/g," ")+'</div>';var sigs=(c.active_signals||[]).map(function(sig){var sc={technical:"#22d3ee",fundamental:"#a78bfa",ownership:"#22c55e",sentiment:"#f59e0b"}[sig.category]||"#999";return "<span style=\x22display:inline-block;padding:1px 5px;border-radius:8px;font-size:8px;border:1px solid "+sc+"40;color:"+sc+";margin:1px\x22>"+sig.name+"</span>"}).join("");h+='<div style="text-align:left;font-size:10px">'+c.active_signal_count+' signals \u2022 '+c.category_diversity+'/4 categories</div><div style="margin-top:6px">'+sigs+'</div>';if(c.best_combination){h+='<div style="margin-top:8px;font-size:10px;color:#22c55e">Backtested: '+c.best_combination.hit_rate+'% hit \u2022 '+c.best_combination.sample_size+' samples</div>'}h+='</div>';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Smart Money Flow\u2122</div><div style="font-size:36px;font-weight:800;color:'+vc+';font-family:monospace">'+s.smart_money_score.toFixed(0)+'</div><div style="font-size:11px;color:'+vc+';font-weight:700;margin-bottom:8px">'+s.verdict.replace(/_/g," ")+'</div>';var pos=(s.positive_signals||[]).slice(0,3).map(function(sig){return "<div style=\x22font-size:9px;color:#22c55e;padding:1px 0\x22>\u2713 "+sig.text+"</div>"}).join("");var rsk=(s.risk_flags||[]).slice(0,2).map(function(sig){return "<div style=\x22font-size:9px;color:#ef4444;padding:1px 0\x22>\u26A0 "+sig.text+"</div>"}).join("");h+='<div style="text-align:left">'+pos+rsk+'</div></div>';h+='</div></div>';document.getElementById('ai-search-status').innerHTML='';document.getElementById('ai-search-result').innerHTML=h+_aiNarrative(sym,a,c,s);document.getElementById('ai-search-result').style.display='block'}).catch(function(e){document.getElementById('ai-search-status').innerHTML='<span style="color:#ef4444">Error: '+e.message+'</span>'})}
 function aiDrillStock(symbol) {
   // Switch to AlphaView and load this stock
   document.getElementById('av-input').value = symbol;
@@ -4443,7 +4492,7 @@ async function initUniversalAutocomplete(){
   }catch(e){console.warn('Symbol cache failed:',e);}
 
   // Attach to all symbol input fields
-  const symInputs = ['bt-sym','ch-sym','pt-sym','mp-add-sym','wl-in','adv-add-sym','opt-sym','oi-sym','dcf-sym','pat-sym','av-sym'];
+  const symInputs = ['bt-sym','ch-sym','pt-sym','mp-add-sym','wl-in','adv-add-sym','opt-sym','oi-sym','dcf-sym','pat-sym','av-sym','ai-search'];
   symInputs.forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
