@@ -131,7 +131,7 @@ async def jobbing_candidates(limit: int = 50):
             "cost_per_trade": costs["total"],
             "target_profit_lot": round(target_profit, 2),
             "breakeven_move": round(breakeven_moves, 2),
-            "best_window": "09:15-10:00" if datetime.now().hour < 12 else "14:30-15:15",
+            "best_window": "09:15-10:00" if _ist_now().hour < 12 else "14:30-15:15",
         })
     candidates.sort(key=lambda x: x["score"], reverse=True)
     return {"candidates": candidates, "count": len(candidates),
