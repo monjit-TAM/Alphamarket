@@ -3473,30 +3473,30 @@ function aiShowInfo(type) {
 
 function _aiNarrative(sym,a,c,s){
 var n='<div style="margin-top:16px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">';
-n+='<div style="font-size:13px;font-weight:700;color:#22d3ee;margin-bottom:10px">\u{1F4CA} What This Means for '+sym+'</div>';
+n+='<div style="font-size:16px;font-weight:700;color:#22d3ee;margin-bottom:12px">\ud83d\udcca What This Means for '+sym+'</div>';
 var asc=a.alphascore,d=a.dimensions;
-n+='<div style="margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.7">';
-n+='<b style="color:var(--text)">Overall Health (AlphaScore '+asc.toFixed(0)+'/100):</b> ';
+n+='<div style="margin-bottom:12px;font-size:14px;color:var(--text2);line-height:1.8">';
+n+='<b style="color:var(--text)">Overall Health (AlphaScore '+asc.toFixed(0)+'/100) <span style="color:#22d3ee;cursor:pointer;font-size:12px" onclick="aiShowInfo(\'alphascore\')">\u24d8 learn more</span>:</b> ';
 if(asc>=70)n+=sym+' is in <b style="color:#22c55e">strong shape</b> across most dimensions. Solid technicals, good fundamentals, and institutional interest. Worth researching for potential entry. ';
 else if(asc>=60)n+=sym+' shows <b style="color:#8BC34A">above-average</b> characteristics. Most dimensions positive, though some areas need monitoring. Consider accumulating on dips. ';
 else if(asc>=50)n+=sym+' is in <b style="color:#FFC107">neutral territory</b>. Mixed signals \u2014 some strengths offset by weaknesses. Hold if you own it, wait for clarity before adding. ';
 else if(asc>=40)n+=sym+' is showing <b style="color:#FF9800">weakness</b> across multiple dimensions. Caution \u2014 risk/reward may not favor new positions. ';
 else n+=sym+' is in <b style="color:#ef4444">poor shape</b>. Multiple dimensions flashing red. Avoid new positions, consider reducing exposure. ';
-var best=Object.keys(d).reduce(function(a,b){return d[a]>d[b]?a:b});
-var worst=Object.keys(d).reduce(function(a,b){return d[a]<d[b]?a:b});
+var best=Object.keys(d).reduce(function(x,y){return d[x]>d[y]?x:y});
+var worst=Object.keys(d).reduce(function(x,y){return d[x]<d[y]?x:y});
 var dn={technical:"Technical Strength",fundamental:"Fundamental Quality",ownership:"Ownership Conviction",momentum:"Momentum",risk_alpha:"Risk Profile"};
 n+='Strongest: <b style="color:#22c55e">'+dn[best]+' ('+d[best].toFixed(0)+')</b>. Weakest: <b style="color:#ef4444">'+dn[worst]+' ('+d[worst].toFixed(0)+')</b> \u2014 needs improvement.';
 n+='</div>';
-n+='<div style="margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.7">';
-n+='<b style="color:var(--text)">Signal Confluence ('+c.probability.toFixed(0)+'% conviction):</b> ';
+n+='<div style="margin-bottom:12px;font-size:14px;color:var(--text2);line-height:1.8">';
+n+='<b style="color:var(--text)">Signal Confluence ('+c.probability.toFixed(0)+'% conviction) <span style="color:#22d3ee;cursor:pointer;font-size:12px" onclick="aiShowInfo(\'confluence\')">\u24d8 learn more</span>:</b> ';
 if(c.probability>=70)n+='<b style="color:#22c55e">Multiple independent signals firing simultaneously</b> \u2014 high-conviction setup. '+c.active_signal_count+' signals across '+c.category_diversity+' categories. ';
 else if(c.probability>=50)n+='<b style="color:#FFC107">Moderate signal alignment</b>. '+c.active_signal_count+' signals active but not enough cross-category confirmation. Monitor for more. ';
 else if(c.probability>0)n+='Signal confluence is <b style="color:#FF9800">weak</b>. Only '+c.active_signal_count+' signal(s). Wait for more alignment. ';
 else n+='<b style="color:var(--text3)">No signals active</b>. Stock in quiet phase. ';
 if(c.best_combination)n+='<span style="color:#22c55e">Matches backtested pattern: '+c.best_combination.hit_rate+'% hit rate, '+c.best_combination.sample_size+' samples, +'+c.best_combination.avg_return+'% avg return in '+c.best_combination.holding_days+' days.</span> ';
 n+='</div>';
-n+='<div style="margin-bottom:8px;font-size:12px;color:var(--text2);line-height:1.7">';
-n+='<b style="color:var(--text)">Institutional Activity (Smart Money '+s.smart_money_score.toFixed(0)+'/100):</b> ';
+n+='<div style="margin-bottom:8px;font-size:14px;color:var(--text2);line-height:1.8">';
+n+='<b style="color:var(--text)">Institutional Activity (Smart Money '+s.smart_money_score.toFixed(0)+'/100) <span style="color:#22d3ee;cursor:pointer;font-size:12px" onclick="aiShowInfo(\'smartmoney\')">\u24d8 learn more</span>:</b> ';
 if(s.smart_money_score>=70)n+='<b style="color:#22c55e">Institutions actively accumulating</b>. Volume quality, trend structure, and momentum confirm smart money building positions. ';
 else if(s.smart_money_score>=55)n+='<b style="color:#8BC34A">Some institutional interest</b>. On radar but conviction not yet strong. Watch for increasing volume quality. ';
 else if(s.smart_money_score>=40)n+='Institutional activity is <b style="color:#FFC107">mixed</b>. No clear accumulation or distribution. Smart money appears neutral. ';
@@ -3505,15 +3505,15 @@ var pC=s.positive_signals?s.positive_signals.length:0,rC=s.risk_flags?s.risk_fla
 if(pC>0)n+=pC+' positive signal'+(pC>1?'s':'')+'. ';
 if(rC>0)n+='<span style="color:#ef4444">'+rC+' risk flag'+(rC>1?'s':'')+'.</span> ';
 n+='</div>';
-n+='<div style="padding:10px;background:rgba(34,211,238,0.05);border:1px solid rgba(34,211,238,0.2);border-radius:6px;font-size:11px;color:var(--text2);line-height:1.6">';
-n+='<b style="color:#22d3ee">\u{1F3AF} Action Guide:</b> ';
+n+='<div style="padding:12px;background:rgba(34,211,238,0.05);border:1px solid rgba(34,211,238,0.2);border-radius:6px;font-size:13px;color:var(--text2);line-height:1.7">';
+n+='<b style="color:#22d3ee">\ud83c\udfaf Action Guide:</b> ';
 if(asc>=60&&c.probability>=60)n+='Strong stock + high confluence \u2014 <b style="color:#22c55e">consider entering</b> with proper sizing and stop loss.';
 else if(asc>=60&&c.probability<40)n+='Fundamentally strong, no confluence trigger \u2014 <b style="color:#FFC107">add to watchlist</b>, wait for signal alignment.';
 else if(asc<50&&c.probability>=60)n+='Weak stock + reversal signals \u2014 <b style="color:#FF9800">potential bounce but risky</b>. Only for experienced traders with tight stops.';
 else if(asc<40)n+='Weak across metrics \u2014 <b style="color:#ef4444">avoid new positions</b>. Consider reducing on any bounce.';
 else n+='Mixed signals \u2014 <b style="color:#FFC107">wait for clarity</b>. Monitor for changes.';
 n+='</div></div>';return n}
-function aiSearchStock(){var sym=document.getElementById('ai-search').value.trim().toUpperCase();if(!sym)return;document.getElementById('ai-search-status').innerHTML='<span style="color:#22d3ee">Analyzing '+sym+'...</span>';fetch('/dyor/api/alpha-intel/'+sym).then(function(r){return r.json()}).then(function(d){if(d.detail){document.getElementById('ai-search-status').innerHTML='<span style="color:#ef4444">'+d.detail+'</span>';return}var a=d.alphascore,c=d.confluence,s=d.smart_money;var gc=_aiGradeColor(a.grade);var cc=_aiConvColor(c.conviction);var vc=_aiVerdictColor(s.verdict);var h='<div style="margin:16px 0;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">';h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-size:18px;font-weight:800;font-family:monospace;color:var(--text)">'+sym+'</div><button onclick="document.getElementById(\x27ai-search-result\x27).style.display=\x27none\x27" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer">\u2715</button></div>';h+='<div style="display:flex;gap:16px;flex-wrap:wrap">';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">AlphaScore\u2122</div><div style="font-size:36px;font-weight:800;color:'+gc+';font-family:monospace">'+a.alphascore.toFixed(0)+'</div><div style="font-size:11px;color:'+gc+';font-weight:700;margin-bottom:8px">'+a.grade+' \u2022 '+a.signal.replace(/_/g," ")+'</div>';h+='<div style="text-align:left;font-size:11px">'+_aiBar(a.dimensions.technical)+'<span style="font-size:9px;color:var(--text3)">Technical</span>'+_aiBar(a.dimensions.fundamental)+'<span style="font-size:9px;color:var(--text3)">Fundamental</span>'+_aiBar(a.dimensions.ownership)+'<span style="font-size:9px;color:var(--text3)">Ownership</span>'+_aiBar(a.dimensions.momentum)+'<span style="font-size:9px;color:var(--text3)">Momentum</span>'+_aiBar(a.dimensions.risk_alpha)+'<span style="font-size:9px;color:var(--text3)">Risk Alpha</span></div></div>';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Confluence Engine\u2122</div><div style="font-size:36px;font-weight:800;color:'+cc+';font-family:monospace">'+c.probability.toFixed(0)+'%</div><div style="font-size:11px;color:'+cc+';font-weight:700;margin-bottom:8px">'+c.conviction.replace(/_/g," ")+'</div>';var sigs=(c.active_signals||[]).map(function(sig){var sc={technical:"#22d3ee",fundamental:"#a78bfa",ownership:"#22c55e",sentiment:"#f59e0b"}[sig.category]||"#999";return "<span style=\x22display:inline-block;padding:1px 5px;border-radius:8px;font-size:8px;border:1px solid "+sc+"40;color:"+sc+";margin:1px\x22>"+sig.name+"</span>"}).join("");h+='<div style="text-align:left;font-size:10px">'+c.active_signal_count+' signals \u2022 '+c.category_diversity+'/4 categories</div><div style="margin-top:6px">'+sigs+'</div>';if(c.best_combination){h+='<div style="margin-top:8px;font-size:10px;color:#22c55e">Backtested: '+c.best_combination.hit_rate+'% hit \u2022 '+c.best_combination.sample_size+' samples</div>'}h+='</div>';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Smart Money Flow\u2122</div><div style="font-size:36px;font-weight:800;color:'+vc+';font-family:monospace">'+s.smart_money_score.toFixed(0)+'</div><div style="font-size:11px;color:'+vc+';font-weight:700;margin-bottom:8px">'+s.verdict.replace(/_/g," ")+'</div>';var pos=(s.positive_signals||[]).slice(0,3).map(function(sig){return "<div style=\x22font-size:9px;color:#22c55e;padding:1px 0\x22>\u2713 "+sig.text+"</div>"}).join("");var rsk=(s.risk_flags||[]).slice(0,2).map(function(sig){return "<div style=\x22font-size:9px;color:#ef4444;padding:1px 0\x22>\u26A0 "+sig.text+"</div>"}).join("");h+='<div style="text-align:left">'+pos+rsk+'</div></div>';h+='</div></div>';document.getElementById('ai-search-status').innerHTML='';document.getElementById('ai-search-result').innerHTML=h+_aiNarrative(sym,a,c,s);document.getElementById('ai-search-result').style.display='block'}).catch(function(e){document.getElementById('ai-search-status').innerHTML='<span style="color:#ef4444">Error: '+e.message+'</span>'})}
+function aiSearchStock(){var sym=document.getElementById('ai-search').value.trim().toUpperCase();if(!sym)return;document.getElementById('ai-search-status').innerHTML='<span style="color:#22d3ee">Analyzing '+sym+'...</span>';fetch('/dyor/api/alpha-intel/'+sym).then(function(r){return r.json()}).then(function(d){if(d.detail){document.getElementById('ai-search-status').innerHTML='<span style="color:#ef4444">'+d.detail+'</span>';return}var a=d.alphascore,c=d.confluence,s=d.smart_money;var gc=_aiGradeColor(a.grade);var cc=_aiConvColor(c.conviction);var vc=_aiVerdictColor(s.verdict);var h='<div style="margin:16px 0;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">';h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px"><div style="font-size:22px;font-weight:800;font-family:monospace;color:var(--text)">'+sym+'</div><button onclick="document.getElementById(\x27ai-search-result\x27).style.display=\x27none\x27" style="background:none;border:none;color:var(--text3);font-size:18px;cursor:pointer">\u2715</button></div>';h+='<div style="display:flex;gap:16px;flex-wrap:wrap">';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:12px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">AlphaScore\u2122</div><div style="font-size:36px;font-weight:800;color:'+gc+';font-family:monospace">'+a.alphascore.toFixed(0)+'</div><div style="font-size:11px;color:'+gc+';font-weight:700;margin-bottom:8px">'+a.grade+' \u2022 '+a.signal.replace(/_/g," ")+'</div>';h+='<div style="text-align:left;font-size:11px">'+_aiBar(a.dimensions.technical)+'<span style="font-size:11px;color:var(--text3)">Technical</span>'+_aiBar(a.dimensions.fundamental)+'<span style="font-size:11px;color:var(--text3)">Fundamental</span>'+_aiBar(a.dimensions.ownership)+'<span style="font-size:11px;color:var(--text3)">Ownership</span>'+_aiBar(a.dimensions.momentum)+'<span style="font-size:11px;color:var(--text3)">Momentum</span>'+_aiBar(a.dimensions.risk_alpha)+'<span style="font-size:11px;color:var(--text3)">Risk Alpha</span></div></div>';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:12px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Confluence Engine\u2122</div><div style="font-size:36px;font-weight:800;color:'+cc+';font-family:monospace">'+c.probability.toFixed(0)+'%</div><div style="font-size:11px;color:'+cc+';font-weight:700;margin-bottom:8px">'+c.conviction.replace(/_/g," ")+'</div>';var sigs=(c.active_signals||[]).map(function(sig){var sc={technical:"#22d3ee",fundamental:"#a78bfa",ownership:"#22c55e",sentiment:"#f59e0b"}[sig.category]||"#999";return "<span style=\x22display:inline-block;padding:1px 5px;border-radius:8px;font-size:8px;border:1px solid "+sc+"40;color:"+sc+";margin:1px\x22>"+sig.name+"</span>"}).join("");h+='<div style="text-align:left;font-size:10px">'+c.active_signal_count+' signals \u2022 '+c.category_diversity+'/4 categories</div><div style="margin-top:6px">'+sigs+'</div>';if(c.best_combination){h+='<div style="margin-top:8px;font-size:10px;color:#22c55e">Backtested: '+c.best_combination.hit_rate+'% hit \u2022 '+c.best_combination.sample_size+' samples</div>'}h+='</div>';h+='<div style="flex:1;min-width:200px;padding:12px;border:1px solid var(--border);border-radius:6px;text-align:center"><div style="font-size:12px;color:var(--text3);text-transform:uppercase;margin-bottom:6px">Smart Money Flow\u2122</div><div style="font-size:36px;font-weight:800;color:'+vc+';font-family:monospace">'+s.smart_money_score.toFixed(0)+'</div><div style="font-size:11px;color:'+vc+';font-weight:700;margin-bottom:8px">'+s.verdict.replace(/_/g," ")+'</div>';var pos=(s.positive_signals||[]).slice(0,3).map(function(sig){return "<div style=\x22font-size:9px;color:#22c55e;padding:1px 0\x22>\u2713 "+sig.text+"</div>"}).join("");var rsk=(s.risk_flags||[]).slice(0,2).map(function(sig){return "<div style=\x22font-size:9px;color:#ef4444;padding:1px 0\x22>\u26A0 "+sig.text+"</div>"}).join("");h+='<div style="text-align:left">'+pos+rsk+'</div></div>';h+='</div></div>';document.getElementById('ai-search-status').innerHTML='';document.getElementById('ai-search-result').innerHTML=h+_aiNarrative(sym,a,c,s);document.getElementById('ai-search-result').style.display='block'}).catch(function(e){document.getElementById('ai-search-status').innerHTML='<span style="color:#ef4444">Error: '+e.message+'</span>'})}
 function aiDrillStock(symbol) {
   // Switch to AlphaView and load this stock
   document.getElementById('av-input').value = symbol;
@@ -3603,7 +3603,7 @@ function aiDrillStock(symbol) {
           </div>
           <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use</div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Step 1:</b> Click <b>SCREEN BUILDER</b> in the sidebar (highlighted in cyan).<br>
               <b>Step 2:</b> Choose asset type — <b>Stocks</b> (923 NSE stocks), <b>Futures</b> (32 F&amp;O stocks + indices), or <b>Options</b> (31 F&amp;O stocks + indices).<br>
               <b>Step 3:</b> In the left panel, pick a category (Technical / Fundamental / Alpha), select a parameter, set an operator (between, ≥, ≤, etc.) and enter values.<br>
@@ -3622,7 +3622,7 @@ function aiDrillStock(symbol) {
           </div>
           <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">💡 Pro Tips</div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               • <b>Save your screens</b> — click 💾 SAVE to name and store your filter set. Load anytime from 📂 SAVED.<br>
               • <b>Cache is warm after first scan</b> — share the tab with colleagues and their scans will be instant.<br>
               • <b>Combine filters</b> — RSI Oversold + Volume Ratio &gt; 1.5 + MACD Bullish = high-conviction reversal setups.<br>
@@ -3643,7 +3643,7 @@ function aiDrillStock(symbol) {
           </div>
           <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use</div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Step 1:</b> Select a strategy from the dropdown — choose from 33 options across Technical (Momentum, Breakout, MACD, Supertrend, Minervini), Fundamental (Low P/E, High ROE, Dividend Yield), and Hybrid (Growth + Momentum, Quality + MACD) categories.<br>
               <b>Step 2:</b> Set price range filters (Min/Max) to focus on your preferred stock universe.<br>
               <b>Step 3:</b> Optionally filter by Sector, Industry, or Basic Industry for targeted scanning.<br>
@@ -3688,7 +3688,7 @@ function aiDrillStock(symbol) {
           </div>
           <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use</div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Step 1:</b> Choose your timeframes — Short (1-5 days), Medium (5-20 days), Long (20-60+ days).<br>
               <b>Step 2:</b> Tick the strategies you want under each timeframe. Defaults are pre-selected for a balanced setup.<br>
               <b>Step 3:</b> Set the <b>Minimum Confluence Score</b> — how many strategies must agree. Higher = fewer but stronger signals.<br>
@@ -3729,7 +3729,7 @@ function aiDrillStock(symbol) {
           </div>
           <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use</div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Step 1:</b> Enter a stock symbol (e.g., RELIANCE, TCS, INFY).<br>
               <b>Step 2:</b> Select a strategy — 39 options across Technical (SMA Crossover, MACD, Supertrend, Bollinger, Breakout), Value (Low P/E, Deep Value, GARP), Quality (Piotroski, High ROE, Low Debt), Growth (EPS Growth, Revenue), and Hybrid (Growth+Breakout, Quality+MACD).<br>
               <b>Step 3:</b> Set the time period (start/end dates) and initial capital.<br>
@@ -3776,7 +3776,7 @@ function aiDrillStock(symbol) {
             </div>
           </div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Controls:</b> Type any stock symbol in the search box → Press Enter or click Load. Use the period buttons (1M, 3M, 6M, 1Y, 3Y, 5Y) to change the timeframe. Zoom with mouse scroll, pan by dragging, hover for crosshair with exact OHLCV values.
             </div>
           </div>
@@ -3824,7 +3824,7 @@ function aiDrillStock(symbol) {
             Paper Trading lets you simulate trades without risking real capital. Open BUY or SELL positions with entry price, quantity, stop-loss, and target — and track real-time P&L based on live market data. This is where you validate your screening and backtesting ideas in real-time.
           </div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Open a Trade:</b> Enter symbol, quantity, entry price, and optionally stop-loss and target. Choose BUY (long) or SELL (short). Click <b>OPEN TRADE</b>.<br>
               <b>Manage Positions:</b> All open positions show live P&L, gain %. Close any position with one click. Closed trades move to the trade log with final P&L recorded.<br>
               <b>From Screener/MTF:</b> You can also open paper trades directly from screener results — click the TRADE button on any stock row.
@@ -3846,7 +3846,7 @@ function aiDrillStock(symbol) {
             Forward Testing bridges the gap between backtesting and real trading. It runs your chosen strategy on the live market every day, auto-scans the Nifty 50/100/500 universe, generates signals with strength scores, and tracks performance with real equity curves — all without you placing a single manual trade.
           </div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Create a Test:</b> Name your test, select a strategy and stock universe (Nifty 50/100/500 or custom), set entry/exit rules, capital allocation, and sector caps.<br>
               <b>Monitor:</b> View active signals with strength scores, open positions with live P&L, and the trade log. The hit rate metric shows what percentage of generated signals were profitable.<br>
               <b>Iterate:</b> Run multiple forward tests with different strategies side by side. Compare hit rates and returns to find which strategies work best in current market conditions.
@@ -3869,7 +3869,7 @@ function aiDrillStock(symbol) {
           </div>
           <div style="font-size:14px;font-weight:700;color:var(--text1);margin-bottom:8px">📌 How to Use</div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Templates:</b> Choose from templates — Banking, IT, Pharma, Defence, Infrastructure, Auto, Chemical, Metal, Energy, FMCG, Realty, plus strategy-based portfolios (Momentum Leaders, Value Picks, Dividend Yield, etc.). Click a template to instantly create a portfolio with the recommended stocks.<br>
               <b>Custom Builder:</b> Name your portfolio, then add stocks manually by symbol. Set allocation weights. The builder shows real-time portfolio metrics as you add holdings.<br>
               <b>My Portfolios:</b> View all your saved portfolios with total return, individual holding performance, and one-click options to rebalance, add/remove stocks, or deploy to paper trades.
@@ -3891,7 +3891,7 @@ function aiDrillStock(symbol) {
             Your personal shortlist of stocks to monitor. Add from screener, charts, or manually. Shows live prices, day change, and key technicals at a glance. One-click access to full charts for any stock.
           </div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1)">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Add Stocks:</b> Type a symbol and click <b>+ ADD</b>. Or use the <b>+W</b> button from any screener result, MTF result, or trade.<br>
               <b>View:</b> Grid of cards showing stock name, current price, day change (green/red), and percentage change. Click any card to open its chart.<br>
               <b>Remove:</b> Hover any card and click the ✕ button to remove from watchlist.<br>
@@ -3915,7 +3915,7 @@ function aiDrillStock(symbol) {
             <div style="padding:12px;border:1px solid rgba(232,66,21,0.2);border-radius:6px;background:rgba(232,66,21,0.03)">
               <div style="font-weight:700;font-size:13px;color:var(--accent);margin-bottom:4px">☀ Morning Research Brief / 🌙 Market Wrap Up</div>
               <div style="font-size:12px;color:var(--text2);line-height:1.6">Click <b>"☀ MORNING BRIEF"</b> or <b>"🌙 MARKET WRAP UP"</b> to open the config panel. You can customise:</div>
-              <div style="font-size:11px;color:var(--text2);line-height:1.6;margin-top:6px;padding-left:12px">
+              <div style="font-size:13px;color:var(--text2);line-height:1.7;margin-top:6px;padding-left:12px">
                 • <b>Report Template:</b> Full Brief, Signals Only, Sector Rotation, Portfolio Review, Executive Summary, Advisory Call Sheet<br>
                 • <b>Firm Branding:</b> Upload logo, enter firm name, SEBI reg no, tagline — all saved for next time<br>
                 • <b>Section Picker:</b> Toggle 12 sections on/off — Sector Pulse, Strategy Signals, High Conviction, Portfolios, Open Trades, Forward Tests, Watchlist, India Market News, Sentiment Heatmap, Gainers/Losers, Day Summary, Advisory Calls<br>
@@ -3947,7 +3947,7 @@ function aiDrillStock(symbol) {
             Set up custom alerts to get notified when specific conditions are met — price crosses a level, volume spikes, or a strategy signal triggers. Never miss a trading opportunity.
           </div>
           <div style="padding:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg1);margin-bottom:10px">
-            <div style="font-size:12px;color:var(--text2);line-height:1.7">
+            <div style="font-size:14px;color:var(--text2);line-height:1.8">
               <b>Create Alert:</b> Enter stock symbol, choose alert type (Price Above, Price Below, Volume Spike, Strategy Signal), set the threshold value, and save.<br>
               <b>My Alerts:</b> View all active alerts with status (active/triggered). Toggle on/off or delete as needed.<br>
               <b>Notification History:</b> Log of all triggered alerts with timestamp and the condition that was met. The bell icon in the top navigation also shows recent alerts.
@@ -4007,7 +4007,7 @@ function aiDrillStock(symbol) {
               <div style="font-size:12px;color:var(--text2);line-height:1.65"><b>Relative Strength:</b> Shows how the stock performs vs NIFTY over 1m, 3m, 6m, 1y. Positive = outperforming. Look for consistently positive RS across timeframes.<br><b>Pivot Levels:</b> S2/S1/Pivot/R1/R2 — potential support and resistance zones for trading.</div>
             </div>
           </div>
-          <div style="margin-top:12px;padding:12px;border-radius:6px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+          <div style="margin-top:12px;padding:12px;border-radius:6px;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.2);font-size:14px;color:var(--text2);line-height:1.8">
             <b>💡 Example Workflow:</b> Search RELIANCE → Check Alpha Score (57 = Neutral) → See Momentum is 59 (decent) but SMA alignment shows 1 (bearish) → Assessment shows Value:60, Growth:35, Quality:30 → Patterns show Double Bottom forming → <b>Conclusion:</b> Stock has value characteristics but trend is weak. Wait for SMA alignment to improve before entry. Set alert at R1 pivot level.
           </div>
         </div>
@@ -4039,7 +4039,7 @@ function aiDrillStock(symbol) {
               • <b>Signal:</b> STRONG (>12%), GOOD (>8%), FAIR (>5%), AVOID (<-2%)
             </div>
           </div>
-          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:14px;color:var(--text2);line-height:1.8">
             <b>💡 Example:</b> RELIANCE Spot ₹1,413, Futures ₹1,421. Basis = ₹8 (0.57%). 25 days to expiry. Annualized = 8.3%. Lot size 250. You buy 250 shares in cash (₹3.53L) and sell 1 lot futures. At expiry, both converge. Gross profit: ₹2,000. After costs (~₹350): <b>Net ₹1,650</b>.
           </div>
         </div>
@@ -4067,7 +4067,7 @@ function aiDrillStock(symbol) {
               <b>Best Windows:</b> 09:15-10:00 (opening volatility) and 14:30-15:15 (closing rebalancing). Avoid 12:00-14:00 (low volume lunch period).
             </div>
           </div>
-          <div style="padding:10px;border-radius:6px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+          <div style="padding:10px;border-radius:6px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);font-size:14px;color:var(--text2);line-height:1.8">
             <b>⚠️ Warning:</b> Jobbing requires very fast execution, discipline, and experience. Transaction costs can quickly accumulate. Always paper trade for at least 2-4 weeks before attempting real jobbing. Use the <b>Calculator</b> tab to verify your expected daily P&L is positive after all costs.
           </div>
         </div>
@@ -4098,7 +4098,7 @@ function aiDrillStock(symbol) {
               <b>4.</b> Exit at target or stop — no exceptions. Discipline is everything in scalping.
             </div>
           </div>
-          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:14px;color:var(--text2);line-height:1.8">
             <b>💡 Example:</b> HDFCBANK showing BULLISH, Score 7.5, VWAP Dev +0.8%, Day Change +1.2%. Entry ₹1,655, Target ₹1,663 (+0.5%), Stop ₹1,650 (-0.3%). Lot 550. Potential profit: ₹4,400. Potential loss: ₹2,750. R:R = 1.6:1. Net after costs: ~₹4,305 win / ₹2,845 loss.
           </div>
         </div>
@@ -4144,7 +4144,7 @@ function aiDrillStock(symbol) {
               <b>How to Use:</b> Enter symbol → Review signals (each tagged BULLISH/BEARISH with strength) → Check detected patterns → Read the narrative for plain-English outlook → Use composite score for quick decision. Combine with AlphaView for full picture.
             </div>
           </div>
-          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:14px;color:var(--text2);line-height:1.8">
             <b>💡 Example:</b> INFY scan shows Score +42 (MILDLY BULLISH). 6 bullish signals (Price above 200 DMA, RSI at 58, MACD above signal, Supertrend bullish) vs 3 bearish (Stochastic overbought, near upper BB). Pattern detected: Ascending Triangle (bullish, reliability: moderate). Narrative: "INFY shows moderate bullish momentum with price consolidating in an ascending triangle pattern..."
           </div>
         </div>
@@ -4196,7 +4196,7 @@ function aiDrillStock(symbol) {
               • <b>Terminal Growth:</b> 3% (long-term GDP growth — what happens after year 10)
             </div>
           </div>
-          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:12px;color:var(--text2);line-height:1.7">
+          <div style="padding:10px;border-radius:6px;background:rgba(16,185,129,0.06);border:1px solid rgba(16,185,129,0.2);font-size:14px;color:var(--text2);line-height:1.8">
             <b>💡 Example:</b> RELIANCE: EPS ₹61.49, auto-detected growth 10%. EPS DCF intrinsic value: ₹1,800. FCF DCF: ₹1,650. Graham Number: ₹1,720. Average: ₹1,723. Current price: ₹1,413. Margin of Safety: +18%. <b>Verdict: UNDERVALUED.</b> This suggests RELIANCE may be trading below its fair value — but always verify assumptions and do additional research before acting.
           </div>
         </div>
