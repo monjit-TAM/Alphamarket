@@ -141,14 +141,17 @@ def _get_kite_headers():
 
 
 def _is_kite_connected():
-    """Check if Kite session is active. Auto-reloads from DB if token missing (multi-worker safe)."""
+    """Check if Kite session is active. Auto-reloads from DB if token missing or expired (multi-worker safe)."""
     if not _kite_store["access_token"]:
         _load_kite_token()  # Re-check DB — another worker may have set it
     if not _kite_store["access_token"]:
         return False
     if _kite_store["expires_at"] and datetime.now() > _kite_store["expires_at"]:
+        logger.info("Kite token expired in memory, attempting DB reload...")
         _kite_store["access_token"] = None
-        return False
+        _load_kite_token()  # Try DB — user may have re-logged
+        if not _kite_store["access_token"]:
+            return False
     return True
 
 
@@ -235,14 +238,18 @@ async def kite_status():
 # CASH-FUTURES SPREAD SCANNER
 # ══════════════════════════════════════════════════════════════════
 
-async def _fetch_kite_quotes(symbols: list) -> dict:
-    """Fetch LTP from Kite API for multiple instruments"""
-    import urllib.request
+async def _fetch_kite_quotes(symbols: list, _retry=False) -> dict:
+    """Fetch LTP from Kite API for multiple instruments.
+    On 403/401: invalidates in-memory token, reloads from DB, retries once.
+    This is the PERMANENT fix for multi-worker stale token issues.
+    """
+    import urllib.request, urllib.error
+    if not _is_kite_connected():
+        raise HTTPException(401, "Kite not connected. Please login via Settings.")
     headers = _get_kite_headers()
     if not headers:
         raise HTTPException(401, "Kite not connected. Please login via Settings.")
 
-    # Build instrument list: NSE:SYMBOL for cash, NFO:SYMBOL{EXPIRY}FUT for futures
     params = "&".join([f"i={s}" for s in symbols])
     url = f"https://api.kite.trade/quote/ltp?{params}"
 
@@ -252,6 +259,19 @@ async def _fetch_kite_quotes(symbols: list) -> dict:
         data = json.loads(resp.read().decode())
         if data.get("status") == "success":
             return data["data"]
+        return {}
+    except urllib.error.HTTPError as e:
+        if e.code in (403, 401) and not _retry:
+            logger.warning(f"Kite 403/401 — token likely stale in this worker. Reloading from DB...")
+            _kite_store["access_token"] = None  # Force clear
+            _load_kite_token()  # Reload from DB (another worker may have refreshed it)
+            if _kite_store["access_token"]:
+                logger.info("Kite token reloaded from DB, retrying...")
+                return await _fetch_kite_quotes(symbols, _retry=True)
+            else:
+                logger.error("Kite token reload failed — needs fresh login")
+                return {}
+        logger.error(f"Kite quote fetch error: HTTP {e.code} {e.reason}")
         return {}
     except Exception as e:
         logger.error(f"Kite quote fetch error: {e}")

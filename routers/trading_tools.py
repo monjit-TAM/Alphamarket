@@ -9,6 +9,20 @@ from core.trading_config import (FNO_LOT_SIZES, get_lot_size, get_sector,
     calculate_costs, check_position_risk, RISK_RULES, TRADING_WINDOWS, SECTOR_MAP)
 
 logger = logging.getLogger("dyor.trading")
+
+def _ist_now():
+    """Get current time in IST (UTC+5:30). Server runs UTC."""
+    from datetime import timezone, timedelta
+    return datetime.now(timezone(timedelta(hours=5, minutes=30)))
+
+def _is_market_open():
+    """Check if NSE market is open (9:15 AM - 3:30 PM IST, Mon-Fri)."""
+    n = _ist_now()
+    if n.weekday() >= 5: return False  # Weekend
+    h, m = n.hour, n.minute
+    if h < 9 or (h == 9 and m < 15): return False
+    if h > 15 or (h == 15 and m > 30): return False
+    return True
 router = APIRouter(prefix="/api/trading", tags=["Trading Tools"])
 
 from routers.arbitrage import (_kite_store, _is_kite_connected, _get_kite_headers,
@@ -30,17 +44,32 @@ async def jobbing_candidates(limit: int = 50):
         fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
     params = "&".join([f"i={s}" for s in cash_symbols + fut_symbols])
     url = f"https://api.kite.trade/quote/ohlc?{params}"
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        resp = urllib.request.urlopen(req, timeout=15)
-        data = json.loads(resp.read().decode())
-        if data.get("status") != "success":
-            raise HTTPException(500, "Failed to fetch quotes")
-        quotes = data["data"]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Data fetch error: {str(e)}")
+    import urllib.error
+    def _do_kite_fetch(url, headers, retry=False):
+        """Fetch with auto-retry on 403 (stale token in worker)."""
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            resp = urllib.request.urlopen(req, timeout=15)
+            data = json.loads(resp.read().decode())
+            if data.get("status") != "success":
+                raise HTTPException(500, "Failed to fetch quotes")
+            return data["data"]
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 401) and not retry:
+                logger.warning(f"Kite {e.code} in trading_tools — reloading token from DB...")
+                from routers.arbitrage import _load_kite_token, _kite_store
+                _kite_store["access_token"] = None
+                _load_kite_token()
+                new_headers = _get_kite_headers()
+                if new_headers:
+                    return _do_kite_fetch(url, new_headers, retry=True)
+            raise HTTPException(500, f"Data fetch error: HTTP {e.code}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Data fetch error: {str(e)}")
+
+    quotes = _do_kite_fetch(url, headers)
 
     candidates = []
     all_syms = list(FNO_UNIVERSE[:limit]) + list(INDEX_FNO.keys())
@@ -107,7 +136,7 @@ async def jobbing_candidates(limit: int = 50):
     candidates.sort(key=lambda x: x["score"], reverse=True)
     return {"candidates": candidates, "count": len(candidates),
             "timestamp": datetime.now().isoformat(),
-            "market_status": "OPEN" if 9 <= datetime.now().hour < 16 else "CLOSED"}
+            "market_status": "OPEN" if _is_market_open() else "CLOSED"}
 
 @router.get("/jobbing/calculator")
 async def jobbing_calc(price: float = 0, qty: int = 1, target_pct: float = 0.05,
@@ -159,17 +188,32 @@ async def scalping_candidates(limit: int = 50):
         fut_symbols.append(f"NFO:{idx_sym}{expiry_str}FUT")
     params = "&".join([f"i={s}" for s in cash_symbols + fut_symbols])
     url = f"https://api.kite.trade/quote/ohlc?{params}"
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        resp = urllib.request.urlopen(req, timeout=15)
-        data = json.loads(resp.read().decode())
-        if data.get("status") != "success":
-            raise HTTPException(500, "Failed to fetch quotes")
-        quotes = data["data"]
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(500, f"Data fetch error: {str(e)}")
+    import urllib.error
+    def _do_kite_fetch(url, headers, retry=False):
+        """Fetch with auto-retry on 403 (stale token in worker)."""
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            resp = urllib.request.urlopen(req, timeout=15)
+            data = json.loads(resp.read().decode())
+            if data.get("status") != "success":
+                raise HTTPException(500, "Failed to fetch quotes")
+            return data["data"]
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 401) and not retry:
+                logger.warning(f"Kite {e.code} in trading_tools — reloading token from DB...")
+                from routers.arbitrage import _load_kite_token, _kite_store
+                _kite_store["access_token"] = None
+                _load_kite_token()
+                new_headers = _get_kite_headers()
+                if new_headers:
+                    return _do_kite_fetch(url, new_headers, retry=True)
+            raise HTTPException(500, f"Data fetch error: HTTP {e.code}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(500, f"Data fetch error: {str(e)}")
+
+    quotes = _do_kite_fetch(url, headers)
 
     candidates = []
     all_syms = list(FNO_UNIVERSE[:limit]) + list(INDEX_FNO.keys())
@@ -258,7 +302,7 @@ async def scalping_candidates(limit: int = 50):
     candidates.sort(key=lambda x: x["score"], reverse=True)
     return {"candidates": candidates, "count": len(candidates),
             "timestamp": datetime.now().isoformat(),
-            "market_status": "OPEN" if 9 <= datetime.now().hour < 16 else "CLOSED"}
+            "market_status": "OPEN" if _is_market_open() else "CLOSED"}
 
 @router.get("/scalping/calculator")
 async def scalping_calc(price: float = 0, qty: int = 1, target_pct: float = 0.5,
@@ -317,10 +361,12 @@ async def risk_check(symbol: str, price: float, qty: int = 0, capital: float = 5
 @router.get("/trading-windows")
 async def trading_windows():
     """Get current trading window status"""
-    now = datetime.now()
-    current_time = now.strftime("%H:%M")
-    hour = now.hour
-    minute = now.minute
+    from datetime import timezone, timedelta as _td
+    IST = timezone(_td(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    current_time = now_ist.strftime("%H:%M")
+    hour = now_ist.hour
+    minute = now_ist.minute
 
     windows = TRADING_WINDOWS.copy()
     active_window = "CLOSED"
@@ -340,7 +386,7 @@ async def trading_windows():
         elif hour == 15:
             active_window = "CLOSING"
 
-    is_expiry = now.weekday() == 3  # Thursday
+    is_expiry = now_ist.weekday() == 3  # Thursday
     return {
         "current_time": current_time,
         "market_status": "OPEN" if 9 <= hour < 16 else "CLOSED",

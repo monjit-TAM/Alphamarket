@@ -4,6 +4,7 @@ Production Trading Configuration — Lot Sizes, Margins, Risk Rules
 
 # NSE F&O Lot Sizes (as of Mar 2026 — update quarterly)
 FNO_LOT_SIZES = {
+    "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25, "MIDCPNIFTY": 50,
     "RELIANCE": 250, "TCS": 175, "HDFCBANK": 550, "INFY": 300, "ICICIBANK": 700,
     "HINDUNILVR": 300, "ITC": 1600, "SBIN": 750, "BHARTIARTL": 475, "KOTAKBANK": 400,
     "LT": 150, "AXISBANK": 600, "BAJFINANCE": 125, "MARUTI": 50, "HCLTECH": 350,
