@@ -59,14 +59,14 @@ async def _get_stock(request: Request, symbol: str) -> dict:
 
 @router.get("/alphascore/info")
 async def alphascore_info():
-    """AlphaScore™ methodology — powers the 'i' info tooltip."""
+    """AlphaScore™ methodology — 5 dimensions, 40+ factors, grading system, and usage guide. Powers the ⓘ tooltip in DYOR frontend."""
     return ALPHASCORE_INFO
 
 
 @router.get("/alphascore/top")
 async def alphascore_top(request: Request, n: int = Query(20, ge=1, le=100),
                          sector: Optional[str] = None, cap: Optional[str] = None):
-    """Top N stocks by AlphaScore. Optional sector/cap filter."""
+    """Top N stocks ranked by AlphaScore™ (0-100 composite). Optional filters: sector (e.g. Energy, IT, Banking), cap (large/mid/small). Returns score, grade (A+ to F), signal, and 5 dimension breakdowns."""
     rc = await _get_redis(request)
     cache_key = f"alphascore_top_{n}_{sector}_{cap}"
     if rc:
@@ -90,7 +90,7 @@ async def alphascore_top(request: Request, n: int = Query(20, ge=1, le=100),
 
 @router.get("/alphascore/bulk")
 async def alphascore_bulk(request: Request):
-    """All 920 stocks ranked by AlphaScore."""
+    """All 920 NSE stocks ranked by AlphaScore™. Cached 30 min. Returns complete dimension breakdown (Technical, Fundamental, Ownership, Momentum, Risk-Alpha) for every stock."""
     rc = await _get_redis(request)
     if rc:
         cached = await rc.get("alphascore_bulk")
@@ -106,7 +106,7 @@ async def alphascore_bulk(request: Request):
 
 @router.get("/alphascore/{symbol}")
 async def alphascore_single(request: Request, symbol: str):
-    """AlphaScore for a single stock."""
+    """Compute AlphaScore™ for a single stock. Returns 0-100 score, grade (A+/A/B+/B/C/D/F), signal (STRONG_BUY to AVOID), and per-dimension scores."""
     data = await _get_stock(request, symbol)
     return compute_alphascore(symbol.upper(), data)
 
@@ -117,13 +117,13 @@ async def alphascore_single(request: Request, symbol: str):
 
 @router.get("/confluence/info")
 async def confluence_info():
-    """Confluence Engine™ methodology — powers the 'i' info tooltip."""
+    """Confluence Engine™ methodology — 22 signals, 16 backtested combinations, conviction levels, and usage guide."""
     return CONFLUENCE_INFO
 
 
 @router.get("/confluence/top")
 async def confluence_top(request: Request, n: int = Query(20, ge=1, le=100)):
-    """Top N stocks by confluence conviction."""
+    """Top N stocks by cross-signal conviction probability. Shows active signals, backtested combination match (hit rate, avg return, sample size), estimated return, holding period, and conviction level (VERY_HIGH to VERY_LOW)."""
     rc = await _get_redis(request)
     if rc:
         cached = await rc.get(f"confluence_top_{n}")
@@ -139,7 +139,7 @@ async def confluence_top(request: Request, n: int = Query(20, ge=1, le=100)):
 
 @router.get("/confluence/bulk")
 async def confluence_bulk(request: Request):
-    """All stocks with active confluence signals."""
+    """All stocks with 1+ active confluence signals. Sorted by probability descending. Each result includes signal details, category diversity, and backtested pattern match if available."""
     rc = await _get_redis(request)
     if rc:
         cached = await rc.get("confluence_bulk")
@@ -155,7 +155,7 @@ async def confluence_bulk(request: Request):
 
 @router.get("/confluence/{symbol}")
 async def confluence_single(request: Request, symbol: str):
-    """Confluence analysis for a single stock."""
+    """Full confluence analysis for a single stock. Detects all 22 signals, checks against 16 backtested combination patterns, computes conviction probability with category diversity bonus."""
     data = await _get_stock(request, symbol)
     return compute_confluence(symbol.upper(), data)
 
@@ -166,13 +166,13 @@ async def confluence_single(request: Request, symbol: str):
 
 @router.get("/smart-money/info")
 async def smart_money_info():
-    """Smart Money Flow™ methodology — powers the 'i' info tooltip."""
+    """Smart Money Flow™ methodology — 6 components (Accumulation, Minervini, Volume Quality, Fundamental, Momentum, Trend), verdicts, and usage guide."""
     return FLOW_SIGNALS_INFO
 
 
 @router.get("/smart-money/top")
 async def smart_money_top(request: Request, n: int = Query(20, ge=1, le=100)):
-    """Top N stocks by Smart Money Score."""
+    """Top N stocks by Smart Money Accumulation Score (0-100). Shows 6 component scores, human-readable positive signals and risk flags, verdict (STRONG_ACCUMULATION to STRONG_DISTRIBUTION)."""
     rc = await _get_redis(request)
     if rc:
         cached = await rc.get(f"smart_money_top_{n}")
@@ -188,7 +188,7 @@ async def smart_money_top(request: Request, n: int = Query(20, ge=1, le=100)):
 
 @router.get("/smart-money/bulk")
 async def smart_money_bulk(request: Request):
-    """All stocks ranked by Smart Money Score."""
+    """All 920 stocks ranked by Smart Money Flow™ score. Includes component breakdown, institutional signal narratives, and risk flags for each stock."""
     rc = await _get_redis(request)
     if rc:
         cached = await rc.get("smart_money_bulk")
@@ -204,7 +204,7 @@ async def smart_money_bulk(request: Request):
 
 @router.get("/smart-money/{symbol}")
 async def smart_money_single(request: Request, symbol: str):
-    """Smart Money Score for a single stock."""
+    """Smart Money Flow™ analysis for a single stock. Returns 0-100 score, 6 component scores, positive institutional signals, and risk flags with human-readable explanations."""
     data = await _get_stock(request, symbol)
     return compute_smart_money_score(symbol.upper(), data)
 
@@ -215,13 +215,13 @@ async def smart_money_single(request: Request, symbol: str):
 
 @router.get("/info")
 async def all_info():
-    """Combined info for all 3 engines."""
+    """Combined methodology info for all 3 engines — AlphaScore™, Confluence Engine™, and Smart Money Flow™. Used by frontend ⓘ info modals."""
     return {"alphascore": ALPHASCORE_INFO, "confluence": CONFLUENCE_INFO, "smart_money": FLOW_SIGNALS_INFO}
 
 
 @router.get("/dashboard")
 async def dashboard(request: Request, n: int = Query(10, ge=1, le=50)):
-    """Dashboard: top stocks across all 3 engines."""
+    """Alpha Intelligence Dashboard — top N stocks across all 3 engines in a single call. Ideal for overview screens and combined analysis."""
     universe = await _get_universe(request)
     return {
         "alphascore_top": compute_alphascore_bulk(universe)[:n],
@@ -232,7 +232,7 @@ async def dashboard(request: Request, n: int = Query(10, ge=1, le=50)):
 
 @router.get("/{symbol}")
 async def combined_single(request: Request, symbol: str):
-    """All 3 scores for one stock."""
+    """Combined Alpha Intelligence view for a single stock — AlphaScore™ + Confluence Engine™ + Smart Money Flow™ in one API call. The most comprehensive analysis endpoint."""
     data = await _get_stock(request, symbol)
     sym = symbol.upper()
     return {
