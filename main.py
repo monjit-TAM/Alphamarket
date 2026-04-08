@@ -95,6 +95,7 @@ from routers.upstox import router as upstox_router
 from routers.basket_publisher import router as basket_router
 from routers.options_backtest import router as options_bt_router
 from routers.alpha_intelligence import router as alpha_intel_router
+from alphascore import compute_alphascore
 
 app = FastAPI(
     root_path="/dyor",
@@ -9497,12 +9498,46 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     except:
         sentiment_rating = 50
 
-    # --- ALPHA SCORE (composite) ---
-    alpha_score = min(99, max(1, int(
-        momentum_rating * 0.25 + fundamentals_rating * 0.25 +
-        accumulation_rating * 0.20 + trend_rating * 0.15 +
-        sentiment_rating * 0.15
-    )))
+    # --- ALPHA SCORE™ (unified across entire platform) ---
+    try:
+        _sma20 = float(df["sma_20"].iloc[-1]) if "sma_20" in df.columns else price
+        _sma50 = float(df["sma_50"].iloc[-1]) if "sma_50" in df.columns else price
+        _sma200 = float(df["sma_200"].iloc[-1]) if "sma_200" in df.columns and len(df) >= 200 else price
+        _av_data = {
+            "rsi": rsi, "macd_hist": macd - macd_signal, "macd_cross_up": macd > macd_signal,
+            "sma_50": _sma50, "sma_200": _sma200, "above_50dma": above_50, "above_200dma": above_200,
+            "above_supertrend": supertrend_bullish, "vol_ratio": vol_ratio,
+            "pct_from_52h": round((price / float(h.max()) - 1) * 100, 1) if float(h.max()) > 0 else -20,
+            "pct_from_52l": round((price / float(l.min()) - 1) * 100, 1) if float(l.min()) > 0 else 0,
+            "bb_upper": bb_upper, "bb_lower": bb_lower,
+            "bb_width": round((bb_upper - bb_lower) / _sma20 * 100, 2) if _sma20 > 0 else 5,
+            "gap_pct": 0,
+            "price": price, "close": price,
+            "pe_ratio": sf(fund.get("pe_trailing") or fund.get("pe_forward") or fund.get("pe_ratio"), 0),
+            "roe": sf(fund.get("roe"), 0) * 100 if 0 < sf(fund.get("roe"), 0) < 1 else sf(fund.get("roe"), 0),
+            "debt_equity": sf(fund.get("debt_equity"), 0),
+            "dividend_yield": sf(fund.get("dividend_yield"), 0),
+            "market_cap": sf(fund.get("market_cap") or fund.get("marketCap"), 0),
+            "accumulation_score": accumulation_rating / 10.0,
+            "momentum_score": momentum_rating / 10.0,
+            "fundamental_score": fundamentals_rating / 10.0,
+            "trend_score": trend_rating / 10.0,
+            "sentiment_score": sentiment_rating / 10.0,
+            "minervini_score": sum([above_50, above_200, price > _sma20, _sma50 > _sma200, rsi > 40, vol_ratio > 0.8, above_20, supertrend_bullish]),
+            "rs_1m": 0, "rs_3m": 0,
+            "wk_change": round((price / float(c.iloc[-5]) - 1) * 100, 2) if len(c) > 5 else 0,
+            "change_pct": round((price - prev_close) / prev_close * 100, 2) if prev_close else 0,
+            "alpha_rating": 0,
+        }
+        _as_result = compute_alphascore(sym, _av_data)
+        alpha_score = int(_as_result["alphascore"])
+    except Exception as _e:
+        logger.warning(f"AlphaScore™ fallback for {sym}: {_e}")
+        alpha_score = min(99, max(1, int(
+            momentum_rating * 0.25 + fundamentals_rating * 0.25 +
+            accumulation_rating * 0.20 + trend_rating * 0.15 +
+            sentiment_rating * 0.15
+        )))
 
     # Keep backward compat vars
     eps_growth = eps_growth_val
