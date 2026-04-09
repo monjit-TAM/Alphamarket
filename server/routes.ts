@@ -6783,7 +6783,7 @@ export async function registerRoutes(
       const apiKey = "amk_live_" + crypto.randomBytes(24).toString("hex");
       const apiSecret = crypto.randomBytes(32).toString("hex");
       const result = await db.execute(sql`INSERT INTO broker_api_keys (broker_name, api_key, api_secret, contact_email, contact_name, permissions, rate_limit, ip_whitelist, webhook_url, webhook_events)
-        VALUES (\${brokerName}, \${apiKey}, \${apiSecret}, \${contactEmail||null}, \${contactName||null}, \${permissions||['read']}, \${rateLimit||100}, \${ipWhitelist||null}, \${webhookUrl||null}, \${webhookEvents||null})
+        VALUES (${brokerName}, ${apiKey}, ${apiSecret}, ${contactEmail||null}, ${contactName||null}, ${permissions||['read']}, ${rateLimit||100}, ${ipWhitelist||null}, ${webhookUrl||null}, ${webhookEvents||null})
         RETURNING *`);
       res.status(201).json({...result.rows[0], api_key: apiKey, api_secret: apiSecret});
     } catch(err:any){res.status(500).send(err.message);}
@@ -6813,14 +6813,14 @@ export async function registerRoutes(
   app.put("/api/admin/pull-api/brokers/:id/advisors", requireAdmin, async (req, res) => {
     try {
       const { advisorIds } = req.body;
-      await db.execute(sql`UPDATE broker_api_keys SET allowed_advisors=\${advisorIds||null} WHERE id=\${req.params.id}`);
+      await db.execute(sql`UPDATE broker_api_keys SET allowed_advisors=${advisorIds||null} WHERE id=${req.params.id}`);
       res.json({status:"updated"});
     } catch(err:any){res.status(500).send(err.message);}
   });
 
   app.get("/api/admin/pull-api/brokers/:id/advisors", requireAdmin, async (req, res) => {
     try {
-      const key = await db.execute(sql`SELECT allowed_advisors FROM broker_api_keys WHERE id=\${req.params.id}`);
+      const key = await db.execute(sql`SELECT allowed_advisors FROM broker_api_keys WHERE id=${req.params.id}`);
       const allowed = key.rows[0]?.allowed_advisors || [];
       const advisors = await storage.getAdvisors();
       const mapped = advisors.filter((a:any) => a.isApproved).map((a:any) => ({
@@ -6834,7 +6834,7 @@ export async function registerRoutes(
   app.get("/api/admin/pull-api/brokers/:id/logs", requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(parseInt(req.query.limit as string)||50, 200);
-      const logs = await db.execute(sql`SELECT * FROM broker_api_logs WHERE api_key_id=\${req.params.id} ORDER BY created_at DESC LIMIT \${limit}`);
+      const logs = await db.execute(sql`SELECT * FROM broker_api_logs WHERE api_key_id=${req.params.id} ORDER BY created_at DESC LIMIT ${limit}`);
       res.json(logs.rows);
     } catch(err:any){res.status(500).send(err.message);}
   });
@@ -6842,7 +6842,7 @@ export async function registerRoutes(
   app.get("/api/admin/pull-api/brokers/:id/webhook-logs", requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(parseInt(req.query.limit as string)||50, 200);
-      const logs = await db.execute(sql`SELECT * FROM broker_webhook_logs WHERE api_key_id=\${req.params.id} ORDER BY created_at DESC LIMIT \${limit}`);
+      const logs = await db.execute(sql`SELECT * FROM broker_webhook_logs WHERE api_key_id=${req.params.id} ORDER BY created_at DESC LIMIT ${limit}`);
       res.json(logs.rows);
     } catch(err:any){res.status(500).send(err.message);}
   });
@@ -6860,7 +6860,7 @@ export async function registerRoutes(
 
   app.delete("/api/admin/pull-api/brokers/:id", requireAdmin, async (req, res) => {
     try {
-      await db.execute(sql`DELETE FROM broker_api_keys WHERE id=\${req.params.id}`);
+      await db.execute(sql`DELETE FROM broker_api_keys WHERE id=${req.params.id}`);
       res.json({status:"deleted"});
     } catch(err:any){res.status(500).send(err.message);}
   });
