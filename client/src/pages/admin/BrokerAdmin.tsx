@@ -43,6 +43,26 @@ export default function BrokerAdmin(){
   const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null);
   const [dashboard,setDashboard]=useState<any>(null);
   const [newB,setNewB]=useState({name:"",brokerType:"XTS",baseUrl:"",vendorCode:"",vendorKey:"",notes:""});
+  const [mode,setMode]=useState<"xts"|"pullapi">("xts");
+  const [pullBrokers,setPullBrokers]=useState<any[]>([]);
+  const [pullSelected,setPullSelected]=useState<any>(null);
+  const [pullTab,setPullTab]=useState<"advisors"|"apilog"|"webhooklog"|"settings">("advisors");
+  const [pullAdvisors,setPullAdvisors]=useState<any[]>([]);
+  const [pullApiLogs,setPullApiLogs]=useState<any[]>([]);
+  const [pullWebhookLogs,setPullWebhookLogs]=useState<any[]>([]);
+  const [pullDash,setPullDash]=useState<any>(null);
+  const [showAddPull,setShowAddPull]=useState(false);
+  const [newPull,setNewPull]=useState({brokerName:"",contactEmail:"",contactName:"",webhookUrl:"",rateLimit:"100",notes:""});
+  const [pullLoading,setPullLoading]=useState(false);
+  const [showSecret,setShowSecret]=useState<any>(null);
+  const loadPull=async()=>{try{const[b,d]=await Promise.all([api("GET","/api/admin/pull-api/brokers"),api("GET","/api/admin/pull-api/dashboard")]);setPullBrokers(b);setPullDash(d);if(pullSelected){const u=b.find((x:any)=>x.id===pullSelected.id);if(u)setPullSelected(u);}}catch(e:any){showToast(e.message,false);}};
+  const loadPullTab=async()=>{if(!pullSelected)return;setPullLoading(true);try{if(pullTab==="advisors")setPullAdvisors(await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/advisors"));else if(pullTab==="apilog")setPullApiLogs(await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/logs"));else if(pullTab==="webhooklog")setPullWebhookLogs(await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/webhook-logs"));}catch(e:any){showToast(e.message,false);}setPullLoading(false);};
+  useEffect(()=>{if(mode==="pullapi")loadPull();},[mode]);
+  useEffect(()=>{if(mode==="pullapi"&&pullSelected)loadPullTab();},[pullSelected,pullTab]);
+  const addPullBroker=async()=>{setSaving(true);try{const r=await api("POST","/api/admin/pull-api/brokers",{brokerName:newPull.brokerName,contactEmail:newPull.contactEmail||undefined,contactName:newPull.contactName||undefined,webhookUrl:newPull.webhookUrl||undefined,rateLimit:parseInt(newPull.rateLimit)||100,permissions:["read"],notes:newPull.notes||undefined});setShowSecret(r);setShowAddPull(false);setNewPull({brokerName:"",contactEmail:"",contactName:"",webhookUrl:"",rateLimit:"100",notes:""});loadPull();showToast("Broker added — save the API credentials!");}catch(e:any){showToast(e.message,false);}setSaving(false);};
+  const togglePullBroker=async(b:any)=>{try{await api("PATCH","/api/admin/pull-api/brokers/"+b.id,{isActive:!b.is_active});showToast(b.broker_name+" "+(b.is_active?"disabled":"enabled"));loadPull();}catch(e:any){showToast(e.message,false);}};
+  const togglePullAdvisor=async(a:any)=>{if(!pullSelected)return;try{const curr=pullSelected.allowed_advisors||[];const newList=a.enabled?curr.filter((id:string)=>id!==a.id):[...curr,a.id];await api("PUT","/api/admin/pull-api/brokers/"+pullSelected.id+"/advisors",{advisorIds:newList.length>0?newList:[]});loadPullTab();loadPull();}catch(e:any){showToast(e.message,false);}};
+  const savePullSettings=async()=>{if(!pullSelected)return;setSaving(true);try{await api("PATCH","/api/admin/pull-api/brokers/"+pullSelected.id,{brokerName:pullSelected.broker_name,webhookUrl:pullSelected.webhook_url,rateLimit:pullSelected.rate_limit,contactEmail:pullSelected.contact_email,notes:pullSelected.notes});showToast("Saved");loadPull();}catch(e:any){showToast(e.message,false);}setSaving(false);};
   const [editS,setEditS]=useState<Partial<BrokerConnection>>({});
   const showToast=(msg:string,ok=true)=>{setToast({msg,ok});setTimeout(()=>setToast(null),3500);};
   const loadBrokers=useCallback(async()=>{try{const[data,dash]=await Promise.all([api("GET","/api/admin/broker-connections"),api("GET","/api/admin/xts-dashboard")]);setBrokers(data);setDashboard(dash);if(selected){const u=data.find((b:BrokerConnection)=>b.id===selected.id);if(u)setSelected(u);}}catch(e:any){showToast(e.message,false);}},[selected]);
@@ -64,12 +84,87 @@ export default function BrokerAdmin(){
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}`}</style>
       {toast&&<div style={{position:"fixed",top:20,right:20,zIndex:1000,background:toast.ok?C.green:C.red,color:"#fff",padding:"10px 18px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>{toast.msg}</div>}
       <div style={{background:C.dark,padding:"14px 28px",display:"flex",alignItems:"center",gap:16}}>
-        <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,color:"#fff"}}>Broker Integrations</div><div style={{fontSize:11,color:"#9CA3AF",marginTop:2}}>XTS Symphony · Advisory Publishing Control</div></div>
+        <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,color:"#fff"}}>Broker Integrations</div><div style={{display:"flex",gap:0,marginTop:6}}>{(["xts","pullapi"] as const).map(m=>(<div key={m} onClick={()=>{setMode(m);setSelected(null);setPullSelected(null);}} style={{padding:"4px 14px",fontSize:11,fontWeight:mode===m?700:400,color:mode===m?"#fff":"#9CA3AF",borderBottom:mode===m?"2px solid #fff":"2px solid transparent",cursor:"pointer"}}>{m==="xts"?"XTS Push Brokers":"Pull API Brokers"}</div>))}</div></div>
         {dashboard&&<div style={{display:"flex",gap:20}}>{[["Active",`${dashboard.brokers?.enabled||0}/${dashboard.brokers?.total||0}`,C.green],["Published 24h",dashboard.publishing?.success_24h||0,C.green],["Errors 24h",dashboard.publishing?.error_24h||0,(dashboard.publishing?.error_24h||0)>0?C.red:C.green]].map(([l,v,c])=>(<div key={l as string} style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:700,color:c as string}}>{v as string}</div><div style={{fontSize:10,color:"#9CA3AF"}}>{l as string}</div></div>))}</div>}
-        {btn("+ Add Broker",()=>setShowAdd(true),"secondary")}
+        {mode==="xts"?btn("+ Add Broker",()=>setShowAdd(true),"secondary"):btn("+ Add Pull Broker",()=>setShowAddPull(true),"secondary")}
       </div>
       {showAdd&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{background:C.panel,borderRadius:12,padding:28,width:480}}><div style={{fontSize:16,fontWeight:700,marginBottom:20}}>Add Broker Connection</div>{inp("Name",newB.name,v=>setNewB(p=>({...p,name:v})),"text","XTS Symphony Fintech")}{inp("Base URL",newB.baseUrl,v=>setNewB(p=>({...p,baseUrl:v})),"text","https://api.symphonyfintech.in")}{inp("Vendor Code",newB.vendorCode,v=>setNewB(p=>({...p,vendorCode:v})))}{inp("Vendor Key",newB.vendorKey,v=>setNewB(p=>({...p,vendorKey:v})),"password")}{inp("Notes",newB.notes,v=>setNewB(p=>({...p,notes:v})))}<div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>{btn("Cancel",()=>setShowAdd(false),"ghost")}{btn("Add",addBroker,"primary",saving||!newB.name||!newB.baseUrl)}</div></div></div>}
-      <div style={{display:"flex",height:"calc(100vh - 57px)"}}>
+      {showAddPull&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{background:C.panel,borderRadius:12,padding:28,width:480}}><div style={{fontSize:16,fontWeight:700,marginBottom:20}}>Add Pull API Broker</div>{inp("Broker Name",newPull.brokerName,v=>setNewPull(p=>({...p,brokerName:v})),"text","Upstox / Zerodha / etc")}{inp("Contact Email",newPull.contactEmail,v=>setNewPull(p=>({...p,contactEmail:v})),"email")}{inp("Contact Person",newPull.contactName,v=>setNewPull(p=>({...p,contactName:v})))}{inp("Webhook URL (optional)",newPull.webhookUrl,v=>setNewPull(p=>({...p,webhookUrl:v})),"text","https://broker.com/webhook")}{inp("Rate Limit (req/min)",newPull.rateLimit,v=>setNewPull(p=>({...p,rateLimit:v})),"number")}{inp("Notes",newPull.notes,v=>setNewPull(p=>({...p,notes:v})))}<div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>{btn("Cancel",()=>setShowAddPull(false),"ghost")}{btn("Create",addPullBroker,"primary",saving||!newPull.brokerName)}</div></div></div>}
+      {showSecret&&<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{background:C.panel,borderRadius:12,padding:28,width:560}}><div style={{fontSize:16,fontWeight:700,marginBottom:8,color:C.green}}>✅ Broker API Key Created</div><div style={{fontSize:12,color:C.red,marginBottom:16,fontWeight:600}}>Save these credentials now — the secret will not be shown again!</div><div style={{background:C.bg,padding:16,borderRadius:8,marginBottom:12,fontFamily:"monospace",fontSize:13}}><div style={{marginBottom:8}}><span style={{color:C.muted}}>API Key:</span><br/><span style={{fontWeight:700,wordBreak:"break-all" as any}}>{showSecret.api_key}</span></div><div><span style={{color:C.muted}}>API Secret:</span><br/><span style={{fontWeight:700,wordBreak:"break-all" as any}}>{showSecret.api_secret}</span></div></div><div style={{fontSize:11,color:C.muted,marginBottom:16}}>Swagger Docs: https://alphamarket.co.in/api/broker-docs</div>{btn("Done",()=>setShowSecret(null),"primary")}</div></div>}
+      {mode==="pullapi"?(<div style={{display:"flex",height:"calc(100vh - 57px)"}}>
+        <div style={{width:280,background:C.panel,borderRight:"1px solid "+C.border,overflowY:"auto"}}>
+          <div style={{padding:"14px 16px",fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,borderBottom:"1px solid "+C.border}}>PULL API BROKERS</div>
+          {pullBrokers.length===0&&<div style={{padding:24,textAlign:"center",color:C.muted,fontSize:13}}>No pull API brokers yet</div>}
+          {pullBrokers.map((b:any)=>(<div key={b.id} onClick={()=>{setPullSelected(b);setPullTab("advisors");}} style={{padding:"14px 16px",cursor:"pointer",borderBottom:"1px solid "+C.border,background:pullSelected?.id===b.id?C.blueBg:"transparent",borderLeft:pullSelected?.id===b.id?"3px solid "+C.blue:"3px solid transparent"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div style={{flex:1,fontWeight:600,fontSize:13}}>{b.broker_name}</div><Toggle checked={b.is_active} onChange={()=>togglePullBroker(b)}/></div>
+            <div style={{fontSize:11,color:C.muted,marginBottom:4}}>{b.contact_email||"No contact"}</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap" as any}}><Badge label={b.is_active?"Active":"Off"} color={b.is_active?C.green:C.muted} bg={b.is_active?C.greenBg:C.bg}/>{b.webhook_url&&<Badge label="Webhook" color={C.blue} bg={C.blueBg}/>}</div>
+            <div style={{display:"flex",gap:12,marginTop:6,fontSize:11,color:C.muted}}><span>{b.requests_24h||0} reqs/24h</span><span>{b.webhooks_24h||0} hooks</span>{(b.webhook_errors_24h||0)>0&&<span style={{color:C.red}}>{b.webhook_errors_24h} errors</span>}</div>
+          </div>))}
+        </div>
+        {!pullSelected?(<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,fontSize:14}}>Select a broker</div>):(
+          <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            <div style={{background:C.panel,borderBottom:"1px solid "+C.border,padding:"16px 24px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:16}}>
+                <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700}}>{pullSelected.broker_name}</div><div style={{fontSize:12,color:C.muted,marginTop:2}}>API Key: {pullSelected.api_key?.slice(0,20)}... · Rate: {pullSelected.rate_limit}/min</div></div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:12,color:C.muted}}>Active</span><Toggle checked={pullSelected.is_active} onChange={()=>togglePullBroker(pullSelected)}/></div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginTop:16}}>
+                <Stat label="API Reqs (24h)" value={pullSelected.requests_24h||0}/>
+                <Stat label="Webhooks Sent" value={pullSelected.webhooks_24h||0} color={C.green}/>
+                <Stat label="Webhook Errors" value={pullSelected.webhook_errors_24h||0} color={(pullSelected.webhook_errors_24h||0)>0?C.red:C.muted}/>
+                <Stat label="Rate Limit" value={pullSelected.rate_limit+"/min"}/>
+                <Stat label="Advisors" value={(pullSelected.allowed_advisors||[]).length||"All"}/>
+              </div>
+              {pullSelected.webhook_url&&<div style={{marginTop:8,fontSize:11,color:C.muted}}>Webhook: <span style={{color:C.blue}}>{pullSelected.webhook_url}</span></div>}
+              {pullSelected.last_used_at&&<div style={{fontSize:11,color:C.muted,marginTop:2}}>Last used: {fmt(pullSelected.last_used_at)}</div>}
+            </div>
+            <div style={{background:C.panel,borderBottom:"1px solid "+C.border,display:"flex",padding:"0 24px"}}>
+              {(["advisors","apilog","webhooklog","settings"] as const).map(t=>(<div key={t} onClick={()=>setPullTab(t)} style={{padding:"12px 16px",fontSize:13,fontWeight:pullTab===t?600:400,color:pullTab===t?C.blue:C.muted,borderBottom:pullTab===t?"2px solid "+C.blue:"2px solid transparent",cursor:"pointer"}}>{t==="apilog"?"API Logs":t==="webhooklog"?"Webhook Logs":t.charAt(0).toUpperCase()+t.slice(1)}</div>))}
+            </div>
+            <div style={{flex:1,overflowY:"auto",padding:24}}>
+              {pullLoading&&<div style={{color:C.muted,fontSize:13}}>Loading...</div>}
+              {!pullLoading&&pullTab==="advisors"&&(<div>
+                <div style={{marginBottom:16,fontSize:13,color:C.muted}}>Toggle advisors to control whose calls this broker receives. When no advisors are selected, all advisors' calls are accessible.</div>
+                {pullAdvisors.map((a:any)=>(<div key={a.id} style={{background:C.panel,border:"1px solid "+C.border,borderRadius:8,padding:"12px 16px",marginBottom:8,display:"flex",alignItems:"center",gap:12,opacity:a.enabled?1:0.6}}>
+                  <Toggle checked={a.enabled} onChange={()=>togglePullAdvisor(a)}/>
+                  <div style={{flex:1}}><div style={{fontWeight:600,fontSize:13}}>{a.companyName||a.username}</div><div style={{fontSize:11,color:C.muted}}>{a.email}</div></div>
+                  {a.isApproved&&<Badge label="SEBI Approved" color={C.green} bg={C.greenBg}/>}
+                </div>))}
+              </div>)}
+              {!pullLoading&&pullTab==="apilog"&&(<div>
+                <div style={{marginBottom:12,fontSize:12,color:C.muted}}>Last 50 API requests from this broker</div>
+                {pullApiLogs.length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:40}}>No API requests yet</div>:(
+                  <div style={{background:C.panel,border:"1px solid "+C.border,borderRadius:8,overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead><tr style={{background:C.bg}}>{["Time","Method","Path","Status","Time(ms)","IP"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontWeight:600,color:C.muted,fontSize:11,borderBottom:"1px solid "+C.border}}>{h}</th>)}</tr></thead>
+                      <tbody>{pullApiLogs.map((l:any,i:number)=>(<tr key={l.id||i} style={{background:i%2===0?C.panel:C.bg}}><td style={{padding:"8px 12px",color:C.muted,whiteSpace:"nowrap"}}>{fmt(l.created_at)}</td><td style={{padding:"8px 12px",fontWeight:600}}>{l.method}</td><td style={{padding:"8px 12px",fontFamily:"monospace",fontSize:11}}>{l.path}</td><td style={{padding:"8px 12px"}}><Badge label={String(l.status_code)} color={l.status_code<400?C.green:C.red} bg={l.status_code<400?C.greenBg:C.redBg}/></td><td style={{padding:"8px 12px"}}>{l.response_time_ms}ms</td><td style={{padding:"8px 12px",fontSize:11,color:C.muted}}>{l.ip_address}</td></tr>))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>)}
+              {!pullLoading&&pullTab==="webhooklog"&&(<div>
+                <div style={{marginBottom:12,fontSize:12,color:C.muted}}>Last 50 webhook deliveries to this broker</div>
+                {pullWebhookLogs.length===0?<div style={{color:C.muted,fontSize:13,textAlign:"center",padding:40}}>No webhooks sent yet</div>:(
+                  <div style={{background:C.panel,border:"1px solid "+C.border,borderRadius:8,overflow:"hidden"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+                      <thead><tr style={{background:C.bg}}>{["Time","Event","Status","Response","Attempt","Error"].map(h=><th key={h} style={{padding:"10px 12px",textAlign:"left",fontWeight:600,color:C.muted,fontSize:11,borderBottom:"1px solid "+C.border}}>{h}</th>)}</tr></thead>
+                      <tbody>{pullWebhookLogs.map((l:any,i:number)=>(<tr key={l.id||i} style={{background:i%2===0?C.panel:C.bg}}><td style={{padding:"8px 12px",color:C.muted,whiteSpace:"nowrap"}}>{fmt(l.created_at)}</td><td style={{padding:"8px 12px",fontWeight:500}}>{l.event}</td><td style={{padding:"8px 12px"}}><Badge label={l.delivered?"Delivered":"Failed"} color={l.delivered?C.green:C.red} bg={l.delivered?C.greenBg:C.redBg}/></td><td style={{padding:"8px 12px",fontSize:11}}>{l.status_code||"—"}</td><td style={{padding:"8px 12px",textAlign:"center"}}>{l.attempt}</td><td style={{padding:"8px 12px",fontSize:10,color:C.red,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis"}}>{l.error_message||"—"}</td></tr>))}</tbody>
+                    </table>
+                  </div>
+                )}
+              </div>)}
+              {!pullLoading&&pullTab==="settings"&&(<div style={{maxWidth:520}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.muted,letterSpacing:1,textTransform:"uppercase" as any,marginBottom:12}}>Broker Settings</div>
+                {inp("Broker Name",pullSelected.broker_name||"",v=>setPullSelected((p:any)=>({...p,broker_name:v})))}{inp("Contact Email",pullSelected.contact_email||"",v=>setPullSelected((p:any)=>({...p,contact_email:v})),"email")}{inp("Webhook URL",pullSelected.webhook_url||"",v=>setPullSelected((p:any)=>({...p,webhook_url:v})),"text","https://broker.com/webhook")}{inp("Rate Limit (req/min)",String(pullSelected.rate_limit||100),v=>setPullSelected((p:any)=>({...p,rate_limit:parseInt(v)||100})),"number")}{inp("Notes",pullSelected.notes||"",v=>setPullSelected((p:any)=>({...p,notes:v})))}
+                <div style={{background:C.bg,padding:14,borderRadius:8,marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6}}>API Credentials</div><div style={{fontFamily:"monospace",fontSize:12,wordBreak:"break-all" as any}}><div>Key: {pullSelected.api_key}</div></div><div style={{fontSize:11,color:C.muted,marginTop:4}}>Secret is hidden after creation. Create a new key if needed.</div></div>
+                <div style={{background:C.bg,padding:14,borderRadius:8,marginBottom:16}}><div style={{fontSize:12,fontWeight:600,color:C.muted,marginBottom:6}}>API Documentation</div><a href="/api/broker-docs" target="_blank" style={{color:C.blue,fontSize:13}}>Open Swagger UI → /api/broker-docs</a></div>
+                <div style={{display:"flex",gap:10}}>{btn(saving?"Saving...":"Save Settings",savePullSettings,"primary",saving)}</div>
+              </div>)}
+            </div>
+          </div>
+        )}
+      </div>):(<div style={{display:"flex",height:"calc(100vh - 57px)"}}>
         <div style={{width:280,background:C.panel,borderRight:`1px solid ${C.border}`,overflowY:"auto"}}>
           <div style={{padding:"14px 16px",fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,borderBottom:`1px solid ${C.border}`}}>BROKER CONNECTIONS</div>
           {brokers.length===0&&<div style={{padding:24,textAlign:"center",color:C.muted,fontSize:13}}>No connections yet</div>}
@@ -152,6 +247,7 @@ export default function BrokerAdmin(){
           </div>
         )}
       </div>
+    </div>)}
     </div>
   );
 }

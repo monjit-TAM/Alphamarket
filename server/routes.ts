@@ -6763,6 +6763,108 @@ export async function registerRoutes(
     } catch(err:any){res.status(500).send(err.message);}
   });
 
+  // ═══ PULL API BROKER ADMIN ROUTES ═══
+  app.get("/api/admin/pull-api/brokers", requireAdmin, async (_req, res) => {
+    try {
+      const keys = await db.execute(sql`SELECT k.*, 
+        (SELECT COUNT(*)::int FROM broker_api_logs WHERE api_key_id=k.id AND created_at > NOW()-INTERVAL '24 hours') as requests_24h,
+        (SELECT COUNT(*)::int FROM broker_webhook_logs WHERE api_key_id=k.id AND created_at > NOW()-INTERVAL '24 hours' AND delivered=true) as webhooks_24h,
+        (SELECT COUNT(*)::int FROM broker_webhook_logs WHERE api_key_id=k.id AND created_at > NOW()-INTERVAL '24 hours' AND delivered=false) as webhook_errors_24h
+        FROM broker_api_keys k ORDER BY k.created_at DESC`);
+      res.json(keys.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.post("/api/admin/pull-api/brokers", requireAdmin, async (req, res) => {
+    try {
+      const { brokerName, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes } = req.body;
+      if (!brokerName) return res.status(400).send("brokerName required");
+      const crypto = require("crypto");
+      const apiKey = "amk_live_" + crypto.randomBytes(24).toString("hex");
+      const apiSecret = crypto.randomBytes(32).toString("hex");
+      const result = await db.execute(sql`INSERT INTO broker_api_keys (broker_name, api_key, api_secret, contact_email, contact_name, permissions, rate_limit, ip_whitelist, webhook_url, webhook_events)
+        VALUES (\${brokerName}, \${apiKey}, \${apiSecret}, \${contactEmail||null}, \${contactName||null}, \${permissions||['read']}, \${rateLimit||100}, \${ipWhitelist||null}, \${webhookUrl||null}, \${webhookEvents||null})
+        RETURNING *`);
+      res.status(201).json({...result.rows[0], api_key: apiKey, api_secret: apiSecret});
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.patch("/api/admin/pull-api/brokers/:id", requireAdmin, async (req, res) => {
+    try {
+      const { brokerName, isActive, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes } = req.body;
+      const sets: string[] = [];
+      const vals: any[] = [];
+      if (brokerName !== undefined) { sets.push("broker_name=$" + (vals.length+1)); vals.push(brokerName); }
+      if (isActive !== undefined) { sets.push("is_active=$" + (vals.length+1)); vals.push(isActive); }
+      if (contactEmail !== undefined) { sets.push("contact_email=$" + (vals.length+1)); vals.push(contactEmail); }
+      if (contactName !== undefined) { sets.push("contact_name=$" + (vals.length+1)); vals.push(contactName); }
+      if (permissions !== undefined) { sets.push("permissions=$" + (vals.length+1)); vals.push(permissions); }
+      if (rateLimit !== undefined) { sets.push("rate_limit=$" + (vals.length+1)); vals.push(rateLimit); }
+      if (webhookUrl !== undefined) { sets.push("webhook_url=$" + (vals.length+1)); vals.push(webhookUrl); }
+      if (webhookEvents !== undefined) { sets.push("webhook_events=$" + (vals.length+1)); vals.push(webhookEvents); }
+      if (notes !== undefined) { sets.push("notes=$" + (vals.length+1)); vals.push(notes); }
+      if (sets.length === 0) return res.json({status:"no changes"});
+      vals.push(req.params.id);
+      await db.execute({text: "UPDATE broker_api_keys SET " + sets.join(",") + " WHERE id=$" + vals.length, values: vals} as any);
+      res.json({status:"updated"});
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.put("/api/admin/pull-api/brokers/:id/advisors", requireAdmin, async (req, res) => {
+    try {
+      const { advisorIds } = req.body;
+      await db.execute(sql`UPDATE broker_api_keys SET allowed_advisors=\${advisorIds||null} WHERE id=\${req.params.id}`);
+      res.json({status:"updated"});
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.get("/api/admin/pull-api/brokers/:id/advisors", requireAdmin, async (req, res) => {
+    try {
+      const key = await db.execute(sql`SELECT allowed_advisors FROM broker_api_keys WHERE id=\${req.params.id}`);
+      const allowed = key.rows[0]?.allowed_advisors || [];
+      const advisors = await storage.getAdvisors();
+      const mapped = advisors.filter((a:any) => a.isApproved).map((a:any) => ({
+        id: a.id, username: a.username, companyName: a.companyName, email: a.email, isApproved: a.isApproved,
+        enabled: allowed.length === 0 || allowed.includes(a.id)
+      }));
+      res.json(mapped);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.get("/api/admin/pull-api/brokers/:id/logs", requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string)||50, 200);
+      const logs = await db.execute(sql`SELECT * FROM broker_api_logs WHERE api_key_id=\${req.params.id} ORDER BY created_at DESC LIMIT \${limit}`);
+      res.json(logs.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.get("/api/admin/pull-api/brokers/:id/webhook-logs", requireAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string)||50, 200);
+      const logs = await db.execute(sql`SELECT * FROM broker_webhook_logs WHERE api_key_id=\${req.params.id} ORDER BY created_at DESC LIMIT \${limit}`);
+      res.json(logs.rows);
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.get("/api/admin/pull-api/dashboard", requireAdmin, async (_req, res) => {
+    try {
+      const [keys,apiLogs,whLogs] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*)::int as total, SUM(CASE WHEN is_active THEN 1 ELSE 0 END)::int as active FROM broker_api_keys`),
+        db.execute(sql`SELECT COUNT(*)::int as requests_24h FROM broker_api_logs WHERE created_at > NOW()-INTERVAL '24 hours'`),
+        db.execute(sql`SELECT COUNT(*) FILTER(WHERE delivered=true)::int as delivered_24h, COUNT(*) FILTER(WHERE delivered=false)::int as failed_24h FROM broker_webhook_logs WHERE created_at > NOW()-INTERVAL '24 hours'`),
+      ]);
+      res.json({brokers: keys.rows[0], api: apiLogs.rows[0], webhooks: whLogs.rows[0]});
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  app.delete("/api/admin/pull-api/brokers/:id", requireAdmin, async (req, res) => {
+    try {
+      await db.execute(sql`DELETE FROM broker_api_keys WHERE id=\${req.params.id}`);
+      res.json({status:"deleted"});
+    } catch(err:any){res.status(500).send(err.message);}
+  });
+
       // Initialize XTS Bridge
   initXTSBridge();
 
