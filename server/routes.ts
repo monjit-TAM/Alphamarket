@@ -83,6 +83,14 @@ export async function registerRoutes(
   registerBrokerApiRoutes(app);
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(getSwaggerSpec(), { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "AlphaMarket Broker API" }));
 
+  // ═══ BROKER INTEGRATION SWAGGER (separate from XTS docs) ═══
+  const brokerSwaggerPath = require("path").join(__dirname, "broker-swagger.json");
+  const brokerSwaggerSpec = JSON.parse(require("fs").readFileSync(brokerSwaggerPath, "utf-8"));
+  app.get("/api/broker-spec.json", (_req: any, res: any) => res.json(brokerSwaggerSpec));
+  app.get("/api/broker-docs", (_req: any, res: any) => {
+    res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>AlphaMarket Broker Integration API</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" /><style>body{margin:0;background:#fafafa}.swagger-ui .topbar{display:none}.swagger-ui .info hgroup.main h2{font-size:14px;color:#666}</style></head><body><div id="swagger-ui"></div><script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"><\/script><script>SwaggerUIBundle({url:"/api/broker-spec.json",dom_id:"#swagger-ui",deepLinking:true,layout:"BaseLayout",defaultModelsExpandDepth:2,docExpansion:"list"});<\/script></body></html>`);
+  });
+
   function requireAuth(req: Request, res: Response, next: Function) {
     if (!req.session.userId) {
       return res.status(401).send("Not authenticated");
