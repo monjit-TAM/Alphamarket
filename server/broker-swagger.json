@@ -1,0 +1,1127 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AlphaMarket - Broker Integration API",
+    "version": "1.0.0",
+    "description": "# AlphaMarket Broker Integration API\n\nSEBI-compliant advisory marketplace. Brokers pull live calls via REST API or receive real-time webhooks.\n\n## Authentication\nAll requests require x-api-key header. Optional HMAC-SHA256 signature.\n\n## Rate Limit\n100 req/min per key.\n\n## Webhook Events\nCALL_CREATED, CALL_MODIFIED, CALL_CLOSED, TARGET_ACHIEVED, STOPLOSS_TRIGGERED, TRAILING_SL_TRIGGERED, TRAILING_SL_UPDATED, POSITION_CREATED, POSITION_MODIFIED, POSITION_CLOSED\n\n## Contact\nhello@alphamarket.co.in",
+    "contact": {
+      "email": "hello@alphamarket.co.in",
+      "name": "AlphaMarket",
+      "url": "https://alphamarket.co.in"
+    }
+  },
+  "servers": [
+    {
+      "url": "https://alphamarket.co.in/api/v1",
+      "description": "Production"
+    }
+  ],
+  "security": [
+    {
+      "ApiKeyAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "System",
+      "description": "Health checks"
+    },
+    {
+      "name": "Advisors",
+      "description": "SEBI-registered advisors"
+    },
+    {
+      "name": "Strategies",
+      "description": "Published strategies"
+    },
+    {
+      "name": "Live Calls",
+      "description": "Active calls - primary polling endpoint"
+    },
+    {
+      "name": "Portfolio",
+      "description": "CRUD for calls and positions"
+    },
+    {
+      "name": "Admin",
+      "description": "API key management, webhooks, logs"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key",
+        "description": "Broker API key"
+      }
+    },
+    "schemas": {
+      "Advisor": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "companyName": {
+            "type": "string",
+            "example": "Front Wave Research LLP"
+          },
+          "advisorId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "emailId": {
+            "type": "string",
+            "format": "email"
+          },
+          "theme": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Equity",
+              "F&O",
+              "Growth"
+            ]
+          },
+          "sebiRegistrationNo": {
+            "type": "string",
+            "example": "INH000018407"
+          },
+          "overview": {
+            "type": "string"
+          },
+          "profilePicUrl": {
+            "type": "string"
+          },
+          "isApproved": {
+            "type": "string",
+            "enum": [
+              "Y",
+              "N"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "SUSPENDED"
+            ]
+          },
+          "numberOfLiveStrategy": {
+            "type": "integer"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "Strategy": {
+        "type": "object",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "strategyId": {
+            "type": "string"
+          },
+          "strategyName": {
+            "type": "string",
+            "example": "WIZTHEME VALUE"
+          },
+          "advisorId": {
+            "type": "string"
+          },
+          "advisorName": {
+            "type": "string"
+          },
+          "strategyType": {
+            "type": "string",
+            "enum": [
+              "Equity",
+              "Basket",
+              "Future",
+              "Commodity",
+              "Option"
+            ]
+          },
+          "strategyDescription": {
+            "type": "string"
+          },
+          "theme": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "benchmark": {
+            "type": "string",
+            "example": "Nifty 50"
+          },
+          "cagr": {
+            "type": "number",
+            "example": 24.5
+          },
+          "minimumInvestment": {
+            "type": "number"
+          },
+          "totalRecommendations": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "DRAFT"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      },
+      "LiveCall": {
+        "type": "object",
+        "description": "Active call with full advisor and strategy context",
+        "properties": {
+          "uid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "callStatus": {
+            "type": "string",
+            "enum": [
+              "PUBLISHED",
+              "ACTIVE",
+              "CLOSED"
+            ]
+          },
+          "dayMonth": {
+            "type": "string",
+            "example": "0704"
+          },
+          "symbol": {
+            "type": "string",
+            "example": "SAIL"
+          },
+          "callType": {
+            "type": "string",
+            "enum": [
+              "BUY",
+              "SELL"
+            ]
+          },
+          "advisorId": {
+            "type": "string"
+          },
+          "advisorName": {
+            "type": "string",
+            "example": "STOKWIZ"
+          },
+          "advisorSebiRegistrationNo": {
+            "type": "string",
+            "example": "INH000013925"
+          },
+          "profilePic": {
+            "type": "string"
+          },
+          "strategyId": {
+            "type": "string"
+          },
+          "strategyName": {
+            "type": "string",
+            "example": "WIZTHEME VALUE"
+          },
+          "strategyDescription": {
+            "type": "string"
+          },
+          "strategyType": {
+            "type": "string",
+            "enum": [
+              "Equity",
+              "Basket",
+              "Future",
+              "Commodity",
+              "Option"
+            ]
+          },
+          "benchmark": {
+            "type": "string",
+            "example": "Nifty 50"
+          },
+          "recommendationId": {
+            "type": "string"
+          },
+          "rational": {
+            "type": "string",
+            "description": "Advisor rationale"
+          },
+          "theme": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Equity",
+              "F&O",
+              "Growth"
+            ]
+          },
+          "thematicCollection": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Value"
+            ]
+          },
+          "managementStyle": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Active"
+            ]
+          },
+          "volatility": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Medium"
+            ]
+          },
+          "horizon": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": [
+              "Positional"
+            ]
+          },
+          "equityCall": {
+            "type": "object",
+            "properties": {
+              "exchange": {
+                "type": "string",
+                "example": "NSE"
+              },
+              "legId": {
+                "type": "string"
+              },
+              "exchangeToken": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string",
+                "example": "SAIL"
+              },
+              "name": {
+                "type": "string",
+                "example": "Steel Authority of India Limited"
+              },
+              "buyDate": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "buyPrice": {
+                "type": "number",
+                "example": 147
+              },
+              "buyPriceRangeStart": {
+                "type": "number",
+                "example": 147
+              },
+              "buyPriceRangeEnd": {
+                "type": "number",
+                "example": 149
+              },
+              "callType": {
+                "type": "string",
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              "targetPriceRange": {
+                "type": "string",
+                "example": "163"
+              },
+              "profitGoal": {
+                "type": "string",
+                "example": "10"
+              },
+              "stopLoss": {
+                "type": "string",
+                "example": "138"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "PUBLISHED",
+                  "ACTIVE",
+                  "CLOSED"
+                ]
+              }
+            }
+          },
+          "fnoPosition": {
+            "type": "object",
+            "properties": {
+              "exchange": {
+                "type": "string",
+                "example": "NFO"
+              },
+              "legId": {
+                "type": "string"
+              },
+              "symbol": {
+                "type": "string",
+                "example": "NIFTY"
+              },
+              "segment": {
+                "type": "string",
+                "enum": [
+                  "FUTIDX",
+                  "OPTIDX",
+                  "FUTSTK",
+                  "OPTSTK"
+                ]
+              },
+              "callPut": {
+                "type": "string",
+                "enum": [
+                  "CE",
+                  "PE"
+                ]
+              },
+              "buySell": {
+                "type": "string",
+                "enum": [
+                  "BUY",
+                  "SELL"
+                ]
+              },
+              "expiry": {
+                "type": "string"
+              },
+              "strikePrice": {
+                "type": "number"
+              },
+              "entryPrice": {
+                "type": "number"
+              },
+              "target": {
+                "type": "number"
+              },
+              "stopLoss": {
+                "type": "number"
+              },
+              "lots": {
+                "type": "integer"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "ACTIVE",
+                  "CLOSED"
+                ]
+              }
+            }
+          },
+          "trailingStopLoss": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "PERCENTAGE",
+                  "POINTS",
+                  "PRICE"
+                ]
+              },
+              "value": {
+                "type": "number"
+              },
+              "currentSL": {
+                "type": "string"
+              },
+              "highestPrice": {
+                "type": "string"
+              }
+            }
+          },
+          "isActive": {
+            "type": "boolean"
+          },
+          "creationDate": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WebhookPayload": {
+        "type": "object",
+        "description": "POST to broker webhook. Verify HMAC. Return 200 in 5s. 3 retries.",
+        "properties": {
+          "event": {
+            "type": "string",
+            "enum": [
+              "CALL_CREATED",
+              "CALL_MODIFIED",
+              "CALL_CLOSED",
+              "TARGET_ACHIEVED",
+              "STOPLOSS_TRIGGERED",
+              "TRAILING_SL_TRIGGERED",
+              "TRAILING_SL_UPDATED",
+              "POSITION_CREATED",
+              "POSITION_MODIFIED",
+              "POSITION_CLOSED"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LiveCall"
+          },
+          "signature": {
+            "type": "string",
+            "description": "HMAC-SHA256(api_secret, event+timestamp+data)"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health check",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/alpha/advisor": {
+      "get": {
+        "tags": [
+          "Advisors"
+        ],
+        "summary": "List approved advisors",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "theme",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter: Equity, F&O, Growth, Value"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Advisors",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Advisor"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid API key"
+          },
+          "429": {
+            "description": "Rate limited"
+          }
+        }
+      }
+    },
+    "/alpha/advisor/{advisorId}": {
+      "get": {
+        "tags": [
+          "Advisors"
+        ],
+        "summary": "Get advisor details",
+        "parameters": [
+          {
+            "name": "advisorId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Advisor",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Advisor"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/alpha/strategy": {
+      "get": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "List published strategies",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "advisorId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Filter by advisor"
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "Equity",
+                "Basket",
+                "Future",
+                "Commodity",
+                "Option"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Strategies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Strategy"
+                      }
+                    },
+                    "pagination": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alpha/strategy/{strategyId}": {
+      "get": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Get strategy with calls and positions",
+        "parameters": [
+          {
+            "name": "strategyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Strategy with portfolio"
+          }
+        }
+      }
+    },
+    "/alpha/live-calls": {
+      "get": {
+        "tags": [
+          "Live Calls"
+        ],
+        "summary": "Get active live calls (PRIMARY ENDPOINT)",
+        "description": "Returns all active calls with full enriched payload including advisor details, strategy context, equity/F&O specifics. Poll every 30-60s or use webhooks for real-time.",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "EQUITY",
+                "FnO"
+              ]
+            },
+            "description": "Filter by EQUITY or FnO"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Active calls",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/LiveCall"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/alpha/strategy/{strategyId}/portfolio": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Get recommendations for strategy",
+        "parameters": [
+          {
+            "name": "strategyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "CLOSED",
+                "ALL"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recommendations"
+          }
+        }
+      }
+    },
+    "/alpha/strategy/portfolio": {
+      "post": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Create recommendation (push call)",
+        "description": "Push equity/FnO call. Auto-detects type. Triggers webhooks. Requires write permission.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "strategyId",
+                  "symbol"
+                ],
+                "properties": {
+                  "strategyId": {
+                    "type": "string"
+                  },
+                  "symbol": {
+                    "type": "string",
+                    "example": "RELIANCE"
+                  },
+                  "callType": {
+                    "type": "string",
+                    "enum": [
+                      "BUY",
+                      "SELL"
+                    ]
+                  },
+                  "buyPrice": {
+                    "type": "number"
+                  },
+                  "quantity": {
+                    "type": "integer"
+                  },
+                  "buyPriceRangeStart": {
+                    "type": "number"
+                  },
+                  "buyPriceRangeEnd": {
+                    "type": "number"
+                  },
+                  "targetPriceRange": {
+                    "type": "string"
+                  },
+                  "profitGoal": {
+                    "type": "string"
+                  },
+                  "stopLoss": {
+                    "type": "string"
+                  },
+                  "rational": {
+                    "type": "string"
+                  },
+                  "equityType": {
+                    "type": "string",
+                    "enum": [
+                      "EQ",
+                      "FnO"
+                    ]
+                  },
+                  "optionType": {
+                    "type": "string",
+                    "enum": [
+                      "CE",
+                      "PE"
+                    ]
+                  },
+                  "expiry": {
+                    "type": "string"
+                  },
+                  "strikePrice": {
+                    "type": "number"
+                  },
+                  "trailingStopLoss": {
+                    "type": "object",
+                    "properties": {
+                      "enabled": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "value": {
+                        "type": "number"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "400": {
+            "description": "Missing fields"
+          },
+          "404": {
+            "description": "Strategy not found"
+          }
+        }
+      }
+    },
+    "/alpha/strategy/{strategyId}/portfolio/{callId}": {
+      "put": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Update or close recommendation",
+        "parameters": [
+          {
+            "name": "strategyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "callId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sellPrice": {
+                    "type": "number"
+                  },
+                  "exitDate": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "ACTIVE",
+                      "CLOSED"
+                    ]
+                  },
+                  "targetPriceRange": {
+                    "type": "string"
+                  },
+                  "stopLoss": {
+                    "type": "string"
+                  },
+                  "rational": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/alpha/api-keys": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "List broker API keys",
+        "description": "Requires admin permission.",
+        "responses": {
+          "200": {
+            "description": "Keys"
+          }
+        }
+      }
+    },
+    "/alpha/api-keys/{keyId}/advisors": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Set allowed advisors for broker",
+        "parameters": [
+          {
+            "name": "keyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "advisorIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated"
+          }
+        }
+      }
+    },
+    "/alpha/api-keys/{keyId}/webhook": {
+      "put": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Configure webhook URL and events",
+        "parameters": [
+          {
+            "name": "keyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "webhookUrl": {
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://broker.com/webhook/alphamarket"
+                  },
+                  "events": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "CALL_CREATED",
+                        "CALL_MODIFIED",
+                        "CALL_CLOSED",
+                        "TARGET_ACHIEVED",
+                        "STOPLOSS_TRIGGERED",
+                        "POSITION_CREATED",
+                        "POSITION_MODIFIED",
+                        "POSITION_CLOSED"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Configured"
+          }
+        }
+      }
+    },
+    "/alpha/api-logs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "API request logs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logs"
+          }
+        }
+      }
+    },
+    "/alpha/webhook-logs": {
+      "get": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Webhook delivery logs",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logs"
+          }
+        }
+      }
+    }
+  }
+}
