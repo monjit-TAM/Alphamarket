@@ -568,7 +568,7 @@ tr:last-child td{border-bottom:none}
     <div class="tdiv"></div>
     <div class="tnav">
       <button class="nbtn" onclick="nav('stock360',this)" style="color:#00e5ff;font-weight:700">◈ STOCK 360</button>
-      <button class="nbtn on" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700";display:none">ALPHAVIEW</button>
+      <button class="nbtn on" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700;display:none">ALPHAVIEW</button>
       <button class="nbtn" onclick="nav('dashboard',this)">DASHBOARD</button>
       <button class="nbtn" onclick="nav('screener',this)">SCREENER</button>
       <button class="nbtn" onclick="nav('mtf',this)">MTF COMBINER</button>
@@ -9395,7 +9395,6 @@ const w=window.open('','_blank');w.document.write(`<!DOCTYPE html><html><head><t
 </div>
 </div>
 
-<script src="/dyor/dyor/stock360.js"></script>
 </body></html>`);
 w.document.close();
 setTimeout(()=>w.print(),500);
@@ -12784,5 +12783,5 @@ function submitPublish(){
 })();
 </script>
 
-<script src="/dyor/dyor/stock360.js"></script>
+<script src="/dyor/stock360.js"></script>
 </body></html>
