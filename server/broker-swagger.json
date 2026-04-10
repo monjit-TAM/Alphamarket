@@ -39,6 +39,10 @@
       "description": "Active calls - primary polling endpoint"
     },
     {
+      "name": "Performance",
+      "description": "Advisor accuracy, hit rate, period-wise analytics"
+    },
+    {
       "name": "Portfolio",
       "description": "CRUD for calls and positions"
     },
@@ -1283,7 +1287,7 @@
     "/alpha/strategy/{strategyId}/performance": {
       "get": {
         "tags": [
-          "Strategies"
+          "Performance"
         ],
         "summary": "Get strategy performance & advisor accuracy",
         "description": "Returns comprehensive performance analytics: hit rate, absolute return, period-wise breakdown (1W/1M/3M/6M/1Y/3Y/Max), best/worst calls, win/loss summary. Use this to track advisor accuracy.",
