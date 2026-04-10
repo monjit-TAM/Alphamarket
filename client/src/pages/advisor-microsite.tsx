@@ -60,7 +60,7 @@ export default function AdvisorMicrosite() {
     { id: "about", label: "About", show: ms.showAbout && ms.about },
     { id: "services", label: "Services", show: enabledServices.length > 0 },
     { id: "strategies", label: "Strategies", show: strategies.length > 0 },
-    { id: "plans", label: "Plans", show: data.plans?.length > 0 },
+    { id: "plans", label: "Plans", show: strategies.length > 0 },
     { id: "testimonials", label: "Testimonials", show: hasTestimonials },
     { id: "faq", label: "FAQ", show: hasFaq },
     { id: "contact", label: "Contact", show: hasContact },
@@ -73,6 +73,19 @@ export default function AdvisorMicrosite() {
 
       {/* ═══ HERO SECTION ═══ */}
       <div className="relative">
+        {/* Logo bar above banner */}
+        {ms.logoUrl && (
+          <div className="bg-white border-b border-gray-100">
+            <div className="max-w-6xl mx-auto px-6 py-4 flex items-center gap-4">
+              <img src={ms.logoUrl} alt={advisor.companyName + " logo"} className="h-20 w-auto max-w-[240px] object-contain rounded-lg shadow-sm border border-gray-100 bg-white p-1.5" />
+              <div>
+                <p className="font-bold text-gray-900 text-lg">{advisor.companyName}</p>
+                {ms.tagline && <p className="text-sm text-gray-500">{ms.tagline}</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Full-width banner background */}
         <div className="h-72 md:h-80 relative overflow-hidden" style={{ background: ms.bannerImageUrl ? undefined : ("linear-gradient(135deg, " + tc + ", " + tc + "cc)") }}>
           {ms.bannerImageUrl ? (
@@ -84,13 +97,9 @@ export default function AdvisorMicrosite() {
             <div className="absolute inset-0 opacity-10" style={{ backgroundImage: "url(\"data:image/svg+xml,%3Csvg width=\'60\' height=\'60\' viewBox=\'0 0 60 60\' xmlns=\'http://www.w3.org/2000/svg\'%3E%3Cg fill=\'none\' fill-rule=\'evenodd\'%3E%3Cg fill=\'%23ffffff\' fill-opacity=\'0.4\'%3E%3Cpath d=\'M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z\'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E\")" }} />
           )}
 
-          {/* Top nav over banner */}
+          {/* Top nav over banner — social links only */}
           <div className="absolute top-0 left-0 right-0 z-10">
-            <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                {ms.logoUrl && <img src={ms.logoUrl} alt="" className="w-10 h-10 rounded-lg object-cover border-2 border-white/30 shadow-lg" />}
-                <span className="text-sm font-bold text-white drop-shadow-sm">{advisor.companyName}</span>
-              </div>
+            <div className="max-w-6xl mx-auto px-6 py-5 flex items-center justify-end">
               <div className="flex items-center gap-2">
                 {ms.socialLinkedin && <a href={ms.socialLinkedin} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white/80 hover:bg-white/25 transition-colors"><Linkedin className="w-3.5 h-3.5" /></a>}
                 {ms.socialTwitter && <a href={ms.socialTwitter} target="_blank" rel="noopener" className="w-8 h-8 rounded-full bg-white/15 backdrop-blur flex items-center justify-center text-white/80 hover:bg-white/25 transition-colors"><Twitter className="w-3.5 h-3.5" /></a>}
@@ -278,35 +287,60 @@ export default function AdvisorMicrosite() {
           </div>
         )}
 
-        {/* ───── PLANS ───── */}
-        {activeTab === "plans" && data.plans?.length > 0 && (
+        {/* ───── PLANS (Strategy-based pricing) ───── */}
+        {activeTab === "plans" && strategies.length > 0 && (
           <div className="max-w-6xl mx-auto px-6 py-12">
             <div className="text-center mb-10">
               <h2 className="text-3xl font-bold text-gray-900 mb-2">Plans & Pricing</h2>
               <div className="w-16 h-1 rounded-full mx-auto mb-3" style={{ background: tc }} />
-              <p className="text-sm text-gray-400">Choose the plan that suits your investment journey</p>
+              <p className="text-sm text-gray-400">Choose a strategy and plan that suits your investment journey</p>
             </div>
-            <div className="grid gap-5 md:grid-cols-3 max-w-4xl mx-auto">
-              {data.plans.map((plan: any, i: number) => (
-                <div key={plan.id} className={"rounded-2xl p-7 text-center transition-all hover:shadow-xl " + (i === 0 ? "border-2 shadow-lg scale-[1.03] bg-white" : "border border-gray-200 bg-white")}
-                  style={i === 0 ? { borderColor: tc } : {}}>
-                  {i === 0 && <div className="text-[11px] font-bold uppercase tracking-widest mb-4 py-1 px-3 rounded-full inline-block text-white" style={{ background: tc }}>Most Popular</div>}
-                  <p className="font-semibold text-gray-600 mb-3 text-sm">{plan.name}</p>
-                  <div className="text-5xl font-bold mb-1" style={{ color: i === 0 ? tc : "#111" }}>
-                    {"\u20B9"}{plan.amount.toLocaleString("en-IN")}
+
+            <div className="space-y-10 max-w-5xl mx-auto">
+              {strategies.map((strat: any) => {
+                const stratPlans = (data.strategyPlans || {})[strat.id] || data.plans || [];
+                if (stratPlans.length === 0) return null;
+                return (
+                  <div key={strat.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-shadow">
+                    <div className="px-7 py-5 border-b border-gray-100 flex items-center justify-between flex-wrap gap-3">
+                      <div>
+                        <h3 className="text-lg font-bold text-gray-900">{strat.name}</h3>
+                        <div className="flex items-center gap-3 mt-1">
+                          <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full" style={{ background: tc + "12", color: tc }}>{strat.type}</span>
+                          {strat.riskLevel && <span className="text-[11px] text-gray-400">Risk: {strat.riskLevel}</span>}
+                          {strat.horizon && <span className="text-[11px] text-gray-400">Horizon: {strat.horizon}</span>}
+                        </div>
+                      </div>
+                      {strat.cagr && <div className="text-right"><div className="text-xl font-bold" style={{ color: tc }}>{strat.cagr}%</div><div className="text-[10px] text-gray-400 uppercase">CAGR</div></div>}
+                    </div>
+                    {strat.description && <p className="px-7 py-3 text-sm text-gray-500 border-b border-gray-50">{strat.description}</p>}
+                    <div className="px-7 py-6">
+                      <div className={"grid gap-4 " + (stratPlans.length === 1 ? "grid-cols-1 max-w-xs" : stratPlans.length === 2 ? "grid-cols-2 max-w-lg" : "grid-cols-3")}>
+                        {stratPlans.map((plan: any, i: number) => (
+                          <div key={plan.id} className={"rounded-xl p-5 text-center transition-all hover:shadow-md cursor-pointer " + (i === 0 ? "border-2 bg-white" : "border border-gray-200 bg-white")}
+                            style={i === 0 ? { borderColor: tc } : {}}>
+                            {i === 0 && stratPlans.length > 1 && <div className="text-[10px] font-bold uppercase tracking-widest mb-3 py-0.5 px-2.5 rounded-full inline-block text-white" style={{ background: tc }}>Popular</div>}
+                            <p className="font-semibold text-gray-600 mb-2 text-sm">{plan.name}</p>
+                            <div className="text-3xl font-bold mb-1" style={{ color: i === 0 ? tc : "#111" }}>
+                              {"\u20B9"}{Number(plan.amount).toLocaleString("en-IN")}
+                            </div>
+                            {plan.durationDays && <p className="text-xs text-gray-400 mb-4">{plan.durationDays} days</p>}
+                            <Link href={"/strategies/" + strat.id + "/esign-agreement?plan=" + plan.id}>
+                              <Button className="w-full py-2.5 text-white text-sm font-semibold" style={{ background: i === 0 ? tc : "#374151" }}>
+                                Subscribe <ArrowRight className="w-3.5 h-3.5 ml-1" />
+                              </Button>
+                            </Link>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                  {plan.durationDays && <p className="text-xs text-gray-400 mb-6">{plan.durationDays} days</p>}
-                  <Link href={"/strategies"}>
-                    <Button className="w-full py-3 text-white font-semibold" style={{ background: i === 0 ? tc : "#374151" }}>
-                      Get Started <ArrowRight className="w-4 h-4 ml-1" />
-                    </Button>
-                  </Link>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* Compliance */}
-            <div className="mt-10 p-6 bg-gray-50 rounded-xl border border-gray-100 max-w-4xl mx-auto">
+            <div className="mt-10 p-6 bg-gray-50 rounded-xl border border-gray-100 max-w-5xl mx-auto">
               <p className="text-xs text-gray-500 font-semibold mb-3 uppercase tracking-wider">Compliance & Safety</p>
               <div className="flex gap-3 flex-wrap">
                 {["eKYC (Aadhaar + PAN)", "eSign Agreement", ...(advisor.requireRiskProfiling ? ["Risk Profiling"] : []), ...(advisor.requirePmla ? ["PMLA Verification"] : [])].map(label => (

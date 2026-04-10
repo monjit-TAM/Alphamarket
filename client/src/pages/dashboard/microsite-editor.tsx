@@ -192,6 +192,7 @@ export default function MicrositeEditor() {
                     <Button variant="outline" size="sm" onClick={() => uploadFile("logoUrl")}><Upload className="w-3 h-3 mr-1" /> Upload</Button>
                     {form.logoUrl && <Button variant="ghost" size="sm" onClick={() => setForm({...form, logoUrl: ""})}><Trash2 className="w-3 h-3" /></Button>}
                   </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Min 200×200px, square or landscape. Use a white or solid-color background for best results. PNG or JPG.</p>
                 </div>
                 <div className="space-y-1">
                   <Label className="text-sm">Banner Image</Label>
@@ -200,6 +201,7 @@ export default function MicrositeEditor() {
                     <Button variant="outline" size="sm" onClick={() => uploadFile("bannerImageUrl")}><Upload className="w-3 h-3 mr-1" /> Upload</Button>
                     {form.bannerImageUrl && <Button variant="ghost" size="sm" onClick={() => setForm({...form, bannerImageUrl: ""})}><Trash2 className="w-3 h-3" /></Button>}
                   </div>
+                  <p className="text-[11px] text-muted-foreground mt-1">Recommended 1200×400px (3:1 ratio). Landscape orientation. JPG or PNG, max 2MB.</p>
                 </div>
               </div>
               <div className="space-y-1">

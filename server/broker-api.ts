@@ -1174,5 +1174,44 @@ export function registerBrokerApiRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
+
+  // ========== STRATEGY PERFORMANCE ==========
+  app.get(prefix + "/alpha/strategy/:strategyId/performance", requirePermission("read") as any, async (req: BrokerRequest, res) => {
+    try {
+      const strategy = await storage.getStrategy(req.params.strategyId);
+      const allCalls = await storage.getCalls(req.params.strategyId);
+      const allPositions = await storage.getPositions(req.params.strategyId);
+      const closedCalls = allCalls.filter((c: any) => c.status === "Closed");
+      const closedPositions = allPositions.filter((p: any) => p.status === "Closed");
+      const entries = [
+        ...closedCalls.map((c: any) => ({ type: "call", id: c.id, label: c.stockName, gainPercent: Number(c.gainPercent || 0), entryPrice: Number(c.entryPrice || c.buyRangeStart || 0), exitPrice: Number(c.sellPrice || 0), exitDate: c.exitDate ? new Date(c.exitDate) : null, createdAt: c.createdAt ? new Date(c.createdAt) : null })),
+        ...closedPositions.map((p: any) => ({ type: "position", id: p.id, label: (p.symbol||"") + (p.expiry?" "+p.expiry:"") + (p.strikePrice?" "+p.strikePrice:"") + (p.callPut?" "+p.callPut:""), gainPercent: Number(p.gainPercent || 0), entryPrice: Number(p.entryPrice || 0), exitPrice: Number(p.exitPrice || 0), exitDate: p.exitDate ? new Date(p.exitDate) : null, createdAt: p.createdAt ? new Date(p.createdAt) : null })),
+      ];
+      const closedCount = entries.length;
+      const profitableCount = entries.filter(e => e.gainPercent > 0).length;
+      const lossCount = entries.filter(e => e.gainPercent < 0).length;
+      const hitRate = closedCount > 0 ? Math.round((profitableCount / closedCount) * 10000) / 100 : 0;
+      const absoluteReturn = entries.reduce((s, e) => s + e.gainPercent, 0);
+      const avgReturn = closedCount > 0 ? Math.round((absoluteReturn / closedCount) * 100) / 100 : 0;
+      const maxProfit = entries.filter(e=>e.gainPercent>0).sort((a,b)=>b.gainPercent-a.gainPercent)[0] || null;
+      const maxDrawdown = entries.filter(e=>e.gainPercent<0).sort((a,b)=>a.gainPercent-b.gainPercent)[0] || null;
+      const now = new Date();
+      const periods = [{label:"1W",days:7},{label:"1M",days:30},{label:"3M",days:90},{label:"6M",days:180},{label:"1Y",days:365},{label:"3Y",days:1095},{label:"Max",days:99999}].map(({label,days})=>{
+        const cutoff = new Date(now.getTime()-days*86400000);
+        const f = entries.filter(e=>{const d=e.exitDate||e.createdAt;return d&&d>=cutoff;});
+        const cnt=f.length; const prof=f.filter(e=>e.gainPercent>0).length; const tot=f.reduce((s,e)=>s+e.gainPercent,0);
+        return {label,closedCount:cnt,profitableCount:prof,hitRate:cnt>0?Math.round((prof/cnt)*10000)/100:0,absoluteReturn:Math.round(tot*100)/100,avgReturn:cnt>0?Math.round((tot/cnt)*100)/100:0};
+      });
+      res.json({
+        strategyId: req.params.strategyId, strategyName: strategy.name, advisorName: (strategy as any).advisor?.companyName || (strategy as any).advisor?.username,
+        totals: { closedCount, profitableCount, lossCount, hitRate, absoluteReturn: Math.round(absoluteReturn*100)/100, avgReturn },
+        periods,
+        maxProfit: maxProfit ? { type: maxProfit.type, label: maxProfit.label, gainPercent: maxProfit.gainPercent, exitDate: maxProfit.exitDate } : null,
+        maxDrawdown: maxDrawdown ? { type: maxDrawdown.type, label: maxDrawdown.label, gainPercent: maxDrawdown.gainPercent, exitDate: maxDrawdown.exitDate } : null,
+        winLossSummary: { winRate: hitRate, avgReturnPerCall: avgReturn, totalReturn: Math.round(absoluteReturn*100)/100, callsAnalyzed: closedCount },
+      });
+    } catch(err: any) { res.status(500).json({ error: err.message }); }
+  });
+
   console.log("Broker API v1 routes registered at /api/v1/alpha/*");
 }

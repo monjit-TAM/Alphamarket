@@ -504,6 +504,163 @@
             "description": "HMAC-SHA256(api_secret, event+timestamp+data)"
           }
         }
+      },
+      "StrategyPerformance": {
+        "type": "object",
+        "description": "Advisor accuracy and strategy performance analytics",
+        "properties": {
+          "strategyId": {
+            "type": "string"
+          },
+          "strategyName": {
+            "type": "string"
+          },
+          "advisorName": {
+            "type": "string"
+          },
+          "totals": {
+            "type": "object",
+            "properties": {
+              "closedCount": {
+                "type": "integer",
+                "example": 11,
+                "description": "Total closed calls"
+              },
+              "profitableCount": {
+                "type": "integer",
+                "example": 7,
+                "description": "Profitable calls"
+              },
+              "lossCount": {
+                "type": "integer",
+                "example": 2,
+                "description": "Loss-making calls"
+              },
+              "hitRate": {
+                "type": "number",
+                "example": 63.64,
+                "description": "Win rate percentage"
+              },
+              "absoluteReturn": {
+                "type": "number",
+                "example": 76.93,
+                "description": "Total absolute return (sum of all gain%)"
+              },
+              "avgReturn": {
+                "type": "number",
+                "example": 6.99,
+                "description": "Average return per call (%)"
+              }
+            }
+          },
+          "periods": {
+            "type": "array",
+            "description": "Period-wise performance breakdown",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "enum": [
+                    "1W",
+                    "1M",
+                    "3M",
+                    "6M",
+                    "1Y",
+                    "3Y",
+                    "Max"
+                  ]
+                },
+                "closedCount": {
+                  "type": "integer"
+                },
+                "profitableCount": {
+                  "type": "integer"
+                },
+                "hitRate": {
+                  "type": "number",
+                  "example": 100,
+                  "description": "Hit rate for this period"
+                },
+                "absoluteReturn": {
+                  "type": "number"
+                },
+                "avgReturn": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "maxProfit": {
+            "type": "object",
+            "nullable": true,
+            "description": "Best performing call",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "call",
+                  "position"
+                ]
+              },
+              "label": {
+                "type": "string",
+                "example": "BANKNIFTY 2026-04-02 51800 CE"
+              },
+              "gainPercent": {
+                "type": "number",
+                "example": 40.35
+              },
+              "exitDate": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "maxDrawdown": {
+            "type": "object",
+            "nullable": true,
+            "description": "Worst performing call",
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string",
+                "example": "HDFCBANK"
+              },
+              "gainPercent": {
+                "type": "number",
+                "example": -8.73
+              },
+              "exitDate": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "winLossSummary": {
+            "type": "object",
+            "properties": {
+              "winRate": {
+                "type": "number",
+                "example": 63.64
+              },
+              "avgReturnPerCall": {
+                "type": "number",
+                "example": 6.99
+              },
+              "totalReturn": {
+                "type": "number",
+                "example": 76.93
+              },
+              "callsAnalyzed": {
+                "type": "integer",
+                "example": 11
+              }
+            }
+          }
+        }
       }
     }
   },
@@ -1119,6 +1276,40 @@
         "responses": {
           "200": {
             "description": "Logs"
+          }
+        }
+      }
+    },
+    "/alpha/strategy/{strategyId}/performance": {
+      "get": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Get strategy performance & advisor accuracy",
+        "description": "Returns comprehensive performance analytics: hit rate, absolute return, period-wise breakdown (1W/1M/3M/6M/1Y/3Y/Max), best/worst calls, win/loss summary. Use this to track advisor accuracy.",
+        "parameters": [
+          {
+            "name": "strategyId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Performance analytics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyPerformance"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Strategy not found"
           }
         }
       }
