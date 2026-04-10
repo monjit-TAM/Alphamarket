@@ -233,57 +233,61 @@ async def prefill_fno_basket(request: Request):
         await conn.close()
 
 @router.get("/basket/prefill/equity")
+@router.get("/basket/prefill/equity")
 async def prefill_equity_basket(request: Request):
-    """Pre-fill equity basket from top Nifty50 movers via data service"""
+    """Pre-fill equity basket from top movers using screener universe (dynamic)"""
+    import redis as _redis
+    try:
+        rc = _redis.Redis(host="127.0.0.1", port=6379, db=1, decode_responses=True)
+        raw = rc.get("sb_universe")
+        rc.close()
+        if raw:
+            universe = json.loads(raw)
+            movers = [s for s in universe if s.get("price", 0) > 50 and s.get("change_pct") is not None]
+            movers.sort(key=lambda x: abs(x.get("change_pct", 0)), reverse=True)
+            legs = []
+            for m in movers[:10]:
+                sym = m.get("symbol", "")
+                ltp = m.get("price", 0)
+                chg = m.get("change_pct", 0)
+                side = "BUY" if chg >= 0 else "SELL"
+                legs.append({
+                    "symbol": sym, "instrument_type": "EQ", "side": side,
+                    "quantity": 1, "price": ltp,
+                    "stop_loss": round(ltp * (0.98 if side == "BUY" else 1.02), 2),
+                    "target": round(ltp * (1.02 if side == "BUY" else 0.98), 2),
+                    "display": f"{sym} EQ", "change_pct": chg,
+                    "order_type": "LIMIT", "product": "MIS",
+                    "sector": m.get("sector", ""),
+                    "instrument_key": get_instrument_key(sym, "EQ", ""),
+                })
+            if legs:
+                return {"legs": legs, "count": len(legs), "source": "screener_universe"}
+    except Exception:
+        pass
+    # Fallback to data service
     import urllib.request as urlreq
     try:
         req = urlreq.Request(
             "http://127.0.0.1:5004/data/equity/quotes",
-            data=json.dumps({"symbols": [
-                "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK",
-                "HINDUNILVR","SBIN","BAJFINANCE","KOTAKBANK","LT",
-                "AXISBANK","WIPRO","MARUTI","TATAMOTORS","SUNPHARMA",
-                "ONGC","NTPC","POWERGRID","ULTRACEMCO","TITAN"
-            ]}).encode(),
-            headers={"Content-Type": "application/json"},
-            method="POST"
+            data=json.dumps({"symbols": ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","SBIN","AXISBANK","WIPRO","LT","BAJFINANCE"]}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST"
         )
         with urlreq.urlopen(req, timeout=8) as resp:
             quotes = json.loads(resp.read())
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Data service error: {str(e)}")
-
-    # Sort by absolute % change, pick top 5 up + top 5 down
     movers = []
     for sym, data in quotes.get("quotes", {}).items():
         if isinstance(data, dict) and data.get("change_pct") is not None:
-            movers.append({
-                "symbol": sym,
-                "ltp": data.get("price", 0),
-                "change_pct": data.get("change_pct", 0)
-            })
+            movers.append({"symbol": sym, "ltp": data.get("price", 0), "change_pct": data.get("change_pct", 0)})
     movers.sort(key=lambda x: abs(x["change_pct"]), reverse=True)
-    top = movers[:10]
-
     legs = []
-    for m in top:
+    for m in movers[:10]:
         side = "BUY" if m["change_pct"] > 0 else "SELL"
         ltp = m["ltp"]
-        legs.append({
-            "symbol": m["symbol"],
-            "instrument_type": "EQ",
-            "side": side,
-            "quantity": 1,
-            "price": ltp,
-            "stop_loss": round(ltp * (0.98 if side == "BUY" else 1.02), 2),
-            "target": round(ltp * (1.02 if side == "BUY" else 0.98), 2),
-            "display": f"{m['symbol']} EQ",
-            "change_pct": m["change_pct"],
-            "order_type": "LIMIT",
-            "product": "MIS",
-            "instrument_key": get_instrument_key(m["symbol"], "EQ", "")
-        })
-    return {"legs": legs, "count": len(legs), "source": "nifty50_movers"}
+        legs.append({"symbol": m["symbol"], "instrument_type": "EQ", "side": side, "quantity": 1, "price": ltp, "stop_loss": round(ltp*(0.98 if side=="BUY" else 1.02),2), "target": round(ltp*(1.02 if side=="BUY" else 0.98),2), "display": f"{m['symbol']} EQ", "change_pct": m["change_pct"], "order_type": "LIMIT", "product": "MIS", "instrument_key": get_instrument_key(m["symbol"], "EQ", "")})
+    return {"legs": legs, "count": len(legs), "source": "data_service"}
 
 @router.post("/basket/place")
 async def place_basket(request: Request):
