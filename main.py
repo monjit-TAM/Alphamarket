@@ -96,6 +96,8 @@ from routers.basket_publisher import router as basket_router
 from routers.options_backtest import router as options_bt_router
 from routers.alpha_intelligence import router as alpha_intel_router
 from alphascore import compute_alphascore
+from confluence_engine import compute_confluence
+from flow_signals import compute_smart_money_score
 
 app = FastAPI(
     root_path="/dyor",
@@ -10902,3 +10904,58 @@ async def delete_saved_screen(screen_id: int, user=Depends(get_current_user)):
     if "DELETE 0" in result:
         return {"error": "Screen not found or not owned by you"}
     return {"deleted": True, "id": screen_id}
+
+
+# ══ STOCK 360 — Unified Stock Intelligence ═════════════════════════════════
+@app.get("/api/stock360/{symbol}", tags=["Stock 360"], summary="Unified stock analysis")
+async def stock360(symbol: str, user=Depends(get_current_user)):
+    """Stock 360: AlphaView + Alpha Intel + Patterns in one call."""
+    sym = symbol.upper()
+    results = {"symbol": sym}
+    try:
+        av = await alphaview(sym, user)
+        results["alphaview"] = av
+    except Exception as e:
+        results["alphaview"] = {"error": str(e)}
+    try:
+        if "alphaview" in results and "error" not in results.get("alphaview", {}):
+            av = results["alphaview"]
+            tech = av.get("technicals", {})
+            fund = av.get("fundamentals", {})
+            ma = av.get("moving_averages", {})
+            summ = av.get("summary", {})
+            rs = av.get("relative_strength", {})
+            ratings = av.get("ratings", {})
+            sd = {
+                "symbol": sym, "price": summ.get("price", 0),
+                "rsi": tech.get("rsi", 50), "macd_hist": tech.get("macd_histogram", 0),
+                "macd_cross_up": tech.get("macd", 0) > tech.get("macd_signal", 0),
+                "sma_50": ma.get("sma50", 0), "sma_200": ma.get("sma200", 0),
+                "above_50dma": ma.get("above_50dma", False), "above_200dma": ma.get("above_200dma", False),
+                "above_supertrend": tech.get("supertrend_bullish", False),
+                "vol_ratio": tech.get("volume_ratio", 1),
+                "pct_from_52h": summ.get("off_high_pct", -10), "pct_from_52l": summ.get("off_low_pct", 10),
+                "bb_upper": tech.get("bb_upper", 0), "bb_lower": tech.get("bb_lower", 0),
+                "bb_width": tech.get("bb_width", 5), "gap_pct": 0, "close": summ.get("price", 0),
+                "pe_ratio": fund.get("pe_trailing", 0), "roe": fund.get("roe", 0),
+                "debt_equity": fund.get("debt_equity", 0), "dividend_yield": fund.get("dividend_yield", 0),
+                "market_cap": summ.get("market_cap", 0),
+                "accumulation_score": ratings.get("accumulation", 0) / 10.0,
+                "momentum_score": ratings.get("momentum", 0) / 10.0,
+                "fundamental_score": ratings.get("fundamentals", 0) / 10.0,
+                "trend_score": ratings.get("trend_rating", 0) / 10.0,
+                "sentiment_score": ratings.get("sentiment", 0) / 10.0,
+                "minervini_score": 5, "rs_1m": rs.get("rs_1m", 0), "rs_3m": rs.get("rs_3m", 0),
+                "wk_change": 0, "change_pct": summ.get("change_pct", 0), "alpha_rating": 0,
+            }
+            results["alphascore"] = compute_alphascore(sym, sd)
+            results["confluence"] = compute_confluence(sym, sd)
+            results["smart_money"] = compute_smart_money_score(sym, sd)
+    except Exception as e:
+        results["alphascore"] = {"error": str(e)}
+    try:
+        pat = await detect_patterns(sym, user)
+        results["patterns"] = pat
+    except Exception as e:
+        results["patterns"] = {"error": str(e)}
+    return results

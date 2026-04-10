@@ -567,6 +567,7 @@ tr:last-child td{border-bottom:none}
     <div class="tlogo">ALPHALAB</div>
     <div class="tdiv"></div>
     <div class="tnav">
+      <button class="nbtn" onclick="nav('stock360',this)" style="color:#00e5ff;font-weight:700">◈ STOCK 360</button>
       <button class="nbtn on" onclick="nav('alphaview',this)" style="color:#f59e0b;font-weight:700">ALPHAVIEW</button>
       <button class="nbtn" onclick="nav('dashboard',this)">DASHBOARD</button>
       <button class="nbtn" onclick="nav('screener',this)">SCREENER</button>
@@ -2992,6 +2993,20 @@ tr:last-child td{border-bottom:none}
       <div><span style="color:var(--text2);font-weight:700">Risk:</span> Stop 0.3% below entry; 1:2 R:R minimum</div></div></div>
     </div>
 
+<div class="panel" id="p-stock360" style="padding:0 16px 16px">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--border);margin-bottom:8px">
+    <div>
+      <div style="font-size:16px;font-weight:800;color:#00e5ff;letter-spacing:1px">◈ STOCK 360™</div>
+      <div style="font-size:9px;color:var(--text3)">Unified Intelligence — AlphaScore™ · Confluence™ · Smart Money™ · Patterns · Technicals · Fundamentals</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="s360-sym" placeholder="SYMBOL" style="padding:6px 12px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text);font-size:13px;font-family:monospace;width:140px;text-transform:uppercase" onkeydown="if(event.key==='Enter')analyze360()" autocomplete="off">
+      <button onclick="analyze360()" style="padding:6px 16px;border-radius:4px;border:none;background:#00e5ff;color:#0a0e17;font-weight:800;font-size:12px;cursor:pointer;font-family:monospace;letter-spacing:1px">ANALYZE</button>
+    </div>
+  </div>
+  <div id="s360-content"><div style="text-align:center;padding:60px;color:var(--text3);font-size:12px">Enter a stock symbol and click ANALYZE for complete 360° intelligence</div></div>
+</div>
+
 <div class="panel" id="p-alphaview" style="padding:16px">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
     <div><h2 style="font-size:20px;font-weight:800;color:var(--text1);margin:0">AlphaView</h2>
@@ -4492,7 +4507,7 @@ async function initUniversalAutocomplete(){
   }catch(e){console.warn('Symbol cache failed:',e);}
 
   // Attach to all symbol input fields
-  const symInputs = ['bt-sym','ch-sym','pt-sym','mp-add-sym','wl-in','adv-add-sym','opt-sym','oi-sym','dcf-sym','pat-sym','av-sym','ai-search'];
+  const symInputs = ['bt-sym','ch-sym','pt-sym','mp-add-sym','wl-in','adv-add-sym','opt-sym','oi-sym','dcf-sym','pat-sym','av-sym','ai-search','s360-sym'];
   symInputs.forEach(id=>{
     const el = document.getElementById(id);
     if(!el) return;
@@ -5154,6 +5169,7 @@ function nav(p,btn){
   if(p==='dividends_tab')loadDividends();
   if(p==='screenbuilder')window.renderSB();
   if(p==='alphaintel')aiLoadTab(_aiTab||'alphascore');
+  if(p==='stock360')load360();
 }
 
 async function loadDash(){
@@ -9379,6 +9395,7 @@ const w=window.open('','_blank');w.document.write(`<!DOCTYPE html><html><head><t
 </div>
 </div>
 
+<script src="/dyor/dyor/stock360.js"></script>
 </body></html>`);
 w.document.close();
 setTimeout(()=>w.print(),500);
@@ -12767,4 +12784,5 @@ function submitPublish(){
 })();
 </script>
 
+<script src="/dyor/dyor/stock360.js"></script>
 </body></html>
