@@ -3816,6 +3816,17 @@ export async function registerRoutes(
 
       const plans = await storage.getPlans(row.advisor_id);
 
+      // Build per-strategy plan mapping
+      const strategyPlans: Record<string, any[]> = {};
+      for (const s of publishedStrategies) {
+        if (s.planIds && s.planIds.length > 0) {
+          strategyPlans[s.id] = plans.filter((p: any) => s.planIds!.includes(p.id));
+          if (strategyPlans[s.id].length === 0) strategyPlans[s.id] = plans;
+        } else {
+          strategyPlans[s.id] = plans;
+        }
+      }
+
       res.json({
         microsite: {
           slug: row.slug,
@@ -3857,6 +3868,7 @@ export async function registerRoutes(
         plans: plans.map((p: any) => ({
           id: p.id, name: p.name, amount: p.amount, durationDays: p.durationDays, code: p.code,
         })),
+        strategyPlans,
         strategies: publishedStrategies.map((s: any) => ({
           id: s.id,
           name: s.name,
