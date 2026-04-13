@@ -4640,13 +4640,15 @@ export async function registerRoutes(
         source: "dyor",
       });
 
-      if (isPublished) {
-        const strategy = await storage.getStrategy(strategy_id);
-        if (strategy) {
+      const strategy = await storage.getStrategy(strategy_id);
+      if (isPublished && strategy) {
           const subPayload = buildNewCallSubscriberNotification(c, strategy.name);
           notifyStrategySubscribers(strategy_id, strategy.name, "new_call", subPayload);
-        }
       }
+      if (isPublished && strategy) {
+          fireWebhookEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
+          xtsHandleEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
+        }
       res.json({ success: true, call_id: c.id, published: isPublished, source: "dyor" });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
@@ -4687,13 +4689,15 @@ export async function registerRoutes(
         source: "dyor",
       });
 
-      if (isPublished) {
-        const strategy = await storage.getStrategy(strategy_id);
-        if (strategy) {
+      const strategy = await storage.getStrategy(strategy_id);
+      if (isPublished && strategy) {
           const subPayload = buildNewPositionSubscriberNotification(p, strategy.name);
           notifyStrategySubscribers(strategy_id, strategy.name, "new_position", subPayload);
-        }
       }
+      if (isPublished && strategy) {
+          fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
+          xtsHandleEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
+        }
       res.json({ success: true, position_id: p.id, published: isPublished, source: "dyor" });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
