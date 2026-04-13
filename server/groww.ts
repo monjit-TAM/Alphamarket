@@ -411,7 +411,7 @@ export async function getLiveQuote(
   }
 
   // Try Alpha Data Service first — works for plain symbols even in F&O strategies
-  const isPlainSymbol = !symbol.match(/d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i);
+  const isPlainSymbol = !symbol.match(/\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i);
   if (isPlainSymbol) {
     const dsQuote = await dataServiceQuote(symbol);
     if (dsQuote && dsQuote.price) {
