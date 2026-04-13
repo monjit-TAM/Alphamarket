@@ -295,7 +295,7 @@ function resolveExchangeAndSegment(
   // For F&O strategies, only use FNO segment if symbol looks like a derivative
   // (contains expiry/strike like NIFTY26APR22800CE). Plain symbols like ICICIBANK use CASH.
   if (strategyType === "Future" || strategyType === "Option") {
-    const hasDerivativeFormat = /d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/.test(upperSymbol);
+    const hasDerivativeFormat = /\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/.test(upperSymbol);
     if (hasDerivativeFormat) {
       return { exchange: "NSE", segment: "FNO", tradingSymbol: upperSymbol };
     }
