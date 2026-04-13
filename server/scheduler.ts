@@ -1,4 +1,6 @@
 import { storage } from "./storage";
+import { fireWebhookEvent, buildCallEventData, buildPositionEventData } from "./webhook-dispatcher";
+import { handleXTSEvent } from "./xts-bridge";
 import { db } from "./db";
 import { calls, positions, strategies } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
@@ -198,6 +200,10 @@ async function checkStopLossAndTargets() {
               exitDate: new Date(),
             });
             const reason = triggered === "SL" ? "Stop Loss triggered automatically" : "Target achieved automatically";
+            const evtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
+            const closedCall = {...call, sellPrice: String(ltp.toFixed(2)), gainPercent, status: "Closed"};
+            fireWebhookEvent(evtType, buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
+            handleXTSEvent(evtType, buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
             console.log(`[Scheduler] ${reason}: ${call.stockName} at \u20B9${ltp.toFixed(2)}, P&L: ${gainPercent}%`);
             const subPayload = buildCallClosedSubscriberNotification(call, ltp, gainPercent, reason, strategy.name);
             notifyStrategySubscribers(call.strategyId, strategy.name, "call_closed", subPayload);
@@ -228,6 +234,8 @@ async function checkStopLossAndTargets() {
                 status: "Closed", sellPrice: String(ltp.toFixed(2)), gainPercent: gp,
                 exitDate: new Date(), trailing_sl_triggered_at: new Date().toISOString(),
               });
+              fireWebhookEvent("TRAILING_SL_TRIGGERED", buildCallEventData({...call, sellPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed"}, strategy), strategy.advisorId).catch(() => {});
+              handleXTSEvent("TRAILING_SL_TRIGGERED", buildCallEventData({...call, sellPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed"}, strategy), strategy.advisorId).catch(() => {});
               console.log(`[Scheduler] Trailing SL triggered: ${call.stockName} at \u20B9${ltp.toFixed(2)}`);
               const reason = "Trailing Stop Loss triggered automatically";
               const subPayload = buildCallClosedSubscriberNotification(call, ltp, gp, reason, strategy.name);
