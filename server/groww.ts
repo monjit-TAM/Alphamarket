@@ -292,8 +292,15 @@ function resolveExchangeAndSegment(
     };
   }
 
+  // For F&O strategies, only use FNO segment if symbol looks like a derivative
+  // (contains expiry/strike like NIFTY26APR22800CE). Plain symbols like ICICIBANK use CASH.
   if (strategyType === "Future" || strategyType === "Option") {
-    return { exchange: "NSE", segment: "FNO", tradingSymbol: upperSymbol };
+    const hasDerivativeFormat = /d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/.test(upperSymbol);
+    if (hasDerivativeFormat) {
+      return { exchange: "NSE", segment: "FNO", tradingSymbol: upperSymbol };
+    }
+    // Plain underlying symbol — use CASH segment for quote
+    return { exchange: "NSE", segment: "CASH", tradingSymbol: upperSymbol };
   }
 
   // Map full company names to NSE trading symbols
