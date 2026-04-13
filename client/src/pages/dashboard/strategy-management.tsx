@@ -2505,6 +2505,15 @@ function AddPositionSheet({
     enabled: isFnOSegment && form.symbol.length > 1,
   });
 
+    // Filter expiries for Futures: only show monthly (last expiry per month)
+  const filteredExpiries = form.segment === "Future" && expiries
+    ? Object.values(expiries.reduce((acc: Record<string, string>, exp: string) => {
+        const key = exp.substring(0, 7); // YYYY-MM
+        acc[key] = exp; // keeps last (latest) expiry per month
+        return acc;
+      }, {} as Record<string, string>)).sort() as string[]
+    : expiries;
+
   const { data: optionChain, isLoading: chainLoading } = useQuery<any[]>({
     queryKey: ["/api/option-chain", form.symbol, symbolExchange, form.expiry],
     queryFn: async () => {
@@ -2607,13 +2616,13 @@ function AddPositionSheet({
                 <Label>Expiry Date</Label>
                 {expiriesLoading ? (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Loading expiries...</div>
-                ) : expiries && expiries.length > 0 ? (
+                ) : filteredExpiries && filteredExpiries.length > 0 ? (
                   <Select value={form.expiry} onValueChange={(v) => setForm({ ...form, expiry: v, strikePrice: "" })}>
                     <SelectTrigger data-testid="select-expiry">
                       <SelectValue placeholder="Select expiry date" />
                     </SelectTrigger>
                     <SelectContent>
-                      {expiries.map((exp: string) => (
+                      {filteredExpiries.map((exp: string) => (
                         <SelectItem key={exp} value={exp}>
                           {new Date(exp).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                         </SelectItem>
