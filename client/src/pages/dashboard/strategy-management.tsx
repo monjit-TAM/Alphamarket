@@ -2514,6 +2514,15 @@ function AddPositionSheet({
       }, {} as Record<string, string>)).sort() as string[]
     : expiries;
 
+    // Filter expiries for Futures: only show monthly (last expiry per month)
+  const filteredExpiries = form.segment === "Future" && expiries
+    ? Object.values(expiries.reduce((acc: Record<string, string>, exp: string) => {
+        const key = exp.substring(0, 7); // YYYY-MM
+        acc[key] = exp; // keeps last (latest) expiry per month
+        return acc;
+      }, {} as Record<string, string>)).sort() as string[]
+    : expiries;
+
   const { data: optionChain, isLoading: chainLoading } = useQuery<any[]>({
     queryKey: ["/api/option-chain", form.symbol, symbolExchange, form.expiry],
     queryFn: async () => {
