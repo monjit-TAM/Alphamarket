@@ -2514,6 +2514,17 @@ function AddPositionSheet({
       }, {} as Record<string, string>)).sort() as string[]
     : expiries;
 
+  const { data: optionChain, isLoading: chainLoading } = useQuery<any[]>({
+    queryKey: ["/api/option-chain", form.symbol, symbolExchange, form.expiry],
+    queryFn: async () => {
+      if (!form.symbol || !form.expiry) return [];
+      const res = await fetch(`/api/option-chain?symbol=${encodeURIComponent(form.symbol)}&exchange=${symbolExchange}&expiry=${encodeURIComponent(form.expiry)}`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: isFnOSegment && form.segment !== "Future" && form.symbol.length > 1 && !!form.expiry,
+  });
+
   const selectedStrike = optionChain?.find((s: any) => String(s.strikePrice) === form.strikePrice);
   const optionLTP = selectedStrike
     ? (form.callPut === "Call" ? selectedStrike.ce?.ltp : selectedStrike.pe?.ltp) || null
