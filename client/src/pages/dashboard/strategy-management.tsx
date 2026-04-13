@@ -2513,7 +2513,7 @@ function AddPositionSheet({
       if (!res.ok) return [];
       return res.json();
     },
-    enabled: isFnOSegment && form.symbol.length > 1 && !!form.expiry,
+    enabled: isFnOSegment && form.segment !== "Future" && form.symbol.length > 1 && !!form.expiry,
   });
 
   const selectedStrike = optionChain?.find((s: any) => String(s.strikePrice) === form.strikePrice);
@@ -2555,7 +2555,7 @@ function AddPositionSheet({
           </div>
           <div className="space-y-1.5">
             <div className="flex flex-wrap gap-1">
-              {["Call", "Put"].map((cp) => (
+              {form.segment !== "Future" && ["Call", "Put"].map((cp) => (
                 <Button
                   key={cp}
                   type="button"
@@ -2630,7 +2630,7 @@ function AddPositionSheet({
                 )}
               </div>
 
-              <div className="space-y-1.5">
+              {form.segment !== "Future" && <div className="space-y-1.5">
                 <Label>Strike Price</Label>
                 {chainLoading ? (
                   <div className="flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="w-3 h-3 animate-spin" /> Loading option chain...</div>
@@ -2665,7 +2665,7 @@ function AddPositionSheet({
                     Live {form.callPut} Premium: {"\u20B9"}{optionLTP.toFixed(2)}
                   </p>
                 )}
-              </div>
+              </div>}
             </>
           ) : (
             <>
