@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { createHmac } from "crypto";
 import { handleXTSEvent } from "./xts-bridge";
 import { handleBrokerEvent } from "./broker-integrations";
+import { buildFormatAPayload, inferSegment } from "./webhook-format-a";
 
 interface WebhookTarget {
   api_key_id: string;
@@ -11,6 +12,10 @@ interface WebhookTarget {
   broker_name: string;
   allowed_advisors: string[] | null;
   webhook_events: string[] | null;
+  webhook_payload_version: string | null;
+  allowed_segments: string[] | null;
+  allowed_strategies: string[] | null;
+  webhook_timeout_ms: number | null;
 }
 
 interface WebhookPayload {
@@ -22,7 +27,7 @@ interface WebhookPayload {
 
 // Retry configuration
 const RETRY_DELAYS = [5000, 30000, 120000]; // 5s, 30s, 2min
-const WEBHOOK_TIMEOUT = 5000; // 5 second timeout
+const WEBHOOK_TIMEOUT_DEFAULT = 10000; // 10 second default; per-broker override via webhook_timeout_ms
 
 // Queue for webhook deliveries
 const webhookQueue: Array<{
@@ -44,7 +49,8 @@ export async function fireWebhookEvent(
   try {
     // Get all active API keys with webhook URLs configured
     const result = await db.execute(sql`
-      SELECT id AS api_key_id, webhook_url, api_secret, broker_name, allowed_advisors, webhook_events
+      SELECT id AS api_key_id, webhook_url, api_secret, broker_name, allowed_advisors, webhook_events,
+             webhook_payload_version, allowed_segments, allowed_strategies, webhook_timeout_ms
       FROM broker_api_keys
       WHERE is_active = true AND webhook_url IS NOT NULL AND webhook_url != ''
     `);
@@ -60,23 +66,56 @@ export async function fireWebhookEvent(
       // Check if advisor is in broker's allowed list
       if (advisorId && target.allowed_advisors && target.allowed_advisors.length > 0) {
         if (!target.allowed_advisors.includes(advisorId)) {
-          continue; // Skip - this advisor is not in broker's selected list
+          continue; // Skip - advisor not in broker's selected list
         }
       }
 
-      const payload: WebhookPayload = {
-        event,
-        timestamp: new Date().toISOString(),
-        data: { ...data, advisorId },
-      };
+      // Segment filter (allowed_segments) — e.g. Dreamstreet wants equity only
+      if (target.allowed_segments && target.allowed_segments.length > 0) {
+        const seg = inferSegment(event, data);
+        if (seg && !target.allowed_segments.includes(seg)) {
+          continue; // Skip - segment not allowed for this broker
+        }
+      }
 
-      // Sign the payload
-      const payloadStr = JSON.stringify(payload);
-      payload.signature = createHmac("sha256", target.api_secret)
+      // Strategy filter (allowed_strategies) — fine-grained per-strategy opt-in
+      if (target.allowed_strategies && target.allowed_strategies.length > 0) {
+        const sid = (data as any).strategyId || (data as any).strategy_id;
+        if (sid && !target.allowed_strategies.includes(sid)) {
+          continue; // Skip - strategy not in broker's allowed list
+        }
+      }
+
+      // Build payload — version-aware
+      const payloadVersion = target.webhook_payload_version || 'v1_flat';
+      let payloadBody: any;
+
+      try {
+        if (payloadVersion === 'v1_thealphamarket') {
+          // Format A — matches thealphamarket.com webhook shape exactly
+          payloadBody = await buildFormatAPayload(event, { ...data, advisorId });
+        } else {
+          // Default v1_flat — current simple shape
+          payloadBody = {
+            event,
+            timestamp: new Date().toISOString(),
+            data: { ...data, advisorId },
+          };
+        }
+      } catch (buildErr: any) {
+        console.error(`[Webhook] Payload build failed for ${target.broker_name} (${payloadVersion}):`, buildErr.message);
+        continue; // Skip this target — don't block other deliveries
+      }
+
+      // Sign
+      const payloadStr = JSON.stringify(payloadBody);
+      const signature = createHmac("sha256", target.api_secret)
         .update(payloadStr)
         .digest("hex");
 
-      webhookQueue.push({ target, payload, attempt: 1 });
+      // Attach signature in a way that doesn't mutate the canonical body used for verification.
+      // We store it on the wrapper so the deliverWebhook function can send it as header.
+      webhookQueue.push({ target, payload: { ...payloadBody, __signature: signature, __event: event } as any, attempt: 1 });
     }
 
     // Process queue
@@ -84,7 +123,7 @@ export async function fireWebhookEvent(
 
     // XTS Bridge — fire in parallel, never blocks webhook delivery
     handleXTSEvent(event, data, advisorId || "").catch((err) => console.error("[XTS Bridge] Unhandled:", err));
-    handleBrokerEvent(event, data, advisorId || "").catch((err) => console.error("[broker-dispatch] Unhandled:", err));
+    handleBrokerEvent(event as any, data, advisorId || "").catch((err) => console.error("[broker-dispatch] Unhandled:", err));
   } catch (err) {
     console.error("[Webhook] Error firing event:", event, err);
   }
@@ -112,21 +151,29 @@ async function deliverWebhook(
   let responseBody = "";
   let delivered = false;
   let errorMessage = "";
+  const timeoutMs = (target as any).webhook_timeout_ms || WEBHOOK_TIMEOUT_DEFAULT;
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetch(target.webhook_url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-AlphaMarket-Event": payload.event,
-        "X-AlphaMarket-Signature": payload.signature || "",
-        "X-AlphaMarket-Timestamp": payload.timestamp,
+        "X-AlphaMarket-Event": (payload as any).__event || (payload as any).event || "",
+        "X-AlphaMarket-Signature": "sha256=" + ((payload as any).__signature || ""),
+        "X-AlphaMarket-Timestamp": String(Math.floor(Date.now() / 1000)),
+        "X-AlphaMarket-Event-Id": (payload as any).__event_id || ((payload as any).messageId) || (payload as any).__event || "",
         "User-Agent": "AlphaMarket-Webhook/1.0",
       },
-      body: JSON.stringify(payload),
+      body: (() => {
+        const clean = { ...(payload as any) };
+        delete clean.__signature;
+        delete clean.__event;
+        delete clean.__event_id;
+        return JSON.stringify(clean);
+      })(),
       signal: controller.signal,
     });
 
@@ -137,7 +184,7 @@ async function deliverWebhook(
   } catch (err: any) {
     errorMessage = err.message || "Unknown error";
     if (err.name === "AbortError") {
-      errorMessage = "Webhook request timed out (5s)";
+      errorMessage = `Webhook request timed out (${timeoutMs}ms)`;
     }
   }
 
