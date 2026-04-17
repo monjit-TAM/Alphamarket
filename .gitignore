@@ -13,3 +13,9 @@ uploads/
 *.bak
 *.bak.*
 .env.bak
+
+# Safety backup files (human-created with .bak, .bak2, .bak-pre-*, etc.)
+*.bak
+*.bak[0-9]*
+*.bak-*
+*.bak.*
