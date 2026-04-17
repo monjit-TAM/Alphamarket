@@ -129,10 +129,8 @@ export async function loadInstrumentMaster(): Promise<void> {
 }
 
 function lookupInstrumentID(symbol: string, exchange?: string): string {
-  const key = symbol.toUpperCase();
-  if (instrumentMaster.has(key)) return instrumentMaster.get(key)!;
-  if (exchange && instrumentMaster.has(`${exchange}:${key}`)) return instrumentMaster.get(`${exchange}:${key}`)!;
-  console.warn(`[XTS Bridge] No instrument ID for ${symbol}, using symbol as fallback`);
+  // TODO: Re-enable after XTS confirms correct exchangeInstrumentID format
+  // Temporarily using NSE symbol directly (confirmed working Apr 1 & Apr 9)
   return symbol;
 }
 
@@ -184,7 +182,7 @@ function mapEquityCallToXTS(call: any, strategy: any, advisor: any, sm: Strategy
   const instrumentID = lookupInstrumentID(symbol, exchange);
   const strategyName = sm?.custom_strategy_name || `${strategy.name} | ${advisor.company_name || advisor.username}`;
   const order: XTSOrder = {
-    exchange, exchangeInstrumentID: instrumentID, series: "EQ", name: symbol,
+    exchange: "NSE", exchangeInstrumentID: instrumentID, series: "EQ", name: symbol,
     productType: deriveProductType(call.durationUnit || call.duration_unit),
     orderType: (call.buyRangeStart || call.buy_range_start) ? "LIMIT" : "MARKET",
     orderSide: (call.action || "BUY").toUpperCase(), timeInForce: "DAY", orderQuantity: 1,
@@ -214,7 +212,7 @@ function mapPositionToXTS(pos: any, strategy: any, advisor: any, sm: StrategyMap
     ? `${symbol} ${pos.strikePrice||pos.strike_price} ${(pos.callPut||pos.call_put||"").substring(0,2).toUpperCase()} ${expiryStr}`
     : `${symbol} FUT ${expiryStr}`;
   const order: XTSOrder = {
-    exchange, exchangeInstrumentID: instrumentID, series: deriveSeries(pos.segment, pos.callPut||pos.call_put, pos.symbol),
+    exchange: "NSE", exchangeInstrumentID: instrumentID, series: deriveSeries(pos.segment, pos.callPut||pos.call_put, pos.symbol),
     name: contractName, productType: deriveProductType(pos.durationUnit||pos.duration_unit, pos.segment),
     orderType: "LIMIT", orderSide: (pos.buySell||pos.buy_sell||"BUY").toUpperCase(), timeInForce: "DAY",
     orderQuantity: pos.lots || 1,
