@@ -53,6 +53,7 @@ function validateVerifyToken(token: string, orderId: string, userId: string): bo
 }
 
 import { initXTSBridge } from "./xts-bridge";
+import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -1218,6 +1219,7 @@ export async function registerRoutes(
           const wlPayload = buildNewCallWatchlistNotification(c, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_call_masked", wlPayload);
           xtsHandleEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
+          handleBrokerEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
         }
       }
       res.json(c);
@@ -1251,6 +1253,7 @@ export async function registerRoutes(
           const wlPayload = buildNewPositionWatchlistNotification(p, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_position_masked", wlPayload);
           xtsHandleEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
+          handleBrokerEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
         }
       }
       res.json(p);
@@ -1411,6 +1414,7 @@ export async function registerRoutes(
       const wlPayload = buildNewCallWatchlistNotification(call, strategy.name);
       notifyWatchlistUsers(call.strategyId, strategy.name, "new_call_masked", wlPayload);
       xtsHandleEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
+      handleBrokerEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -1440,6 +1444,7 @@ export async function registerRoutes(
       const wlPayload = buildNewPositionWatchlistNotification(pos, strategy.name);
       notifyWatchlistUsers(pos.strategyId, strategy.name, "new_position_masked", wlPayload);
       xtsHandleEvent("POSITION_CREATED", buildPositionEventData(pos, strategy), strategy.advisorId).catch(() => {});
+      handleBrokerEvent("POSITION_CREATED", buildPositionEventData(pos, strategy), strategy.advisorId).catch(() => {});
       res.json(updated);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -4657,6 +4662,7 @@ export async function registerRoutes(
       if (isPublished && strategy) {
           fireWebhookEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
           xtsHandleEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
+          handleBrokerEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
         }
       res.json({ success: true, call_id: c.id, published: isPublished, source: "dyor" });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -4706,6 +4712,7 @@ export async function registerRoutes(
       if (isPublished && strategy) {
           fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
           xtsHandleEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
+          handleBrokerEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
         }
       res.json({ success: true, position_id: p.id, published: isPublished, source: "dyor" });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -6893,6 +6900,7 @@ export async function registerRoutes(
 
       // Initialize XTS Bridge
   initXTSBridge();
+  initBrokerAdapters();
 
   return httpServer;
 }
