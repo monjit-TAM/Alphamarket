@@ -6810,13 +6810,13 @@ export async function registerRoutes(
 
   app.post("/api/admin/pull-api/brokers", requireAdmin, async (req, res) => {
     try {
-      const { brokerName, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes } = req.body;
+      const { brokerName, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes, webhookPayloadVersion, allowedSegments, allowedStrategies, webhookTimeoutMs } = req.body;
       if (!brokerName) return res.status(400).send("brokerName required");
       const crypto = require("crypto");
       const apiKey = "amk_live_" + crypto.randomBytes(24).toString("hex");
       const apiSecret = crypto.randomBytes(32).toString("hex");
-      const result = await db.execute(sql`INSERT INTO broker_api_keys (broker_name, api_key, api_secret, contact_email, contact_name, permissions, rate_limit, ip_whitelist, webhook_url, webhook_events)
-        VALUES (${brokerName}, ${apiKey}, ${apiSecret}, ${contactEmail||null}, ${contactName||null}, ${permissions||['read']}, ${rateLimit||100}, ${ipWhitelist||null}, ${webhookUrl||null}, ${webhookEvents||null})
+      const result = await db.execute(sql`INSERT INTO broker_api_keys (broker_name, api_key, api_secret, contact_email, contact_name, permissions, rate_limit, ip_whitelist, webhook_url, webhook_events, webhook_payload_version, allowed_segments, allowed_strategies, webhook_timeout_ms)
+        VALUES (${brokerName}, ${apiKey}, ${apiSecret}, ${contactEmail||null}, ${contactName||null}, ${permissions||['read']}, ${rateLimit||100}, ${ipWhitelist||null}, ${webhookUrl||null}, ${webhookEvents||null}, ${webhookPayloadVersion||'v1_flat'}, ${allowedSegments||null}, ${allowedStrategies||null}, ${webhookTimeoutMs||10000})
         RETURNING *`);
       res.status(201).json({...result.rows[0], api_key: apiKey, api_secret: apiSecret});
     } catch(err:any){res.status(500).send(err.message);}
@@ -6824,7 +6824,7 @@ export async function registerRoutes(
 
   app.patch("/api/admin/pull-api/brokers/:id", requireAdmin, async (req, res) => {
     try {
-      const { brokerName, isActive, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes } = req.body;
+      const { brokerName, isActive, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes, webhookPayloadVersion, allowedSegments, allowedStrategies, webhookTimeoutMs } = req.body;
       const sets: string[] = [];
       const vals: any[] = [];
       if (brokerName !== undefined) { sets.push("broker_name=$" + (vals.length+1)); vals.push(brokerName); }
@@ -6834,6 +6834,10 @@ export async function registerRoutes(
       if (permissions !== undefined) { sets.push("permissions=$" + (vals.length+1)); vals.push(permissions); }
       if (rateLimit !== undefined) { sets.push("rate_limit=$" + (vals.length+1)); vals.push(rateLimit); }
       if (webhookUrl !== undefined) { sets.push("webhook_url=$" + (vals.length+1)); vals.push(webhookUrl); }
+      if (webhookPayloadVersion !== undefined) { sets.push("webhook_payload_version=$" + (vals.length+1)); vals.push(webhookPayloadVersion); }
+      if (allowedSegments !== undefined) { sets.push("allowed_segments=$" + (vals.length+1)); vals.push(allowedSegments); }
+      if (allowedStrategies !== undefined) { sets.push("allowed_strategies=$" + (vals.length+1)); vals.push(allowedStrategies); }
+      if (webhookTimeoutMs !== undefined) { sets.push("webhook_timeout_ms=$" + (vals.length+1)); vals.push(webhookTimeoutMs); }
       if (webhookEvents !== undefined) { sets.push("webhook_events=$" + (vals.length+1)); vals.push(webhookEvents); }
       if (notes !== undefined) { sets.push("notes=$" + (vals.length+1)); vals.push(notes); }
       if (sets.length === 0) return res.json({status:"no changes"});
@@ -6870,6 +6874,25 @@ export async function registerRoutes(
       const logs = await db.execute(sql`SELECT * FROM broker_api_logs WHERE api_key_id=${req.params.id} ORDER BY created_at DESC LIMIT ${limit}`);
       res.json(logs.rows);
     } catch(err:any){res.status(500).send(err.message);}
+  });
+
+  
+  // ─── GET /api/admin/strategies/list — for admin multi-select of allowed_strategies ───
+  app.get("/api/admin/strategies/list", requireAdmin, async (_req, res) => {
+    try {
+      const r = await db.execute(sql`
+        SELECT s.id, s.slug, s.name, s.type, s.status,
+               u.id AS advisor_id, u.company_name AS advisor_name, u.username AS advisor_username
+        FROM strategies s
+        JOIN users u ON u.id = s.advisor_id
+        WHERE s.status != 'Draft'
+        ORDER BY u.company_name NULLS LAST, s.name
+      `);
+      res.json(r.rows);
+    } catch (e: any) {
+      console.error("[admin strategies list]", e);
+      res.status(500).json({ error: "Failed to fetch strategies" });
+    }
   });
 
   app.get("/api/admin/pull-api/brokers/:id/webhook-logs", requireAdmin, async (req, res) => {
