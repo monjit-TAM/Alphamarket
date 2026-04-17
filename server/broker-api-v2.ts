@@ -22,6 +22,13 @@ import {
   type BrokerRequest,
   type BrokerApiKey,
 } from "./broker-api";
+import {
+  callsSegmentFilterSql,
+  positionsSegmentFilterSql,
+  strategyAllowlistFilterSql,
+  strategyIdAllowlistFilterSql,
+  isStrategyAccessible,
+} from "./broker-filter-helpers";
 
 // ═══════════════════════════════════════════════════════════════════════
 // Response envelope helpers
@@ -533,6 +540,9 @@ export function registerBrokerApiRoutesV2(app: Express) {
   // ─── GET /alpha/strategies/:strategyId ───
   app.get(prefix + "/alpha/strategies/:strategyId", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
     try {
+      if (!isStrategyAccessible(req.broker!, String(req.params.strategyId))) {
+        return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Strategy not found"));
+      }
       const id = req.params.strategyId;
       const scoped = advisorFilterSql(req.broker!, "u");
       const q = await db.execute(sql`
@@ -558,12 +568,18 @@ export function registerBrokerApiRoutesV2(app: Express) {
   // ─── GET /alpha/strategies/:strategyId/calls ───
   app.get(prefix + "/alpha/strategies/:strategyId/calls", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
     try {
-      const id = req.params.strategyId;
+      const id = String(req.params.strategyId);
+      // Early strategy-level access check
+      if (!isStrategyAccessible(req.broker!, id)) {
+        return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Strategy not found"));
+      }
       const statusFilter = String(req.query.status ?? "ACTIVE").toUpperCase();
       const from = req.query.from ? String(req.query.from) : null;
       const to = req.query.to ? String(req.query.to) : null;
       const limit = clampInt(req.query.limit, 100, 1, 500);
       const scoped = advisorFilterSql(req.broker!, "u");
+      const callsSegFilter = callsSegmentFilterSql(req.broker!, "c");
+      const posSegFilter = positionsSegmentFilterSql(req.broker!, "p");
 
       const sQ = await db.execute(sql`
         SELECT s.*, u.id AS u_id, u.username AS u_username, u.company_name AS u_company_name,
@@ -594,6 +610,7 @@ export function registerBrokerApiRoutesV2(app: Express) {
          AND im.exchange = 'NSE'
         WHERE c.strategy_id = ${id}
           AND c.is_published = true
+          AND ${callsSegFilter}
           ${statusWhere}
           ${from ? sql`AND c.created_at >= ${from}::timestamp` : sql``}
           ${to ? sql`AND c.created_at <= ${to}::timestamp` : sql``}
@@ -607,6 +624,7 @@ export function registerBrokerApiRoutesV2(app: Express) {
         LEFT JOIN instrument_master im ON im.tradingsymbol = p.symbol
         WHERE p.strategy_id = ${id}
           AND p.is_published = true
+          AND ${posSegFilter}
           ${statusFilter === "ACTIVE" ? sql`AND p.status = 'Active'` : statusFilter === "CLOSED" ? sql`AND p.status = 'Closed'` : sql``}
           ${from ? sql`AND p.created_at >= ${from}::timestamp` : sql``}
           ${to ? sql`AND p.created_at <= ${to}::timestamp` : sql``}
@@ -727,6 +745,10 @@ export function registerBrokerApiRoutesV2(app: Express) {
       const strategyType = req.query.strategyType ? String(req.query.strategyType) : null;
       const limit = clampInt(req.query.limit, 100, 1, 500);
       const scoped = advisorFilterSql(req.broker!, "u");
+      const stratFilter = strategyIdAllowlistFilterSql(req.broker!, "c.strategy_id");
+      const posStratFilter = strategyIdAllowlistFilterSql(req.broker!, "p.strategy_id");
+      const callsSegFilter = callsSegmentFilterSql(req.broker!, "c");
+      const posSegFilter = positionsSegmentFilterSql(req.broker!, "p");
       const brokerName = req.broker!.broker_name;
 
       const callsQ = await db.execute(sql`
@@ -749,6 +771,8 @@ export function registerBrokerApiRoutesV2(app: Express) {
           AND c.is_published = true
           AND s.status = 'Published'
           AND ${scoped}
+          AND ${stratFilter}
+          AND ${callsSegFilter}
           ${advisorId ? sql`AND s.advisor_id = ${advisorId}` : sql``}
           ${strategyType ? sql`AND s.type = ${strategyType}::strategy_type` : sql``}
         ORDER BY c.created_at DESC
@@ -771,6 +795,8 @@ export function registerBrokerApiRoutesV2(app: Express) {
           AND p.is_published = true
           AND s.status = 'Published'
           AND ${scoped}
+          AND ${posStratFilter}
+          AND ${posSegFilter}
           ${advisorId ? sql`AND s.advisor_id = ${advisorId}` : sql``}
           ${strategyType ? sql`AND s.type = ${strategyType}::strategy_type` : sql``}
         ORDER BY p.created_at DESC
