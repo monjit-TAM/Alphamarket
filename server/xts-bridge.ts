@@ -113,10 +113,14 @@ const instrumentMaster: Map<string, string> = new Map();
 
 export async function loadInstrumentMaster(): Promise<void> {
   try {
-    const all = await db.execute(sql.raw(`SELECT symbol, exchange_instrument_id FROM xts_instrument_master`));
+    const all = await db.execute(sql.raw(`SELECT name, series, exchange_instrument_id FROM xts_instrument_master`));
     instrumentMaster.clear();
     for (const row of all.rows as any[]) {
-      instrumentMaster.set(row.symbol.toUpperCase(), row.exchange_instrument_id);
+      if (row.series === 'EQ' || row.series === 'FUTIDX' || row.series === 'FUTSTK') {
+        instrumentMaster.set(row.name.toUpperCase(), row.exchange_instrument_id);
+      } else {
+        instrumentMaster.set(row.name.toUpperCase(), row.exchange_instrument_id);
+      }
     }
     console.log(`[XTS Bridge] Loaded ${instrumentMaster.size} instruments from DB`);
   } catch {
@@ -149,9 +153,17 @@ async function getStrategyMapping(connId: string, strategyId: string): Promise<S
 }
 
 // --- Payload Mapping ---
-function deriveSeries(segment?: string, callPut?: string): string {
-  if (segment === "Option") return "OPTIDX";
-  if (segment === "Future") return "FUTIDX";
+const INDEX_SYMBOLS = ["NIFTY","BANKNIFTY","FINNIFTY","MIDCPNIFTY","SENSEX","BANKEX"];
+
+function deriveSeries(segment?: string, callPut?: string, symbol?: string): string {
+  if (segment === "Option") {
+    const isIndex = symbol && INDEX_SYMBOLS.includes(symbol.toUpperCase());
+    return isIndex ? "OPTIDX" : "OPTSTK";
+  }
+  if (segment === "Future") {
+    const isIndex = symbol && INDEX_SYMBOLS.includes(symbol.toUpperCase());
+    return isIndex ? "FUTIDX" : "FUTSTK";
+  }
   return "EQ";
 }
 
@@ -187,7 +199,7 @@ function mapEquityCallToXTS(call: any, strategy: any, advisor: any, sm: Strategy
     strategyname: strategyName, messageID: call.id || call.uid,
     stopLossPrice: order.stopLoss, targetPrice: order.target, profitBookedPrice: order.profitBooked,
     limitPrice: order.limitPrice, badge: call.theme || strategy.horizon || "Short Term",
-    theory: call.rationale || "", validity: formatValidity(call.duration, call.durationUnit || call.duration_unit),
+    theory: (call.rationale || "").replace(/[^\x00-\x7F]/g, "").substring(0, 500), validity: formatValidity(call.duration, call.durationUnit || call.duration_unit),
     createdAt: order.createdAt, exchangeInstrumentID: instrumentID, orders: [order], thematicCollection: "Equity",
   };
 }
@@ -202,7 +214,7 @@ function mapPositionToXTS(pos: any, strategy: any, advisor: any, sm: StrategyMap
     ? `${symbol} ${pos.strikePrice||pos.strike_price} ${(pos.callPut||pos.call_put||"").substring(0,2).toUpperCase()} ${expiryStr}`
     : `${symbol} FUT ${expiryStr}`;
   const order: XTSOrder = {
-    exchange, exchangeInstrumentID: instrumentID, series: deriveSeries(pos.segment, pos.callPut||pos.call_put),
+    exchange, exchangeInstrumentID: instrumentID, series: deriveSeries(pos.segment, pos.callPut||pos.call_put, pos.symbol),
     name: contractName, productType: deriveProductType(pos.durationUnit||pos.duration_unit, pos.segment),
     orderType: "LIMIT", orderSide: (pos.buySell||pos.buy_sell||"BUY").toUpperCase(), timeInForce: "DAY",
     orderQuantity: pos.lots || 1,
@@ -217,7 +229,7 @@ function mapPositionToXTS(pos: any, strategy: any, advisor: any, sm: StrategyMap
     strategyname: strategyName, messageID: pos.id || pos.uid,
     stopLossPrice: order.stopLoss, targetPrice: order.target, profitBookedPrice: order.profitBooked,
     limitPrice: order.limitPrice, badge: pos.theme || strategy.horizon || "Short Term",
-    theory: pos.rationale || "", validity: formatValidity(pos.duration, pos.durationUnit||pos.duration_unit),
+    theory: (pos.rationale || "").replace(/[^\x00-\x7F]/g, "").substring(0, 500), validity: formatValidity(pos.duration, pos.durationUnit||pos.duration_unit),
     createdAt: order.createdAt, exchangeInstrumentID: instrumentID, orders: [order], thematicCollection: "F&O",
   };
 }

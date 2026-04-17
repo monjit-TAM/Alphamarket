@@ -65,6 +65,8 @@ async function buildAll() {
     await mkdir("dist/public", { recursive: true });
     await copyFile("server/broker-swagger.json", "dist/public/broker-swagger.json");
     await copyFile("server/broker-guide.html", "dist/public/broker-guide.html");
+    await copyFile("server/broker-swagger-v2.json", "dist/public/broker-swagger-v2.json");
+    await copyFile("server/broker-guide-v2.html", "dist/public/broker-guide-v2.html");
     console.log("static files copied ✓");
   } catch(e) {
     console.warn("Warning: could not copy static files:", e.message);

@@ -1,0 +1,505 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AlphaMarket Broker Integration API",
+    "version": "2.0.0",
+    "description": "AlphaMarket exposes two complementary integration modes for brokers.\n\n**Pull API** — brokers poll AlphaMarket's REST endpoints to fetch advisor profiles, strategies, and active recommendations. Designed for periodic polling (30-60s recommended for live-calls).\n\n**Webhook Push** — brokers register an HTTPS endpoint; AlphaMarket POSTs signed payloads in real time when calls are created, modified, closed, hit target/stop-loss, or when trailing stop-loss updates. Retry policy: 3 attempts (5s, 30s, 2min). HMAC-SHA256 signature. 5-second request timeout.\n\nBoth modes return **identical payload shapes** under the same response envelope — brokers can use one parser for both integration modes.\n\nEach recommendation carries `exchangeToken` (NSE/BSE/MCX-native numeric instrument ID) so brokers can map to their own instrument masters reliably.\n\n## Authentication\n\nEvery request to the Pull API must include the header `x-api-key: amk_live_<YOUR_API_KEY>`. Keys are issued by AlphaMarket and can be scoped to specific advisors, permissions, and IP ranges. Contact integrations@alphamarket.co.in to obtain a key.\n\n## Response Envelope\n\nAll responses (success and error) follow this shape:\n\n```json\n{\n  \"status\": \"success\" | \"error\",\n  \"statusCode\": 200,\n  \"message\": { \"key\": \"GET\", \"message\": \"Get Successfully\" },\n  \"data\": { ... }\n}\n```\n\nFor list endpoints, `data` is an array and a `total` field is added at the top level.\n\n## Environments\n\n- **Production:** `https://alphamarket.co.in/api/v2`\n- **UAT:** `https://uat.alphamarket.co.in/api/v2`\n\n## Rate Limits\n\nDefault: 100 requests per minute per API key. Headers on every response: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`.\n\n## Support\n\nintegrations@alphamarket.co.in",
+    "contact": { "name": "AlphaMarket Integrations", "email": "integrations@alphamarket.co.in", "url": "https://alphamarket.co.in" },
+    "license": { "name": "Proprietary — AlphaMarket" }
+  },
+  "servers": [
+    { "url": "https://alphamarket.co.in/api/v2", "description": "Production" },
+    { "url": "https://uat.alphamarket.co.in/api/v2", "description": "UAT" }
+  ],
+  "security": [ { "ApiKeyAuth": [] } ],
+  "tags": [
+    { "name": "Meta", "description": "Service health and metadata" },
+    { "name": "Advisors", "description": "SEBI-registered investment advisors" },
+    { "name": "Strategies", "description": "Advisor strategies" },
+    { "name": "Recommendations", "description": "Active and historical trading calls + F&O positions" },
+    { "name": "Search", "description": "Flexible paginated search" },
+    { "name": "Instruments", "description": "Instrument master lookup" },
+    { "name": "Webhooks", "description": "Webhook delivery logs and replay" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Meta"], "summary": "Health check",
+        "description": "Returns service status. No authentication required.", "security": [],
+        "responses": { "200": { "description": "Service is healthy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } } } }
+      }
+    },
+    "/alpha/advisors": {
+      "get": {
+        "tags": ["Advisors"], "summary": "List advisors",
+        "description": "SEBI-approved advisors accessible to this API key. If the key has `allowedAdvisors` set, only those are returned.",
+        "parameters": [
+          { "name": "theme", "in": "query", "schema": { "type": "string" }, "description": "Case-insensitive theme filter", "example": "Growth" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0, "minimum": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "List of advisors", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdvisorListResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/alpha/advisors/{advisorId}": {
+      "get": {
+        "tags": ["Advisors"], "summary": "Get advisor by ID",
+        "parameters": [ { "name": "advisorId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "6a1dda4a-6bbc-4913-9657-613c952e63be" } ],
+        "responses": {
+          "200": { "description": "Advisor detail with strategies", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdvisorDetailResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/alpha/strategies": {
+      "get": {
+        "tags": ["Strategies"], "summary": "List strategies",
+        "parameters": [
+          { "name": "advisorId", "in": "query", "schema": { "type": "string" } },
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["Equity", "Future", "Option", "Commodity", "Basket"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "minimum": 1, "maximum": 100 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0, "minimum": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "List of strategies", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StrategyListResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/alpha/strategies/{strategyId}": {
+      "get": {
+        "tags": ["Strategies"], "summary": "Get strategy by ID",
+        "parameters": [ { "name": "strategyId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "42459575-b915-43d1-bfb1-76140113f772" } ],
+        "responses": {
+          "200": { "description": "Strategy detail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/StrategyDetailResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/alpha/strategies/{strategyId}/calls": {
+      "get": {
+        "tags": ["Recommendations"], "summary": "Recommendations for a strategy",
+        "parameters": [
+          { "name": "strategyId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["ACTIVE", "CLOSED", "ALL"], "default": "ACTIVE" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "minimum": 1, "maximum": 500 } }
+        ],
+        "responses": {
+          "200": { "description": "Recommendations", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecommendationListResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/alpha/strategies/{strategyId}/performance": {
+      "get": {
+        "tags": ["Strategies"], "summary": "Performance metrics",
+        "description": "Hit-rate, period-wise P&L, best/worst closed calls.",
+        "parameters": [
+          { "name": "strategyId", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "period", "in": "query", "schema": { "type": "string", "enum": ["1M", "3M", "6M", "1Y", "ALL"], "default": "ALL" } }
+        ],
+        "responses": {
+          "200": { "description": "Performance", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PerformanceResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/alpha/live-calls": {
+      "get": {
+        "tags": ["Recommendations"], "summary": "All live recommendations (PRIMARY POLLING ENDPOINT)",
+        "description": "The main endpoint for brokers polling AlphaMarket. Returns all currently-active recommendations visible to this API key, across every strategy of every allowed advisor.\n\nRecommended polling interval: 30-60 seconds. For real-time delivery, register a webhook instead.",
+        "parameters": [
+          { "name": "advisorId", "in": "query", "schema": { "type": "string" } },
+          { "name": "strategyType", "in": "query", "schema": { "type": "string", "enum": ["Equity", "Future", "Option", "Commodity", "Basket"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "minimum": 1, "maximum": 500 } }
+        ],
+        "responses": {
+          "200": { "description": "Live recommendations", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecommendationListResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/alpha/calls/{callId}": {
+      "get": {
+        "tags": ["Recommendations"], "summary": "Get single recommendation by ID",
+        "parameters": [ { "name": "callId", "in": "path", "required": true, "schema": { "type": "string" }, "example": "fc44f5d6-dbf5-4f84-8f52-50a03546f480" } ],
+        "responses": {
+          "200": { "description": "Recommendation detail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecommendationDetailResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/alpha/integration/call/search": {
+      "post": {
+        "tags": ["Search"], "summary": "Flexible paginated search across recommendations",
+        "description": "Full search endpoint — supports filters for date range, status, symbol, advisor, strategy type. Use for bulk back-fill and historical queries.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CallSearchRequest" } } } },
+        "responses": {
+          "200": { "description": "Search results", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RecommendationListResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/alpha/instruments/lookup": {
+      "get": {
+        "tags": ["Instruments"], "summary": "Look up instrument by symbol + exchange",
+        "description": "Returns exchangeToken and metadata for a given symbol.",
+        "parameters": [
+          { "name": "symbol", "in": "query", "required": true, "schema": { "type": "string" }, "example": "SAIL" },
+          { "name": "exchange", "in": "query", "schema": { "type": "string", "enum": ["NSE", "BSE", "NFO", "BFO", "MCX", "NCO"], "default": "NSE" } },
+          { "name": "type", "in": "query", "schema": { "type": "string", "enum": ["EQ", "FUT", "CE", "PE"], "default": "EQ" } }
+        ],
+        "responses": {
+          "200": { "description": "Instrument found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InstrumentResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      }
+    },
+    "/alpha/instruments/search": {
+      "get": {
+        "tags": ["Instruments"], "summary": "Search instruments by partial symbol or name",
+        "parameters": [
+          { "name": "q", "in": "query", "required": true, "schema": { "type": "string", "minLength": 2 }, "example": "NIFTY" },
+          { "name": "exchange", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 25, "minimum": 1, "maximum": 50 } }
+        ],
+        "responses": {
+          "200": { "description": "Matching instruments", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/InstrumentListResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/alpha/webhook-logs": {
+      "get": {
+        "tags": ["Webhooks"], "summary": "Webhook delivery audit log",
+        "parameters": [
+          { "name": "event", "in": "query", "schema": { "$ref": "#/components/schemas/WebhookEventType" } },
+          { "name": "delivered", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date-time" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100, "minimum": 1, "maximum": 500 } }
+        ],
+        "responses": {
+          "200": { "description": "Delivery logs", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WebhookLogListResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/alpha/sync/replay": {
+      "post": {
+        "tags": ["Webhooks"], "summary": "Replay missed webhook events",
+        "description": "Re-fires webhook events for a time range. Rate-limited to one request per 5 minutes per API key.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReplayRequest" } } } },
+        "responses": {
+          "202": { "description": "Replay scheduled", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReplayResponse" } } } },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey", "in": "header", "name": "x-api-key",
+        "description": "API key issued by AlphaMarket. Format: `amk_live_<64 hex chars>`."
+      }
+    },
+    "responses": {
+      "BadRequest":    { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "status": "error", "statusCode": 400, "message": { "key": "BAD_REQUEST", "message": "Invalid request body" }, "data": null } } } },
+      "Unauthorized":  { "description": "Invalid or missing API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "status": "error", "statusCode": 401, "message": { "key": "UNAUTHORIZED", "message": "Invalid API key" }, "data": null } } } },
+      "NotFound":      { "description": "Resource not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "status": "error", "statusCode": 404, "message": { "key": "NOT_FOUND", "message": "Resource not found" }, "data": null } } } },
+      "RateLimited":   { "description": "Rate limit exceeded", "headers": { "Retry-After": { "schema": { "type": "integer" }, "description": "Seconds until quota resets" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" }, "example": { "status": "error", "statusCode": 429, "message": { "key": "RATE_LIMITED", "message": "Too many requests" }, "data": null } } } }
+    },
+    "schemas": {
+      "SuccessEnvelope": {
+        "type": "object",
+        "required": ["status", "statusCode", "message", "data"],
+        "properties": {
+          "status":     { "type": "string", "enum": ["success"], "example": "success" },
+          "statusCode": { "type": "integer", "example": 200 },
+          "message":    { "type": "object", "properties": { "key": { "type": "string", "example": "GET" }, "message": { "type": "string", "example": "Get Successfully" } } }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["status", "statusCode", "message"],
+        "properties": {
+          "status":     { "type": "string", "enum": ["error"] },
+          "statusCode": { "type": "integer" },
+          "message":    { "type": "object", "properties": { "key": { "type": "string" }, "message": { "type": "string" } } },
+          "data":       { "type": "object", "nullable": true, "example": null }
+        }
+      },
+      "HealthResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SuccessEnvelope" },
+          { "type": "object", "properties": { "data": { "type": "object", "properties": { "service": { "type": "string", "example": "AlphaMarket Broker API" }, "version": { "type": "string", "example": "2.0.0" }, "timestamp": { "type": "string", "format": "date-time" } } } } }
+        ]
+      },
+      "Advisor": {
+        "type": "object",
+        "properties": {
+          "advisorId":                 { "type": "string", "format": "uuid" },
+          "advisorName":               { "type": "string", "example": "STOKWIZ" },
+          "advisorSebiRegistrationNo": { "type": "string", "example": "INH000013925" },
+          "profilePic":                { "type": "string", "format": "uri", "nullable": true },
+          "certificateURl":            { "type": "string", "format": "uri", "nullable": true, "description": "SEBI RIA certificate URL (spelling preserved from legacy contract — note capital U, lowercase l)" },
+          "overview":                  { "type": "string", "nullable": true },
+          "themes":                    { "type": "array", "items": { "type": "string" }, "example": ["Equity", "F&O", "Growth"] },
+          "isApproved":                { "type": "boolean", "example": true },
+          "activeSince":               { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "StrategySummary": {
+        "type": "object",
+        "properties": {
+          "strategyId":           { "type": "string", "format": "uuid" },
+          "strategyName":         { "type": "string", "example": "Equity Short Term" },
+          "strategyType":         { "type": "string", "enum": ["Equity", "Future", "Option", "Commodity", "Basket"] },
+          "activeCallsCount":     { "type": "integer", "example": 5 },
+          "totalRecommendations": { "type": "integer", "example": 123 }
+        }
+      },
+      "Strategy": {
+        "type": "object",
+        "properties": {
+          "strategyId":                { "type": "string", "format": "uuid" },
+          "strategyName":              { "type": "string", "example": "WIZTHEME VALUE" },
+          "strategyDescription":       { "type": "string", "nullable": true },
+          "strategyType":              { "type": "string", "enum": ["Equity", "Future", "Option", "Commodity", "Basket"] },
+          "status":                    { "type": "string", "enum": ["Draft", "Published", "Archived"], "example": "Published" },
+          "benchmark":                 { "type": "string", "nullable": true, "example": "Nifty 50" },
+          "theme":                     { "type": "array", "items": { "type": "string" }, "example": ["Equity", "F&O", "Growth"] },
+          "thematicCollection":        { "type": "array", "items": { "type": "string" }, "example": ["Value"] },
+          "managementStyle":           { "type": "array", "items": { "type": "string" }, "example": ["Active"] },
+          "volatility":                { "type": "array", "items": { "type": "string", "enum": ["Low", "Medium", "High"] }, "example": ["Medium"] },
+          "horizon":                   { "type": "array", "items": { "type": "string", "enum": ["Intraday", "Swing", "Positional", "LongTerm"] }, "example": ["Positional"] },
+          "keySector":                 { "type": "array", "items": { "type": "string" }, "nullable": true, "example": ["Technology", "Banks", "FMCG"] },
+          "marketCap":                 { "type": "array", "items": { "type": "string", "enum": ["LargeCap", "MidCap", "SmallCap"] }, "nullable": true },
+          "minimumInvestment":         { "type": "number", "nullable": true },
+          "cagr":                      { "type": "number", "nullable": true },
+          "advisorId":                 { "type": "string", "format": "uuid" },
+          "advisorName":               { "type": "string", "example": "STOKWIZ" },
+          "advisorSebiRegistrationNo": { "type": "string", "example": "INH000013925" },
+          "profilePic":                { "type": "string", "format": "uri", "nullable": true },
+          "certificateURl":            { "type": "string", "format": "uri", "nullable": true },
+          "createdAt":                 { "type": "string", "format": "date-time" }
+        }
+      },
+      "Recommendation": {
+        "type": "object",
+        "description": "A single trading call with full advisor+strategy context.\n\nEither `equityCall` OR `fnoCall` is populated — never both. Equity/Basket strategies populate `equityCall`. Future/Option/Commodity strategies populate `fnoCall` (an array to support multi-leg strategies like iron condor).\n\n**This exact shape is delivered identically via the Pull API `data` field and inside the Webhook Push `data` field — one parser works for both integration modes.**",
+        "required": ["callId", "recommendationId", "strategyId", "advisorId", "callStatus", "callType", "creationDate", "symbol"],
+        "properties": {
+          "callId":                    { "type": "string", "format": "uuid", "description": "Internal AlphaMarket UUID of the call. Use for idempotency and deduplication.", "example": "fc44f5d6-dbf5-4f84-8f52-50a03546f480" },
+          "recommendationId":          { "type": "string", "description": "Sequential stable ID", "example": "11316" },
+          "clientId":                  { "type": "string", "description": "The broker receiving this recommendation.", "example": "upstox" },
+          "env":                       { "type": "string", "enum": ["uat", "pod"], "description": "Environment: uat or pod (production)", "example": "pod" },
+          "callStatus":                { "type": "string", "enum": ["PUBLISHED", "ACTIVE", "CLOSED", "ARCHIVED"], "example": "PUBLISHED" },
+          "dayMonth":                  { "type": "string", "description": "DDMM format (publish day/month)", "example": "1403" },
+          "symbol":                    { "type": "string", "description": "For F&O, the full contract symbol (e.g. NIFTY26APRFUT)", "example": "SAIL" },
+          "callType":                  { "type": "string", "enum": ["BUY", "SELL"], "example": "BUY" },
+          "strategyId":                { "type": "string" },
+          "strategyName":              { "type": "string", "example": "WIZTHEME VALUE" },
+          "strategyDescription":       { "type": "string", "nullable": true },
+          "strategyType":              { "type": "string", "enum": ["Equity", "Future", "Option", "Commodity", "Basket"] },
+          "benchmark":                 { "type": "string", "nullable": true, "example": "Nifty 50" },
+          "rational":                  { "type": "string", "description": "Advisor's rationale. For closed calls, may be TargetAchieved, StoplossTriggered, TrailingSLTriggered, or custom." },
+          "theme":                     { "type": "array", "items": { "type": "string" }, "example": ["Equity", "F&O", "Growth"] },
+          "thematicCollection":        { "type": "array", "items": { "type": "string" }, "example": ["Value"] },
+          "managementStyle":           { "type": "array", "items": { "type": "string" }, "example": ["Active"] },
+          "volatility":                { "type": "array", "items": { "type": "string" }, "example": ["Medium"] },
+          "horizon":                   { "type": "array", "items": { "type": "string" }, "example": ["Positional"] },
+          "keySector":                 { "type": "array", "items": { "type": "string" }, "nullable": true },
+          "advisorId":                 { "type": "string", "example": "6a1dda4a-6bbc-4913-9657-613c952e63be" },
+          "advisorName":               { "type": "string", "example": "STOKWIZ" },
+          "advisorSebiRegistrationNo": { "type": "string", "example": "INH000013925" },
+          "profilePic":                { "type": "string", "format": "uri", "nullable": true },
+          "certificateURl":            { "type": "string", "format": "uri", "nullable": true },
+          "equityCall":                { "oneOf": [ { "$ref": "#/components/schemas/EquityCall" }, { "type": "null" } ], "description": "Populated for Equity/Basket strategies. Null for F&O." },
+          "fnoCall":                   { "type": "array", "items": { "$ref": "#/components/schemas/FnoCall" }, "nullable": true, "description": "Populated for Future/Option/Commodity strategies. Array supports multi-leg strategies." },
+          "trailingStopLoss":          { "$ref": "#/components/schemas/TrailingStopLoss" },
+          "creationDate":              { "type": "string", "format": "date-time", "example": "2026-03-14T17:32:44.217Z" },
+          "status":                    { "type": "string", "enum": ["SEND", "PENDING", "FAILED"], "description": "Delivery status to this broker. SEND = delivered.", "example": "SEND" },
+          "isActive":                  { "type": "boolean", "example": true }
+        }
+      },
+      "EquityCall": {
+        "type": "object",
+        "description": "Equity recommendation leg (cash market).",
+        "properties": {
+          "exchange":            { "type": "string", "enum": ["NSE", "BSE"], "example": "NSE" },
+          "legId":               { "type": "string", "example": "11317" },
+          "exchangeToken":       { "type": "string", "description": "NSE/BSE-native numeric instrument token.", "example": "2963" },
+          "symbol":              { "type": "string", "example": "SAIL" },
+          "name":                { "type": "string", "example": "Steel Authority of India Limited" },
+          "buyDate":             { "type": "string", "format": "date-time" },
+          "buyPrice":            { "type": "number", "example": 147.0 },
+          "buyPriceRangeStart":  { "type": "number", "nullable": true, "example": 147.0 },
+          "buyPriceRangeEnd":    { "type": "number", "nullable": true, "example": 149.0 },
+          "callType":            { "type": "string", "enum": ["BUY", "SELL"] },
+          "targetPriceRange":    { "type": "string", "example": "163" },
+          "profitGoal":          { "type": "string", "example": "10" },
+          "stopLoss":            { "type": "string", "example": "138" },
+          "profitLossPercent":   { "type": "number", "nullable": true, "description": "Populated when closed", "example": 2.26 },
+          "sellPrice":           { "type": "number", "nullable": true, "description": "Populated when closed" },
+          "sellDate":            { "type": "string", "format": "date-time", "nullable": true, "description": "Populated when closed" },
+          "exitType":            { "type": "string", "enum": ["TargetAchieved", "StoplossTriggered", "TrailingSLTriggered", "Manual", "Expired"], "nullable": true },
+          "status":              { "type": "string", "enum": ["PUBLISHED", "ACTIVE", "CLOSED"] }
+        }
+      },
+      "FnoCall": {
+        "type": "object",
+        "description": "F&O recommendation leg. Futures, options, or commodity derivatives.",
+        "properties": {
+          "exchange":            { "type": "string", "enum": ["NFO", "BFO", "MCX", "NCO"], "example": "NFO" },
+          "legId":               { "type": "string", "example": "00833" },
+          "legName":             { "type": "string", "nullable": true },
+          "exchangeToken":       { "type": "string", "example": "66691" },
+          "symbol":              { "type": "string", "example": "NIFTY26APRFUT" },
+          "name":                { "type": "string", "example": "NIFTY" },
+          "series":              { "type": "string", "nullable": true, "example": "XX" },
+          "segment":             { "type": "string", "enum": ["FUTIDX", "OPTIDX", "FUTSTK", "OPTSTK", "FUTCOM", "OPTCOM"] },
+          "optionType":          { "type": "string", "enum": ["Future", "CE", "PE"], "example": "Future" },
+          "callPut":             { "type": "string", "enum": ["CE", "PE"], "nullable": true, "description": "Only set for options" },
+          "buySell":             { "type": "string", "enum": ["BUY", "SELL"] },
+          "expiryDate":          { "type": "string", "format": "date-time", "example": "2026-04-28T00:00:00.000Z" },
+          "strike":              { "type": "number", "description": "Strike price (0 for futures)", "example": 0 },
+          "lotSize":             { "type": "integer", "example": 65 },
+          "isStoppLossAbsolute": { "type": "object", "description": "Whether stopLoss is absolute (Y) or percentage (N)", "properties": { "code": { "type": "string", "enum": ["Y", "N"] }, "name": { "type": "string", "enum": ["Yes", "No"] } } },
+          "buyDate":             { "type": "string", "format": "date-time" },
+          "buyPrice":            { "type": "number", "example": 24715.0 },
+          "buyPriceRangeStart":  { "type": "number", "nullable": true },
+          "buyPriceRangeEnd":    { "type": "number", "nullable": true },
+          "callType":            { "type": "string", "enum": ["BUY", "SELL"] },
+          "targetPriceRange":    { "type": "string", "example": "25777" },
+          "profitGoal":          { "type": "string", "nullable": true },
+          "stopLoss":            { "type": "string", "example": "24300" },
+          "profitLossPercent":   { "type": "number", "nullable": true },
+          "sellPrice":           { "type": "number", "nullable": true },
+          "sellDate":            { "type": "string", "format": "date-time", "nullable": true },
+          "exitType":            { "type": "string", "enum": ["TargetAchieved", "StoplossTriggered", "TrailingSLTriggered", "Manual", "Expired"], "nullable": true },
+          "rational":            { "type": "string", "nullable": true },
+          "creationDate":        { "type": "string", "format": "date-time" },
+          "status":              { "type": "string", "enum": ["PUBLISHED", "ACTIVE", "CLOSED"] }
+        }
+      },
+      "TrailingStopLoss": {
+        "type": "object",
+        "properties": {
+          "enabled":      { "type": "boolean", "example": false },
+          "type":         { "type": "string", "enum": ["PERCENTAGE", "POINTS", "PRICE"], "nullable": true },
+          "value":        { "type": "number", "nullable": true },
+          "currentSL":    { "type": "string", "nullable": true },
+          "highestPrice": { "type": "string", "nullable": true },
+          "triggeredAt":  { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "Instrument": {
+        "type": "object",
+        "properties": {
+          "tradingsymbol":   { "type": "string", "example": "SAIL" },
+          "name":            { "type": "string", "example": "STEEL AUTHORITY OF INDIA" },
+          "exchange":        { "type": "string", "enum": ["NSE", "BSE", "NFO", "BFO", "MCX", "NCO"], "example": "NSE" },
+          "exchangeToken":   { "type": "string", "example": "2963" },
+          "instrumentToken": { "type": "string", "example": "758529" },
+          "instrumentType":  { "type": "string", "enum": ["EQ", "FUT", "CE", "PE"], "example": "EQ" },
+          "segment":         { "type": "string", "nullable": true, "example": "NSE" },
+          "expiry":          { "type": "string", "format": "date", "nullable": true },
+          "strike":          { "type": "number", "nullable": true },
+          "lotSize":         { "type": "integer", "nullable": true },
+          "tickSize":        { "type": "number", "nullable": true }
+        }
+      },
+      "CallSearchRequest": {
+        "type": "object",
+        "description": "All fields optional; omit to disable that filter.",
+        "properties": {
+          "advisorId":    { "type": "string" },
+          "strategyId":   { "type": "string" },
+          "strategyType": { "type": "string", "enum": ["Equity", "Future", "Option", "Commodity", "Basket"] },
+          "status":       { "type": "string", "enum": ["ACTIVE", "CLOSED", "ALL"], "default": "ACTIVE" },
+          "callType":     { "type": "string", "enum": ["BUY", "SELL"] },
+          "symbol":       { "type": "string" },
+          "from":         { "type": "string", "format": "date-time" },
+          "to":           { "type": "string", "format": "date-time" },
+          "limit":        { "type": "integer", "default": 100, "minimum": 1, "maximum": 500 },
+          "offset":       { "type": "integer", "default": 0, "minimum": 0 }
+        }
+      },
+      "ReplayRequest": {
+        "type": "object",
+        "required": ["from", "to"],
+        "properties": {
+          "from":       { "type": "string", "format": "date-time" },
+          "to":         { "type": "string", "format": "date-time" },
+          "eventTypes": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookEventType" } }
+        }
+      },
+      "ReplayResponse": {
+        "allOf": [
+          { "$ref": "#/components/schemas/SuccessEnvelope" },
+          { "type": "object", "properties": { "data": { "type": "object", "properties": { "scheduledCount": { "type": "integer", "example": 27 }, "jobId": { "type": "string", "format": "uuid" } } } } }
+        ]
+      },
+      "WebhookEventType": {
+        "type": "string",
+        "enum": [ "CALL_CREATED", "CALL_MODIFIED", "CALL_CLOSED", "TARGET_ACHIEVED", "STOPLOSS_TRIGGERED", "TRAILING_SL_TRIGGERED", "TRAILING_SL_UPDATED", "POSITION_CREATED", "POSITION_MODIFIED", "POSITION_CLOSED" ]
+      },
+      "WebhookPayload": {
+        "type": "object",
+        "description": "Payload POSTed to your registered webhook URL.\n\n**Headers sent:**\n- `Content-Type: application/json`\n- `X-AlphaMarket-Event: <event name>`\n- `X-AlphaMarket-Signature: <hex>` — HMAC-SHA256 of raw JSON body using your `apiSecret`.\n- `X-AlphaMarket-Timestamp: <ISO 8601>`\n- `User-Agent: AlphaMarket-Webhook/2.0`\n\n**Your endpoint must** return HTTP 2xx within 5 seconds. On non-2xx or timeout, AlphaMarket retries with delays 5s → 30s → 2min (max 3 attempts).\n\n**Verification (Node.js):**\n```js\nconst crypto = require('crypto');\nconst expected = crypto.createHmac('sha256', YOUR_API_SECRET)\n  .update(rawBody).digest('hex');\nif (expected !== req.headers['x-alphamarket-signature']) return res.status(401).end();\n```",
+        "required": ["status", "statusCode", "message", "event", "timestamp", "data"],
+        "properties": {
+          "status":     { "type": "string", "enum": ["success"] },
+          "statusCode": { "type": "integer", "example": 200 },
+          "message":    { "type": "object", "properties": { "key": { "type": "string", "example": "WEBHOOK_PUSH" }, "message": { "type": "string", "example": "Pushed Successfully" } } },
+          "event":      { "$ref": "#/components/schemas/WebhookEventType" },
+          "timestamp":  { "type": "string", "format": "date-time" },
+          "data":       { "$ref": "#/components/schemas/Recommendation" }
+        }
+      },
+      "WebhookLogEntry": {
+        "type": "object",
+        "properties": {
+          "id":           { "type": "string" },
+          "event":        { "$ref": "#/components/schemas/WebhookEventType" },
+          "payload":      { "type": "object" },
+          "statusCode":   { "type": "integer", "nullable": true },
+          "responseBody": { "type": "string", "nullable": true },
+          "attempt":      { "type": "integer", "example": 1 },
+          "delivered":    { "type": "boolean" },
+          "errorMessage": { "type": "string", "nullable": true },
+          "createdAt":    { "type": "string", "format": "date-time" },
+          "deliveredAt":  { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "AdvisorListResponse":          { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Advisor" } }, "total": { "type": "integer" } } } ] },
+      "AdvisorDetailResponse":        { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "allOf": [ { "$ref": "#/components/schemas/Advisor" }, { "type": "object", "properties": { "strategies": { "type": "array", "items": { "$ref": "#/components/schemas/StrategySummary" } } } } ] } } } ] },
+      "StrategyListResponse":         { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Strategy" } }, "total": { "type": "integer" } } } ] },
+      "StrategyDetailResponse":       { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/Strategy" } } } ] },
+      "RecommendationListResponse":   { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Recommendation" } }, "total": { "type": "integer" }, "serverTime": { "type": "string", "format": "date-time" } } } ] },
+      "RecommendationDetailResponse": { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/Recommendation" } } } ] },
+      "InstrumentResponse":           { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/Instrument" } } } ] },
+      "InstrumentListResponse":       { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/Instrument" } }, "total": { "type": "integer" } } } ] },
+      "PerformanceResponse":          { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "type": "object", "properties": { "strategyId": { "type": "string" }, "period": { "type": "string" }, "hitRate": { "type": "number", "example": 0.62 }, "totalCalls": { "type": "integer", "example": 140 }, "closedCalls": { "type": "integer", "example": 118 }, "winners": { "type": "integer", "example": 73 }, "losers": { "type": "integer", "example": 45 }, "avgProfitPercent": { "type": "number", "example": 4.2 }, "avgLossPercent": { "type": "number", "example": -2.1 }, "bestCall": { "type": "object", "properties": { "symbol": { "type": "string" }, "profitLossPercent": { "type": "number" }, "callId": { "type": "string" } } }, "worstCall": { "type": "object", "properties": { "symbol": { "type": "string" }, "profitLossPercent": { "type": "number" }, "callId": { "type": "string" } } } } } } } ] },
+      "WebhookLogListResponse":       { "allOf": [ { "$ref": "#/components/schemas/SuccessEnvelope" }, { "type": "object", "properties": { "data": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookLogEntry" } }, "total": { "type": "integer" } } } ] }
+    }
+  }
+}

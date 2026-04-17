@@ -6,7 +6,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 import { fireWebhookEvent, buildCallEventData, buildPositionEventData } from "./webhook-dispatcher";
 import { handleXTSEvent } from "./xts-bridge";
 
-export interface BrokerApiKey {
+interface BrokerApiKey {
   id: string;
   broker_name: string;
   api_key: string;
@@ -24,7 +24,7 @@ export interface BrokerApiKey {
   webhook_events: string[] | null;
 }
 
-export interface BrokerRequest extends Request {
+interface BrokerRequest extends Request {
   broker?: BrokerApiKey;
 }
 
@@ -42,7 +42,7 @@ function checkRateLimit(apiKey: string, limit: number): boolean {
   return true;
 }
 
-export async function authenticateBroker(req: BrokerRequest, res: Response, next: NextFunction) {
+async function authenticateBroker(req: BrokerRequest, res: Response, next: NextFunction) {
   const startTime = Date.now();
   const apiKey = req.headers["x-api-key"] as string;
   const signature = req.headers["x-api-signature"] as string;
@@ -97,7 +97,7 @@ export async function authenticateBroker(req: BrokerRequest, res: Response, next
   }
 }
 
-export function requirePermission(perm: string) {
+function requirePermission(perm: string) {
   return (req: BrokerRequest, res: Response, next: NextFunction) => {
     if (!req.broker?.permissions?.includes(perm) && !req.broker?.permissions?.includes("admin")) {
       return res.status(403).json({ error: "Permission '" + perm + "' required" });

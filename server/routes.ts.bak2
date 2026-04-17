@@ -3,7 +3,6 @@ import { generateLinkingCode, getUserTelegramStatus, initTelegramBot } from "./t
 import type { Express, Request, Response } from "express";
 import swaggerUi from "swagger-ui-express";
 import { registerBrokerApiRoutes, getSwaggerSpec } from "./broker-api";
-import { registerBrokerApiRoutesV2 } from "./broker-api-v2";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
@@ -82,7 +81,6 @@ export async function registerRoutes(
 
   // Broker API v1 + Swagger
   registerBrokerApiRoutes(app);
-  registerBrokerApiRoutesV2(app);
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(getSwaggerSpec(), { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "AlphaMarket Broker API" }));
 
   // ═══ BROKER INTEGRATION SWAGGER (separate from XTS docs) ═══

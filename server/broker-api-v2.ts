@@ -1,0 +1,1090 @@
+/**
+ * AlphaMarket Broker Integration API — v2
+ *
+ * Pull API + Webhook Push contract. All responses wrapped in the standard envelope:
+ *   { status, statusCode, message: {key, message}, data, total?, serverTime? }
+ *
+ * Reuses authentication / rate limiting / request-logging middleware from broker-api.ts.
+ * All new code is additive — no v1 behavior is modified.
+ *
+ * See server/broker-swagger-v2.json for the full OpenAPI contract.
+ *
+ * v2.0.0 — 17 Apr 2026
+ */
+
+import type { Express, Response } from "express";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
+import { randomUUID } from "crypto";
+import {
+  authenticateBroker,
+  requirePermission,
+  type BrokerRequest,
+  type BrokerApiKey,
+} from "./broker-api";
+
+// ═══════════════════════════════════════════════════════════════════════
+// Response envelope helpers
+// ═══════════════════════════════════════════════════════════════════════
+
+function envelope(data: any, msgKey = "GET", msgText = "Get Successfully") {
+  return {
+    status: "success",
+    statusCode: 200,
+    message: { key: msgKey, message: msgText },
+    data,
+  };
+}
+
+function listEnvelope(data: any[], total: number) {
+  return {
+    status: "success",
+    statusCode: 200,
+    message: { key: "GET", message: "Get Successfully" },
+    data,
+    total,
+    serverTime: new Date().toISOString(),
+  };
+}
+
+function errEnvelope(statusCode: number, key: string, message: string) {
+  return { status: "error", statusCode, message: { key, message }, data: null };
+}
+
+function isoOrNull(d: any): string | null {
+  if (!d) return null;
+  if (d instanceof Date) return d.toISOString();
+  try { return new Date(d).toISOString(); } catch { return null; }
+}
+
+function asArray(v: any): string[] {
+  if (v == null) return [];
+  if (Array.isArray(v)) return v.filter(x => x != null).map(String);
+  if (typeof v === "string") {
+    if (v.startsWith("[")) {
+      try { const p = JSON.parse(v); return Array.isArray(p) ? p.map(String) : [v]; } catch { return [v]; }
+    }
+    return [v];
+  }
+  return [];
+}
+
+function ddmm(d: any): string | null {
+  if (!d) return null;
+  try {
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return null;
+    const day = String(dt.getUTCDate()).padStart(2, "0");
+    const mon = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    return day + mon;
+  } catch { return null; }
+}
+
+function clampInt(v: any, def: number, min: number, max: number): number {
+  const n = typeof v === "number" ? v : parseInt(String(v ?? ""), 10);
+  if (!Number.isFinite(n)) return def;
+  return Math.min(max, Math.max(min, n));
+}
+
+function asNum(v: any): number | null {
+  if (v == null || v === "") return null;
+  const n = typeof v === "number" ? v : parseFloat(String(v));
+  return Number.isFinite(n) ? n : null;
+}
+
+// Stable hash-based pseudo-ID until we add a sequential column.
+// 5-digit zero-padded. Collision-safe enough for per-broker context; caller sees `callId` UUID as the real ID.
+function pseudoRecommendationId(uuid: string): string {
+  let h = 0;
+  for (let i = 0; i < uuid.length; i++) {
+    h = ((h << 5) - h + uuid.charCodeAt(i)) | 0;
+  }
+  const v = Math.abs(h) % 99999;
+  return String(v).padStart(5, "0");
+}
+
+// Derive exitType when a call is closed. Heuristic until we store it explicitly.
+function deriveExitType(row: any): string | null {
+  if (row.status !== "Closed" && row.callStatus !== "CLOSED") return null;
+  if (row.trailing_sl_triggered_at) return "TrailingSLTriggered";
+  const sell = asNum(row.sell_price ?? row.exit_price);
+  const target = asNum(row.target_price ?? row.target);
+  const sl = asNum(row.stop_loss);
+  const action = String(row.action ?? row.buy_sell ?? "Buy").toLowerCase();
+  if (sell != null) {
+    if (action.startsWith("b")) {
+      if (target != null && sell >= target) return "TargetAchieved";
+      if (sl != null && sell <= sl) return "StoplossTriggered";
+    } else {
+      if (target != null && sell <= target) return "TargetAchieved";
+      if (sl != null && sell >= sl) return "StoplossTriggered";
+    }
+  }
+  return "Manual";
+}
+
+// Map call_status enum (Active/Closed/etc.) to v2 enum (PUBLISHED/ACTIVE/CLOSED/ARCHIVED)
+function mapCallStatus(s: any, isPublished: boolean): string {
+  const raw = String(s ?? "").toLowerCase();
+  if (raw === "closed") return "CLOSED";
+  if (raw === "archived") return "ARCHIVED";
+  return isPublished ? "ACTIVE" : "PUBLISHED";
+}
+
+function envFromNode(): "uat" | "pod" {
+  return process.env.NODE_ENV === "production" ? "pod" : "uat";
+}
+
+function normStrategyType(t: any): string {
+  const raw = String(t ?? "Equity");
+  const valid = ["Equity", "Future", "Option", "Commodity", "Basket"];
+  return valid.includes(raw) ? raw : "Equity";
+}
+
+function mapFnoSegment(segment: string, callPut: string | null, symbol: string | null): string {
+  const seg = String(segment ?? "").toLowerCase();
+  const isOption = callPut === "CE" || callPut === "PE";
+  const upSym = String(symbol ?? "").toUpperCase();
+  const isIndex = /(NIFTY|BANKNIFTY|FINNIFTY|SENSEX|BANKEX|MIDCPNIFTY)/.test(upSym);
+  const isCommodity = seg === "commodity";
+  if (isCommodity) return isOption ? "OPTCOM" : "FUTCOM";
+  if (isOption) return isIndex ? "OPTIDX" : "OPTSTK";
+  return isIndex ? "FUTIDX" : "FUTSTK";
+}
+
+function mapFnoExchange(segment: string, symbol: string | null): string {
+  const seg = String(segment ?? "").toLowerCase();
+  const upSym = String(symbol ?? "").toUpperCase();
+  if (seg === "commodity") return /OPT/.test(upSym) ? "NCO" : "MCX";
+  if (upSym.includes("SENSEX") || upSym.includes("BANKEX")) return "BFO";
+  return "NFO";
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Payload builders
+// ═══════════════════════════════════════════════════════════════════════
+
+function buildAdvisor(u: any): any {
+  return {
+    advisorId: u.id,
+    advisorName: u.company_name || u.username,
+    advisorSebiRegistrationNo: u.sebi_reg_number || null,
+    profilePic: u.logo_url || null,
+    certificateURl: u.sebi_cert_url || null,
+    overview: u.overview || null,
+    themes: asArray(u.themes),
+    isApproved: !!u.is_approved,
+    activeSince: isoOrNull(u.active_since),
+  };
+}
+
+function buildStrategySummary(s: any): any {
+  return {
+    strategyId: s.id,
+    strategyName: s.name,
+    strategyType: normStrategyType(s.type),
+    activeCallsCount: Number(s.active_calls_count ?? 0),
+    totalRecommendations: Number(s.total_recommendations ?? 0),
+  };
+}
+
+function buildStrategy(s: any, advisor: any): any {
+  return {
+    strategyId: s.id,
+    strategyName: s.name,
+    strategyDescription: s.description || null,
+    strategyType: normStrategyType(s.type),
+    status: s.status || "Draft",
+    benchmark: s.benchmark || null,
+    theme: asArray(s.theme),
+    thematicCollection: [],
+    managementStyle: s.management_style ? [s.management_style] : [],
+    volatility: s.volatility ? [s.volatility] : [],
+    horizon: s.horizon ? [s.horizon] : [],
+    keySector: s.key_sectors ? asArray(s.key_sectors) : null,
+    marketCap: null,
+    minimumInvestment: asNum(s.minimum_investment),
+    cagr: asNum(s.cagr),
+    advisorId: s.advisor_id,
+    advisorName: advisor?.company_name || advisor?.username || null,
+    advisorSebiRegistrationNo: advisor?.sebi_reg_number || null,
+    profilePic: advisor?.logo_url || null,
+    certificateURl: advisor?.sebi_cert_url || null,
+    createdAt: isoOrNull(s.created_at),
+  };
+}
+
+function buildTrailingStopLoss(row: any): any {
+  const enabled = !!row.trailing_sl_enabled;
+  return {
+    enabled,
+    type: enabled ? (row.trailing_sl_type || "PERCENTAGE") : null,
+    value: enabled ? asNum(row.trailing_sl_value) : null,
+    currentSL: enabled ? (row.trailing_sl_current_sl || null) : null,
+    highestPrice: enabled ? (row.trailing_sl_highest_price || null) : null,
+    triggeredAt: enabled ? isoOrNull(row.trailing_sl_triggered_at) : null,
+  };
+}
+
+function buildEquityCall(c: any, instrument: any, recommendationId: string): any {
+  const isClosed = String(c.status).toLowerCase() === "closed";
+  return {
+    exchange: instrument?.exchange || "NSE",
+    legId: recommendationId + "_1",
+    exchangeToken: instrument?.exchange_token ? String(instrument.exchange_token) : null,
+    symbol: c.stock_name,
+    name: instrument?.name || c.stock_name,
+    buyDate: isoOrNull(c.call_date),
+    buyPrice: asNum(c.entry_price) ?? asNum(c.buy_range_start),
+    buyPriceRangeStart: asNum(c.buy_range_start),
+    buyPriceRangeEnd: asNum(c.buy_range_end),
+    callType: String(c.action || "Buy").toUpperCase().startsWith("S") ? "SELL" : "BUY",
+    targetPriceRange: c.target_price != null ? String(c.target_price) : null,
+    profitGoal: c.profit_goal != null ? String(c.profit_goal) : null,
+    stopLoss: c.stop_loss != null ? String(c.stop_loss) : null,
+    profitLossPercent: isClosed ? asNum(c.gain_percent) : null,
+    sellPrice: isClosed ? asNum(c.sell_price) : null,
+    sellDate: isClosed ? isoOrNull(c.exit_date) : null,
+    exitType: isClosed ? deriveExitType(c) : null,
+    status: isClosed ? "CLOSED" : (c.is_published ? "ACTIVE" : "PUBLISHED"),
+  };
+}
+
+function buildFnoCall(p: any, instrument: any, recommendationId: string, legIdx: number): any {
+  const isClosed = String(p.status).toLowerCase() === "closed";
+  const callPut = p.call_put || null;
+  const segment = mapFnoSegment(p.segment, callPut, p.symbol);
+  const exchange = mapFnoExchange(p.segment, p.symbol);
+  const optionType = callPut === "CE" ? "CE" : callPut === "PE" ? "PE" : "Future";
+  const buySell = String(p.buy_sell || "Buy").toUpperCase().startsWith("S") ? "SELL" : "BUY";
+  return {
+    exchange: instrument?.exchange || exchange,
+    legId: recommendationId + "_" + (legIdx + 1),
+    legName: null,
+    exchangeToken: instrument?.exchange_token ? String(instrument.exchange_token) : null,
+    symbol: p.symbol,
+    name: instrument?.name || p.symbol,
+    series: null,
+    segment,
+    optionType,
+    callPut,
+    buySell,
+    expiryDate: isoOrNull(p.expiry),
+    strike: asNum(p.strike_price) ?? 0,
+    lotSize: instrument?.lot_size ?? p.lots ?? null,
+    isStoppLossAbsolute: {
+      code: p.use_percentage ? "N" : "Y",
+      name: p.use_percentage ? "No" : "Yes",
+    },
+    buyDate: isoOrNull(p.created_at),
+    buyPrice: asNum(p.entry_price),
+    buyPriceRangeStart: null,
+    buyPriceRangeEnd: null,
+    callType: buySell,
+    targetPriceRange: p.target != null ? String(p.target) : null,
+    profitGoal: null,
+    stopLoss: p.stop_loss != null ? String(p.stop_loss) : null,
+    profitLossPercent: isClosed ? asNum(p.gain_percent) : null,
+    sellPrice: isClosed ? asNum(p.exit_price) : null,
+    sellDate: isClosed ? isoOrNull(p.exit_date) : null,
+    exitType: isClosed ? deriveExitType(p) : null,
+    rational: p.rationale || null,
+    creationDate: isoOrNull(p.created_at),
+    status: isClosed ? "CLOSED" : (p.is_published ? "ACTIVE" : "PUBLISHED"),
+  };
+}
+
+function buildRecommendationFromCall(
+  c: any,
+  strategy: any,
+  advisor: any,
+  instrument: any,
+  brokerName: string
+): any {
+  const recId = pseudoRecommendationId(c.id);
+  const isClosed = String(c.status).toLowerCase() === "closed";
+  const callStatus = mapCallStatus(c.status, !!c.is_published);
+  return {
+    callId: c.id,
+    recommendationId: recId,
+    clientId: brokerName,
+    env: envFromNode(),
+    callStatus,
+    dayMonth: ddmm(c.call_date || c.created_at),
+    symbol: c.stock_name,
+    callType: String(c.action || "Buy").toUpperCase().startsWith("S") ? "SELL" : "BUY",
+    strategyId: strategy?.id || c.strategy_id,
+    strategyName: strategy?.name || null,
+    strategyDescription: strategy?.description || null,
+    strategyType: normStrategyType(strategy?.type),
+    benchmark: strategy?.benchmark || null,
+    rational: c.rationale || null,
+    theme: asArray(strategy?.theme),
+    thematicCollection: [],
+    managementStyle: strategy?.management_style ? [strategy.management_style] : [],
+    volatility: strategy?.volatility ? [strategy.volatility] : [],
+    horizon: strategy?.horizon ? [strategy.horizon] : [],
+    keySector: strategy?.key_sectors ? asArray(strategy.key_sectors) : null,
+    advisorId: strategy?.advisor_id || advisor?.id,
+    advisorName: advisor?.company_name || advisor?.username || null,
+    advisorSebiRegistrationNo: advisor?.sebi_reg_number || null,
+    profilePic: advisor?.logo_url || null,
+    certificateURl: advisor?.sebi_cert_url || null,
+    equityCall: buildEquityCall(c, instrument, recId),
+    fnoCall: null,
+    trailingStopLoss: buildTrailingStopLoss(c),
+    creationDate: isoOrNull(c.created_at),
+    status: isClosed ? "SEND" : "SEND",
+    isActive: !isClosed,
+  };
+}
+
+function buildRecommendationFromPosition(
+  p: any,
+  strategy: any,
+  advisor: any,
+  instrument: any,
+  brokerName: string
+): any {
+  const recId = pseudoRecommendationId(p.id);
+  const isClosed = String(p.status).toLowerCase() === "closed";
+  const callStatus = mapCallStatus(p.status, !!p.is_published);
+  const buySell = String(p.buy_sell || "Buy").toUpperCase().startsWith("S") ? "SELL" : "BUY";
+  return {
+    callId: p.id,
+    recommendationId: recId,
+    clientId: brokerName,
+    env: envFromNode(),
+    callStatus,
+    dayMonth: ddmm(p.created_at),
+    symbol: p.symbol,
+    callType: buySell,
+    strategyId: strategy?.id || p.strategy_id,
+    strategyName: strategy?.name || null,
+    strategyDescription: strategy?.description || null,
+    strategyType: normStrategyType(strategy?.type),
+    benchmark: strategy?.benchmark || null,
+    rational: p.rationale || null,
+    theme: asArray(strategy?.theme),
+    thematicCollection: [],
+    managementStyle: strategy?.management_style ? [strategy.management_style] : [],
+    volatility: strategy?.volatility ? [strategy.volatility] : [],
+    horizon: strategy?.horizon ? [strategy.horizon] : [],
+    keySector: strategy?.key_sectors ? asArray(strategy.key_sectors) : null,
+    advisorId: strategy?.advisor_id || advisor?.id,
+    advisorName: advisor?.company_name || advisor?.username || null,
+    advisorSebiRegistrationNo: advisor?.sebi_reg_number || null,
+    profilePic: advisor?.logo_url || null,
+    certificateURl: advisor?.sebi_cert_url || null,
+    equityCall: null,
+    fnoCall: [buildFnoCall(p, instrument, recId, 0)],
+    trailingStopLoss: buildTrailingStopLoss(p),
+    creationDate: isoOrNull(p.created_at),
+    status: "SEND",
+    isActive: !isClosed,
+  };
+}
+
+function buildInstrument(i: any): any {
+  return {
+    tradingsymbol: i.tradingsymbol,
+    name: i.name,
+    exchange: i.exchange,
+    exchangeToken: i.exchange_token != null ? String(i.exchange_token) : null,
+    instrumentToken: i.instrument_token != null ? String(i.instrument_token) : null,
+    instrumentType: i.instrument_type,
+    segment: i.segment || null,
+    expiry: i.expiry ? String(i.expiry).slice(0, 10) : null,
+    strike: asNum(i.strike),
+    lotSize: i.lot_size ?? null,
+    tickSize: asNum(i.tick_size),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Advisor scoping
+// ═══════════════════════════════════════════════════════════════════════
+
+function advisorFilterSql(broker: BrokerApiKey, alias = "u") {
+  if (!broker.allowed_advisors || broker.allowed_advisors.length === 0) {
+    return sql`TRUE`;
+  }
+  return sql.raw(`${alias}.id = ANY(ARRAY['${broker.allowed_advisors.map(a => String(a).replace(/'/g, "''")).join("','")}']::text[])`);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Route handlers + registration
+// ═══════════════════════════════════════════════════════════════════════
+
+export function registerBrokerApiRoutesV2(app: Express) {
+  const prefix = "/api/v2";
+
+  // ─── Health (no auth) ───
+  app.get(prefix + "/health", (_req, res) => {
+    res.json(envelope({
+      service: "AlphaMarket Broker API",
+      version: "2.0.0",
+      timestamp: new Date().toISOString(),
+    }, "HEALTH", "Service healthy"));
+  });
+
+  // ─── All /alpha/* routes require API key ───
+  app.use(prefix + "/alpha", authenticateBroker as any);
+
+  // ─── GET /alpha/advisors ───
+  app.get(prefix + "/alpha/advisors", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const limit = clampInt(req.query.limit, 50, 1, 100);
+      const offset = clampInt(req.query.offset, 0, 0, 1_000_000);
+      const theme = (req.query.theme ? String(req.query.theme) : "").trim();
+      const scoped = advisorFilterSql(req.broker!, "u");
+
+      const base = sql`
+        FROM users u
+        WHERE u.role = 'advisor'
+          AND u.is_approved = true
+          AND ${scoped}
+          ${theme ? sql`AND EXISTS (SELECT 1 FROM unnest(u.themes) t WHERE LOWER(t) = LOWER(${theme}))` : sql``}
+      `;
+
+      const totalQ = await db.execute(sql`SELECT COUNT(*)::int AS c ${base}`);
+      const total = Number((totalQ.rows[0] as any)?.c ?? 0);
+
+      const rowsQ = await db.execute(sql`
+        SELECT u.* ${base}
+        ORDER BY u.company_name NULLS LAST, u.username
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+      const data = (rowsQ.rows as any[]).map(buildAdvisor);
+      res.json(listEnvelope(data, total));
+    } catch (e: any) {
+      console.error("[v2 advisors] ", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch advisors"));
+    }
+  });
+
+  // ─── GET /alpha/advisors/:advisorId ───
+  app.get(prefix + "/alpha/advisors/:advisorId", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const id = req.params.advisorId;
+      const scoped = advisorFilterSql(req.broker!, "u");
+      const uQ = await db.execute(sql`
+        SELECT u.* FROM users u
+        WHERE u.id = ${id} AND u.role = 'advisor' AND ${scoped}
+        LIMIT 1
+      `);
+      const u = (uQ.rows[0] as any);
+      if (!u) return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Advisor not found"));
+
+      const stratsQ = await db.execute(sql`
+        SELECT s.id, s.name, s.type, s.total_recommendations,
+               (SELECT COUNT(*)::int FROM calls c WHERE c.strategy_id = s.id AND c.status = 'Active' AND c.is_published = true)
+             + (SELECT COUNT(*)::int FROM positions p WHERE p.strategy_id = s.id AND p.status = 'Active' AND p.is_published = true)
+             AS active_calls_count
+        FROM strategies s
+        WHERE s.advisor_id = ${id} AND s.status = 'Published'
+        ORDER BY s.created_at DESC
+      `);
+      const advisorPayload = buildAdvisor(u);
+      (advisorPayload as any).strategies = (stratsQ.rows as any[]).map(buildStrategySummary);
+      res.json(envelope(advisorPayload));
+    } catch (e: any) {
+      console.error("[v2 advisor]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch advisor"));
+    }
+  });
+
+  // ─── GET /alpha/strategies ───
+  app.get(prefix + "/alpha/strategies", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const limit = clampInt(req.query.limit, 50, 1, 100);
+      const offset = clampInt(req.query.offset, 0, 0, 1_000_000);
+      const advisorId = req.query.advisorId ? String(req.query.advisorId) : null;
+      const type = req.query.type ? String(req.query.type) : null;
+      const scoped = advisorFilterSql(req.broker!, "u");
+
+      const base = sql`
+        FROM strategies s JOIN users u ON u.id = s.advisor_id
+        WHERE s.status = 'Published' AND ${scoped}
+          ${advisorId ? sql`AND s.advisor_id = ${advisorId}` : sql``}
+          ${type ? sql`AND s.type = ${type}::strategy_type` : sql``}
+      `;
+      const totalQ = await db.execute(sql`SELECT COUNT(*)::int AS c ${base}`);
+      const total = Number((totalQ.rows[0] as any)?.c ?? 0);
+      const rowsQ = await db.execute(sql`
+        SELECT s.*, u.id AS u_id, u.username AS u_username, u.company_name AS u_company_name,
+               u.sebi_reg_number AS u_sebi_reg_number, u.logo_url AS u_logo_url,
+               u.sebi_cert_url AS u_sebi_cert_url
+        ${base}
+        ORDER BY s.modified_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+      const data = (rowsQ.rows as any[]).map(r => buildStrategy(r, {
+        id: r.u_id, username: r.u_username, company_name: r.u_company_name,
+        sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url,
+      }));
+      res.json(listEnvelope(data, total));
+    } catch (e: any) {
+      console.error("[v2 strategies]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch strategies"));
+    }
+  });
+
+  // ─── GET /alpha/strategies/:strategyId ───
+  app.get(prefix + "/alpha/strategies/:strategyId", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const id = req.params.strategyId;
+      const scoped = advisorFilterSql(req.broker!, "u");
+      const q = await db.execute(sql`
+        SELECT s.*, u.id AS u_id, u.username AS u_username, u.company_name AS u_company_name,
+               u.sebi_reg_number AS u_sebi_reg_number, u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url
+        FROM strategies s JOIN users u ON u.id = s.advisor_id
+        WHERE s.id = ${id} AND ${scoped}
+        LIMIT 1
+      `);
+      const r = q.rows[0] as any;
+      if (!r) return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Strategy not found"));
+      const advisor = {
+        id: r.u_id, username: r.u_username, company_name: r.u_company_name,
+        sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url,
+      };
+      res.json(envelope(buildStrategy(r, advisor)));
+    } catch (e: any) {
+      console.error("[v2 strategy]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch strategy"));
+    }
+  });
+
+  // ─── GET /alpha/strategies/:strategyId/calls ───
+  app.get(prefix + "/alpha/strategies/:strategyId/calls", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const id = req.params.strategyId;
+      const statusFilter = String(req.query.status ?? "ACTIVE").toUpperCase();
+      const from = req.query.from ? String(req.query.from) : null;
+      const to = req.query.to ? String(req.query.to) : null;
+      const limit = clampInt(req.query.limit, 100, 1, 500);
+      const scoped = advisorFilterSql(req.broker!, "u");
+
+      const sQ = await db.execute(sql`
+        SELECT s.*, u.id AS u_id, u.username AS u_username, u.company_name AS u_company_name,
+               u.sebi_reg_number AS u_sebi_reg_number, u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url
+        FROM strategies s JOIN users u ON u.id = s.advisor_id
+        WHERE s.id = ${id} AND ${scoped}
+        LIMIT 1
+      `);
+      const strat = sQ.rows[0] as any;
+      if (!strat) return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Strategy not found"));
+      const advisor = {
+        id: strat.u_id, username: strat.u_username, company_name: strat.u_company_name,
+        sebi_reg_number: strat.u_sebi_reg_number, logo_url: strat.u_logo_url, sebi_cert_url: strat.u_sebi_cert_url,
+      };
+      const brokerName = req.broker!.broker_name;
+
+      const statusWhere = statusFilter === "ACTIVE" ? sql`AND c.status = 'Active'`
+                        : statusFilter === "CLOSED" ? sql`AND c.status = 'Closed'`
+                        : sql``;
+
+      const callsQ = await db.execute(sql`
+        SELECT c.*, im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM calls c
+        LEFT JOIN instrument_master im
+          ON im.tradingsymbol = c.stock_name
+         AND im.instrument_type = 'EQ'
+         AND im.exchange = 'NSE'
+        WHERE c.strategy_id = ${id}
+          AND c.is_published = true
+          ${statusWhere}
+          ${from ? sql`AND c.created_at >= ${from}::timestamp` : sql``}
+          ${to ? sql`AND c.created_at <= ${to}::timestamp` : sql``}
+        ORDER BY c.created_at DESC
+        LIMIT ${limit}
+      `);
+      const positionsQ = (strat.type !== "Equity" && strat.type !== "Basket") ? await db.execute(sql`
+        SELECT p.*, im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM positions p
+        LEFT JOIN instrument_master im ON im.tradingsymbol = p.symbol
+        WHERE p.strategy_id = ${id}
+          AND p.is_published = true
+          ${statusFilter === "ACTIVE" ? sql`AND p.status = 'Active'` : statusFilter === "CLOSED" ? sql`AND p.status = 'Closed'` : sql``}
+          ${from ? sql`AND p.created_at >= ${from}::timestamp` : sql``}
+          ${to ? sql`AND p.created_at <= ${to}::timestamp` : sql``}
+        ORDER BY p.created_at DESC
+        LIMIT ${limit}
+      `) : { rows: [] as any[] };
+
+      const out: any[] = [];
+      for (const c of callsQ.rows as any[]) {
+        const instr = c.im_exchange_token != null ? {
+          exchange: c.im_exchange, exchange_token: c.im_exchange_token, name: c.im_name, lot_size: c.im_lot_size,
+        } : null;
+        out.push(buildRecommendationFromCall(c, strat, advisor, instr, brokerName));
+      }
+      for (const p of positionsQ.rows as any[]) {
+        const instr = p.im_exchange_token != null ? {
+          exchange: p.im_exchange, exchange_token: p.im_exchange_token, name: p.im_name, lot_size: p.im_lot_size,
+        } : null;
+        out.push(buildRecommendationFromPosition(p, strat, advisor, instr, brokerName));
+      }
+      res.json(listEnvelope(out, out.length));
+    } catch (e: any) {
+      console.error("[v2 strategy-calls]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch recommendations"));
+    }
+  });
+
+  // ─── GET /alpha/strategies/:strategyId/performance ───
+  app.get(prefix + "/alpha/strategies/:strategyId/performance", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const id = String(req.params.strategyId);
+      const period = String(req.query.period ?? "ALL").toUpperCase();
+      const scoped = advisorFilterSql(req.broker!, "u");
+      const checkQ = await db.execute(sql`
+        SELECT s.id FROM strategies s JOIN users u ON u.id = s.advisor_id
+        WHERE s.id = ${id} AND ${scoped} LIMIT 1
+      `);
+      if (!checkQ.rows[0]) return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Strategy not found"));
+
+      const cutoff: Record<string, string> = {
+        "1M": "NOW() - INTERVAL '30 days'",
+        "3M": "NOW() - INTERVAL '90 days'",
+        "6M": "NOW() - INTERVAL '180 days'",
+        "1Y": "NOW() - INTERVAL '365 days'",
+        "ALL": "'1970-01-01'::timestamp",
+      };
+      const cutoffSql = cutoff[period] || cutoff["ALL"];
+      const safeId = id.replace(/'/g, "''");
+
+      const statsQ = await db.execute(sql.raw(`
+        WITH all_rec AS (
+          SELECT id, stock_name AS symbol, status, gain_percent, created_at FROM calls
+            WHERE strategy_id = '${safeId}' AND is_published = true AND created_at >= ${cutoffSql}
+          UNION ALL
+          SELECT id, symbol, status, gain_percent, created_at FROM positions
+            WHERE strategy_id = '${safeId}' AND is_published = true AND created_at >= ${cutoffSql}
+        )
+        SELECT
+          COUNT(*)::int AS total_calls,
+          COUNT(*) FILTER (WHERE status = 'Closed')::int AS closed_calls,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_percent IS NOT NULL AND gain_percent > 0)::int AS winners,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_percent IS NOT NULL AND gain_percent <= 0)::int AS losers,
+          AVG(gain_percent) FILTER (WHERE status = 'Closed' AND gain_percent > 0) AS avg_profit_percent,
+          AVG(gain_percent) FILTER (WHERE status = 'Closed' AND gain_percent <= 0) AS avg_loss_percent
+        FROM all_rec
+      `));
+      const s = statsQ.rows[0] as any;
+      const closed = Number(s.closed_calls || 0);
+      const winners = Number(s.winners || 0);
+      const hitRate = closed > 0 ? winners / closed : 0;
+
+      const bestQ = await db.execute(sql.raw(`
+        WITH all_rec AS (
+          SELECT id, stock_name AS symbol, status, gain_percent FROM calls WHERE strategy_id = '${safeId}' AND is_published = true
+          UNION ALL
+          SELECT id, symbol, status, gain_percent FROM positions WHERE strategy_id = '${safeId}' AND is_published = true
+        )
+        SELECT id, symbol, gain_percent FROM all_rec
+        WHERE status = 'Closed' AND gain_percent IS NOT NULL
+        ORDER BY gain_percent DESC LIMIT 1
+      `));
+      const worstQ = await db.execute(sql.raw(`
+        WITH all_rec AS (
+          SELECT id, stock_name AS symbol, status, gain_percent FROM calls WHERE strategy_id = '${safeId}' AND is_published = true
+          UNION ALL
+          SELECT id, symbol, status, gain_percent FROM positions WHERE strategy_id = '${safeId}' AND is_published = true
+        )
+        SELECT id, symbol, gain_percent FROM all_rec
+        WHERE status = 'Closed' AND gain_percent IS NOT NULL
+        ORDER BY gain_percent ASC LIMIT 1
+      `));
+      const best = bestQ.rows[0] as any;
+      const worst = worstQ.rows[0] as any;
+
+      res.json(envelope({
+        strategyId: id,
+        period,
+        hitRate: Number(hitRate.toFixed(4)),
+        totalCalls: Number(s.total_calls || 0),
+        closedCalls: closed,
+        winners,
+        losers: Number(s.losers || 0),
+        avgProfitPercent: asNum(s.avg_profit_percent),
+        avgLossPercent: asNum(s.avg_loss_percent),
+        bestCall: best ? { symbol: best.symbol, profitLossPercent: asNum(best.gain_percent), callId: best.id } : null,
+        worstCall: worst ? { symbol: worst.symbol, profitLossPercent: asNum(worst.gain_percent), callId: worst.id } : null,
+      }));
+    } catch (e: any) {
+      console.error("[v2 strategy-performance]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to compute performance"));
+    }
+  });
+
+  // ─── GET /alpha/live-calls — PRIMARY POLLING ENDPOINT ───
+  app.get(prefix + "/alpha/live-calls", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const advisorId = req.query.advisorId ? String(req.query.advisorId) : null;
+      const strategyType = req.query.strategyType ? String(req.query.strategyType) : null;
+      const limit = clampInt(req.query.limit, 100, 1, 500);
+      const scoped = advisorFilterSql(req.broker!, "u");
+      const brokerName = req.broker!.broker_name;
+
+      const callsQ = await db.execute(sql`
+        SELECT c.*, s.id AS s_id, s.name AS s_name, s.description AS s_description, s.type AS s_type,
+               s.theme AS s_theme, s.benchmark AS s_benchmark, s.management_style AS s_management_style,
+               s.volatility AS s_volatility, s.horizon AS s_horizon, s.key_sectors AS s_key_sectors,
+               s.advisor_id AS s_advisor_id,
+               u.username AS u_username, u.company_name AS u_company_name, u.sebi_reg_number AS u_sebi_reg_number,
+               u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url,
+               im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM calls c
+        JOIN strategies s ON s.id = c.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        LEFT JOIN instrument_master im
+          ON im.tradingsymbol = c.stock_name
+         AND im.instrument_type = 'EQ'
+         AND im.exchange = 'NSE'
+        WHERE c.status = 'Active'
+          AND c.is_published = true
+          AND s.status = 'Published'
+          AND ${scoped}
+          ${advisorId ? sql`AND s.advisor_id = ${advisorId}` : sql``}
+          ${strategyType ? sql`AND s.type = ${strategyType}::strategy_type` : sql``}
+        ORDER BY c.created_at DESC
+        LIMIT ${limit}
+      `);
+      const positionsQ = await db.execute(sql`
+        SELECT p.*, s.id AS s_id, s.name AS s_name, s.description AS s_description, s.type AS s_type,
+               s.theme AS s_theme, s.benchmark AS s_benchmark, s.management_style AS s_management_style,
+               s.volatility AS s_volatility, s.horizon AS s_horizon, s.key_sectors AS s_key_sectors,
+               s.advisor_id AS s_advisor_id,
+               u.username AS u_username, u.company_name AS u_company_name, u.sebi_reg_number AS u_sebi_reg_number,
+               u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url,
+               im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM positions p
+        JOIN strategies s ON s.id = p.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        LEFT JOIN instrument_master im ON im.tradingsymbol = p.symbol
+        WHERE p.status = 'Active'
+          AND p.is_published = true
+          AND s.status = 'Published'
+          AND ${scoped}
+          ${advisorId ? sql`AND s.advisor_id = ${advisorId}` : sql``}
+          ${strategyType ? sql`AND s.type = ${strategyType}::strategy_type` : sql``}
+        ORDER BY p.created_at DESC
+        LIMIT ${limit}
+      `);
+
+      const out: any[] = [];
+      for (const r of callsQ.rows as any[]) {
+        const strategy = { id: r.s_id, name: r.s_name, description: r.s_description, type: r.s_type,
+          theme: r.s_theme, benchmark: r.s_benchmark, management_style: r.s_management_style,
+          volatility: r.s_volatility, horizon: r.s_horizon, key_sectors: r.s_key_sectors, advisor_id: r.s_advisor_id };
+        const advisor = { id: r.s_advisor_id, username: r.u_username, company_name: r.u_company_name,
+          sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url };
+        const instr = r.im_exchange_token != null ? { exchange: r.im_exchange, exchange_token: r.im_exchange_token, name: r.im_name, lot_size: r.im_lot_size } : null;
+        out.push(buildRecommendationFromCall(r, strategy, advisor, instr, brokerName));
+      }
+      for (const r of positionsQ.rows as any[]) {
+        const strategy = { id: r.s_id, name: r.s_name, description: r.s_description, type: r.s_type,
+          theme: r.s_theme, benchmark: r.s_benchmark, management_style: r.s_management_style,
+          volatility: r.s_volatility, horizon: r.s_horizon, key_sectors: r.s_key_sectors, advisor_id: r.s_advisor_id };
+        const advisor = { id: r.s_advisor_id, username: r.u_username, company_name: r.u_company_name,
+          sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url };
+        const instr = r.im_exchange_token != null ? { exchange: r.im_exchange, exchange_token: r.im_exchange_token, name: r.im_name, lot_size: r.im_lot_size } : null;
+        out.push(buildRecommendationFromPosition(r, strategy, advisor, instr, brokerName));
+      }
+      res.json(listEnvelope(out.slice(0, limit), out.length));
+    } catch (e: any) {
+      console.error("[v2 live-calls]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch live calls"));
+    }
+  });
+
+  // ─── GET /alpha/calls/:callId ───
+  app.get(prefix + "/alpha/calls/:callId", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const id = req.params.callId;
+      const scoped = advisorFilterSql(req.broker!, "u");
+      const brokerName = req.broker!.broker_name;
+
+      const cQ = await db.execute(sql`
+        SELECT c.*, s.id AS s_id, s.name AS s_name, s.description AS s_description, s.type AS s_type,
+               s.theme AS s_theme, s.benchmark AS s_benchmark, s.management_style AS s_management_style,
+               s.volatility AS s_volatility, s.horizon AS s_horizon, s.key_sectors AS s_key_sectors,
+               s.advisor_id AS s_advisor_id,
+               u.username AS u_username, u.company_name AS u_company_name, u.sebi_reg_number AS u_sebi_reg_number,
+               u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url,
+               im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id
+        LEFT JOIN instrument_master im ON im.tradingsymbol = c.stock_name AND im.instrument_type = 'EQ' AND im.exchange = 'NSE'
+        WHERE c.id = ${id} AND ${scoped} LIMIT 1
+      `);
+      if (cQ.rows[0]) {
+        const r = cQ.rows[0] as any;
+        const strategy = { id: r.s_id, name: r.s_name, description: r.s_description, type: r.s_type,
+          theme: r.s_theme, benchmark: r.s_benchmark, management_style: r.s_management_style,
+          volatility: r.s_volatility, horizon: r.s_horizon, key_sectors: r.s_key_sectors, advisor_id: r.s_advisor_id };
+        const advisor = { id: r.s_advisor_id, username: r.u_username, company_name: r.u_company_name,
+          sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url };
+        const instr = r.im_exchange_token != null ? { exchange: r.im_exchange, exchange_token: r.im_exchange_token, name: r.im_name, lot_size: r.im_lot_size } : null;
+        return res.json(envelope(buildRecommendationFromCall(r, strategy, advisor, instr, brokerName)));
+      }
+
+      const pQ = await db.execute(sql`
+        SELECT p.*, s.id AS s_id, s.name AS s_name, s.description AS s_description, s.type AS s_type,
+               s.theme AS s_theme, s.benchmark AS s_benchmark, s.management_style AS s_management_style,
+               s.volatility AS s_volatility, s.horizon AS s_horizon, s.key_sectors AS s_key_sectors,
+               s.advisor_id AS s_advisor_id,
+               u.username AS u_username, u.company_name AS u_company_name, u.sebi_reg_number AS u_sebi_reg_number,
+               u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url,
+               im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id
+        LEFT JOIN instrument_master im ON im.tradingsymbol = p.symbol
+        WHERE p.id = ${id} AND ${scoped} LIMIT 1
+      `);
+      if (pQ.rows[0]) {
+        const r = pQ.rows[0] as any;
+        const strategy = { id: r.s_id, name: r.s_name, description: r.s_description, type: r.s_type,
+          theme: r.s_theme, benchmark: r.s_benchmark, management_style: r.s_management_style,
+          volatility: r.s_volatility, horizon: r.s_horizon, key_sectors: r.s_key_sectors, advisor_id: r.s_advisor_id };
+        const advisor = { id: r.s_advisor_id, username: r.u_username, company_name: r.u_company_name,
+          sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url };
+        const instr = r.im_exchange_token != null ? { exchange: r.im_exchange, exchange_token: r.im_exchange_token, name: r.im_name, lot_size: r.im_lot_size } : null;
+        return res.json(envelope(buildRecommendationFromPosition(r, strategy, advisor, instr, brokerName)));
+      }
+
+      return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Call not found"));
+    } catch (e: any) {
+      console.error("[v2 call]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch call"));
+    }
+  });
+
+  // ─── POST /alpha/integration/call/search ───
+  app.post(prefix + "/alpha/integration/call/search", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const body = (req.body || {}) as any;
+      const limit = clampInt(body.limit, 100, 1, 500);
+      const offset = clampInt(body.offset, 0, 0, 1_000_000);
+      const statusFilter = String(body.status ?? "ACTIVE").toUpperCase();
+      const callTypeFilter = body.callType ? String(body.callType).toUpperCase() : null;
+      const scoped = advisorFilterSql(req.broker!, "u");
+      const brokerName = req.broker!.broker_name;
+
+      const statusWhere = statusFilter === "ACTIVE" ? sql`AND c.status = 'Active'`
+                        : statusFilter === "CLOSED" ? sql`AND c.status = 'Closed'`
+                        : sql``;
+      const positionStatusWhere = statusFilter === "ACTIVE" ? sql`AND p.status = 'Active'`
+                                : statusFilter === "CLOSED" ? sql`AND p.status = 'Closed'`
+                                : sql``;
+
+      const callsQ = await db.execute(sql`
+        SELECT c.*, s.id AS s_id, s.name AS s_name, s.description AS s_description, s.type AS s_type,
+               s.theme AS s_theme, s.benchmark AS s_benchmark, s.management_style AS s_management_style,
+               s.volatility AS s_volatility, s.horizon AS s_horizon, s.key_sectors AS s_key_sectors,
+               s.advisor_id AS s_advisor_id,
+               u.username AS u_username, u.company_name AS u_company_name, u.sebi_reg_number AS u_sebi_reg_number,
+               u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url,
+               im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id
+        LEFT JOIN instrument_master im ON im.tradingsymbol = c.stock_name AND im.instrument_type = 'EQ' AND im.exchange = 'NSE'
+        WHERE c.is_published = true AND ${scoped}
+          ${statusWhere}
+          ${body.advisorId ? sql`AND s.advisor_id = ${body.advisorId}` : sql``}
+          ${body.strategyId ? sql`AND s.id = ${body.strategyId}` : sql``}
+          ${body.strategyType ? sql`AND s.type = ${body.strategyType}::strategy_type` : sql``}
+          ${body.symbol ? sql`AND c.stock_name = ${body.symbol}` : sql``}
+          ${callTypeFilter ? sql`AND UPPER(c.action) LIKE ${callTypeFilter + '%'}` : sql``}
+          ${body.from ? sql`AND c.created_at >= ${body.from}::timestamp` : sql``}
+          ${body.to ? sql`AND c.created_at <= ${body.to}::timestamp` : sql``}
+        ORDER BY c.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const positionsQ = await db.execute(sql`
+        SELECT p.*, s.id AS s_id, s.name AS s_name, s.description AS s_description, s.type AS s_type,
+               s.theme AS s_theme, s.benchmark AS s_benchmark, s.management_style AS s_management_style,
+               s.volatility AS s_volatility, s.horizon AS s_horizon, s.key_sectors AS s_key_sectors,
+               s.advisor_id AS s_advisor_id,
+               u.username AS u_username, u.company_name AS u_company_name, u.sebi_reg_number AS u_sebi_reg_number,
+               u.logo_url AS u_logo_url, u.sebi_cert_url AS u_sebi_cert_url,
+               im.exchange AS im_exchange, im.exchange_token AS im_exchange_token,
+               im.name AS im_name, im.lot_size AS im_lot_size
+        FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id
+        LEFT JOIN instrument_master im ON im.tradingsymbol = p.symbol
+        WHERE p.is_published = true AND ${scoped}
+          ${positionStatusWhere}
+          ${body.advisorId ? sql`AND s.advisor_id = ${body.advisorId}` : sql``}
+          ${body.strategyId ? sql`AND s.id = ${body.strategyId}` : sql``}
+          ${body.strategyType ? sql`AND s.type = ${body.strategyType}::strategy_type` : sql``}
+          ${body.symbol ? sql`AND p.symbol = ${body.symbol}` : sql``}
+          ${callTypeFilter ? sql`AND UPPER(p.buy_sell) LIKE ${callTypeFilter + '%'}` : sql``}
+          ${body.from ? sql`AND p.created_at >= ${body.from}::timestamp` : sql``}
+          ${body.to ? sql`AND p.created_at <= ${body.to}::timestamp` : sql``}
+        ORDER BY p.created_at DESC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      const out: any[] = [];
+      for (const r of callsQ.rows as any[]) {
+        const strategy = { id: r.s_id, name: r.s_name, description: r.s_description, type: r.s_type,
+          theme: r.s_theme, benchmark: r.s_benchmark, management_style: r.s_management_style,
+          volatility: r.s_volatility, horizon: r.s_horizon, key_sectors: r.s_key_sectors, advisor_id: r.s_advisor_id };
+        const advisor = { id: r.s_advisor_id, username: r.u_username, company_name: r.u_company_name,
+          sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url };
+        const instr = r.im_exchange_token != null ? { exchange: r.im_exchange, exchange_token: r.im_exchange_token, name: r.im_name, lot_size: r.im_lot_size } : null;
+        out.push(buildRecommendationFromCall(r, strategy, advisor, instr, brokerName));
+      }
+      for (const r of positionsQ.rows as any[]) {
+        const strategy = { id: r.s_id, name: r.s_name, description: r.s_description, type: r.s_type,
+          theme: r.s_theme, benchmark: r.s_benchmark, management_style: r.s_management_style,
+          volatility: r.s_volatility, horizon: r.s_horizon, key_sectors: r.s_key_sectors, advisor_id: r.s_advisor_id };
+        const advisor = { id: r.s_advisor_id, username: r.u_username, company_name: r.u_company_name,
+          sebi_reg_number: r.u_sebi_reg_number, logo_url: r.u_logo_url, sebi_cert_url: r.u_sebi_cert_url };
+        const instr = r.im_exchange_token != null ? { exchange: r.im_exchange, exchange_token: r.im_exchange_token, name: r.im_name, lot_size: r.im_lot_size } : null;
+        out.push(buildRecommendationFromPosition(r, strategy, advisor, instr, brokerName));
+      }
+      out.sort((a, b) => String(b.creationDate).localeCompare(String(a.creationDate)));
+      res.json(listEnvelope(out.slice(0, limit), out.length));
+    } catch (e: any) {
+      console.error("[v2 call-search]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Search failed"));
+    }
+  });
+
+  // ─── GET /alpha/instruments/lookup ───
+  app.get(prefix + "/alpha/instruments/lookup", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const symbol = req.query.symbol ? String(req.query.symbol).toUpperCase() : "";
+      if (!symbol) return res.status(400).json(errEnvelope(400, "BAD_REQUEST", "symbol is required"));
+      const exchange = String(req.query.exchange ?? "NSE").toUpperCase();
+      const type = String(req.query.type ?? "EQ").toUpperCase();
+      const q = await db.execute(sql`
+        SELECT * FROM instrument_master
+        WHERE tradingsymbol = ${symbol} AND exchange = ${exchange} AND instrument_type = ${type}
+        LIMIT 1
+      `);
+      if (!q.rows[0]) return res.status(404).json(errEnvelope(404, "NOT_FOUND", "Instrument not found"));
+      res.json(envelope(buildInstrument(q.rows[0])));
+    } catch (e: any) {
+      console.error("[v2 instrument-lookup]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Lookup failed"));
+    }
+  });
+
+  // ─── GET /alpha/instruments/search ───
+  app.get(prefix + "/alpha/instruments/search", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const q = req.query.q ? String(req.query.q).trim() : "";
+      if (q.length < 2) return res.status(400).json(errEnvelope(400, "BAD_REQUEST", "q must be at least 2 characters"));
+      const exchange = req.query.exchange ? String(req.query.exchange).toUpperCase() : null;
+      const limit = clampInt(req.query.limit, 25, 1, 50);
+      const pat = q.toUpperCase() + "%";
+      const exWhere = exchange ? sql`AND exchange = ${exchange}` : sql``;
+      const rowsQ = await db.execute(sql`
+        SELECT * FROM instrument_master
+        WHERE (tradingsymbol LIKE ${pat} OR UPPER(name) LIKE ${"%" + q.toUpperCase() + "%"})
+          ${exWhere}
+        ORDER BY (CASE WHEN tradingsymbol = ${q.toUpperCase()} THEN 0 ELSE 1 END),
+                 tradingsymbol
+        LIMIT ${limit}
+      `);
+      const data = (rowsQ.rows as any[]).map(buildInstrument);
+      res.json(listEnvelope(data, data.length));
+    } catch (e: any) {
+      console.error("[v2 instrument-search]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Search failed"));
+    }
+  });
+
+  // ─── GET /alpha/webhook-logs ───
+  app.get(prefix + "/alpha/webhook-logs", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const limit = clampInt(req.query.limit, 100, 1, 500);
+      const event = req.query.event ? String(req.query.event) : null;
+      const delivered = req.query.delivered;
+      const from = req.query.from ? String(req.query.from) : null;
+      const to = req.query.to ? String(req.query.to) : null;
+      const deliveredWhere = delivered === "true" ? sql`AND delivered = true`
+                            : delivered === "false" ? sql`AND delivered = false` : sql``;
+      const rowsQ = await db.execute(sql`
+        SELECT id::text AS id, event, payload, status_code, response_body, attempt, delivered,
+               error_message, created_at, delivered_at
+        FROM broker_webhook_logs
+        WHERE api_key_id = ${req.broker!.id}
+          ${event ? sql`AND event = ${event}` : sql``}
+          ${deliveredWhere}
+          ${from ? sql`AND created_at >= ${from}::timestamp` : sql``}
+          ${to ? sql`AND created_at <= ${to}::timestamp` : sql``}
+        ORDER BY created_at DESC
+        LIMIT ${limit}
+      `);
+      const data = (rowsQ.rows as any[]).map(r => ({
+        id: r.id,
+        event: r.event,
+        payload: r.payload,
+        statusCode: r.status_code,
+        responseBody: r.response_body ? String(r.response_body).slice(0, 500) : null,
+        attempt: Number(r.attempt || 1),
+        delivered: !!r.delivered,
+        errorMessage: r.error_message,
+        createdAt: isoOrNull(r.created_at),
+        deliveredAt: isoOrNull(r.delivered_at),
+      }));
+      res.json(listEnvelope(data, data.length));
+    } catch (e: any) {
+      console.error("[v2 webhook-logs]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Failed to fetch webhook logs"));
+    }
+  });
+
+  // ─── POST /alpha/sync/replay ───
+  app.post(prefix + "/alpha/sync/replay", requirePermission("read") as any, async (req: BrokerRequest, res: Response) => {
+    try {
+      const body = (req.body || {}) as any;
+      if (!body.from || !body.to) {
+        return res.status(400).json(errEnvelope(400, "BAD_REQUEST", "from and to are required (ISO 8601)"));
+      }
+      const recent = await db.execute(sql`
+        SELECT MAX(created_at) AS last FROM broker_webhook_logs
+        WHERE api_key_id = ${req.broker!.id} AND event = 'REPLAY_REQUEST'
+      `);
+      const last = (recent.rows[0] as any)?.last;
+      if (last && (Date.now() - new Date(last).getTime()) < 300_000) {
+        return res.status(429).json(errEnvelope(429, "RATE_LIMITED", "Replay rate-limited to once per 5 minutes"));
+      }
+
+      const events = Array.isArray(body.eventTypes) ? body.eventTypes : [];
+      const evWhere = events.length ? sql`AND event = ANY(${events}::text[])` : sql``;
+      const countQ = await db.execute(sql`
+        SELECT COUNT(*)::int AS c FROM broker_webhook_logs
+        WHERE api_key_id = ${req.broker!.id}
+          AND created_at >= ${body.from}::timestamp
+          AND created_at <= ${body.to}::timestamp
+          ${evWhere}
+      `);
+      const scheduledCount = Number((countQ.rows[0] as any)?.c ?? 0);
+      const jobId = randomUUID();
+
+      await db.execute(sql`
+        INSERT INTO broker_webhook_logs (api_key_id, event, payload, attempt, delivered, created_at)
+        VALUES (${req.broker!.id}, 'REPLAY_REQUEST', ${JSON.stringify({ from: body.from, to: body.to, jobId, scheduledCount })}::jsonb, 1, false, NOW())
+      `).catch(() => {});
+
+      res.status(202).json({
+        status: "success", statusCode: 202,
+        message: { key: "REPLAY_SCHEDULED", message: "Replay scheduled" },
+        data: { scheduledCount, jobId },
+      });
+    } catch (e: any) {
+      console.error("[v2 sync-replay]", e);
+      res.status(500).json(errEnvelope(500, "INTERNAL_ERROR", "Replay failed"));
+    }
+  });
+}

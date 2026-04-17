@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlphaMarket Broker Integration Guide (v2)</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #6b7280;
+    --accent: #e74c3c;
+    --accent-soft: #fef1ef;
+    --border: #e5e7eb;
+    --code-bg: #1e293b;
+    --code-fg: #e2e8f0;
+    --warn-bg: #fef3c7;
+    --warn-border: #f59e0b;
+    --ok-bg: #d1fae5;
+    --ok-border: #10b981;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 0;
+  }
+  header {
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    color: white;
+    padding: 48px 32px;
+    text-align: center;
+  }
+  header h1 { margin: 0 0 8px; font-size: 32px; font-weight: 700; }
+  header .subtitle { opacity: 0.85; font-size: 16px; }
+  header .version { display: inline-block; margin-top: 12px; padding: 4px 12px; background: rgba(255,255,255,0.15); border-radius: 4px; font-size: 13px; }
+  .container { max-width: 920px; margin: 0 auto; padding: 40px 32px; }
+  nav.toc {
+    background: var(--accent-soft);
+    border-left: 4px solid var(--accent);
+    padding: 20px 24px;
+    margin: 32px 0;
+    border-radius: 0 6px 6px 0;
+  }
+  nav.toc h3 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--accent); }
+  nav.toc ol { margin: 0; padding-left: 20px; }
+  nav.toc li { margin: 4px 0; }
+  nav.toc a { color: var(--fg); text-decoration: none; }
+  nav.toc a:hover { color: var(--accent); text-decoration: underline; }
+  h2 {
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 8px;
+    margin-top: 48px;
+    font-size: 24px;
+  }
+  h3 { margin-top: 32px; font-size: 18px; }
+  h4 { margin-top: 24px; font-size: 16px; color: var(--muted); }
+  code {
+    font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
+    background: #f3f4f6;
+    color: #be2d58;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 13px;
+  }
+  pre {
+    background: var(--code-bg);
+    color: var(--code-fg);
+    padding: 16px 20px;
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  pre code { background: none; color: inherit; padding: 0; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; font-size: 14px; }
+  th { background: #f9fafb; font-weight: 600; }
+  .callout { padding: 16px 20px; border-radius: 6px; margin: 20px 0; }
+  .callout.info { background: var(--accent-soft); border-left: 4px solid var(--accent); }
+  .callout.warn { background: var(--warn-bg); border-left: 4px solid var(--warn-border); }
+  .callout.ok { background: var(--ok-bg); border-left: 4px solid var(--ok-border); }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+  .pill.get { background: #dbeafe; color: #1e40af; }
+  .pill.post { background: #dcfce7; color: #166534; }
+  .pill.put { background: #fef3c7; color: #92400e; }
+  .endpoint { margin: 12px 0; padding: 8px 12px; background: #f9fafb; border-radius: 4px; font-family: "SF Mono", monospace; font-size: 13px; }
+  footer {
+    margin-top: 80px;
+    padding: 32px;
+    background: #f9fafb;
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>AlphaMarket Broker Integration Guide</h1>
+  <div class="subtitle">REST Pull API + Webhook Push contract for broker partners</div>
+  <div class="version">v2.0.0 — Apr 2026</div>
+</header>
+
+<div class="container">
+
+<nav class="toc">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#overview">Overview</a></li>
+    <li><a href="#auth">Authentication</a></li>
+    <li><a href="#envelope">Response envelope</a></li>
+    <li><a href="#pull-api">Pull API — polling</a></li>
+    <li><a href="#webhooks">Webhook push — real-time</a></li>
+    <li><a href="#hmac">HMAC signature verification</a></li>
+    <li><a href="#recommendation-shape">The Recommendation payload</a></li>
+    <li><a href="#equity-calls">Equity calls (<code>equityCall</code>)</a></li>
+    <li><a href="#fno-calls">F&amp;O calls (<code>fnoCall</code>)</a></li>
+    <li><a href="#event-types">Event types</a></li>
+    <li><a href="#errors">Errors and rate limits</a></li>
+    <li><a href="#recipes">Common recipes</a></li>
+    <li><a href="#testing">Testing &amp; UAT</a></li>
+    <li><a href="#support">Support</a></li>
+  </ol>
+</nav>
+
+<h2 id="overview">1. Overview</h2>
+
+<p>AlphaMarket is a SEBI-registered investment advisory platform. Brokers integrate with AlphaMarket to receive trading recommendations (<em>calls</em>) published by advisors in real time, so that broker users can follow these advisors inside the broker's own app.</p>
+
+<p>Two integration modes are available and <strong>both deliver the same payload shape</strong>:</p>
+
+<table>
+  <tr><th>Mode</th><th>Direction</th><th>Use when</th></tr>
+  <tr><td><strong>Pull API</strong></td><td>Broker polls AlphaMarket</td><td>Scheduled reconciliation; broker-side control over timing; back-fill / replay of past calls</td></tr>
+  <tr><td><strong>Webhook Push</strong></td><td>AlphaMarket POSTs to broker</td><td>Real-time delivery; production operations; event-driven architectures</td></tr>
+</table>
+
+<p>Most production brokers use <strong>both</strong>: webhook for live delivery, Pull API for back-fill and reconciliation.</p>
+
+<h3>Base URLs</h3>
+<div class="endpoint">Production: <code>https://alphamarket.co.in/api/v2</code></div>
+<div class="endpoint">UAT: <code>https://uat.alphamarket.co.in/api/v2</code></div>
+
+<h2 id="auth">2. Authentication</h2>
+
+<p>Every request to the Pull API must include your API key in the <code>x-api-key</code> header:</p>
+
+<pre><code>curl -H "x-api-key: amk_live_f387ae19154f71a6a95262dadd07184d6ee1115129987f5e" \
+     https://alphamarket.co.in/api/v2/alpha/live-calls</code></pre>
+
+<p>Keys have the format <code>amk_live_&lt;64 hex chars&gt;</code>. Your paired <code>apiSecret</code> is used only for HMAC verification of inbound webhook deliveries — you never send it in requests.</p>
+
+<div class="callout warn">
+<p><strong>Security.</strong> Your <code>apiKey</code> and <code>apiSecret</code> are credentials. Store them in environment variables, not in source code. Rotate them if exposed. Keys can be scoped to specific advisor IDs and IP ranges — contact integrations@alphamarket.co.in to configure.</p>
+</div>
+
+<h3>Obtaining a key</h3>
+<p>Contact <code>integrations@alphamarket.co.in</code> with:</p>
+<ul>
+  <li>Broker name and primary contact email</li>
+  <li>Webhook endpoint URL (HTTPS only; must return 200-299 within 5 seconds)</li>
+  <li>Production IP ranges (for IP-whitelist configuration)</li>
+  <li>Whether you need access to all advisors or a subset</li>
+</ul>
+
+<h2 id="envelope">3. Response envelope</h2>
+
+<p>Every Pull API response and every webhook payload is wrapped in the same envelope:</p>
+
+<pre><code>{
+  "status": "success",
+  "statusCode": 200,
+  "message": { "key": "GET", "message": "Get Successfully" },
+  "data": { ... }
+}</code></pre>
+
+<p>For list endpoints, <code>data</code> is an array and a <code>total</code> field is added at the top level:</p>
+
+<pre><code>{
+  "status": "success",
+  "statusCode": 200,
+  "message": { "key": "GET", "message": "Get Successfully" },
+  "data": [ {...}, {...}, ... ],
+  "total": 42,
+  "serverTime": "2026-04-16T18:45:00.123Z"
+}</code></pre>
+
+<p>Errors follow the same shape with <code>status: "error"</code> and <code>data: null</code>:</p>
+
+<pre><code>{
+  "status": "error",
+  "statusCode": 401,
+  "message": { "key": "UNAUTHORIZED", "message": "Invalid API key" },
+  "data": null
+}</code></pre>
+
+<h2 id="pull-api">4. Pull API — polling</h2>
+
+<p>The primary polling endpoint is <code>GET /alpha/live-calls</code>. It returns every active recommendation visible to your key.</p>
+
+<div class="endpoint"><span class="pill get">GET</span> <code>/api/v2/alpha/live-calls</code></div>
+
+<p><strong>Recommended polling interval:</strong> 30-60 seconds. Use the <code>serverTime</code> in the response to do incremental polling — pass <code>?from=&lt;prev serverTime&gt;</code> to <code>/alpha/integration/call/search</code> for changes since last poll.</p>
+
+<h3>Example — Node.js</h3>
+<pre><code>const fetch = require('node-fetch');
+
+const API_KEY = process.env.ALPHAMARKET_API_KEY;
+const BASE = 'https://alphamarket.co.in/api/v2';
+
+async function fetchLiveCalls() {
+  const res = await fetch(`${BASE}/alpha/live-calls`, {
+    headers: { 'x-api-key': API_KEY }
+  });
+  const body = await res.json();
+  if (body.status !== 'success') throw new Error(body.message.message);
+  console.log(`Received ${body.total} active calls`);
+  return body.data;
+}
+
+// Poll every 45 seconds
+setInterval(fetchLiveCalls, 45000);</code></pre>
+
+<h3>Example — Python</h3>
+<pre><code>import os, time, requests
+
+API_KEY = os.environ['ALPHAMARKET_API_KEY']
+BASE = 'https://alphamarket.co.in/api/v2'
+HEADERS = {'x-api-key': API_KEY}
+
+def fetch_live_calls():
+    r = requests.get(f'{BASE}/alpha/live-calls', headers=HEADERS, timeout=10)
+    r.raise_for_status()
+    body = r.json()
+    if body['status'] != 'success':
+        raise RuntimeError(body['message']['message'])
+    return body['data']
+
+while True:
+    calls = fetch_live_calls()
+    print(f'Received {len(calls)} active calls')
+    time.sleep(45)</code></pre>
+
+<h3>All Pull API endpoints</h3>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Purpose</th></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/health</code></td><td>Service health (no auth)</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/advisors</code></td><td>List advisors</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/advisors/{id}</code></td><td>Advisor detail + strategies</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/strategies</code></td><td>List strategies</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/strategies/{id}</code></td><td>Strategy detail</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/strategies/{id}/calls</code></td><td>Recommendations for a strategy</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/strategies/{id}/performance</code></td><td>Performance metrics</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/live-calls</code></td><td><strong>Primary polling endpoint</strong></td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/calls/{id}</code></td><td>Single call</td></tr>
+  <tr><td><span class="pill post">POST</span></td><td><code>/alpha/integration/call/search</code></td><td>Flexible paginated search</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/instruments/lookup</code></td><td>Symbol → exchangeToken</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/instruments/search</code></td><td>Partial symbol / name search</td></tr>
+  <tr><td><span class="pill get">GET</span></td><td><code>/alpha/webhook-logs</code></td><td>Webhook delivery audit</td></tr>
+  <tr><td><span class="pill post">POST</span></td><td><code>/alpha/sync/replay</code></td><td>Replay missed webhook events</td></tr>
+</table>
+
+<p>For full parameter lists, schemas, and example responses, see the interactive Swagger UI at <a href="/api/broker-docs-v2">/api/broker-docs-v2</a>.</p>
+
+<h2 id="webhooks">5. Webhook push — real-time</h2>
+
+<p>When an advisor publishes, modifies, or closes a call (or the scheduler fires SL/target/trailing-SL events), AlphaMarket POSTs the event to your registered webhook URL:</p>
+
+<ul>
+  <li><strong>Method:</strong> POST</li>
+  <li><strong>Content-Type:</strong> <code>application/json</code></li>
+  <li><strong>Timeout:</strong> 5 seconds — return 2xx within this window</li>
+  <li><strong>Retries:</strong> 3 attempts with delays 5s → 30s → 2min</li>
+  <li><strong>User-Agent:</strong> <code>AlphaMarket-Webhook/2.0</code></li>
+</ul>
+
+<h3>Headers sent</h3>
+
+<pre><code>POST /your/webhook/path HTTP/1.1
+Host: broker.example.com
+Content-Type: application/json
+User-Agent: AlphaMarket-Webhook/2.0
+X-AlphaMarket-Event: CALL_CREATED
+X-AlphaMarket-Signature: 8b1a9953c4611296a827abf8c47804d7abc012...
+X-AlphaMarket-Timestamp: 2026-04-16T18:45:00.123Z</code></pre>
+
+<h3>Response expected from your endpoint</h3>
+
+<p>Return <strong>HTTP 2xx</strong> (ideally 200 with an empty body or <code>{"ok": true}</code>) within 5 seconds. Anything else — non-2xx, timeout, connection error — triggers retry.</p>
+
+<div class="callout info">
+<p><strong>Idempotency.</strong> Every payload includes <code>callId</code> (a UUID). Use it as your idempotency key. If you receive the same <code>callId + event</code> combination twice (possible during retries), treat the second as a no-op.</p>
+</div>
+
+<h2 id="hmac">6. HMAC signature verification</h2>
+
+<p>Each webhook is signed with HMAC-SHA256 over the raw JSON body, using your <code>apiSecret</code>. <strong>Always verify signatures before trusting a payload.</strong></p>
+
+<h3>Verification — Node.js (Express)</h3>
+
+<pre><code>const crypto = require('crypto');
+const express = require('express');
+const app = express();
+
+const API_SECRET = process.env.ALPHAMARKET_API_SECRET;
+
+// IMPORTANT: use express.raw so the body is a Buffer,
+// not already-parsed JSON. HMAC must be over the exact bytes received.
+app.post('/alphamarket/webhook',
+  express.raw({ type: 'application/json' }),
+  (req, res) => {
+    const signature = req.headers['x-alphamarket-signature'];
+    const expected = crypto
+      .createHmac('sha256', API_SECRET)
+      .update(req.body)        // req.body is a Buffer here
+      .digest('hex');
+
+    if (signature !== expected) {
+      return res.status(401).json({ error: 'Invalid signature' });
+    }
+
+    const event = req.headers['x-alphamarket-event'];
+    const payload = JSON.parse(req.body.toString('utf8'));
+
+    // Process the event — return 200 fast.
+    // Heavy work: queue for async processing, don't block the response.
+    enqueue(event, payload);
+
+    res.status(200).json({ ok: true });
+  }
+);</code></pre>
+
+<h3>Verification — Python (Flask)</h3>
+
+<pre><code>import hmac, hashlib, os, json
+from flask import Flask, request, jsonify
+
+API_SECRET = os.environ['ALPHAMARKET_API_SECRET']
+app = Flask(__name__)
+
+@app.post('/alphamarket/webhook')
+def handle_webhook():
+    signature = request.headers.get('X-AlphaMarket-Signature', '')
+    raw = request.get_data()  # bytes — verify before parsing
+    expected = hmac.new(API_SECRET.encode(), raw, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected):
+        return jsonify({'error': 'Invalid signature'}), 401
+
+    event = request.headers['X-AlphaMarket-Event']
+    payload = json.loads(raw)
+    enqueue(event, payload)     # your async processing
+    return jsonify({'ok': True}), 200</code></pre>
+
+<div class="callout warn">
+<p><strong>Common pitfalls:</strong></p>
+<ul>
+<li><strong>Don't re-serialize JSON before verifying.</strong> HMAC is over the raw bytes as received. Serializing <code>req.body</code> after Express parses it changes whitespace and invalidates the signature.</li>
+<li><strong>Use constant-time comparison</strong> (<code>hmac.compare_digest</code> in Python, or compare as equal-length buffers in Node). A simple <code>===</code> is vulnerable to timing attacks.</li>
+<li><strong>Respond quickly.</strong> Do any heavy work (DB writes, pushing to user devices) asynchronously after returning 200.</li>
+</ul>
+</div>
+
+<h2 id="recommendation-shape">7. The Recommendation payload</h2>
+
+<p>Every recommendation — whether delivered via Pull API or Webhook — has this structure:</p>
+
+<pre><code>{
+  "callId": "fc44f5d6-dbf5-4f84-8f52-50a03546f480",
+  "recommendationId": "11316",
+  "clientId": "upstox",
+  "env": "pod",
+  "callStatus": "PUBLISHED",
+  "dayMonth": "1403",
+  "symbol": "SAIL",
+  "callType": "BUY",
+
+  "strategyId": "42459575-b915-43d1-bfb1-76140113f772",
+  "strategyName": "WIZTHEME VALUE",
+  "strategyDescription": "Value-style picks based on Warren Buffett principles...",
+  "strategyType": "Equity",
+  "benchmark": "Nifty 50",
+
+  "advisorId": "6a1dda4a-6bbc-4913-9657-613c952e63be",
+  "advisorName": "STOKWIZ",
+  "advisorSebiRegistrationNo": "INH000013925",
+  "profilePic": "https://alpha-market-image.s3.ap-south-1.amazonaws.com/...",
+  "certificateURl": null,
+
+  "rational": "Long-term targets suggest an upside of over 30%...",
+  "theme":               ["Equity", "F&O", "Growth"],
+  "thematicCollection":  ["Value"],
+  "managementStyle":     ["Active"],
+  "volatility":          ["Medium"],
+  "horizon":             ["Positional"],
+  "keySector":           null,
+
+  "equityCall": { ...see below... },
+  "fnoCall": null,
+
+  "trailingStopLoss": { "enabled": false },
+
+  "creationDate": "2026-03-14T17:32:44.217Z",
+  "status": "SEND",
+  "isActive": true
+}</code></pre>
+
+<h3>Key fields</h3>
+<table>
+<tr><th>Field</th><th>Notes</th></tr>
+<tr><td><code>callId</code></td><td>UUID. Stable. Use as idempotency key.</td></tr>
+<tr><td><code>recommendationId</code></td><td>Sequential numeric ID.</td></tr>
+<tr><td><code>clientId</code></td><td>Your broker identifier (your unique name at AlphaMarket).</td></tr>
+<tr><td><code>env</code></td><td><code>uat</code> or <code>pod</code> (production).</td></tr>
+<tr><td><code>callStatus</code></td><td><code>PUBLISHED</code> (just created), <code>ACTIVE</code>, <code>CLOSED</code>, <code>ARCHIVED</code>.</td></tr>
+<tr><td><code>symbol</code></td><td>Top-level summary. For F&amp;O, the full contract symbol (e.g. <code>NIFTY26APRFUT</code>).</td></tr>
+<tr><td><code>strategyType</code></td><td><code>Equity</code>, <code>Future</code>, <code>Option</code>, <code>Commodity</code>, or <code>Basket</code>.</td></tr>
+<tr><td><code>equityCall</code> / <code>fnoCall</code></td><td>Exactly one is populated. See below.</td></tr>
+<tr><td><code>creationDate</code></td><td>ISO 8601 UTC.</td></tr>
+</table>
+
+<h2 id="equity-calls">8. Equity calls (<code>equityCall</code>)</h2>
+
+<p>For strategies with <code>strategyType: "Equity"</code> or <code>"Basket"</code>, the <code>equityCall</code> field is populated and <code>fnoCall</code> is null.</p>
+
+<pre><code>"equityCall": {
+  "exchange": "NSE",
+  "legId": "11317",
+  "exchangeToken": "2963",
+  "symbol": "SAIL",
+  "name": "Steel Authority of India Limited",
+  "buyDate": "2026-03-14T17:32:38.888Z",
+  "buyPrice": 147.0,
+  "buyPriceRangeStart": 147.0,
+  "buyPriceRangeEnd": 149.0,
+  "callType": "BUY",
+  "targetPriceRange": "163",
+  "profitGoal": "10",
+  "stopLoss": "138",
+  "status": "PUBLISHED"
+}</code></pre>
+
+<p>When the call is closed (target hit, stop triggered, or manually closed), additional fields are populated:</p>
+
+<pre><code>"equityCall": {
+  ...same fields as above...
+  "sellPrice": 258.2,
+  "sellDate": "2025-11-10T08:41:26.365Z",
+  "profitLossPercent": 2.257425742574253,
+  "exitType": "TargetAchieved",
+  "status": "CLOSED"
+}</code></pre>
+
+<h3>Mapping to your instrument master</h3>
+<p>Use <code>exchangeToken</code> — it's the NSE/BSE-native numeric instrument ID. Every Indian broker's instrument master includes this token, so it's a universal join key. Example: <code>SAIL</code> on NSE has <code>exchangeToken: "2963"</code>.</p>
+
+<p>If you need to verify a symbol before receiving calls, use the lookup endpoint:</p>
+
+<pre><code>curl -H "x-api-key: $API_KEY" \
+  "https://alphamarket.co.in/api/v2/alpha/instruments/lookup?symbol=SAIL&exchange=NSE&type=EQ"</code></pre>
+
+<h2 id="fno-calls">9. F&amp;O calls (<code>fnoCall</code>)</h2>
+
+<p>For strategies with <code>strategyType</code> of <code>Future</code>, <code>Option</code>, or <code>Commodity</code>, the <code>fnoCall</code> field is an <strong>array</strong> (to support multi-leg strategies like iron condor). Single-leg strategies have one entry.</p>
+
+<pre><code>"fnoCall": [
+  {
+    "exchange": "NFO",
+    "legId": "00833",
+    "exchangeToken": "66691",
+    "symbol": "NIFTY26APRFUT",
+    "name": "NIFTY",
+    "segment": "FUTIDX",
+    "optionType": "Future",
+    "callPut": null,
+    "buySell": "BUY",
+    "expiryDate": "2026-04-28T00:00:00.000Z",
+    "strike": 0,
+    "lotSize": 65,
+    "isStoppLossAbsolute": { "code": "Y", "name": "Yes" },
+    "buyDate": "2026-04-16T10:30:00.000Z",
+    "buyPrice": 24715.0,
+    "callType": "BUY",
+    "targetPriceRange": "25777",
+    "stopLoss": "24300",
+    "creationDate": "2026-04-16T10:30:00.000Z",
+    "status": "PUBLISHED"
+  }
+]</code></pre>
+
+<h3>Exchange values</h3>
+<table>
+<tr><th>Exchange</th><th>Meaning</th></tr>
+<tr><td><code>NFO</code></td><td>NSE F&amp;O — Index &amp; stock futures/options</td></tr>
+<tr><td><code>BFO</code></td><td>BSE F&amp;O — SENSEX, BANKEX</td></tr>
+<tr><td><code>MCX</code></td><td>Commodities — gold, silver, crude, copper</td></tr>
+<tr><td><code>NCO</code></td><td>NSE Commodity Options</td></tr>
+</table>
+
+<h3>Segment values</h3>
+<table>
+<tr><th>Segment</th><th>Meaning</th></tr>
+<tr><td><code>FUTIDX</code></td><td>Index future (e.g. NIFTY26APRFUT)</td></tr>
+<tr><td><code>OPTIDX</code></td><td>Index option (e.g. NIFTY2550025000CE)</td></tr>
+<tr><td><code>FUTSTK</code></td><td>Stock future</td></tr>
+<tr><td><code>OPTSTK</code></td><td>Stock option</td></tr>
+<tr><td><code>FUTCOM</code></td><td>Commodity future</td></tr>
+<tr><td><code>OPTCOM</code></td><td>Commodity option</td></tr>
+</table>
+
+<h2 id="event-types">10. Event types</h2>
+
+<p>Each webhook delivery carries an <code>X-AlphaMarket-Event</code> header identifying the event:</p>
+
+<table>
+<tr><th>Event</th><th>When it fires</th></tr>
+<tr><td><code>CALL_CREATED</code></td><td>Advisor publishes a new equity call</td></tr>
+<tr><td><code>CALL_MODIFIED</code></td><td>Target/SL/notes updated on an active call</td></tr>
+<tr><td><code>CALL_CLOSED</code></td><td>Advisor manually closes the call</td></tr>
+<tr><td><code>TARGET_ACHIEVED</code></td><td>Scheduler detects target price reached</td></tr>
+<tr><td><code>STOPLOSS_TRIGGERED</code></td><td>Scheduler detects SL breached</td></tr>
+<tr><td><code>TRAILING_SL_TRIGGERED</code></td><td>Trailing SL fires</td></tr>
+<tr><td><code>TRAILING_SL_UPDATED</code></td><td>Trailing SL adjusts (price moves favorably)</td></tr>
+<tr><td><code>POSITION_CREATED</code></td><td>F&amp;O position published</td></tr>
+<tr><td><code>POSITION_MODIFIED</code></td><td>F&amp;O position updated</td></tr>
+<tr><td><code>POSITION_CLOSED</code></td><td>F&amp;O position closed</td></tr>
+</table>
+
+<p>Your webhook receives events for all 10 types by default. To restrict — contact AlphaMarket support; we can limit your key's <code>webhookEvents</code> list.</p>
+
+<h2 id="errors">11. Errors and rate limits</h2>
+
+<h3>Error responses</h3>
+
+<table>
+<tr><th>HTTP</th><th>Meaning</th></tr>
+<tr><td>400</td><td>Bad request (invalid filter, malformed body)</td></tr>
+<tr><td>401</td><td>Missing or invalid API key</td></tr>
+<tr><td>403</td><td>Key lacks permission for this resource</td></tr>
+<tr><td>404</td><td>Resource not found</td></tr>
+<tr><td>429</td><td>Rate limit exceeded — see <code>Retry-After</code> header</td></tr>
+<tr><td>500</td><td>Server error — retry with backoff</td></tr>
+</table>
+
+<h3>Rate limits</h3>
+<p>Default: <strong>100 requests per minute per API key</strong>. Every response includes:</p>
+<pre><code>X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 97
+X-RateLimit-Reset: 1728950400</code></pre>
+
+<p>When exceeded, AlphaMarket returns HTTP 429 with <code>Retry-After: &lt;seconds&gt;</code>. Contact support to raise the limit.</p>
+
+<h2 id="recipes">12. Common recipes</h2>
+
+<h3>Back-fill calls from the last 24 hours</h3>
+<pre><code>curl -X POST \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "status": "ALL",
+    "from": "2026-04-15T00:00:00Z",
+    "to":   "2026-04-16T00:00:00Z",
+    "limit": 500
+  }' \
+  https://alphamarket.co.in/api/v2/alpha/integration/call/search</code></pre>
+
+<h3>Replay missed webhook events</h3>
+<p>If your webhook endpoint was down for a period, ask AlphaMarket to re-fire the events:</p>
+<pre><code>curl -X POST \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "from": "2026-04-16T10:00:00Z",
+    "to":   "2026-04-16T11:00:00Z"
+  }' \
+  https://alphamarket.co.in/api/v2/alpha/sync/replay</code></pre>
+<p>Rate-limited to once per 5 minutes per key.</p>
+
+<h3>Check delivery status of recent webhooks</h3>
+<pre><code>curl -H "x-api-key: $API_KEY" \
+  "https://alphamarket.co.in/api/v2/alpha/webhook-logs?delivered=false&limit=50"</code></pre>
+
+<h3>Lookup an instrument</h3>
+<pre><code>curl -H "x-api-key: $API_KEY" \
+  "https://alphamarket.co.in/api/v2/alpha/instruments/lookup?symbol=SAIL&exchange=NSE&type=EQ"</code></pre>
+
+<h2 id="testing">13. Testing &amp; UAT</h2>
+
+<p>Use the UAT environment (<code>https://uat.alphamarket.co.in/api/v2</code>) for integration testing. AlphaMarket can:</p>
+<ul>
+  <li>Issue a separate UAT API key scoped to test advisors</li>
+  <li>Publish test calls on demand to trigger webhook deliveries</li>
+  <li>Share webhook logs so you can verify delivery and signature</li>
+</ul>
+
+<p>Recommended test sequence for new integrations:</p>
+<ol>
+  <li><strong>Auth check:</strong> GET <code>/health</code> (no key) — confirm 200.</li>
+  <li><strong>Key check:</strong> GET <code>/alpha/advisors</code> — confirm 200 with your scoped advisor list.</li>
+  <li><strong>Symbol check:</strong> GET <code>/alpha/instruments/lookup?symbol=SAIL</code> — confirm <code>exchangeToken: "2963"</code>.</li>
+  <li><strong>Polling check:</strong> GET <code>/alpha/live-calls</code> — confirm array of calls, each with <code>equityCall</code> or <code>fnoCall</code>.</li>
+  <li><strong>Webhook check:</strong> Ask AlphaMarket to publish a UAT call. Confirm POST hits your endpoint with valid <code>X-AlphaMarket-Signature</code>.</li>
+  <li><strong>Lifecycle check:</strong> Have AlphaMarket close the UAT call. Confirm <code>CALL_CLOSED</code> and <code>TARGET_ACHIEVED</code> events arrive.</li>
+  <li><strong>Replay check:</strong> POST <code>/alpha/sync/replay</code> for the window — confirm events re-fire.</li>
+</ol>
+
+<h2 id="support">14. Support</h2>
+
+<p>Technical support, API key issuance, UAT coordination, bug reports:</p>
+<ul>
+  <li>Email: <code>integrations@alphamarket.co.in</code></li>
+  <li>Web: <a href="https://alphamarket.co.in">https://alphamarket.co.in</a></li>
+  <li>Interactive Swagger: <a href="/api/broker-docs-v2">/api/broker-docs-v2</a></li>
+  <li>Raw OpenAPI spec: <a href="/api/broker-spec-v2.json">/api/broker-spec-v2.json</a></li>
+</ul>
+
+</div>
+
+<footer>
+  AlphaMarket Broker Integration API v2.0.0 &nbsp;·&nbsp; © 2026 AlphaMarket &nbsp;·&nbsp; integrations@alphamarket.co.in
+</footer>
+
+</body>
+</html>
