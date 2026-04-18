@@ -3,10 +3,10 @@
   "info": {
     "title": "AlphaMarket Broker Integration API",
     "version": "2.1.0",
-    "description": "AlphaMarket v2 Broker Integration API. Universal spec for all onboarded brokers.\n\n**Your broker account is scoped by AlphaMarket admins.** Calls, strategies, and webhook events you receive are filtered by:\n- `allowed_advisors` \u2014 which advisors' content you can see\n- `allowed_strategies` \u2014 optional fine-grained per-strategy opt-in\n- `allowed_segments` \u2014 equity vs F&O scoping\n\nIf you expect to see a strategy/advisor that isn't appearing in your responses, contact AlphaMarket's integration team \u2014 it's a scope configuration, not a bug.\n\n**Webhook brokers** can receive one of two payload formats:\n- `v1_flat` (default) \u2014 simple `{event, timestamp, data}` shape\n- `v1_thealphamarket` \u2014 byte-exact match to legacy thealphamarket.com spec\n\nPayload version is configured per-broker on our side. To switch, contact admin.",
+    "description": "AlphaMarket v2 Broker Integration API. Universal spec for all onboarded brokers.\n\n**Your broker account is scoped by AlphaMarket admins.** Calls, strategies, and webhook events you receive are filtered by:\n- `allowed_advisors` \u2014 which advisors' content you can see\n- `allowed_strategies` \u2014 optional fine-grained per-strategy opt-in\n- `allowed_segments` \u2014 equity vs F&O scoping\n\nIf you expect to see a strategy/advisor that isn't appearing in your responses, contact AlphaMarket's integration team \u2014 it's a scope configuration, not a bug.\n\n**Webhook brokers** can receive one of two payload formats:\n- `v1_flat` (default) \u2014 simple `{event, timestamp, data}` shape\n- `v1_thealphamarket` \u2014 byte-exact match to legacy thealphamarket.com spec\n\nPayload version is configured per-broker on our side. To switch, contact admin.\n\n**Contact:**\n- Email (primary): hello@alphamarket.co.in\n- Email (escalation): amit@thealphamarket.com\n- Phone: +91 90291 29102",
     "contact": {
-      "name": "AlphaMarket Integrations",
-      "email": "integrations@alphamarket.co.in",
+      "name": "AlphaMarket Integration Support",
+      "email": "hello@alphamarket.co.in",
       "url": "https://alphamarket.co.in"
     },
     "license": {

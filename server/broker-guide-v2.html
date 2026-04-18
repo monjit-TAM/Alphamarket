@@ -172,11 +172,11 @@
 <p>Keys have the format <code>amk_live_&lt;64 hex chars&gt;</code>. Your paired <code>apiSecret</code> is used only for HMAC verification of inbound webhook deliveries — you never send it in requests.</p>
 
 <div class="callout warn">
-<p><strong>Security.</strong> Your <code>apiKey</code> and <code>apiSecret</code> are credentials. Store them in environment variables, not in source code. Rotate them if exposed. Keys can be scoped to specific advisor IDs and IP ranges — contact integrations@alphamarket.co.in to configure.</p>
+<p><strong>Security.</strong> Your <code>apiKey</code> and <code>apiSecret</code> are credentials. Store them in environment variables, not in source code. Rotate them if exposed. Keys can be scoped to specific advisor IDs, strategies, segments, and IP ranges — contact <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> to configure.</p>
 </div>
 
 <h3>Obtaining a key</h3>
-<p>Contact <code>integrations@alphamarket.co.in</code> with:</p>
+<p>Contact <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> with:</p>
 <ul>
   <li>Broker name and primary contact email</li>
   <li>Webhook endpoint URL (HTTPS only; must return 200-299 within 5 seconds)</li>
@@ -708,19 +708,19 @@ X-RateLimit-Reset: 1728950400</code></pre>
 </ol>
 
 <h2 id="support">14. Support</h2>
-
-<p>Technical support, API key issuance, UAT coordination, bug reports:</p>
+<p>For integration questions, issues, or scope changes (enabling additional advisors/strategies/segments):</p>
 <ul>
-  <li>Email: <code>integrations@alphamarket.co.in</code></li>
-  <li>Web: <a href="https://alphamarket.co.in">https://alphamarket.co.in</a></li>
-  <li>Interactive Swagger: <a href="/api/broker-docs-v2">/api/broker-docs-v2</a></li>
-  <li>Raw OpenAPI spec: <a href="/api/broker-spec-v2.json">/api/broker-spec-v2.json</a></li>
+  <li><strong>Email:</strong> <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a></li>
+  <li><strong>Email:</strong> <a href="mailto:amit@thealphamarket.com">amit@thealphamarket.com</a></li>
+  <li><strong>Phone:</strong> <a href="tel:+919029129102">+91 90291 29102</a></li>
 </ul>
+<p>Please include your <code>broker_name</code> and the first 16 characters of your <code>api_key</code> (never the full key, and never the <code>api_secret</code>) in your first email so we can look up your account quickly.</p>
+
 
 </div>
 
 <footer>
-  AlphaMarket Broker Integration API v2.0.0 &nbsp;·&nbsp; © 2026 AlphaMarket &nbsp;·&nbsp; integrations@alphamarket.co.in
+  AlphaMarket Broker Integration API v2.1.0 &nbsp;·&nbsp; © 2026 AlphaMarket &nbsp;·&nbsp; <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a>
 </footer>
 
 </body>
