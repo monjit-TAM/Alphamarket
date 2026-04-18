@@ -192,6 +192,31 @@ function mapSeries(segment: string | null): string {
   return "XX"; // futures + options per thealphamarket.com sample
 }
 
+// ─── Metadata fallbacks ─────────────────────────────────────────
+// AlphaMarket strategies sometimes have empty theme[]/managementStyle/keySector
+// in the DB (optional fields on strategy creation). Format A consumers expect
+// meaningful categorization, so we derive fallbacks from what we do have.
+
+function deriveThemeFallback(strategy: any): string[] | null {
+  const t = strategy?.theme;
+  if (Array.isArray(t) && t.length > 0) return t;
+  // Fallback: derive from strategy.type
+  const type = strategy?.type;
+  if (!type) return null;
+  if (type === "Equity") return ["Equity"];
+  if (type === "Future" || type === "Option" || type === "FnO") return ["F&O"];
+  if (type === "Basket") return ["Equity", "Basket"];
+  return [String(type)];
+}
+
+function deriveManagementStyleFallback(strategy: any): string[] | null {
+  const m = strategy?.management_style;
+  if (Array.isArray(m) && m.length > 0) return m;
+  if (typeof m === "string" && m.trim().length > 0) return [m];
+  // AlphaMarket is an active-advisor platform. Default to "Active".
+  return ["Active"];
+}
+
 // ─── Main builders ──────────────────────────────────────────────
 
 export function buildFormatAEquity(params: {
@@ -256,8 +281,8 @@ export function buildFormatAEquity(params: {
     message: { key: "GET", message: "Get Successfully" },
     data: {
       strategyId: strategy.slug || strategy.id, // prefer slug, fall back to UUID if missing
-      theme: toStringArray(strategy.theme),
-      managementStyle: toStringArray(strategy.management_style),
+      theme: deriveThemeFallback(strategy),
+      managementStyle: deriveManagementStyleFallback(strategy),
       volatility: toStringArray(strategy.volatility),
       marketCap: null,
       horizon: toStringArray(strategy.horizon),
@@ -331,8 +356,8 @@ export function buildFormatAFno(params: {
     message: { key: "GET", message: "Get Successfully" },
     data: {
       strategyId: strategy.slug || strategy.id,
-      theme: toStringArray(strategy.theme),
-      managementStyle: toStringArray(strategy.management_style),
+      theme: deriveThemeFallback(strategy),
+      managementStyle: deriveManagementStyleFallback(strategy),
       volatility: toStringArray(strategy.volatility),
       marketCap: null,
       horizon: toStringArray(strategy.horizon),
