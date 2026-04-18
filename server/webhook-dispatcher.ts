@@ -194,8 +194,8 @@ async function deliverWebhook(
       INSERT INTO broker_webhook_logs (api_key_id, event, payload, status_code, response_body, attempt, delivered, error_message, delivered_at)
       VALUES (
         ${target.api_key_id},
-        ${payload.event},
-        ${JSON.stringify(payload)}::jsonb,
+        ${(payload as any).__event || (payload as any).event || 'UNKNOWN'},
+        ${JSON.stringify((() => { const c = { ...(payload as any) }; delete c.__event; delete c.__event_id; delete c.__signature; return c; })())}::jsonb,
         ${statusCode},
         ${responseBody.substring(0, 500)},
         ${attempt},
@@ -218,11 +218,11 @@ async function deliverWebhook(
     }, delay);
   } else if (!delivered) {
     console.error(
-      `[Webhook] ${target.broker_name} delivery failed after ${attempt} attempts for event ${payload.event}`
+      `[Webhook] ${target.broker_name} delivery failed after ${attempt} attempts for event ${(payload as any).__event || "UNKNOWN"}`
     );
   } else {
     console.log(
-      `[Webhook] ${target.broker_name} delivered: ${payload.event} (${statusCode})`
+      `[Webhook] ${target.broker_name} delivered: ${(payload as any).__event || "UNKNOWN"} (${statusCode})`
     );
   }
 }
@@ -231,38 +231,41 @@ async function deliverWebhook(
  * Helper to build call event data
  */
 export function buildCallEventData(call: any, strategy?: any, advisor?: any) {
+  // Defensive: handle both Drizzle (camelCase) and raw SQL (snake_case) inputs.
+  // Without this, raw SQL callers silently produce undefined fields.
+  const c = call || {};
   return {
-    uid: call.id,
+    uid: c.id,
     type: "EQUITY",
-    symbol: call.stockName,
-    strategyId: call.strategyId,
+    symbol: c.stockName ?? c.stock_name,
+    strategyId: c.strategyId ?? c.strategy_id,
     strategyName: strategy?.name,
-    advisorId: strategy?.advisorId || advisor?.id,
-    advisorName: advisor?.companyName || advisor?.username,
-    action: call.action,
-    buyRangeStart: call.buyRangeStart,
-    buyRangeEnd: call.buyRangeEnd,
-    targetPrice: call.targetPrice,
-    stopLoss: call.stopLoss,
-    entryPrice: call.entryPrice,
-    sellPrice: call.sellPrice,
-    exitDate: call.exitDate,
-    rationale: call.rationale,
-    duration: call.duration,
-    theme: call.theme,
-    gainOrLossPercentage: call.gainPercent,
-    trailingStopLoss: call.trailing_sl_enabled
+    advisorId: strategy?.advisorId ?? strategy?.advisor_id ?? advisor?.id,
+    advisorName: advisor?.companyName ?? advisor?.company_name ?? advisor?.username,
+    action: c.action,
+    buyRangeStart: c.buyRangeStart ?? c.buy_range_start,
+    buyRangeEnd: c.buyRangeEnd ?? c.buy_range_end,
+    targetPrice: c.targetPrice ?? c.target_price,
+    stopLoss: c.stopLoss ?? c.stop_loss,
+    entryPrice: c.entryPrice ?? c.entry_price,
+    sellPrice: c.sellPrice ?? c.sell_price,
+    exitDate: c.exitDate ?? c.exit_date,
+    rationale: c.rationale,
+    duration: c.duration,
+    theme: c.theme,
+    gainOrLossPercentage: c.gainPercent ?? c.gain_percent,
+    trailingStopLoss: (c.trailing_sl_enabled ?? c.trailingSlEnabled)
       ? {
           enabled: true,
-          type: call.trailing_sl_type,
-          value: call.trailing_sl_value,
-          currentSL: call.trailing_sl_current_sl,
-          highestPrice: call.trailing_sl_highest_price,
-          triggeredAt: call.trailing_sl_triggered_at,
+          type: c.trailing_sl_type ?? c.trailingSlType,
+          value: c.trailing_sl_value ?? c.trailingSlValue,
+          currentSL: c.trailing_sl_current_sl ?? c.trailingSlCurrentSl,
+          highestPrice: c.trailing_sl_highest_price ?? c.trailingSlHighestPrice,
+          triggeredAt: c.trailing_sl_triggered_at ?? c.trailingSlTriggeredAt,
         }
       : { enabled: false },
-    status: call.status === "Active" ? "ACTIVE" : "CLOSED",
-    publishMode: call.publishMode,
+    status: c.status === "Active" ? "ACTIVE" : "CLOSED",
+    publishMode: c.publishMode ?? c.publish_mode,
   };
 }
 
@@ -270,37 +273,39 @@ export function buildCallEventData(call: any, strategy?: any, advisor?: any) {
  * Helper to build position event data
  */
 export function buildPositionEventData(position: any, strategy?: any, advisor?: any) {
+  // Defensive: handle both Drizzle (camelCase) and raw SQL (snake_case) inputs.
+  const p = position || {};
   return {
-    uid: position.id,
-    type: position.segment || "FnO",
-    symbol: position.symbol,
-    strategyId: position.strategyId,
+    uid: p.id,
+    type: p.segment || "FnO",
+    symbol: p.symbol,
+    strategyId: p.strategyId ?? p.strategy_id,
     strategyName: strategy?.name,
-    advisorId: strategy?.advisorId || advisor?.id,
-    advisorName: advisor?.companyName || advisor?.username,
-    segment: position.segment,
-    callPut: position.callPut,
-    buySell: position.buySell,
-    expiry: position.expiry,
-    strikePrice: position.strikePrice,
-    entryPrice: position.entryPrice,
-    lots: position.lots,
-    target: position.target,
-    stopLoss: position.stopLoss,
-    exitPrice: position.exitPrice,
-    exitDate: position.exitDate,
-    rationale: position.rationale,
-    trailingStopLoss: position.trailing_sl_enabled
+    advisorId: strategy?.advisorId ?? strategy?.advisor_id ?? advisor?.id,
+    advisorName: advisor?.companyName ?? advisor?.company_name ?? advisor?.username,
+    segment: p.segment,
+    callPut: p.callPut ?? p.call_put,
+    buySell: p.buySell ?? p.buy_sell,
+    expiry: p.expiry,
+    strikePrice: p.strikePrice ?? p.strike_price,
+    entryPrice: p.entryPrice ?? p.entry_price,
+    lots: p.lots,
+    target: p.target,
+    stopLoss: p.stopLoss ?? p.stop_loss,
+    exitPrice: p.exitPrice ?? p.exit_price,
+    exitDate: p.exitDate ?? p.exit_date,
+    rationale: p.rationale,
+    trailingStopLoss: (p.trailing_sl_enabled ?? p.trailingSlEnabled)
       ? {
           enabled: true,
-          type: position.trailing_sl_type,
-          value: position.trailing_sl_value,
-          currentSL: position.trailing_sl_current_sl,
-          highestPrice: position.trailing_sl_highest_price,
-          triggeredAt: position.trailing_sl_triggered_at,
+          type: p.trailing_sl_type ?? p.trailingSlType,
+          value: p.trailing_sl_value ?? p.trailingSlValue,
+          currentSL: p.trailing_sl_current_sl ?? p.trailingSlCurrentSl,
+          highestPrice: p.trailing_sl_highest_price ?? p.trailingSlHighestPrice,
+          triggeredAt: p.trailing_sl_triggered_at ?? p.trailingSlTriggeredAt,
         }
       : { enabled: false },
-    status: position.status === "Active" ? "ACTIVE" : "CLOSED",
+    status: p.status === "Active" ? "ACTIVE" : "CLOSED",
   };
 }
 
