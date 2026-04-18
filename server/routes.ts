@@ -6895,6 +6895,68 @@ export async function registerRoutes(
     }
   });
 
+  
+  // ─── GET /api/admin/pull-api/brokers/:id/strategies ───
+  // Lists all non-draft strategies with an 'enabled' flag indicating whether
+  // this broker's allowed_strategies includes them.
+  app.get("/api/admin/pull-api/brokers/:id/strategies", requireAdmin, async (req, res) => {
+    try {
+      const brokerId = req.params.id;
+      const brokerQ = await db.execute(sql`
+        SELECT allowed_strategies FROM broker_api_keys WHERE id = ${brokerId}
+      `);
+      if (!brokerQ.rows.length) return res.status(404).json({ error: "Broker not found" });
+      const allowed = (brokerQ.rows[0] as any).allowed_strategies as string[] | null;
+
+      const r = await db.execute(sql`
+        SELECT s.id, s.slug, s.name, s.type, s.status,
+               u.id AS advisor_id, u.company_name AS advisor_name, u.username AS advisor_username
+        FROM strategies s
+        JOIN users u ON u.id = s.advisor_id
+        WHERE s.status != 'Draft'
+        ORDER BY u.company_name NULLS LAST, s.name
+      `);
+
+      const out = (r.rows as any[]).map(row => ({
+        id: row.id,
+        slug: row.slug,
+        name: row.name,
+        type: row.type,
+        status: row.status,
+        advisor_id: row.advisor_id,
+        advisor_name: row.advisor_name || row.advisor_username,
+        enabled: allowed ? allowed.includes(row.id) : false,
+      }));
+      res.json(out);
+    } catch (e: any) {
+      console.error("[admin pull-api broker strategies]", e);
+      res.status(500).json({ error: "Failed to fetch strategies" });
+    }
+  });
+
+  // ─── PUT /api/admin/pull-api/brokers/:id/strategies ───
+  // Updates broker_api_keys.allowed_strategies. Empty/null array means "no restriction".
+  app.put("/api/admin/pull-api/brokers/:id/strategies", requireAdmin, async (req, res) => {
+    try {
+      const brokerId = req.params.id;
+      const { strategyIds } = req.body;
+      if (!Array.isArray(strategyIds)) {
+        return res.status(400).json({ error: "strategyIds must be an array" });
+      }
+      // Empty array → null (no restriction). Non-empty → array of UUIDs.
+      const value = strategyIds.length > 0 ? strategyIds : null;
+      await db.execute(sql`
+        UPDATE broker_api_keys
+        SET allowed_strategies = ${value}
+        WHERE id = ${brokerId}
+      `);
+      res.json({ status: "UPDATED", count: strategyIds.length });
+    } catch (e: any) {
+      console.error("[admin pull-api update strategies]", e);
+      res.status(500).json({ error: "Failed to update strategies" });
+    }
+  });
+
   app.get("/api/admin/pull-api/brokers/:id/webhook-logs", requireAdmin, async (req, res) => {
     try {
       const limit = Math.min(parseInt(req.query.limit as string)||50, 200);
