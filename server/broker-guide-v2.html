@@ -116,6 +116,9 @@
   <ol>
     <li><a href="#overview">Overview</a></li>
     <li><a href="#auth">Authentication</a></li>
+<li><a href="#rate-limiting">Rate limiting</a></li>
+<li><a href="#ip-whitelisting">IP whitelisting</a></li>
+
     <li><a href="#envelope">Response envelope</a></li>
     <li><a href="#pull-api">Pull API — polling</a></li>
     <li><a href="#webhooks">Webhook push — real-time</a></li>
@@ -128,6 +131,8 @@
     <li><a href="#recipes">Common recipes</a></li>
     <li><a href="#testing">Testing &amp; UAT</a></li>
     <li><a href="#support">Support</a></li>
+<li><a href="#checklist">Integration checklist</a></li>
+
   </ol>
 </nav>
 
@@ -183,6 +188,31 @@
   <li>Production IP ranges (for IP-whitelist configuration)</li>
   <li>Whether you need access to all advisors or a subset</li>
 </ul>
+
+
+<h3 id="rate-limiting">2.1 Rate limiting</h3>
+<p>Each broker account has a per-minute request cap enforced per <code>api_key</code>.</p>
+<ul>
+  <li><strong>Default:</strong> 100 requests per minute</li>
+  <li><strong>Window:</strong> rolling 60-second window, resets as requests age out</li>
+  <li><strong>Configurable:</strong> contact AlphaMarket admin to raise the limit if your integration needs more (e.g. during bulk sync or aggressive polling). Limits of 500, 1000, or 10000 req/min are available on request.</li>
+  <li><strong>Enforcement:</strong> requests over the limit receive <code>HTTP 429 Too Many Requests</code> with a <code>Retry-After</code> header</li>
+</ul>
+<div class="note note-ok">
+  <strong>Tip:</strong> for polling integrations, start at 60-second intervals and monitor your 429 rate. Tight polling (every 5s or faster) on many endpoints can exhaust the default 100/min — ask us for a higher limit.
+</div>
+
+<h3 id="ip-whitelisting">2.2 IP whitelisting</h3>
+<p>Optional but recommended: restrict API access to your production server IPs.</p>
+<ul>
+  <li><strong>During onboarding,</strong> provide AlphaMarket admin with the public IPs your systems will call from (comma-separated; CIDR ranges not supported).</li>
+  <li><strong>Effect:</strong> once set, requests from any other IP receive <code>HTTP 403 Forbidden</code>. An empty whitelist means all IPs are allowed.</li>
+  <li><strong>Development:</strong> leave the whitelist empty during initial development/testing, then enable it before production cutover.</li>
+  <li><strong>Changes:</strong> IP list changes are instant (no code deploy needed on our side) — admin updates the <code>ip_whitelist</code> column via the admin UI.</li>
+</ul>
+<div class="note note-warn">
+  <strong>Not a substitute for API key security:</strong> IP whitelisting adds defense-in-depth. Still treat your <code>api_key</code> and <code>api_secret</code> as sensitive — leaked keys are a breach regardless of whitelist.
+</div>
 
 <h2 id="envelope">3. Response envelope</h2>
 
@@ -718,6 +748,29 @@ X-RateLimit-Reset: 1728950400</code></pre>
 
 
 </div>
+
+
+<h2 id="checklist">15. Integration checklist</h2>
+<p>Quick reference for your integration team during onboarding:</p>
+<ol>
+  <li><strong>Receive credentials</strong> from AlphaMarket admin (via secure channel): <code>api_key</code> + <code>api_secret</code></li>
+  <li><strong>Store secrets</strong> in environment variables — never in source code or config files committed to git</li>
+  <li><strong>Verify connectivity:</strong> <code>GET /api/v2/health</code> with <code>x-api-key</code> header → expect 200 + your scope info</li>
+  <li><strong>Test pull API:</strong> <code>GET /api/v2/alpha/live-calls?limit=5</code> → expect scoped results (only advisors/segments you're granted)</li>
+  <li><strong>If using webhooks:</strong>
+    <ul>
+      <li>Provide your webhook URL to AlphaMarket admin (must be HTTPS)</li>
+      <li>Confirm your chosen payload version (<code>v1_flat</code> or <code>v1_thealphamarket</code>)</li>
+      <li>Implement HMAC signature verification (see Section 6)</li>
+      <li>Implement idempotency via <code>X-AlphaMarket-Event-Id</code> (see Section 5.3)</li>
+      <li>Test with a webhook.site URL during development before pointing at your real endpoint</li>
+    </ul>
+  </li>
+  <li><strong>Enable IP whitelisting</strong> (optional but recommended) before production cutover (Section 2.2)</li>
+  <li><strong>Monitor</strong>: track 4xx/5xx rates, retry counts, webhook delivery latency</li>
+  <li><strong>Production cutover:</strong> coordinate with AlphaMarket support — we'll move your account from sandbox to production scope</li>
+</ol>
+<p>Any step failing? Contact <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> with your <code>broker_name</code> + first 16 chars of <code>api_key</code>.</p>
 
 <footer>
   AlphaMarket Broker Integration API v2.1.0 &nbsp;·&nbsp; © 2026 AlphaMarket &nbsp;·&nbsp; <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a>
