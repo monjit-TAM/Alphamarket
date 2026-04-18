@@ -149,6 +149,19 @@
 <div class="endpoint">Production: <code>https://alphamarket.co.in/api/v2</code></div>
 <div class="endpoint">UAT: <code>https://uat.alphamarket.co.in/api/v2</code></div>
 
+
+<h2 id="scoping">1.1 Scoping and visibility</h2>
+<p>Your broker account operates under scoping rules managed by AlphaMarket's integration team. You will only see data (calls, strategies, webhook events) that your account has been granted access to:</p>
+<ul>
+  <li><strong>Advisors:</strong> you see calls only from advisors explicitly enabled for your broker.</li>
+  <li><strong>Strategies:</strong> optional fine-grained filter — a specific list of strategies on top of the advisor filter. If empty, no strategy-level restriction applies (you see all strategies from enabled advisors).</li>
+  <li><strong>Segments:</strong> equity vs F&amp;O scoping. A broker can be configured for equity-only, F&amp;O-only, or both. Codes: <code>equity_cash</code>, <code>equity_intraday</code>, <code>equity_swing</code>, <code>equity_positional</code>, <code>fno_futures</code>, <code>fno_options</code>.</li>
+</ul>
+<p><strong>Filters are intersected (AND semantics):</strong> for a call to be visible to you, its advisor AND its strategy (if strategy filter is set) AND its segment (if segment filter is set) must ALL be in your allowed lists.</p>
+<div class="note note-warn">
+  <strong>Missing a strategy you expect?</strong> This is scope configuration, not a bug. Contact AlphaMarket admin to have it added to your allowed_strategies or allowed_advisors list. Turnaround is typically within hours.
+</div>
+
 <h2 id="auth">2. Authentication</h2>
 
 <p>Every request to the Pull API must include your API key in the <code>x-api-key</code> header:</p>
@@ -298,6 +311,20 @@ X-AlphaMarket-Timestamp: 2026-04-16T18:45:00.123Z</code></pre>
 
 <div class="callout info">
 <p><strong>Idempotency.</strong> Every payload includes <code>callId</code> (a UUID). Use it as your idempotency key. If you receive the same <code>callId + event</code> combination twice (possible during retries), treat the second as a no-op.</p>
+</div>
+
+
+<h3 id="webhook-reliability">5.3 Delivery, retries, and idempotency</h3>
+<p>AlphaMarket makes its best effort to deliver each event exactly once, but you should design for at-least-once semantics.</p>
+<ul>
+  <li><strong>Timeout:</strong> we wait up to <strong>10 seconds</strong> for your endpoint to respond with <code>2xx</code>. This is configurable per-broker if your infrastructure needs more — contact admin.</li>
+  <li><strong>Retries:</strong> on non-2xx or timeout, we retry at <strong>5s, 30s, 2min</strong>. After 3 failed attempts, the event is abandoned and logged in <code>broker_webhook_logs</code>.</li>
+  <li><strong>Idempotency:</strong> every delivery (including retries) carries the same <code>X-AlphaMarket-Event-Id</code>. Use this ID for deduplication.</li>
+  <li><strong>Timestamp:</strong> <code>X-AlphaMarket-Timestamp</code> is Unix seconds. Reject requests older than a few minutes to prevent replay.</li>
+  <li><strong>Event type:</strong> <code>X-AlphaMarket-Event</code> header carries the event type (e.g. <code>CALL_CREATED</code>) — faster to read than parsing the body.</li>
+</ul>
+<div class="note note-ok">
+  <strong>Tip:</strong> accept and acknowledge the webhook (<code>200 OK</code>) <em>before</em> processing the payload asynchronously. This keeps your endpoint fast and prevents retry storms.
 </div>
 
 <h2 id="hmac">6. HMAC signature verification</h2>
@@ -514,6 +541,75 @@ def handle_webhook():
 <tr><td><code>FUTCOM</code></td><td>Commodity future</td></tr>
 <tr><td><code>OPTCOM</code></td><td>Commodity option</td></tr>
 </table>
+
+
+<h2 id="payload-versions">7.5 Webhook payload versions</h2>
+<p>Your broker account is configured for <strong>one of two</strong> payload formats. The choice is made by AlphaMarket admin when your broker row is created; switching later is also an admin action (no code change on your end).</p>
+
+<h3 id="payload-v1-flat">v1_flat (default)</h3>
+<p>Simple, flat JSON. Used by most brokers unless legacy compatibility is required.</p>
+<pre><code>{
+  "event": "CALL_CREATED",
+  "timestamp": "2026-04-18T08:12:35.922Z",
+  "data": {
+    "uid": "451dfdb8-087f-446a-b60d-2071717222cc",
+    "type": "EQUITY",
+    "symbol": "HAL",
+    "strategyId": "42459575-b915-43d1-bfb1-76140113f772",
+    "strategyName": "Equity Short Term",
+    "advisorName": "Front Wave Research LLP",
+    "action": "Buy",
+    "entryPrice": 4370,
+    "targetPrice": 4450,
+    "stopLoss": 4350,
+    "status": "ACTIVE"
+  }
+}</code></pre>
+
+<h3 id="payload-v1-thealphamarket">v1_thealphamarket (Format A)</h3>
+<p>Byte-exact match to the legacy thealphamarket.com webhook spec. For brokers migrating from the legacy stack, <strong>zero code change</strong> required on your side.</p>
+<pre><code>{
+  "status": "success",
+  "statusCode": 200,
+  "message": {"key": "GET", "message": "Get Successfully"},
+  "data": {
+    "strategyId": "equity-short-term",
+    "theme": ["Equity"],
+    "managementStyle": ["Active"],
+    "volatility": ["Medium"],
+    "horizon": ["Short Term"],
+    "strategyName": "Equity Short Term",
+    "strategyType": "Equity",
+    "advisorName": "Front Wave Research LLP",
+    "certificateURl": "/objects/uploads/...",
+    "advisorSebiRegistrationNo": "INH000018407",
+    "equityCall": {
+      "exchange": "NSE",
+      "legId": "451df",
+      "symbol": "HAL",
+      "callType": "BUY",
+      "buyPrice": 4370,
+      "targetPriceRange": "4450",
+      "stopLoss": "4350",
+      "status": "PUBLISHED"
+    }
+  }
+}</code></pre>
+<div class="note note-warn">
+  <strong>Format A quirks</strong> (preserved from legacy spec for compatibility):
+  <ul>
+    <li><code>rational</code> — note the missing 'e' at the end</li>
+    <li><code>certificateURl</code> — lowercase 'l' at the end</li>
+    <li><code>isStoppLossAbsolute</code> — two 'p's (original typo preserved)</li>
+    <li>ISO timestamps use <code>+00:00</code> suffix, not <code>Z</code></li>
+    <li><code>targetPriceRange</code>, <code>stopLoss</code>, <code>profitGoal</code> are sent as strings, not numbers</li>
+    <li><code>legId</code> is the first 5 hex characters of the call's UUID</li>
+  </ul>
+  Don't "fix" these in your parser — they're intentional for backward compatibility with the old spec.
+</div>
+
+<h3 id="payload-version-switching">Which version do I have?</h3>
+<p>Ask AlphaMarket admin — they'll tell you your broker account's <code>webhook_payload_version</code> setting. It's also reflected in the <code>BrokerScope</code> returned from <code>GET /health</code>.</p>
 
 <h2 id="event-types">10. Event types</h2>
 
