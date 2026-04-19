@@ -719,22 +719,48 @@ X-RateLimit-Reset: 1728950400</code></pre>
 
 <h2 id="testing">13. Testing &amp; UAT</h2>
 
-<p>Use the UAT environment (<code>https://uat.alphamarket.co.in/api/v2</code>) for integration testing. AlphaMarket can:</p>
+<h3 id="uat-overview">What UAT is</h3>
+<p>UAT is an isolated sandbox at <code>https://uat.alphamarket.co.in/api/v2</code>. Same API surface, version, and behavior as production — but with a separate database, separate app process, and separate credentials.</p>
 <ul>
-  <li>Issue a separate UAT API key scoped to test advisors</li>
-  <li>Publish test calls on demand to trigger webhook deliveries</li>
-  <li>Share webhook logs so you can verify delivery and signature</li>
+  <li><strong>Separate database:</strong> UAT runs against <code>alphamarket_db_uat</code>. Any data you create in UAT (test broker scoping, test webhook configs) does not touch production.</li>
+  <li><strong>Data origin:</strong> UAT was seeded with a point-in-time snapshot from production (advisors, strategies, historical calls). From that point onward, UAT and production diverge.</li>
+  <li><strong>Separate credentials:</strong> UAT broker accounts use <code>amk_uat_*</code> prefixed API keys. Your production <code>amk_live_*</code> or <code>amk_test_*</code> keys will return 401 on UAT and vice versa.</li>
+  <li><strong>Same code:</strong> UAT runs the same application binary as production. Bug fixes and new features arrive in UAT and production simultaneously.</li>
 </ul>
 
-<p>Recommended test sequence for new integrations:</p>
+<h3 id="uat-credentials">Getting UAT credentials</h3>
+<p>UAT credentials are issued separately from production credentials. Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> requesting UAT access. Include:</p>
+<ul>
+  <li>Your broker name (for display in our admin tools)</li>
+  <li>The segments and advisors you want scoped in UAT (can match or differ from production)</li>
+  <li>Your webhook URL (optional, if testing push delivery)</li>
+  <li>Your preferred webhook payload version (<code>v1_flat</code> or <code>v1_thealphamarket</code>)</li>
+</ul>
+
+<div class="note note-warn">
+  <strong>Important:</strong> UAT is not a performance-testing environment. Do not use UAT for load testing. Rate limits are intentionally modest; sustained high-volume traffic will trigger 429 responses. If you need load testing infrastructure, contact us separately.
+</div>
+
+<h3 id="uat-testing-sequence">Recommended test sequence</h3>
+<p>Use the following sequence when integrating a new broker or validating code changes:</p>
 <ol>
-  <li><strong>Auth check:</strong> GET <code>/health</code> (no key) — confirm 200.</li>
-  <li><strong>Key check:</strong> GET <code>/alpha/advisors</code> — confirm 200 with your scoped advisor list.</li>
+  <li><strong>Auth check:</strong> GET <code>/health</code> (no key) — confirm 200 with service metadata.</li>
+  <li><strong>Key check:</strong> GET <code>/alpha/advisors</code> with your UAT api_key — confirm 200 with your scoped advisor list.</li>
   <li><strong>Symbol check:</strong> GET <code>/alpha/instruments/lookup?symbol=SAIL</code> — confirm <code>exchangeToken: "2963"</code>.</li>
-  <li><strong>Polling check:</strong> GET <code>/alpha/live-calls</code> — confirm array of calls, each with <code>equityCall</code> or <code>fnoCall</code>.</li>
-  <li><strong>Webhook check:</strong> Ask AlphaMarket to publish a UAT call. Confirm POST hits your endpoint with valid <code>X-AlphaMarket-Signature</code>.</li>
-  <li><strong>Lifecycle check:</strong> Have AlphaMarket close the UAT call. Confirm <code>CALL_CLOSED</code> and <code>TARGET_ACHIEVED</code> events arrive.</li>
+  <li><strong>Polling check:</strong> GET <code>/alpha/live-calls</code> — confirm array shape. (UAT may return empty if no active calls in snapshot — this is normal.)</li>
+  <li><strong>Webhook check:</strong> Ask AlphaMarket to publish a UAT call. Confirm POST hits your endpoint with valid <code>X-AlphaMarket-Signature</code> and <code>X-AlphaMarket-Event-Id</code>.</li>
+  <li><strong>Lifecycle check:</strong> Have AlphaMarket close the UAT call. Confirm <code>CALL_CLOSED</code> and <code>TARGET_ACHIEVED</code> events arrive with the same <code>X-AlphaMarket-Event-Id</code> across retries (idempotency test).</li>
   <li><strong>Replay check:</strong> POST <code>/alpha/sync/replay</code> for the window — confirm events re-fire.</li>
+  <li><strong>Isolation check:</strong> Use your UAT key against <code>https://alphamarket.co.in</code> — expect 401. Same for production key on UAT. Confirms no cross-contamination.</li>
+</ol>
+
+<h3 id="uat-cutover">Going to production</h3>
+<p>When you are ready to cut over from UAT to production:</p>
+<ol>
+  <li>Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> with your production readiness confirmation.</li>
+  <li>We issue production credentials (separate <code>amk_live_*</code> api_key) via secure channel.</li>
+  <li>Switch your environment variables from UAT base URL and UAT key to production base URL and production key.</li>
+  <li>Confirm first production request works. We monitor <code>broker_api_logs</code> to verify.</li>
 </ol>
 
 <h2 id="support">14. Support</h2>

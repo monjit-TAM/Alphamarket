@@ -16,11 +16,11 @@
   "servers": [
     {
       "url": "https://alphamarket.co.in/api/v2",
-      "description": "Production"
+      "description": "Production \u2014 live production data, amk_live_* keys"
     },
     {
       "url": "https://uat.alphamarket.co.in/api/v2",
-      "description": "UAT"
+      "description": "UAT sandbox \u2014 isolated database (separate from production), amk_uat_* keys. Snapshot seeded from production at UAT build time; diverges over time as test data accumulates. Contact hello@alphamarket.co.in to request UAT credentials."
     }
   ],
   "security": [
