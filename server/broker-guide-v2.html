@@ -719,7 +719,70 @@ X-RateLimit-Reset: 1728950400</code></pre>
 
 <h2 id="testing">13. Testing &amp; UAT</h2>
 
-<h3 id="uat-overview">What UAT is</h3>
+<div class="note note-ok" style="margin-top: 1em; border-left-width: 6px;">
+  <strong>Integrating AlphaMarket for the first time?</strong> Start with UAT. You'll get isolated test credentials and a safe environment to validate your integration before touching production. Request UAT credentials before writing any integration code — details in 13.1 below.
+</div>
+
+<h3 id="uat-credentials">13.1 UAT Credentials</h3>
+<p>Before you integrate with AlphaMarket's production API, we strongly recommend testing against UAT first. UAT uses an isolated database and separate credentials — your production keys and your UAT keys are <strong>not interchangeable</strong>.</p>
+
+<h4 id="uat-how-to-request">How to request UAT credentials</h4>
+<p>Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> with the subject line "UAT credentials request" and include all of the following:</p>
+<ol>
+  <li><strong>Broker / company name</strong> — the official name of your organization. We use this in our admin tools and all correspondence.</li>
+  <li><strong>Primary technical contact</strong> — name and email of the engineer who will own the integration on your side. We will send credentials to this address.</li>
+  <li><strong>Integration mode</strong> — one of:
+    <ul>
+      <li><code>Pull only</code> — you poll AlphaMarket's REST endpoints on your schedule</li>
+      <li><code>Webhook only</code> — we POST events to your endpoint as they happen</li>
+      <li><code>Both</code> — webhook for real-time delivery, Pull API for reconciliation and back-fill</li>
+    </ul>
+  </li>
+  <li><strong>Webhook URL</strong> (only if integration mode includes webhook) — the HTTPS endpoint where we'll POST events. During early development, a webhook.site URL is fine; we can switch to your real endpoint later.</li>
+  <li><strong>Webhook payload version</strong> (only if integration mode includes webhook) — one of:
+    <ul>
+      <li><code>v1_flat</code> — recommended default for new brokers. Simple, flat JSON.</li>
+      <li><code>v1_thealphamarket</code> — for brokers migrating from the legacy thealphamarket.com stack. Byte-exact compatibility.</li>
+    </ul>
+  </li>
+  <li><strong>Segment scoping</strong> — which segments you need access to:
+    <ul>
+      <li><code>equity_cash</code>, <code>equity_intraday</code>, <code>equity_swing</code>, <code>equity_positional</code></li>
+      <li><code>fno_futures</code>, <code>fno_options</code></li>
+      <li>Or specify "all" for full access</li>
+    </ul>
+  </li>
+  <li><strong>Expected go-live timeline</strong> — rough date when you expect to move from UAT to production. Helps us plan scoping changes and production cutover. A ballpark is fine.</li>
+</ol>
+<div class="note note-ok">
+  <strong>Typical turnaround:</strong> We issue UAT credentials within 1 business day of a complete request. Incomplete requests get a reply asking for the missing details.
+</div>
+
+<h4 id="uat-what-you-receive">What you'll receive</h4>
+<p>We send credentials via secure channel — typically 1Password item share, encrypted email, or equivalent. Never over Slack, standard email, or SMS.</p>
+<p>The credential bundle contains:</p>
+<ul>
+  <li><code>api_key</code> — format <code>amk_uat_&lt;32-char-hex&gt;</code>. Use in the <code>x-api-key</code> header on every request.</li>
+  <li><code>api_secret</code> — 64-character hex string. Used for HMAC webhook signature verification (only relevant if you receive webhooks).</li>
+</ul>
+<p>Your UAT base URL is always: <code>https://uat.alphamarket.co.in/api/v2</code></p>
+<p>A sanity check to confirm your credentials work:</p>
+<pre><code>curl -H "x-api-key: amk_uat_..." \
+  https://uat.alphamarket.co.in/api/v2/health
+
+# Expected: HTTP 200 with {"status":"success","data":{"service":"AlphaMarket Broker API",...}}</code></pre>
+
+<h4 id="uat-credentials-security">Keeping credentials secure</h4>
+<p>UAT credentials are functionally real credentials. Anyone holding them can hit the UAT API and potentially view test data, including snapshot data originally copied from production. Treat them with the same care as production credentials:</p>
+<ul>
+  <li><strong>Store in environment variables or a secrets manager.</strong> Never hardcode in source or commit to git.</li>
+  <li><strong>Rotate if you suspect exposure.</strong> Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> to regenerate — rotation is instant on our side and invalidates the old key immediately.</li>
+  <li><strong>Do not share across teams</strong> outside of approved internal channels. If multiple engineers need access, each should have their own credentials (we can issue multiple UAT keys per broker on request).</li>
+  <li><strong>Scrub from logs before committing.</strong> Check CI logs, error reporters (Sentry, Datadog), and application logs for accidentally captured keys.</li>
+  <li><strong>Never paste into chat, ticketing systems, or issue trackers</strong> — not even in screenshots.</li>
+</ul>
+
+<h3 id="uat-overview">13.2 What UAT is</h3>
 <p>UAT is an isolated sandbox at <code>https://uat.alphamarket.co.in/api/v2</code>. Same API surface, version, and behavior as production — but with a separate database, separate app process, and separate credentials.</p>
 <ul>
   <li><strong>Separate database:</strong> UAT runs against <code>alphamarket_db_uat</code>. Any data you create in UAT (test broker scoping, test webhook configs) does not touch production.</li>
@@ -728,20 +791,11 @@ X-RateLimit-Reset: 1728950400</code></pre>
   <li><strong>Same code:</strong> UAT runs the same application binary as production. Bug fixes and new features arrive in UAT and production simultaneously.</li>
 </ul>
 
-<h3 id="uat-credentials">Getting UAT credentials</h3>
-<p>UAT credentials are issued separately from production credentials. Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> requesting UAT access. Include:</p>
-<ul>
-  <li>Your broker name (for display in our admin tools)</li>
-  <li>The segments and advisors you want scoped in UAT (can match or differ from production)</li>
-  <li>Your webhook URL (optional, if testing push delivery)</li>
-  <li>Your preferred webhook payload version (<code>v1_flat</code> or <code>v1_thealphamarket</code>)</li>
-</ul>
-
 <div class="note note-warn">
-  <strong>Important:</strong> UAT is not a performance-testing environment. Do not use UAT for load testing. Rate limits are intentionally modest; sustained high-volume traffic will trigger 429 responses. If you need load testing infrastructure, contact us separately.
+  <strong>UAT is not a performance-testing environment.</strong> Do not use UAT for load testing. Rate limits are intentionally modest; sustained high-volume traffic will trigger 429 responses. If you need load testing infrastructure, contact us separately.
 </div>
 
-<h3 id="uat-testing-sequence">Recommended test sequence</h3>
+<h3 id="uat-testing-sequence">13.3 Recommended test sequence</h3>
 <p>Use the following sequence when integrating a new broker or validating code changes:</p>
 <ol>
   <li><strong>Auth check:</strong> GET <code>/health</code> (no key) — confirm 200 with service metadata.</li>
@@ -754,13 +808,14 @@ X-RateLimit-Reset: 1728950400</code></pre>
   <li><strong>Isolation check:</strong> Use your UAT key against <code>https://alphamarket.co.in</code> — expect 401. Same for production key on UAT. Confirms no cross-contamination.</li>
 </ol>
 
-<h3 id="uat-cutover">Going to production</h3>
+<h3 id="uat-cutover">13.4 Going to production</h3>
 <p>When you are ready to cut over from UAT to production:</p>
 <ol>
-  <li>Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> with your production readiness confirmation.</li>
-  <li>We issue production credentials (separate <code>amk_live_*</code> api_key) via secure channel.</li>
-  <li>Switch your environment variables from UAT base URL and UAT key to production base URL and production key.</li>
-  <li>Confirm first production request works. We monitor <code>broker_api_logs</code> to verify.</li>
+  <li>Email <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a> with your production readiness confirmation. We may ask for a brief summary of which tests you've completed.</li>
+  <li>We issue production credentials (<code>amk_live_*</code> api_key) via the same secure channel used for UAT.</li>
+  <li>Switch your environment variables from UAT base URL and UAT key to production base URL and production key. No code changes should be required — only config.</li>
+  <li>Confirm first production request works. We monitor <code>broker_api_logs</code> to verify on our side during cutover.</li>
+  <li>Your UAT credentials remain valid indefinitely after cutover. Keep them for regression testing.</li>
 </ol>
 
 <h2 id="support">14. Support</h2>
