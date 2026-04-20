@@ -14,7 +14,7 @@ import type { InstrumentIdStrategy, ExchangeFieldFormat } from "./spec";
  */
 export function buildConfigFromDb(dbConfig: any): BuildConfig {
   if (!dbConfig || typeof dbConfig !== "object") {
-    return { ...BUILD_CONFIG_DEFAULT };
+    return { ...PRESET_CURRENT };
   }
 
   const result: BuildConfig = { ...BUILD_CONFIG_DEFAULT };
@@ -68,7 +68,15 @@ export const CONFIG_PRESETS = {
     useExchangeSegmentField: true,
     emitTopLevelSegment: true,
   },
-  // Numeric ID but keep "exchange" field name
+
+  // Confirmed by Shashank on 20 Apr 2026 call — exact format XTS expects
+  SHASHANK_CONFIRMED_20260420: {
+    instrumentIdStrategy: "numeric_from_master" as InstrumentIdStrategy,
+    exchangeFieldFormat: "NSECM" as ExchangeFieldFormat,
+    useExchangeSegmentField: false,  // field name: "exchange" (not exchangeSegment)
+    emitTopLevelSegment: false,       // no top-level exchangeSegment field
+  },
+    // Numeric ID but keep "exchange" field name
   NUMERIC_WITH_NSE: {
     instrumentIdStrategy: "numeric_from_master" as InstrumentIdStrategy,
     exchangeFieldFormat: "NSE" as ExchangeFieldFormat,
@@ -77,4 +85,4 @@ export const CONFIG_PRESETS = {
   },
 };
 
-export const PRESET_CURRENT = CONFIG_PRESETS.LEGACY_SYMBOL_NSE;
+export const PRESET_CURRENT = CONFIG_PRESETS.SHASHANK_CONFIRMED_20260420;

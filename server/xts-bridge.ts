@@ -362,6 +362,11 @@ async function logEnrichedCallLog(
 
 // --- Main Event Handler ---
 export async function handleXTSEvent(event: string, data: Record<string,any>, advisorId: string) {
+  // DEPRECATED 20 Apr 2026 — Old A/B publish path retired.
+  // New path: broker-integrations/xts/adapter.ts (Shashank-confirmed format).
+  // Body preserved below as unreachable code; restore by removing the early return.
+  return;
+
   try {
     const conn = await getActiveConnection();
     if (!conn) return;

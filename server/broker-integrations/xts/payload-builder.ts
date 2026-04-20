@@ -53,7 +53,7 @@ export interface XtsPayload {
   limitPrice: number | null;
   badge: string;
   theory: string;
-  validity: string;
+  validity: number;
   createdAt: string;
   exchangeInstrumentID: string;
   orders: XtsOrderLeg[];
@@ -98,11 +98,17 @@ function exchangeValue(segmentKind: "CASH" | "FO", format: ExchangeFieldFormat):
 }
 
 /**
- * Validity string (spec: "Until Further Notice" default; or "{n} {unit}")
+ * Validity as INTEGER per Shashank 20 Apr 2026 call:
+ *   Intraday → 0
+ *   BTST     → 1
+ *   Swing, Positional, Short Term, Long Term, default → 365
+ * (Symphony Fintech XTS rejects string "Until Further Notice")
  */
-function formatValidity(duration?: number | null, unit?: string | null): string {
-  if (!duration || !unit) return "Until Further Notice";
-  return `${duration} ${unit}`;
+function formatValidity(horizon?: string | string[] | null): number {
+  const h = (Array.isArray(horizon) ? horizon[0] : horizon ?? "").toLowerCase();
+  if (h.includes("intraday")) return 0;
+  if (h.includes("btst"))     return 1;
+  return 365;  // Swing, Positional, Short Term, Long Term
 }
 
 /**
@@ -213,10 +219,7 @@ export function buildEquityCallPayload(
     theory: config.asciiOnlyTheory
       ? sanitizeTheory(call.rationale, config.truncateTheoryChars)
       : (call.rationale ?? "").substring(0, config.truncateTheoryChars),
-    validity: formatValidity(
-      call.duration ?? null,
-      pickFirst<string>(call.duration_unit, call.durationUnit)
-    ),
+    validity: formatValidity(strategy.horizon),
     createdAt,
     exchangeInstrumentID,
     orders: [leg],
@@ -310,10 +313,7 @@ export function buildFnoPositionPayload(
     theory: config.asciiOnlyTheory
       ? sanitizeTheory(pos.rationale, config.truncateTheoryChars)
       : (pos.rationale ?? "").substring(0, config.truncateTheoryChars),
-    validity: formatValidity(
-      pos.duration ?? null,
-      pickFirst<string>(pos.duration_unit, pos.durationUnit)
-    ),
+    validity: formatValidity(strategy.horizon),
     createdAt,
     exchangeInstrumentID,
     orders: [leg],

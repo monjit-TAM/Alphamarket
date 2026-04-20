@@ -285,7 +285,7 @@ async function publishToXts(
 
   // Interpret response
   const body = http.body;
-  if (body?.type === "success" && XTS_SUCCESS_CODES.includes(body?.code)) {
+  if (body?.type === "success") {  // XTS's `type` field is authoritative
     return { status: "success", response: body };
   }
   const snippet = JSON.stringify(body ?? http.rawText ?? {}).slice(0, 500);
