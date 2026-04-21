@@ -13,7 +13,7 @@ import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, 
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements, appSettings, calls, positions, strategies } from "@shared/schema";
 import { db } from "./db";
-import { handleXTSEvent, buildCallEventData, buildPositionEventData } from "./webhook-dispatcher";
+import { handleXTSEvent, buildCallEventData, buildPositionEventData, fireWebhookEvent } from "./webhook-dispatcher";
 import { handleXTSEvent as xtsHandleEvent } from "./xts-bridge";
 import { and, eq, desc, sql } from "drizzle-orm";
 import nseSymbols from "./data/nse-symbols.json";
@@ -1218,8 +1218,7 @@ export async function registerRoutes(
           notifyStrategySubscribers(req.params.id, strategy.name, "new_call", subPayload);
           const wlPayload = buildNewCallWatchlistNotification(c, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_call_masked", wlPayload);
-          xtsHandleEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
-          handleBrokerEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
+          fireWebhookEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch((err: any) => console.error("[routes 1221 bulk CREATE] fireWebhookEvent failed:", err));
         }
       }
       res.json(c);
@@ -1252,8 +1251,7 @@ export async function registerRoutes(
           notifyStrategySubscribers(req.params.id, strategy.name, "new_position", subPayload);
           const wlPayload = buildNewPositionWatchlistNotification(p, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_position_masked", wlPayload);
-          xtsHandleEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
-          handleBrokerEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
+          fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch((err: any) => console.error("[routes 1255 bulk POSITION] fireWebhookEvent failed:", err));
         }
       }
       res.json(p);
@@ -1354,10 +1352,8 @@ export async function registerRoutes(
 
         // Fire broker events for XTS/Upstox/Dreamstreet (mirrors CREATE pattern at line ~1416)
         const closedCall = { ...call, sellPrice: String(exitPrice), gainPercent, status: "Closed", exitDate: new Date() };
-        xtsHandleEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId)
-          .catch((err: any) => console.error("[routes /close] xtsHandleEvent failed:", err));
-        handleBrokerEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId)
-          .catch((err: any) => console.error("[routes /close] handleBrokerEvent failed:", err));
+        fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId)
+          .catch((err: any) => console.error("[routes /close] fireWebhookEvent failed:", err));
       }
       res.json(updated);
     } catch (err: any) {
@@ -1420,8 +1416,7 @@ export async function registerRoutes(
       notifyStrategySubscribers(call.strategyId, strategy.name, "new_call", subPayload);
       const wlPayload = buildNewCallWatchlistNotification(call, strategy.name);
       notifyWatchlistUsers(call.strategyId, strategy.name, "new_call_masked", wlPayload);
-      xtsHandleEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
-      handleBrokerEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch(() => {});
+      fireWebhookEvent("CALL_CREATED", buildCallEventData(call, strategy), strategy.advisorId).catch((err: any) => console.error("[routes /publish CALL] fireWebhookEvent failed:", err));
       res.json(updated);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -1450,8 +1445,7 @@ export async function registerRoutes(
       notifyStrategySubscribers(pos.strategyId, strategy.name, "new_position", subPayload);
       const wlPayload = buildNewPositionWatchlistNotification(pos, strategy.name);
       notifyWatchlistUsers(pos.strategyId, strategy.name, "new_position_masked", wlPayload);
-      xtsHandleEvent("POSITION_CREATED", buildPositionEventData(pos, strategy), strategy.advisorId).catch(() => {});
-      handleBrokerEvent("POSITION_CREATED", buildPositionEventData(pos, strategy), strategy.advisorId).catch(() => {});
+      fireWebhookEvent("POSITION_CREATED", buildPositionEventData(pos, strategy), strategy.advisorId).catch((err: any) => console.error("[routes /publish POSITION] fireWebhookEvent failed:", err));
       res.json(updated);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -4667,9 +4661,7 @@ export async function registerRoutes(
           notifyStrategySubscribers(strategy_id, strategy.name, "new_call", subPayload);
       }
       if (isPublished && strategy) {
-          fireWebhookEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
-          xtsHandleEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
-          handleBrokerEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch(() => {});
+          fireWebhookEvent("CALL_CREATED", buildCallEventData(c, strategy), strategy.advisorId).catch((err: any) => console.error("[routes 4670 bulk CREATE] fireWebhookEvent failed:", err));
         }
       res.json({ success: true, call_id: c.id, published: isPublished, source: "dyor" });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
@@ -4717,9 +4709,7 @@ export async function registerRoutes(
           notifyStrategySubscribers(strategy_id, strategy.name, "new_position", subPayload);
       }
       if (isPublished && strategy) {
-          fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
-          xtsHandleEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
-          handleBrokerEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch(() => {});
+          fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId).catch((err: any) => console.error("[routes 4720 bulk POSITION] fireWebhookEvent failed:", err));
         }
       res.json({ success: true, position_id: p.id, published: isPublished, source: "dyor" });
     } catch (err: any) { res.status(500).json({ error: err.message }); }
