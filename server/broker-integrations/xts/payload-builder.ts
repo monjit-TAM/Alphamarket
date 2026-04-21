@@ -77,10 +77,16 @@ function pickFirst<T>(...values: (T | null | undefined)[]): T | null {
   return null;
 }
 
+/**
+ * Format a date value as ISO-8601 in IST (Asia/Kolkata, +05:30).
+ * Example output: "2026-04-21T10:14:28.695+05:30"
+ * Falls back to current time if input is missing or invalid.
+ */
 function toIsoString(v: any): string {
-  if (!v) return new Date().toISOString();
-  const d = v instanceof Date ? v : new Date(v);
-  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+  const d = !v ? new Date() : (v instanceof Date ? v : new Date(v));
+  const valid = isNaN(d.getTime()) ? new Date() : d;
+  const istShifted = new Date(valid.getTime() + (5.5 * 60 * 60 * 1000));
+  return istShifted.toISOString().replace(/Z$/, "+05:30");
 }
 
 function isIndex(symbol: string): boolean {
@@ -343,7 +349,10 @@ function applyEventOverrides(
     const closed = asNum(exitPrice);
     if (closed != null) {
       payload.profitBookedPrice = closed;
-      if (payload.orders.length > 0) payload.orders[0].profitBooked = closed;
+      if (payload.orders.length > 0) {
+        payload.orders[0].profitBooked = closed;
+        payload.orders[0].orderSide = "SELL";  // Close/exit of BUY call signals SELL
+      }
     }
   }
 }

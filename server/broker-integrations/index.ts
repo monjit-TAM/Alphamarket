@@ -113,7 +113,11 @@ export async function handleBrokerEvent(
       position: isFnO ? (data as InternalPosition) : undefined,
       strategy,
       advisor,
-      advisorId,
+      // Defensive: use strategy's authoritative advisor_id (row.advisor_id)
+      // because upstream callers sometimes pass wrong values (e.g. broker-api.ts
+      // passes call.strategyId as advisorId on manual CALL_CLOSED/CALL_MODIFIED).
+      // FK constraint xts_publish_log.advisor_id -> users.id requires the real user UUID.
+      advisorId: (row.advisor_id as string) ?? advisorId,
     };
 
     await dispatchToBrokers(brokerEvent);

@@ -1351,6 +1351,13 @@ export async function registerRoutes(
         notifyStrategySubscribers(call.strategyId, strategy.name, "call_closed", subPayload);
         const wlPayload = buildCallClosedWatchlistNotification(call, gainPercent, strategy.name);
         notifyWatchlistUsers(call.strategyId, strategy.name, "call_closed_masked", wlPayload);
+
+        // Fire broker events for XTS/Upstox/Dreamstreet (mirrors CREATE pattern at line ~1416)
+        const closedCall = { ...call, sellPrice: String(exitPrice), gainPercent, status: "Closed", exitDate: new Date() };
+        xtsHandleEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId)
+          .catch((err: any) => console.error("[routes /close] xtsHandleEvent failed:", err));
+        handleBrokerEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId)
+          .catch((err: any) => console.error("[routes /close] handleBrokerEvent failed:", err));
       }
       res.json(updated);
     } catch (err: any) {
