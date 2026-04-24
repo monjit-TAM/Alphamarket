@@ -113,7 +113,8 @@ AlphaLab provides institutional-grade quantitative tools for SEBI-registered Res
 - **34+ screener strategies** (momentum, mean reversion, breakout, fundamental, multi-factor)
 - **40+ backtest strategies** with full trade-by-trade analysis
 - **Real-time forward testing** with live signal generation
-- **23 pre-built model portfolio templates**
+- **23 pre-built model portfolio templates** with type-aware scoring engine
+- **Options Alpha Engine** — volatility regime detection, F&O signal generation, spread strategies, auto-close
 - **Options chain & payoff analysis** for stocks and indices
 - **Sector Relative Rotation Graphs (RRG)** with JdK RS-Ratio methodology
 - **SEBI-compliant advisory report generation** with PDF export
@@ -139,7 +140,7 @@ Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via
 - **Email**: hello@thealphamarket.com
 - **Website**: https://alphamarket.co.in
 """,
-    version="3.1.0",
+    version="3.2.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
