@@ -249,8 +249,8 @@ async def strategy_options_directional(index: str, config: dict) -> list:
     change_pct = spot_data.get("change_pct", 0)
 
     min_move_pct = config.get("min_move_pct", 0.4)
-    sl_pct = config.get("sl_pct", 30)         # SL as % of premium
-    target_pct = config.get("target_pct", 50)  # Target as % of premium
+    sl_pct = config.get("sl_pct", 40)         # SL as % of premium
+    target_pct = config.get("target_pct", 100)  # Target as % of premium
     lots = config.get("lots", 1)
 
     atm_strike = get_atm_strike(spot, idx["option_strike_gap"])

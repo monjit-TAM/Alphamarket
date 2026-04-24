@@ -22,9 +22,9 @@ logger = logging.getLogger("dyor.arbitrage")
 router = APIRouter(prefix="/api/arbitrage", tags=["Arbitrage"])
 
 # ── Kite Connect Config ───────────────────────────────────────────
-KITE_API_KEY = os.getenv("KITE_API_KEY", "")
-KITE_API_SECRET = os.getenv("KITE_API_SECRET", "")
-KITE_REDIRECT_URL = os.getenv("KITE_REDIRECT_URL", "")
+KITE_API_KEY = "wmwpq34kw5th0y2l"
+KITE_API_SECRET = "uj050ecoi2x11cpcfvvc58fextfyfaqb"
+KITE_REDIRECT_URL = "https://alphamarket.co.in/dyor/api/arbitrage/kite-callback"
 KITE_LOGIN_URL = f"https://kite.zerodha.com/connect/login?v=3&api_key={KITE_API_KEY}"
 
 # In-memory token store + DB persistence
@@ -356,9 +356,9 @@ async def get_spreads(limit: int = 50):
 
             # Signal detection
             signal = "NEUTRAL"
-            if annualized > 12:
+            if annualized > 6:
                 signal = "STRONG_BUY"
-            elif annualized > 8:
+            elif annualized > 3:
                 signal = "BUY"
             elif annualized < -2:
                 signal = "BACKWARDATION"
@@ -388,9 +388,9 @@ async def get_spreads(limit: int = 50):
 
             # Production signal with tighter thresholds
             signal = "NEUTRAL"
-            if true_annualized > 12:
+            if true_annualized > 6:
                 signal = "STRONG_BUY"
-            elif true_annualized > 8:
+            elif true_annualized > 3:
                 signal = "BUY"
             elif true_annualized > 5:
                 signal = "WATCH"

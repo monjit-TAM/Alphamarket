@@ -192,6 +192,12 @@ class AlphaMarketAuthMiddleware(BaseHTTPMiddleware):
         if path in PUBLIC_PATHS or path.startswith("/api/docs") or path.startswith("/api/trading/") or path.startswith("/api/arbitrage/") or path.startswith("/api/alphabot/") or path.startswith("/api/alpha-intel/"):
             return await call_next(request)
 
+        # Skip auth for internal service calls (AIF → DYOR)
+        internal_key = request.headers.get("x-internal-key") or request.headers.get("X-Internal-Key")
+        if internal_key == "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c":
+            request.state.dyor_user = {"id": 0, "email": "internal@alphalens.tech", "username": "alphalens-aif", "is_admin": True, "is_active": True}
+            return await call_next(request)
+
         # Skip OPTIONS (CORS preflight)
         if request.method == "OPTIONS":
             return await call_next(request)

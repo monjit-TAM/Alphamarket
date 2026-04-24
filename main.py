@@ -89,6 +89,7 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
     return []
 
 from routers.arbitrage import router as arbitrage_router
+from routers.alpha_options import router as alpha_options_router
 from routers.trading_tools import router as trading_router
 from routers.alphabot import router as alphabot_router
 from routers.upstox import router as upstox_router
@@ -159,6 +160,7 @@ def custom_openapi():
 app.openapi = custom_openapi
 
 app.include_router(arbitrage_router)
+app.include_router(alpha_options_router)
 app.include_router(trading_router)
 app.include_router(alphabot_router)
 app.include_router(upstox_router)
@@ -666,6 +668,38 @@ async def init_db():
         """)
         # Model Portfolios
         await conn.execute("""
+            CREATE TABLE IF NOT EXISTS alpha_options_signals (
+                id SERIAL PRIMARY KEY,
+                signal_date DATE DEFAULT CURRENT_DATE,
+                symbol TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                strategy_name TEXT,
+                direction TEXT DEFAULT 'BULLISH',
+                legs JSONB DEFAULT '[]',
+                lots INT DEFAULT 1,
+                lot_size INT DEFAULT 50,
+                capital_required FLOAT DEFAULT 0,
+                max_profit FLOAT DEFAULT 0,
+                max_loss FLOAT DEFAULT 0,
+                entry_price FLOAT DEFAULT 0,
+                net_debit_credit FLOAT DEFAULT 0,
+                expiry_date DATE,
+                trigger_reason TEXT DEFAULT '',
+                alphascore FLOAT DEFAULT 0,
+                conviction FLOAT DEFAULT 0,
+                regime TEXT DEFAULT '',
+                vix FLOAT DEFAULT 0,
+                status TEXT DEFAULT 'OPEN',
+                close_price FLOAT DEFAULT 0,
+                actual_pnl FLOAT DEFAULT 0,
+                actual_pnl_pct FLOAT DEFAULT 0,
+                close_reason TEXT DEFAULT '',
+                close_date DATE,
+                evaluation TEXT DEFAULT '',
+                created_at TIMESTAMP DEFAULT NOW(),
+                closed_at TIMESTAMP
+            );
+            
             CREATE TABLE IF NOT EXISTS model_portfolios (
                 id SERIAL PRIMARY KEY, user_id VARCHAR NOT NULL,
                 name TEXT NOT NULL, description TEXT DEFAULT '',
@@ -776,6 +810,10 @@ def decode_token(t):
     except: return None
 
 async def get_current_user(request: Request, credentials: HTTPAuthorizationCredentials = Depends(security)):
+    # Option 0: Internal service key bypass (AIF → DYOR)
+    internal_key = request.headers.get("x-internal-key") or request.headers.get("X-Internal-Key")
+    if internal_key == "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c":
+        return {"id": 0, "email": "internal@alphalens.tech", "username": "alphalens-aif", "is_admin": True, "is_active": True}
     # Option 1: User already authenticated via AlphaMarket session (middleware)
     dyor_user = getattr(request.state, 'dyor_user', None)
     if dyor_user:
@@ -6277,7 +6315,7 @@ def _sanitize_for_pdf(text: str) -> str:
     return text.replace("₹", "Rs.").replace("—", "-").replace("–", "-")
 
 
-def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str):
+def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str, template: str = "professional"):
     """Generate a professional SEBI-compliant advisory PDF for a single recommendation."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
@@ -6437,22 +6475,207 @@ def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str):
         story.append(ft)
         story.append(Spacer(1, 8))
 
-    # ── Rationale ──
-    story.append(Paragraph("INVESTMENT RATIONALE (SEBI Mandated)", styles['RSec']))
-    for line in rationale.split(". FUNDAMENTAL:"):
-        if line.strip():
-            clean = line.strip()
-            if clean.startswith("TECHNICAL:"):
-                story.append(Paragraph("<b>Technical Analysis:</b>", styles['RLabel']))
-                story.append(Paragraph(_sanitize_for_pdf(clean.replace("TECHNICAL:", "").strip()), styles['RBody']))
-                story.append(Spacer(1, 4))
-            elif "FUNDAMENTAL" not in line and "TECHNICAL" not in line:
-                story.append(Paragraph(_sanitize_for_pdf(clean), styles['RBody']))
-            else:
-                story.append(Paragraph("<b>Fundamental Analysis:</b>", styles['RLabel']))
-                story.append(Paragraph(_sanitize_for_pdf(clean.replace("FUNDAMENTAL:", "").strip()), styles['RBody']))
-    if "TECHNICAL:" not in rationale and "FUNDAMENTAL:" not in rationale:
-        story.append(Paragraph(rationale, styles['RBody']))
+    # ════ CLIENT SUMMARY (1-page simplified) ════
+    if template == "client_summary":
+        story.append(Paragraph("STOCK RECOMMENDATION", styles['RTitle']))
+        story.append(Paragraph(f"Date: {date_str}", styles['RSub']))
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#0d47a1'), spaceAfter=12))
+        company = fund.get("name", sym)
+        sector_v = fund.get("sector", "")
+        story.append(Paragraph(f"<b>{company}</b> ({sym}){' | '+sector_v if sector_v else ''}", styles['RSec']))
+        call_style = styles['RBuy'] if call == 'BUY' else styles['RSell']
+        story.append(Paragraph(f"Our View: {call}", call_style))
+        story.append(Spacer(1, 8))
+        upside = round((target - entry) / entry * 100, 1) if entry > 0 and target else 0
+        rows = [["Buy At", "Target", "Stop Loss", "Expected Return", "Time Frame"],
+                [f"Rs.{entry:,.0f}" if entry else "-", f"Rs.{target:,.0f}" if target else "-",
+                 f"Rs.{sl:,.0f}" if sl else "-", f"+{upside}%" if upside > 0 else f"{upside}%", horizon]]
+        pt = Table(rows, colWidths=[90, 90, 90, 100, 90])
+        pt.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0d47a1')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+            ('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,-1),10),
+            ('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#b0bec5')),('ALIGN',(0,0),(-1,-1),'CENTER'),('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6)]))
+        story.append(pt)
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("Why This Stock?", styles['RSec']))
+        narr = ""
+        alpha = tech.get("alpha_metrics", {}) or {}
+        if alpha.get("alphascore"): narr += f"{company} scores {alpha['alphascore']}/100 on AlphaMarket Stock 360 ({alpha.get('grade','')}: {alpha.get('signal','')}). "
+        if alpha.get("confluence_pct"): narr += f"Confluence shows {alpha['confluence_pct']}% conviction with {alpha.get('active_signals',0)} signals agreeing. "
+        if alpha.get("smart_money_verdict"): narr += f"Institutional flow: {alpha['smart_money_verdict'].lower()}. "
+        if not narr: narr = _sanitize_for_pdf(rationale[:300]) if rationale else f"{sym} meets our criteria."
+        story.append(Paragraph(_sanitize_for_pdf(narr), styles['RBody']))
+        story.append(Spacer(1, 8))
+        kn = []
+        pe_v = fund.get("pe_ratio", 0)
+        if pe_v and pe_v > 0: kn.append(f"P/E: {pe_v:.1f}")
+        roe_v = fund.get("roe", 0)
+        if roe_v and roe_v > 0: kn.append(f"ROE: {roe_v:.1f}%")
+        ph_v = fund.get("promoter_holding", 0)
+        if ph_v: kn.append(f"Promoter: {ph_v:.1f}%")
+        rsi_v = tech.get("rsi", 0)
+        if rsi_v: kn.append(f"RSI: {rsi_v:.0f}")
+        if kn:
+            story.append(Paragraph(f"<b>Key Numbers:</b> {' | '.join(kn)}", styles['RBody']))
+        story.append(Spacer(1, 12))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cccccc'), spaceAfter=6))
+        story.append(Paragraph("<b>DISCLAIMER:</b> Not a guarantee of returns. Investments subject to market risks. Consult your advisor.", styles['RDisc']))
+        doc.build(story)
+        return output_path
+
+    # ════ RESEARCH NOTE (2-page concise) ════
+    if template == "research_note":
+        story.append(Paragraph("RESEARCH NOTE", styles['RTitle']))
+        sub = [f"Date: {date_str}"]
+        advisor = report.get("advisor_name", "")
+        if advisor: sub.append(f"Analyst: {advisor}")
+        story.append(Paragraph(" | ".join(sub), styles['RSub']))
+        story.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor('#e84215'), spaceAfter=10))
+        company = fund.get("name", sym)
+        sector_v = fund.get("sector", "")
+        call_style = styles['RBuy'] if call == 'BUY' else styles['RSell']
+        story.append(Paragraph(f"<b>{company}</b> (NSE: {sym}){' | '+sector_v if sector_v else ''}", styles['RSec']))
+        story.append(Paragraph(f"{call} | Entry: Rs.{entry:,.0f} | Target: Rs.{target:,.0f} | SL: Rs.{sl:,.0f} | {horizon}", call_style))
+        story.append(Spacer(1, 8))
+        alpha = tech.get("alpha_metrics", {}) or {}
+        if alpha.get("alphascore"):
+            dims = alpha.get("dimensions", {})
+            dim_txt = ", ".join([f"{k.replace('_',' ').title()}: {v:.0f}" for k,v in dims.items()]) if dims else ""
+            story.append(Paragraph(f"<b>AlphaScore: {alpha['alphascore']}/100 ({alpha.get('grade','')}: {alpha.get('signal','')})</b>", styles['RBody']))
+            if dim_txt: story.append(Paragraph(_sanitize_for_pdf(f"Dimensions: {dim_txt}"), styles['RLabel']))
+            story.append(Spacer(1, 4))
+        if alpha.get("confluence_pct"):
+            sigs = ", ".join(alpha.get("confluence_signals", [])[:4])
+            story.append(Paragraph(f"<b>Confluence: {alpha['confluence_pct']}% ({alpha.get('confluence_conviction','')})</b> - {alpha.get('active_signals',0)} signals: {sigs}", styles['RBody']))
+            story.append(Spacer(1, 4))
+        if alpha.get("smart_money_score"):
+            story.append(Paragraph(f"<b>Smart Money: {alpha['smart_money_score']}/100 ({alpha.get('smart_money_verdict','')})</b>", styles['RBody']))
+            story.append(Spacer(1, 4))
+        scr_list = alpha.get("screener_appearances", [])
+        if scr_list:
+            scr_names = [s.replace("_"," ").title() for s in scr_list]
+            story.append(Paragraph(f"<b>In {len(scr_list)} screeners:</b> {', '.join(scr_names)}", styles['RBody']))
+            story.append(Spacer(1, 6))
+        story.append(Paragraph("Investment Thesis", styles['RSec']))
+        story.append(Paragraph(_sanitize_for_pdf(rationale.replace("CONCLUSION:","").replace("TECHNICAL:","").replace("FUNDAMENTAL:","").strip()), styles['RBody']))
+        story.append(Spacer(1, 6))
+        fund_parts = []
+        pe_v = fund.get("pe_ratio", 0)
+        if pe_v and pe_v > 0: fund_parts.append(f"P/E {pe_v:.1f}")
+        roe_v = fund.get("roe", 0)
+        if roe_v: fund_parts.append(f"ROE {roe_v:.1f}%")
+        eg = fund.get("earnings_growth", 0)
+        if eg: fund_parts.append(f"EPS Growth {eg:.0f}%")
+        ph_v = fund.get("promoter_holding", 0)
+        if ph_v: fund_parts.append(f"Promoter {ph_v:.1f}%")
+        if fund_parts: story.append(Paragraph(f"<b>Fundamentals:</b> {' | '.join(fund_parts)}", styles['RBody']))
+        tech_parts = []
+        rsi_v = tech.get("rsi", 0)
+        if rsi_v: tech_parts.append(f"RSI {rsi_v:.0f}")
+        tech_parts.append("Above 200DMA" if tech.get("above_200dma") else "Below 200DMA")
+        story.append(Paragraph(f"<b>Technicals:</b> {' | '.join(tech_parts)}", styles['RBody']))
+        story.append(Spacer(1, 10))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor('#cccccc'), spaceAfter=6))
+        story.append(Paragraph(f"<b>DISCLAIMER:</b> For informational purposes only. Past performance does not guarantee future results. Investments subject to market risks.", styles['RDisc']))
+        story.append(Paragraph(f"Generated: {date_str} | AlphaLab - alphamarket.co.in", styles['RDisc']))
+        doc.build(story)
+        return output_path
+
+    # ════ PROFESSIONAL & INSTITUTIONAL (full report continues below) ════
+    is_inst = template == "institutional"
+
+    # ── PROPRIETARY INTELLIGENCE ──
+    alpha = tech.get("alpha_metrics", {}) or {}
+    if alpha.get("alphascore") or alpha.get("confluence_pct") or alpha.get("smart_money_score"):
+        story.append(Paragraph("ALPHAMARKET PROPRIETARY INTELLIGENCE", styles['RSec']))
+        intel_narr = ""
+        asc_v = alpha.get("alphascore", 0)
+        if asc_v:
+            grade = alpha.get("grade", "")
+            sig = alpha.get("signal", "")
+            dims = alpha.get("dimensions", {})
+            intel_narr += f"AlphaMarket Stock 360 rates {sym} at {asc_v}/100 (Grade: {grade}, Signal: {sig}). "
+            if dims:
+                best = max(dims, key=dims.get)
+                worst = min(dims, key=dims.get)
+                intel_narr += f"Strongest: {best.replace('_',' ').title()} at {dims[best]:.0f}/100. "
+                intel_narr += f"Needs attention: {worst.replace('_',' ').title()} at {dims[worst]:.0f}/100. "
+        cf_pct = alpha.get("confluence_pct", 0)
+        if cf_pct:
+            conv = alpha.get("confluence_conviction", "")
+            n_sig = alpha.get("active_signals", 0)
+            intel_narr += f"Confluence Engine: {cf_pct}% ({conv}) with {n_sig} signals active. "
+            sigs = alpha.get("confluence_signals", [])
+            if sigs: intel_narr += f"Signals: {', '.join(sigs[:4])}. "
+        sms_v = alpha.get("smart_money_score", 0)
+        if sms_v:
+            verdict = alpha.get("smart_money_verdict", "")
+            intel_narr += f"Smart Money: {sms_v}/100 ({verdict}). "
+            pos = alpha.get("sm_positives", [])
+            risks = alpha.get("sm_risks", [])
+            if pos: intel_narr += f"Positive: {'; '.join(pos[:2])}. "
+            if risks: intel_narr += f"Risks: {'; '.join(risks[:2])}. "
+        if intel_narr:
+            story.append(Paragraph(_sanitize_for_pdf(intel_narr), styles['RBody']))
+        story.append(Spacer(1, 8))
+
+    # ── SCREENER APPEARANCES ──
+    scr_list = alpha.get("screener_appearances", [])
+    if scr_list:
+        story.append(Paragraph("SCREENER VISIBILITY", styles['RSec']))
+        scr_names = [s.replace("_"," ").title() for s in scr_list]
+        scr_narr = f"{sym} appears in {len(scr_list)} of 34 screeners: {', '.join(scr_names)}. "
+        story.append(Paragraph(_sanitize_for_pdf(scr_narr), styles['RBody']))
+        story.append(Spacer(1, 8))
+
+    # ── PATTERN ANALYSIS ──
+    if alpha.get("pattern_verdict"):
+        story.append(Paragraph("PATTERN ANALYSIS", styles['RSec']))
+        pat_narr = f"Pattern analysis: {alpha['pattern_verdict']} with {alpha.get('bullish_signals',0)} bullish and {alpha.get('bearish_signals',0)} bearish signals. "
+        story.append(Paragraph(_sanitize_for_pdf(pat_narr), styles['RBody']))
+        story.append(Spacer(1, 8))
+
+        # ── Rationale ──
+    story.append(Paragraph("INVESTMENT RATIONALE", styles['RSec']))
+    if "TECHNICAL:" in rationale and "FUNDAMENTAL:" in rationale:
+        # Structured rationale with sections
+        parts = rationale.split("FUNDAMENTAL:")
+        tech_part = parts[0].replace("TECHNICAL:", "").strip()
+        fund_part = parts[1].strip() if len(parts) > 1 else ""
+        # Split conclusion
+        conclusion = ""
+        if "CONCLUSION:" in fund_part:
+            fp = fund_part.split("CONCLUSION:")
+            fund_part = fp[0].strip()
+            conclusion = fp[1].strip() if len(fp) > 1 else ""
+        elif "CONCLUSION:" in tech_part:
+            tp = tech_part.split("CONCLUSION:")
+            tech_part = tp[0].strip()
+            conclusion = tp[1].strip() if len(tp) > 1 else ""
+        if tech_part:
+            story.append(Paragraph("<b>Technical View:</b>", styles['RLabel']))
+            story.append(Paragraph(_sanitize_for_pdf(tech_part), styles['RBody']))
+            story.append(Spacer(1, 4))
+        if fund_part:
+            story.append(Paragraph("<b>Fundamental View:</b>", styles['RLabel']))
+            story.append(Paragraph(_sanitize_for_pdf(fund_part), styles['RBody']))
+            story.append(Spacer(1, 4))
+        if conclusion:
+            story.append(Paragraph("<b>Conclusion:</b>", styles['RLabel']))
+            story.append(Paragraph(_sanitize_for_pdf(conclusion), styles['RBody']))
+    else:
+        # Plain rationale — render once, split conclusion
+        rat_text = rationale
+        conclusion = ""
+        if "CONCLUSION:" in rat_text:
+            rp = rat_text.split("CONCLUSION:")
+            rat_text = rp[0].strip()
+            conclusion = rp[1].strip() if len(rp) > 1 else ""
+        if rat_text:
+            story.append(Paragraph(_sanitize_for_pdf(rat_text), styles['RBody']))
+            story.append(Spacer(1, 4))
+        if conclusion:
+            story.append(Paragraph("<b>Conclusion:</b>", styles['RLabel']))
+            story.append(Paragraph(_sanitize_for_pdf(conclusion), styles['RBody']))
     story.append(Spacer(1, 10))
 
     # ── Disclaimer ──
@@ -6473,6 +6696,17 @@ def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str):
 
     doc.build(story)
     return output_path
+
+
+@app.get("/api/advisory/pdf-templates", tags=["Advisory & Reports"])
+async def get_pdf_templates():
+    """List available PDF report templates."""
+    return [
+        {"id": "professional", "name": "Professional Advisory", "description": "Full SEBI-compliant report with proprietary intelligence, narrative analysis, and detailed fundamentals.", "pages": "3-5"},
+        {"id": "research_note", "name": "Research Note", "description": "Concise 2-page research brief with AlphaScore, Confluence signals, screener visibility, and key metrics.", "pages": "1-2"},
+        {"id": "institutional", "name": "Institutional Brief", "description": "Data-heavy report with tables for all metrics, proprietary scores, and detailed technical/fundamental breakdowns.", "pages": "3-5"},
+        {"id": "client_summary", "name": "Client Summary", "description": "Simple 1-page summary in plain language. Key numbers, our view, and why.", "pages": "1"},
+    ]
 
 
 @app.post("/api/advisory/report", tags=["Advisory & Reports"], summary="Create advisory report",
@@ -6599,6 +6833,99 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
     except Exception as e:
         print(f"Data fetch error for {symbol}: {e}")
 
+    # ── Enrich with proprietary metrics (AlphaScore, Confluence, Smart Money) ──
+    alpha_data = {}
+    try:
+        s360 = await stock360(symbol, user)
+        if s360 and "alphascore" in s360:
+            asc = s360.get("alphascore", {})
+            alpha_data["alphascore"] = round(asc.get("alphascore", 0), 1)
+            alpha_data["grade"] = asc.get("grade", "")
+            alpha_data["signal"] = asc.get("signal", "")
+            alpha_data["dimensions"] = asc.get("dimensions", {})
+        if s360 and "confluence" in s360:
+            cf = s360.get("confluence", {})
+            alpha_data["confluence_pct"] = cf.get("probability", 0)
+            alpha_data["confluence_conviction"] = cf.get("conviction", "")
+            alpha_data["active_signals"] = cf.get("active_signal_count", 0)
+            alpha_data["signal_categories"] = cf.get("category_diversity", 0)
+            alpha_data["confluence_signals"] = [s.get("name","") for s in cf.get("active_signals", [])[:6]]
+        if s360 and "smart_money" in s360:
+            sm = s360.get("smart_money", {})
+            alpha_data["smart_money_score"] = round(sm.get("smart_money_score", 0), 1)
+            alpha_data["smart_money_verdict"] = sm.get("verdict", "")
+            alpha_data["sm_positives"] = [s.get("text","") for s in sm.get("positive_signals", [])[:3]]
+            alpha_data["sm_risks"] = [s.get("text","") for s in sm.get("risk_flags", [])[:3]]
+        if s360 and "patterns" in s360:
+            pt = s360.get("patterns", {})
+            alpha_data["pattern_verdict"] = pt.get("verdict", "")
+            alpha_data["pattern_score"] = pt.get("score", 0)
+            alpha_data["bullish_signals"] = pt.get("bullish_signals", 0)
+            alpha_data["bearish_signals"] = pt.get("bearish_signals", 0)
+        if s360 and "alphaview" in s360:
+            av = s360.get("alphaview", {})
+            assess = av.get("assessment", {})
+            alpha_data["value_score"] = assess.get("value_score", 0)
+            alpha_data["growth_score"] = assess.get("growth_score", 0)
+            alpha_data["quality_score"] = assess.get("quality_score", 0)
+            alpha_data["value_verdict"] = assess.get("value_verdict", "")
+            alpha_data["growth_verdict"] = assess.get("growth_verdict", "")
+            alpha_data["quality_verdict"] = assess.get("quality_verdict", "")
+            avf = av.get("fundamentals", {})
+            for fk in ["pe_forward","pb","roce","profit_margin","operating_margin","revenue_growth","earnings_growth","promoter_holding","book_value","eps","dividend_yield","debt_equity","pe_trailing"]:
+                if avf.get(fk): fund_data[fk] = avf[fk]
+            if not fund_data.get("pe_ratio") and avf.get("pe_trailing"): fund_data["pe_ratio"] = avf["pe_trailing"]
+            if not fund_data.get("pe_ratio") and avf.get("pe_forward"): fund_data["pe_ratio"] = avf["pe_forward"]
+            if not fund_data.get("roe") and avf.get("roce"): fund_data["roe"] = avf["roce"]
+            if not fund_data.get("name"):
+                fund_data["name"] = av.get("name", symbol)
+                fund_data["sector"] = av.get("sector", "")
+                fund_data["market_cap"] = av.get("summary", {}).get("market_cap", 0)
+            if not tech_data.get("price"):
+                summ = av.get("summary", {})
+                mavg = av.get("moving_averages", {})
+                tch = av.get("technicals", {})
+                tech_data["price"] = summ.get("price", 0)
+                tech_data["sma_50"] = mavg.get("sma50", 0)
+                tech_data["sma_200"] = mavg.get("sma200", 0)
+                tech_data["rsi"] = tch.get("rsi", 50)
+                tech_data["above_200dma"] = mavg.get("above_200dma", False)
+                tech_data["above_50dma"] = mavg.get("above_50dma", False)
+                tech_data["macd_hist"] = tch.get("macd_histogram", 0)
+                tech_data["vol_ratio"] = summ.get("volume_ratio", 1)
+                tech_data["w52_high"] = summ.get("high_52w", 0)
+                tech_data["w52_low"] = summ.get("low_52w", 0)
+            rs = av.get("relative_strength", {})
+            if rs:
+                tech_data["rs_1m"] = rs.get("rs_1m", 0)
+                tech_data["rs_3m"] = rs.get("rs_3m", 0)
+                tech_data["rs_6m"] = rs.get("rs_6m", 0)
+    except Exception as _e360:
+        print(f"Stock360 enrichment error for {symbol}: {_e360}")
+
+    # ── Scan screener appearances ──
+    screener_appearances = []
+    try:
+        if redis_client:
+            all_scr_keys = await redis_client.keys("screener:*")
+            for sk in all_scr_keys:
+                scr_cached = await redis_client.get(sk)
+                if scr_cached:
+                    scr_data = json.loads(scr_cached)
+                    scr_stocks = scr_data.get("stocks", scr_data) if isinstance(scr_data, dict) else scr_data
+                    if isinstance(scr_stocks, list):
+                        for ss in scr_stocks:
+                            if ss.get("symbol") == symbol:
+                                scr_name = sk.split(":")[1] if ":" in sk else sk
+                                screener_appearances.append(scr_name)
+                                break
+        alpha_data["screener_appearances"] = screener_appearances
+        alpha_data["screener_count"] = len(screener_appearances)
+    except:
+        pass
+
+    tech_data["alpha_metrics"] = alpha_data
+
     # Generate rationale
     rationale_type = req.get("rationale_type", "quantamental")
     rationale = req.get("rationale", "") or generate_rationale(symbol, call_type, tech_data, fund_data, rationale_type)
@@ -6700,10 +7027,11 @@ async def get_advisory_report(report_id: int, user=Depends(get_current_user)):
 
 @app.post("/api/advisory/report/{report_id}/pdf", tags=["Advisory & Reports"], summary="Generate report PDF",
     description="Generate a SEBI-compliant PDF for an advisory report. Returns base64-encoded PDF data ready for download.")
-async def generate_report_pdf(report_id: int, user=Depends(get_current_user)):
+async def generate_report_pdf(report_id: int, req: dict = {}, user=Depends(get_current_user)):
     """Generate individual PDFs for each recommendation in a report."""
     from fastapi.responses import JSONResponse
     import os
+    template = req.get("template", "professional") if isinstance(req, dict) else "professional"
 
     async with db_pool.acquire() as conn:
         report = await conn.fetchrow("SELECT * FROM advisory_reports WHERE id=$1 AND user_id=$2", report_id, user["id"])
@@ -6728,7 +7056,7 @@ async def generate_report_pdf(report_id: int, user=Depends(get_current_user)):
             rd["fundamental_data"] = json.loads(rd["fundamental_data"]) if isinstance(rd["fundamental_data"], str) else rd["fundamental_data"]
             pdf_name = f"advisory_{report_id}_{rd['id']}_{rd['symbol']}_{rd['call_type']}.pdf"
             pdf_path = f"/tmp/advisory_pdfs/{pdf_name}"
-            generate_single_advisory_pdf(report_dict, rd, pdf_path)
+            generate_single_advisory_pdf(report_dict, rd, pdf_path, template=template)
             await conn.execute("UPDATE advisory_recommendations SET pdf_path=$1 WHERE id=$2", pdf_path, rd["id"])
             pdf_paths.append({"rec_id": rd["id"], "symbol": rd["symbol"], "call_type": rd["call_type"], "pdf_name": pdf_name})
 
@@ -7407,7 +7735,7 @@ MODEL_PORTFOLIO_TEMPLATES = {
 
 
 async def build_model_portfolio(portfolio_id: int, user_id: int):
-    """Build portfolio: run screener → apply strategy filter → rank → allocate weights → deploy to paper trades."""
+    """Build portfolio: run screener -> rank by quality -> apply filters -> allocate weights -> save."""
     from datetime import date, timedelta
 
     async with db_pool.acquire() as conn:
@@ -7421,173 +7749,255 @@ async def build_model_portfolio(portfolio_id: int, user_id: int):
         max_h = mp["max_holdings"]
         capital = mp["initial_capital"]
         weighting = mp["weighting"]
-
-        # Step 1: Run screener to get candidate stocks
-        screener_results = []
-        if screener_strat:
-            min_price = float(params.get("min_price", 50))
-            max_price = float(params.get("max_price", 10000))
-            cache_key = f"screener:{screener_strat}:{int(min_price)}:{int(max_price)}"
-            cached = None
-            if redis_client:
-                cached = await redis_client.get(cache_key)
-            if cached:
-                data = json.loads(cached)
-                screener_results = data.get("stocks", [])
-            else:
-                # Trigger screener endpoint internally would be complex — use a simpler approach
-                # Just use NIFTY_UNIVERSE and filter by the screener criteria after
-                screener_results = []  # Will be populated from forward signals
-
-        # Step 2: If we have a backtest/forward strategy, run it on top candidates
-        candidates = []
-        symbols_to_scan = [s["symbol"] for s in screener_results[:60]] if screener_results else list(NIFTY_UNIVERSE)[:100]
-
-        # Apply sector filter if set
         sector_filter = params.get("sector_filter", "")
-        if sector_filter:
-            symbols_to_scan = [s for s in symbols_to_scan if SECTOR_MAP.get(s, "Other") == sector_filter]
+        port_type = mp["portfolio_type"] or ""
 
-        if bt_strat or mp["forward_strategy"]:
-            strat = bt_strat or mp["forward_strategy"]
-            start_date = (date.today() - timedelta(days=250)).isoformat()
-            end_date = date.today().isoformat()
-            loop = asyncio.get_event_loop()
+        # Step 1: Get candidate stocks from screener cache
+        screener_stocks = []
+        if screener_strat and redis_client:
+            all_keys = await redis_client.keys(f"screener:{screener_strat}:*")
+            if all_keys:
+                cached = await redis_client.get(all_keys[0])
+                if cached:
+                    data = json.loads(cached)
+                    screener_stocks = data.get("stocks", data) if isinstance(data, dict) else data
+            if not screener_stocks:
+                cached = await redis_client.get(f"screener:{screener_strat}")
+                if cached:
+                    data = json.loads(cached)
+                    screener_stocks = data.get("stocks", data) if isinstance(data, dict) else data
 
-            # Batch download
-            yf_syms = [f"{s}.NS" for s in symbols_to_scan]
-            all_data = await batch_download_yf(yf_syms, start_date, end_date, batch_size=40)
-            all_data = {k: v for k, v in all_data.items() if not v.empty and len(v) >= 30}
+        # Step 2: Apply sector filter
+        if sector_filter and screener_stocks:
+            screener_stocks = [s for s in screener_stocks if sector_filter.lower() in (s.get("sector", "") or "").lower()]
 
-            for sym in symbols_to_scan:
-                yf_sym = f"{sym}.NS"
-                if yf_sym not in all_data:
+        # Step 3: Determine symbols to scan
+        if screener_stocks:
+            symbols_to_scan = [s.get("symbol", "") for s in screener_stocks if s.get("symbol")][:80]
+        else:
+            symbols_to_scan = list(NIFTY_UNIVERSE)
+            if sector_filter:
+                symbols_to_scan = [s for s in symbols_to_scan if sector_filter.lower() in SECTOR_MAP.get(s, "Other").lower()]
+            symbols_to_scan = symbols_to_scan[:100]
+
+        if not symbols_to_scan:
+            return {"holdings": 0, "message": "No stocks in universe for this portfolio criteria"}
+
+        # Step 4: Download price data
+        start_date = (date.today() - timedelta(days=300)).isoformat()
+        end_date = date.today().isoformat()
+        yf_syms = [f"{s}.NS" for s in symbols_to_scan]
+        all_data = await batch_download_yf(yf_syms, start_date, end_date, batch_size=40)
+        all_data = {k: v for k, v in all_data.items() if not v.empty and len(v) >= 50}
+
+        candidates = []
+        for sym in symbols_to_scan:
+            yf_sym = f"{sym}.NS"
+            if yf_sym not in all_data:
+                continue
+            try:
+                df = all_data[yf_sym].copy()
+                if "Close" in df.columns:
+                    df = df.rename(columns={"Close": "close", "Open": "open", "High": "high", "Low": "low", "Volume": "volume"})
+                df = df.sort_index().astype({"open": float, "high": float, "low": float, "close": float, "volume": float}).dropna()
+                if len(df) < 50:
                     continue
+
+                df = compute_indicators(df)
+                price = float(df["close"].iloc[-1])
+
+                # Quality gate
+                if price < 30:
+                    continue
+                avg_vol = float(df["volume"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else 0
+                if avg_vol < 10000:
+                    continue
+
+                # Compute metrics
+                rsi = float(df["rsi_14"].iloc[-1]) if "rsi_14" in df.columns and not np.isnan(df["rsi_14"].iloc[-1]) else 50
+                vol_ratio = float(df["volume"].iloc[-1] / df["volume"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else 1
+                sma50 = float(df["sma_50"].iloc[-1]) if "sma_50" in df.columns and not np.isnan(df["sma_50"].iloc[-1]) else price
+                sma200 = float(df["sma_200"].iloc[-1]) if "sma_200" in df.columns and len(df) >= 200 and not np.isnan(df["sma_200"].iloc[-1]) else price
+                above_50 = 1 if price > sma50 else 0
+                above_200 = 1 if price > sma200 else 0
+                atr_val = float(df["atr"].iloc[-1]) if "atr" in df.columns and not np.isnan(df["atr"].iloc[-1]) else price * 0.02
+                change_1m = float((price - float(df["close"].iloc[-22])) / float(df["close"].iloc[-22]) * 100) if len(df) > 22 else 0
+                change_3m = float((price - float(df["close"].iloc[-66])) / float(df["close"].iloc[-66]) * 100) if len(df) > 66 else 0
+                high_52w = float(df["high"].max())
+                pct_from_high = round((price / high_52w - 1) * 100, 1) if high_52w > 0 else 0
+
+                # Fetch fundamentals
+                fund = {}
                 try:
-                    df = all_data[yf_sym].copy()
-                    if "Close" in df.columns:
-                        df = df.rename(columns={"Close":"close","Open":"open","High":"high","Low":"low","Volume":"volume"})
-                    df = df.sort_index().astype({"open":float,"high":float,"low":float,"close":float,"volume":float}).dropna()
-                    if len(df) < 30:
-                        continue
-
-                    df = compute_indicators(df)
-                    p = dict(params)
-                    p["_symbol"] = sym
-
-                    if strat.startswith(("VALUE_","QUALITY_","GROWTH_","HYBRID_","FACTOR_")):
-                        try:
-                            p["_fundamentals"] = fetch_fundamentals_sync(sym)
-                        except:
-                            p["_fundamentals"] = {}
-                    else:
-                        p["_fundamentals"] = {}
-
-                    fn = STRATEGY_MAP.get(strat, strategy_sma_crossover)
-                    sig_series = fn(df, p)
-                    last_sig = int(sig_series.iloc[-1]) if len(sig_series) > 0 else 0
-                    price = float(df["close"].iloc[-1])
-                    fund = p.get("_fundamentals", {})
-
-                    # Score each stock
-                    rsi = float(df["rsi_14"].iloc[-1]) if "rsi_14" in df.columns and not np.isnan(df["rsi_14"].iloc[-1]) else 50
-                    vol_r = float(df["volume"].iloc[-1] / df["volume"].rolling(20).mean().iloc[-1]) if len(df) >= 20 else 1
-                    above_200 = 1 if "sma_200" in df.columns and not np.isnan(df["sma_200"].iloc[-1]) and price > float(df["sma_200"].iloc[-1]) else 0
-                    atr_val = float(df["atr"].iloc[-1]) if "atr" in df.columns and not np.isnan(df["atr"].iloc[-1]) else 0
-                    change_1m = float((price - float(df["close"].iloc[-22])) / float(df["close"].iloc[-22]) * 100) if len(df) > 22 else 0
-
-                    strength = 0
-                    if last_sig == 1:
-                        strength = min(100, max(10, int(30 + (70 - rsi) * 0.3 + min(vol_r, 5) * 8 + above_200 * 20)))
-
-                    # Calculate score for ranking — higher is better
-                    score = strength
-                    # Boost from screener rank
-                    scr_match = next((s for s in screener_results if s.get("symbol") == sym), None)
-                    if scr_match:
-                        scr_rank = screener_results.index(scr_match)
-                        score += max(0, 40 - scr_rank)  # Top screener results get +40 boost
-
-                    if last_sig == 1 or (not bt_strat and screener_strat):
-                        # For screener-only portfolios, include all screener results
-                        candidates.append({
-                            "symbol": sym, "price": round(price, 2), "signal": "BUY" if last_sig == 1 else "HOLD",
-                            "strength": strength, "score": score, "rsi": round(rsi, 1),
-                            "change_1m": round(change_1m, 1), "above_200dma": above_200,
-                            "volume_ratio": round(vol_r, 2), "atr": round(atr_val, 2),
-                            "sector": SECTOR_MAP.get(sym, "Other"), "industry": INDUSTRY_MAP.get(sym, "Other"), "basic_industry": BASIC_INDUSTRY_MAP.get(sym, "Other"),
-                            "pe": fund.get("pe_trailing"), "pb": fund.get("pb"),
-                            "roe": fund.get("roe"), "de": fund.get("debt_equity"),
-                            "div_yield": fund.get("dividend_yield"),
-                        })
+                    fund = fetch_fundamentals_sync(sym) or {}
                 except:
+                    pass
+
+                pe = fund.get("pe_trailing") or fund.get("pe_forward")
+                pb = fund.get("pb")
+                roe_val = fund.get("roe") or fund.get("returnOnEquity", 0)
+                if roe_val and 0 < abs(roe_val) < 1: roe_val = round(roe_val * 100, 2)
+                de_val = fund.get("debt_equity") or fund.get("debtToEquity", 0)
+                div_yield = fund.get("dividend_yield") or fund.get("dividendYield", 0)
+                if div_yield and 0 < div_yield < 1: div_yield = round(div_yield * 100, 2)
+                profit_margin = fund.get("profit_margin") or fund.get("profitMargins", 0)
+                if profit_margin and 0 < abs(profit_margin) < 1: profit_margin = round(profit_margin * 100, 2)
+                earnings_growth = fund.get("earnings_growth") or fund.get("earningsGrowth", 0)
+                if earnings_growth and 0 < abs(earnings_growth) < 1: earnings_growth = round(earnings_growth * 100, 2)
+                market_cap = fund.get("market_cap") or fund.get("marketCap", 0)
+                mcap_cr = round(market_cap / 10000000, 0) if market_cap else 0
+
+                # Run strategy signal
+                last_sig = 0
+                if bt_strat:
+                    try:
+                        p = dict(params)
+                        p["_symbol"] = sym
+                        p["_fundamentals"] = fund
+                        fn = STRATEGY_MAP.get(bt_strat, strategy_sma_crossover)
+                        sig_series = fn(df, p)
+                        last_sig = int(sig_series.iloc[-1]) if len(sig_series) > 0 else 0
+                    except:
+                        last_sig = 0
+
+                # SCORING ENGINE
+                score = 0
+                include = True
+
+                if "momentum" in port_type or bt_strat == "MOMENTUM":
+                    if not above_200: include = False
+                    if rsi > 80 or rsi < 35: include = False
+                    score = round(change_1m * 2 + change_3m * 0.5 + above_200 * 15 + above_50 * 10 + min(vol_ratio, 3) * 5 + (70 - abs(rsi - 60)) * 0.5)
+
+                elif "value" in port_type or bt_strat in ("VALUE_DEEP_VALUE", "VALUE_HIGH_DIVIDEND"):
+                    if pe and pe > 0: score += max(0, 30 - pe)
+                    if pb and pb > 0: score += max(0, int(15 - pb * 5))
+                    if div_yield: score += int(div_yield * 10)
+                    if roe_val and roe_val > 0: score += int(min(roe_val, 30))
+                    if pe and pe > 50: include = False
+
+                elif "quality" in port_type or bt_strat in ("QUALITY_MOAT", "QUALITY_HIGH_ROE", "FACTOR_QUALITY"):
+                    if roe_val and roe_val > 0: score += int(min(roe_val * 2, 50))
+                    if profit_margin and profit_margin > 0: score += int(min(profit_margin, 30))
+                    if de_val is not None and de_val >= 0: score += max(0, int(20 - de_val * 0.3))
+                    if above_200: score += 10
+                    if roe_val and roe_val < 8: include = False
+
+                elif "growth" in port_type or bt_strat == "HYBRID_GROWTH_BREAKOUT":
+                    if earnings_growth and earnings_growth > 0: score += int(min(earnings_growth, 50))
+                    score += int(change_1m * 1.5)
+                    if above_200: score += 15
+                    if vol_ratio > 1.2: score += 10
+
+                elif "breakout" in port_type or bt_strat == "BREAKOUT":
+                    score += max(0, int(100 + pct_from_high))
+                    if vol_ratio > 1.5: score += 20
+                    if above_50 and above_200: score += 15
+                    if pct_from_high < -20: include = False
+
+                elif "golden_cross" in port_type or bt_strat == "GOLDEN_CROSS":
+                    sma50_prev = float(df["sma_50"].iloc[-5]) if "sma_50" in df.columns and len(df) > 5 and not np.isnan(df["sma_50"].iloc[-5]) else 0
+                    sma200_prev = float(df["sma_200"].iloc[-5]) if "sma_200" in df.columns and len(df) > 205 and not np.isnan(df["sma_200"].iloc[-5]) else 0
+                    if sma50 > sma200 and sma50_prev <= sma200_prev: score += 50
+                    elif above_50 and above_200: score += 20
+                    else: include = False
+
+                elif "turnaround" in port_type or bt_strat == "HYBRID_VALUE_REVERSAL":
+                    if rsi < 40: score += int(40 - rsi) * 2
+                    if pe and 0 < pe < 20: score += 15
+                    if change_1m < -5: score += int(abs(change_1m))
+                    if roe_val and roe_val > 10: score += 10
+
+                elif "low_vol" in port_type or bt_strat == "FACTOR_LOW_VOLATILITY":
+                    atr_pct = atr_val / price * 100 if price > 0 else 5
+                    score += max(0, int(50 - atr_pct * 15))
+                    if above_200: score += 15
+                    if div_yield and div_yield > 1: score += 10
+                    if atr_pct > 3: include = False
+
+                elif "small_cap" in port_type or bt_strat == "FACTOR_SIZE":
+                    max_mcap = float(params.get("max_market_cap_cr", 10000))
+                    if mcap_cr > max_mcap: include = False
+                    score += int(change_1m * 2) + above_200 * 15
+                    if roe_val and roe_val > 12: score += 15
+
+                else:
+                    score += above_200 * 15 + above_50 * 10 + int(change_1m * 1.5)
+                    if roe_val and roe_val > 0: score += int(min(roe_val, 25))
+                    if vol_ratio > 1: score += 5
+                    if last_sig == 1: score += 20
+
+                # Subtle screener rank boost
+                scr_idx = next((i for i, s in enumerate(screener_stocks) if s.get("symbol") == sym), -1)
+                if scr_idx >= 0: score += max(0, 10 - scr_idx)
+
+                if not include:
                     continue
 
-        # If no strategy filter, use screener results directly
-        if not candidates and screener_results:
-            for i, s in enumerate(screener_results[:max_h * 2]):
                 candidates.append({
-                    "symbol": s.get("symbol", ""), "price": s.get("price", 0),
-                    "signal": "BUY", "strength": max(10, 80 - i * 3), "score": 80 - i * 3,
-                    "rsi": s.get("rsi", 50), "change_1m": s.get("rs_1m", 0),
-                    "above_200dma": s.get("above_200dma", 0),
-                    "volume_ratio": s.get("vol_ratio", 1), "atr": 0,
-                    "sector": s.get("sector", "Other"),
-                    "pe": None, "pb": None, "roe": None, "de": None, "div_yield": None,
+                    "symbol": sym, "price": round(price, 2),
+                    "signal": "BUY" if last_sig == 1 else ("HOLD" if above_200 else "WATCH"),
+                    "strength": min(100, max(10, score)), "score": score,
+                    "rsi": round(rsi, 1), "change_1m": round(change_1m, 1), "change_3m": round(change_3m, 1),
+                    "above_50dma": above_50, "above_200dma": above_200,
+                    "pct_from_52w_high": pct_from_high, "volume_ratio": round(vol_ratio, 2),
+                    "atr": round(atr_val, 2), "sector": SECTOR_MAP.get(sym, "Other"),
+                    "industry": INDUSTRY_MAP.get(sym, "Other"), "basic_industry": BASIC_INDUSTRY_MAP.get(sym, "Other"),
+                    "pe": round(pe, 1) if pe else None, "pb": round(pb, 1) if pb else None,
+                    "roe": round(roe_val, 1) if roe_val else None, "de": round(de_val, 1) if de_val else None,
+                    "div_yield": round(div_yield, 2) if div_yield else None,
+                    "profit_margin": round(profit_margin, 1) if profit_margin else None,
+                    "market_cap_cr": int(mcap_cr) if mcap_cr else None,
+                    "weight": 0,
                 })
+            except:
+                continue
 
-        # Step 3: Rank and select top N
+        # Step 5: Rank and select
         candidates.sort(key=lambda x: x["score"], reverse=True)
         selected = candidates[:max_h]
 
         if not selected:
-            return {"holdings": 0, "message": "No stocks matched the portfolio criteria"}
+            return {"holdings": 0, "message": "No stocks matched criteria after quality filters"}
 
-        # Step 4: Allocate weights
+        # Step 6: Allocate weights
         if weighting == "equal":
             w = round(100 / len(selected), 2)
-            for s in selected:
-                s["weight"] = w
+            for s in selected: s["weight"] = w
         elif weighting == "score_weighted":
-            total_score = sum(s["score"] for s in selected)
-            for s in selected:
-                s["weight"] = round(s["score"] / total_score * 100, 2) if total_score > 0 else round(100/len(selected), 2)
+            ts = sum(max(s["score"], 1) for s in selected)
+            for s in selected: s["weight"] = round(max(s["score"], 1) / ts * 100, 2)
         elif weighting == "inverse_volatility":
-            total_inv = sum(1/(s["atr"]+0.01) for s in selected)
-            for s in selected:
-                s["weight"] = round((1/(s["atr"]+0.01)) / total_inv * 100, 2) if total_inv > 0 else round(100/len(selected), 2)
+            ti = sum(1 / max(s["atr"], 0.01) for s in selected)
+            for s in selected: s["weight"] = round((1 / max(s["atr"], 0.01)) / ti * 100, 2)
         else:
             w = round(100 / len(selected), 2)
-            for s in selected:
-                s["weight"] = w
+            for s in selected: s["weight"] = w
 
-        # Step 5: Clear old holdings, insert new ones
+        # Step 7: Save to DB
         await conn.execute("DELETE FROM model_portfolio_holdings WHERE portfolio_id=$1", portfolio_id)
 
+        total_val = 0
         for rank, s in enumerate(selected, 1):
             alloc = capital * s["weight"] / 100
             shares = int(alloc / s["price"]) if s["price"] > 0 else 0
-            fund_data = {}
-            for fk in ["pe","pb","roe","de","div_yield"]:
-                if s.get(fk) is not None:
-                    fund_data[fk] = s[fk]
-
+            total_val += shares * s["price"]
+            fd = {k: s[k] for k in ["pe","pb","roe","de","div_yield","profit_margin","market_cap_cr"] if s.get(k) is not None}
             await conn.execute("""
                 INSERT INTO model_portfolio_holdings (portfolio_id,symbol,weight_pct,shares,entry_price,current_price,
                     screener_rank,signal_type,signal_strength,sector,fundamentals)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
             """, portfolio_id, s["symbol"], s["weight"], shares, s["price"], s["price"],
-                rank, s["signal"], s["strength"], s["sector"], json.dumps(fund_data))
+                rank, s["signal"], min(100, max(1, s["strength"])), s["sector"], json.dumps(fd))
 
         await conn.execute("UPDATE model_portfolios SET updated_at=NOW() WHERE id=$1", portfolio_id)
 
-        # Step 6: Snapshot
-        total_val = sum(s["price"] * int(capital * s["weight"]/100 / s["price"]) for s in selected if s["price"] > 0)
         await conn.execute("""
             INSERT INTO model_portfolio_snapshots (portfolio_id,total_value,holdings_data,return_pct,snapshot_date)
             VALUES ($1,$2,$3,0,$4)
             ON CONFLICT (portfolio_id,snapshot_date) DO UPDATE SET total_value=$2,holdings_data=$3
-        """, portfolio_id, round(total_val, 2), json.dumps([{"s":s["symbol"],"w":s["weight"],"p":s["price"]} for s in selected]),
+        """, portfolio_id, round(total_val, 2),
+            json.dumps([{"s":s["symbol"],"w":s["weight"],"p":s["price"],"sc":s["score"]} for s in selected]),
             date.today())
 
         return {
@@ -9251,17 +9661,52 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         except:
             return default
 
-    def fix_pct(val, max_reasonable=100):
-        """Normalize % values. max_reasonable = max sensible % for this field."""
-        v2 = sf(val, 0)
-        if not v2 or v2 == 0: return 0
-        av = abs(v2)
-        if av < 1: result = round(v2 * 100, 2)
-        elif av > max_reasonable * 10: result = round(v2 / 100, 2)
-        elif av > max_reasonable * 3 and av > 100: result = round(v2 / 100, 2)
-        else: result = round(v2, 2)
-        if abs(result) > max_reasonable * 2: result = round(result / 100, 2)
-        return result
+    def fix_pct(val):
+        """Convert to percentage display value. Only divide if over-scaled (>200)."""
+        v = sf(val, 0)
+        if not v: return 0
+        if abs(v) > 200: return round(v / 100, 2)
+        return round(v, 2)
+
+    def fix_pct_smart(val, field_type="default"):
+        """Field-aware percentage converter."""
+        v = sf(val, 0)
+        if not v: return 0
+        if field_type == "div":
+            if abs(v) < 0.1: return round(v * 100, 2)
+            if abs(v) > 10: return round(v / 100, 2)
+            return round(v, 2)
+        elif field_type == "promoter":
+            if abs(v) < 1: return round(v * 100, 2)
+            return round(v, 2)
+        elif field_type in ("roe", "margin", "growth"):
+            if 0 < abs(v) < 1: return round(v * 100, 2)
+            if abs(v) > 200: return round(v / 100, 2)
+            return round(v, 2)
+        else:
+            if abs(v) > 200: return round(v / 100, 2)
+            return round(v, 2)
+
+    # Promoter holding overrides for banking stocks
+    PROMOTER_OVERRIDES = {
+        "HDFCBANK": 25.97, "SBIN": 57.49, "ICICIBANK": 0, "AXISBANK": 8.22,
+        "KOTAKBANK": 25.89, "INDUSINDBK": 16.51, "BANDHANBNK": 39.98,
+        "IDFCFIRSTB": 36.56, "FEDERALBNK": 0, "PNB": 73.15,
+        "BANKBARODA": 63.97, "CANBK": 62.93, "UNIONBANK": 74.76,
+    }
+    promoter_override = PROMOTER_OVERRIDES.get(sym.upper())
+
+    # ROE fallback from EPS/BookValue
+    def compute_roe_fallback():
+        eps_val = sf(fund.get("eps") or fund.get("trailingEps") or fund.get("eps_trailing"), 0)
+        bv_val = sf(fund.get("book_value") or fund.get("bookValue"), 0)
+        if eps_val and bv_val and bv_val > 0:
+            return round((eps_val / bv_val) * 100, 2)
+        return 0
+
+    computed_roe = fix_pct_smart(fund.get("roe") or fund.get("returnOnEquity"), "roe")
+    if not computed_roe or computed_roe == 0:
+        computed_roe = compute_roe_fallback()
 
     # ── 3. Moving Averages & Trend ──
     sma20 = float(c.rolling(20).mean().iloc[-1]) if len(c) >= 20 else price
@@ -9649,18 +10094,18 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
             "pe_trailing": sf(fund.get("pe_trailing") or fund.get("trailingPE")),
             "pe_forward": sf(fund.get("pe_forward") or fund.get("forwardPE")),
             "pb": sf(fund.get("pb") or fund.get("priceToBook")),
-            "roe": fix_pct(fund.get("roe") or fund.get("returnOnEquity"), 60),
-            "roce": fix_pct(fund.get("roce"), 60),
+            "roe": computed_roe,
+            "roce": fix_pct_smart(fund.get("roce"), "roe"),
             "debt_equity": sf(fund.get("debt_equity") or fund.get("debtToEquity")),
-            "dividend_yield": fix_pct(fund.get("dividend_yield") or fund.get("dividendYield"), 15),
+            "dividend_yield": fix_pct_smart(fund.get("dividend_yield") or fund.get("dividendYield"), "div"),
             "dividend_rate": sf(fund.get("dividend_rate") or fund.get("dividendRate")),
             "book_value": sf(fund.get("book_value") or fund.get("bookValue")),
             "revenue": sf(fund.get("revenue")),
-            "revenue_growth": fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth"), 80),
-            "earnings_growth": fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth"), 100),
-            "profit_margin": fix_pct(fund.get("profit_margin") or fund.get("profitMargins"), 50),
-            "operating_margin": fix_pct(fund.get("operating_margin") or fund.get("operatingMargins"), 50),
-            "promoter_holding": sf(fund.get("promoter_holding")),
+            "revenue_growth": fix_pct_smart(fund.get("revenue_growth") or fund.get("revenueGrowth"), "growth"),
+            "earnings_growth": fix_pct_smart(fund.get("earnings_growth") or fund.get("earningsGrowth"), "growth"),
+            "profit_margin": fix_pct_smart(fund.get("profit_margin") or fund.get("profitMargins"), "margin"),
+            "operating_margin": fix_pct_smart(fund.get("operating_margin") or fund.get("operatingMargins"), "margin"),
+            "promoter_holding": promoter_override if promoter_override is not None else (fix_pct_smart(fund.get("promoter_holding"), "promoter") or fix_pct_smart(fund.get("heldPercentInsiders"), "promoter")),
         },
 
         "levels": {
@@ -9814,11 +10259,11 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     # ── 12. Quantamental Assessment ──
     pe = sf(fund.get("pe_trailing") or fund.get("trailingPE"), 0)
     pb_val = sf(fund.get("pb") or fund.get("priceToBook"), 0)
-    roe_val = fix_pct(fund.get("roe") or fund.get("returnOnEquity"))
+    roe_val = fix_pct_smart(fund.get("roe") or fund.get("returnOnEquity"), "roe")
     de = sf(fund.get("debt_equity") or fund.get("debtToEquity"), 0)
-    rev_g = fix_pct(fund.get("revenue_growth") or fund.get("revenueGrowth"))
-    earn_g = fix_pct(fund.get("earnings_growth") or fund.get("earningsGrowth"))
-    pm = fix_pct(fund.get("profit_margin") or fund.get("profitMargins"))
+    rev_g = fix_pct_smart(fund.get("revenue_growth") or fund.get("revenueGrowth"), "growth")
+    earn_g = fix_pct_smart(fund.get("earnings_growth") or fund.get("earningsGrowth"), "growth")
+    pm = fix_pct_smart(fund.get("profit_margin") or fund.get("profitMargins"), "margin")
 
     # Value score
     value_score = 0
@@ -9826,7 +10271,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     elif pe and 15 <= pe < 25: value_score += 15
     if pb_val and pb_val < 2: value_score += 25
     elif pb_val and pb_val < 4: value_score += 10
-    if fix_pct(fund.get("dividend_yield") or fund.get("dividendYield"), 15) > 2: value_score += 20
+    if fix_pct_smart(fund.get("dividend_yield") or fund.get("dividendYield"), "div") > 2: value_score += 20
     if de and de < 50: value_score += 15
     elif de and de < 100: value_score += 5
     if pm and pm > 15: value_score += 10
@@ -9848,7 +10293,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     if pm and pm > 15: quality_score += 20
     if de and de < 30: quality_score += 20
     elif de and de < 80: quality_score += 10
-    if fix_pct(fund.get("operating_margin") or fund.get("operatingMargins"), 50) > 15: quality_score += 15
+    if fix_pct_smart(fund.get("operating_margin") or fund.get("operatingMargins"), "margin") > 15: quality_score += 15
     if vol_ratio < 2: quality_score += 10
     if adx_val > 20: quality_score += 10
 
