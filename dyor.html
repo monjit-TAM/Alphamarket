@@ -4970,7 +4970,7 @@ async function abLoadSignals(){
           '<td>'+s.entry_price+'</td><td style="color:var(--red)">'+s.stop_loss+'</td>'+
           '<td style="color:var(--green)">'+s.target+'</td><td>'+s.quantity+'</td>'+
           '<td style="color:var(--accent)">'+s.potential_pct+'%</td>'+
-          '<td>'+(window._isAmAdvisor?'<button onclick="event.stopPropagation();openPublish(\''+s.symbol+'\','+s.entry_price+',\'F&O Signal: '+s.signal_type+' '+(s.instrument_type||'FUT')+' Entry:'+s.entry_price+' SL:'+s.stop_loss+' Target:'+s.target+' Potential:'+s.potential_pct+'%+'\',true)" style="font-size:9px;padding:2px 6px;border:none;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer">Publish</button>':'')+'</td></tr>';
+          '<td>'+(window._isAmAdvisor?'<button data-sym="'+s.symbol+'" data-price="'+s.entry_price+'" data-sl="'+s.stop_loss+'" data-tgt="'+s.target+'" data-type="'+s.signal_type+'" data-strat="'+(s.strategy_name||'')+'" data-inst="'+(s.instrument_type||'')+'" data-pot="'+s.potential_pct+'" onclick="event.stopPropagation();window.publishFromAB(this)" style="font-size:9px;padding:2px 6px;border:none;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer">Publish</button>':'')+'</td></tr>';
       }).join('')+'</tbody></table>';
   }catch(e){console.error(e);}
 }
