@@ -6588,36 +6588,165 @@ def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str, temp
     alpha = tech.get("alpha_metrics", {}) or {}
     if alpha.get("alphascore") or alpha.get("confluence_pct") or alpha.get("smart_money_score"):
         story.append(Paragraph("ALPHAMARKET PROPRIETARY INTELLIGENCE", styles['RSec']))
-        intel_narr = ""
         asc_v = alpha.get("alphascore", 0)
-        if asc_v:
-            grade = alpha.get("grade", "")
-            sig = alpha.get("signal", "")
-            dims = alpha.get("dimensions", {})
-            intel_narr += f"AlphaMarket Stock 360 rates {sym} at {asc_v}/100 (Grade: {grade}, Signal: {sig}). "
-            if dims:
-                best = max(dims, key=dims.get)
-                worst = min(dims, key=dims.get)
-                intel_narr += f"Strongest: {best.replace('_',' ').title()} at {dims[best]:.0f}/100. "
-                intel_narr += f"Needs attention: {worst.replace('_',' ').title()} at {dims[worst]:.0f}/100. "
+        grade = alpha.get("grade", "")
+        sig = alpha.get("signal", "")
+        dims = alpha.get("dimensions", {})
         cf_pct = alpha.get("confluence_pct", 0)
-        if cf_pct:
-            conv = alpha.get("confluence_conviction", "")
-            n_sig = alpha.get("active_signals", 0)
-            intel_narr += f"Confluence Engine: {cf_pct}% ({conv}) with {n_sig} signals active. "
-            sigs = alpha.get("confluence_signals", [])
-            if sigs: intel_narr += f"Signals: {', '.join(sigs[:4])}. "
+        conv = alpha.get("confluence_conviction", "")
+        n_sig = alpha.get("active_signals", 0)
         sms_v = alpha.get("smart_money_score", 0)
-        if sms_v:
-            verdict = alpha.get("smart_money_verdict", "")
-            intel_narr += f"Smart Money: {sms_v}/100 ({verdict}). "
-            pos = alpha.get("sm_positives", [])
-            risks = alpha.get("sm_risks", [])
-            if pos: intel_narr += f"Positive: {'; '.join(pos[:2])}. "
-            if risks: intel_narr += f"Risks: {'; '.join(risks[:2])}. "
-        if intel_narr:
-            story.append(Paragraph(_sanitize_for_pdf(intel_narr), styles['RBody']))
-        story.append(Spacer(1, 8))
+        verdict = alpha.get("smart_money_verdict", "")
+
+        if is_inst:
+            # INSTITUTIONAL: Data tables
+            intel_rows = [["Metric", "Score", "Rating", "Detail"]]
+            if asc_v:
+                best_d = max(dims, key=dims.get).replace("_"," ").title() if dims else "-"
+                worst_d = min(dims, key=dims.get).replace("_"," ").title() if dims else "-"
+                intel_rows.append(["AlphaScore", f"{asc_v}/100", f"{grade} ({sig})", f"Best: {best_d} | Weakest: {worst_d}"])
+            if cf_pct:
+                sigs_list = alpha.get("confluence_signals", [])
+                intel_rows.append(["Confluence", f"{cf_pct}%", conv, f"{n_sig} signals: {', '.join(sigs_list[:3])}"])
+            if sms_v:
+                intel_rows.append(["Smart Money", f"{sms_v}/100", verdict, ""])
+            if alpha.get("pattern_verdict"):
+                intel_rows.append(["Patterns", f"{alpha.get('pattern_score',0)}/100", alpha["pattern_verdict"], f"Bull: {alpha.get('bullish_signals',0)} | Bear: {alpha.get('bearish_signals',0)}"])
+            if alpha.get("screener_count"):
+                intel_rows.append(["Screener Visibility", f"{alpha['screener_count']}/34", "", ", ".join([s.replace('_',' ').title() for s in alpha.get('screener_appearances',[])[:5]])])
+
+            if len(intel_rows) > 1:
+                it = Table(intel_rows, colWidths=[100, 65, 85, 210])
+                it.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0d47a1')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#b0bec5')),
+                    ('ALIGN',(1,0),(2,-1),'CENTER'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+                ]))
+                story.append(it)
+                story.append(Spacer(1, 8))
+
+            # Dim breakdown table
+            if dims:
+                dim_rows = [["Dimension", "Score", "Bar"]]
+                for dk, dv in sorted(dims.items(), key=lambda x: x[1], reverse=True):
+                    bar = "|" * int(dv / 5)
+                    dim_rows.append([dk.replace("_"," ").title(), f"{dv:.0f}/100", bar])
+                dt = Table(dim_rows, colWidths=[120, 70, 270])
+                dt.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#263238')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#ccc')),
+                    ('TOPPADDING',(0,0),(-1,-1),4),('BOTTOMPADDING',(0,0),(-1,-1),4),
+                ]))
+                story.append(dt)
+                story.append(Spacer(1, 8))
+
+            # Institutional tech/fund data tables
+            tech_rows = [["Indicator", "Value", "Signal"]]
+            tp = tech.get("price", 0)
+            if tp: tech_rows.append(["Current Price", f"Rs.{tp:,.1f}", ""])
+            s50 = tech.get("sma_50", 0)
+            if s50: tech_rows.append(["50 DMA", f"Rs.{s50:,.1f}", "Above" if tp > s50 else "Below"])
+            s200 = tech.get("sma_200", 0)
+            if s200: tech_rows.append(["200 DMA", f"Rs.{s200:,.1f}", "Above" if tp > s200 else "Below"])
+            rsi_v = tech.get("rsi", 0)
+            if rsi_v: tech_rows.append(["RSI (14)", f"{rsi_v:.1f}", "Overbought" if rsi_v > 70 else "Oversold" if rsi_v < 30 else "Neutral"])
+            mh = tech.get("macd_hist", 0)
+            if mh: tech_rows.append(["MACD Histogram", f"{mh:.2f}", "Bullish" if mh > 0 else "Bearish"])
+            vr = tech.get("vol_ratio", 0)
+            if vr: tech_rows.append(["Volume Ratio", f"{vr:.1f}x", "High" if vr > 1.5 else "Normal"])
+            rs3 = tech.get("rs_3m", 0)
+            if rs3: tech_rows.append(["3M Rel. Strength", f"{rs3:.1f}%", "Outperforming" if rs3 > 0 else "Underperforming"])
+            w52h = tech.get("w52_high", 0)
+            if w52h and tp: tech_rows.append(["52-Week High", f"Rs.{w52h:,.1f}", f"{((tp/w52h-1)*100):.1f}% from high"])
+            if len(tech_rows) > 1:
+                story.append(Paragraph("TECHNICAL DATA", styles['RSec']))
+                tt = Table(tech_rows, colWidths=[130, 110, 220])
+                tt.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0d47a1')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#b0bec5')),
+                    ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+                ]))
+                story.append(tt)
+                story.append(Spacer(1, 8))
+
+            fund_rows = [["Metric", "Value", "Assessment"]]
+            pe_v = fund.get("pe_ratio", 0)
+            if pe_v and pe_v > 0: fund_rows.append(["P/E Ratio", f"{pe_v:.1f}x", "Expensive" if pe_v > 40 else "Moderate" if pe_v > 20 else "Cheap"])
+            roe_v = fund.get("roe", 0)
+            if roe_v: fund_rows.append(["Return on Equity", f"{roe_v:.1f}%", "Excellent" if roe_v > 20 else "Good" if roe_v > 12 else "Average"])
+            dy = fund.get("dividend_yield", 0)
+            if dy: fund_rows.append(["Dividend Yield", f"{dy:.1f}%", "Income support" if dy > 2 else "Modest"])
+            de = fund.get("debt_equity", 0)
+            if de: fund_rows.append(["Debt/Equity", f"{de:.2f}", "Conservative" if de < 1 else "Moderate" if de < 2 else "High leverage"])
+            mc = fund.get("market_cap", 0)
+            if mc:
+                if mc > 1e12: cap_s = f"Rs.{mc/1e12:.0f}T"
+                elif mc > 1e9: cap_s = f"Rs.{mc/1e9:.0f}B"
+                else: cap_s = f"Rs.{mc/1e7:.0f}Cr"
+                fund_rows.append(["Market Cap", cap_s, fund.get("cap_segment", "Large Cap") if mc > 2e11 else "Mid Cap" if mc > 5e10 else "Small Cap"])
+            pm = fund.get("profit_margin", 0)
+            if pm: fund_rows.append(["Profit Margin", f"{pm:.1f}%", "Strong" if pm > 15 else "Moderate" if pm > 8 else "Thin"])
+            eg = fund.get("earnings_growth", 0)
+            if eg: fund_rows.append(["Earnings Growth", f"{eg:.1f}%", "High growth" if eg > 20 else "Steady" if eg > 5 else "Declining"])
+            ph = fund.get("promoter_holding", 0)
+            if ph: fund_rows.append(["Promoter Holding", f"{ph:.1f}%", "Strong" if ph > 60 else "Moderate" if ph > 40 else "Low"])
+            if len(fund_rows) > 1:
+                story.append(Paragraph("FUNDAMENTAL DATA", styles['RSec']))
+                ft = Table(fund_rows, colWidths=[130, 110, 220])
+                ft.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#0d47a1')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#b0bec5')),
+                    ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+                ]))
+                story.append(ft)
+                story.append(Spacer(1, 8))
+
+            # Assessment scores table
+            vs = alpha.get("value_score", 0)
+            gs = alpha.get("growth_score", 0)
+            qs = alpha.get("quality_score", 0)
+            if vs or gs or qs:
+                story.append(Paragraph("VALUE / GROWTH / QUALITY ASSESSMENT", styles['RSec']))
+                ass_rows = [["Type", "Score", "Verdict"]]
+                if vs: ass_rows.append(["Value", f"{vs}/100", alpha.get("value_verdict", "")])
+                if gs: ass_rows.append(["Growth", f"{gs}/100", alpha.get("growth_verdict", "")])
+                if qs: ass_rows.append(["Quality", f"{qs}/100", alpha.get("quality_verdict", "")])
+                at = Table(ass_rows, colWidths=[130, 110, 220])
+                at.setStyle(TableStyle([
+                    ('BACKGROUND',(0,0),(-1,0),colors.HexColor('#263238')),('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                    ('FONTNAME',(0,0),(-1,-1),'Helvetica'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+                    ('FONTSIZE',(0,0),(-1,-1),9),('GRID',(0,0),(-1,-1),0.5,colors.HexColor('#ccc')),
+                    ('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5),
+                ]))
+                story.append(at)
+                story.append(Spacer(1, 8))
+        else:
+            # PROFESSIONAL: Narrative style (existing)
+            intel_narr = ""
+            if asc_v:
+                intel_narr += f"AlphaMarket Stock 360 rates {sym} at {asc_v}/100 (Grade: {grade}, Signal: {sig}). "
+                if dims:
+                    best = max(dims, key=dims.get)
+                    worst = min(dims, key=dims.get)
+                    intel_narr += f"Strongest: {best.replace('_',' ').title()} at {dims[best]:.0f}/100. "
+                    intel_narr += f"Needs attention: {worst.replace('_',' ').title()} at {dims[worst]:.0f}/100. "
+            if cf_pct:
+                intel_narr += f"Confluence Engine: {cf_pct}% ({conv}) with {n_sig} signals active. "
+                sigs = alpha.get("confluence_signals", [])
+                if sigs: intel_narr += f"Signals: {', '.join(sigs[:4])}. "
+            if sms_v:
+                intel_narr += f"Smart Money: {sms_v}/100 ({verdict}). "
+                pos = alpha.get("sm_positives", [])
+                risks = alpha.get("sm_risks", [])
+                if pos: intel_narr += f"Positive: {'; '.join(pos[:2])}. "
+                if risks: intel_narr += f"Risks: {'; '.join(risks[:2])}. "
+            if intel_narr:
+                story.append(Paragraph(_sanitize_for_pdf(intel_narr), styles['RBody']))
+            story.append(Spacer(1, 8))
 
     # ── SCREENER APPEARANCES ──
     scr_list = alpha.get("screener_appearances", [])
@@ -7457,7 +7586,7 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
     days = period_days.get(period, 365)
     start = (date.today() - timedelta(days=days + 50)).isoformat()
     end = date.today().isoformat()
-    _ds_rows = await ds_ohlcv(symbol, interval)
+    _ds_rows = await ds_ohlcv(symbol, period)
     if _ds_rows:
         df = pd.DataFrame(_ds_rows)
         df.columns = [c.lower() for c in df.columns]
@@ -7485,7 +7614,11 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
     df = df.sort_index().astype({"open":float,"high":float,"low":float,"close":float,"volume":float}).dropna()
 
     # Compute all indicators
-    df = compute_indicators(df)
+    try:
+        df = compute_indicators(df)
+    except Exception as _ci_err:
+        print(f"compute_indicators error for {symbol}: {_ci_err}")
+        # Continue without indicators — basic OHLCV still works
 
     # Build response — OHLCV candles
     candles = []

@@ -91,6 +91,12 @@ select.fi optgroup{color:var(--accent);font-weight:700;font-size:12px;background
 /* PANELS */
 .main{flex:1;overflow:hidden}
 .panel{display:none;padding:28px 32px;overflow-y:auto;height:calc(100vh - 50px);margin-left:160px}
+
+.ao-leg-buy{display:inline-block;padding:4px 10px;border-radius:6px;background:rgba(22,163,74,0.1);color:var(--green);font-size:11px;font-weight:600;margin:2px}
+.ao-leg-sell{display:inline-block;padding:4px 10px;border-radius:6px;background:rgba(220,38,38,0.1);color:var(--accent);font-size:11px;font-weight:600;margin:2px}
+.ao-metric{padding:12px;background:var(--bg1);border-radius:6px;text-align:center}
+.ao-metric-label{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:4px}
+.ao-metric-value{font-size:20px;font-weight:700}
 .panel.on{display:block;animation:fadeIn 0.15s ease}
 @keyframes fadeIn{from{opacity:0.7}to{opacity:1}}
 @media(pointer:coarse){.btn,.btn-s,.nbtn,.lbtn{min-height:36px;min-width:36px}
@@ -3198,12 +3204,33 @@ function toggleNavGroup(id){
 
 <!-- ── ALPHABOT ── -->
 
+
+<!-- Options Alpha Info Modal -->
+<div id="ao-info-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.5);align-items:center;justify-content:center" onclick="this.style.display='none'">
+  <div onclick="event.stopPropagation()" style="background:#fff;border:1px solid var(--border);border-radius:10px;max-width:600px;width:90%;max-height:80vh;overflow:auto;padding:28px;box-shadow:0 4px 24px rgba(0,0,0,0.15)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <div style="font-size:18px;font-weight:700;color:var(--accent)">Options Alpha Engine — How It Works</div>
+      <button onclick="document.getElementById('ao-info-modal').style.display='none'" style="background:none;border:none;font-size:20px;cursor:pointer;color:var(--text3)">&times;</button>
+    </div>
+    <div style="font-size:13px;color:var(--text2);line-height:1.8">
+      <div style="margin-bottom:14px"><b style="color:var(--accent)">Pillar 1: Confluence-Triggered Directional</b><br>Uses AlphaScore + Confluence Engine + Smart Money Flow to identify high-conviction directional trades. Only enters when ALL three engines agree.</div>
+      <div style="margin-bottom:14px"><b style="color:var(--text1)">Pillar 2: Volatility Regime + Theta Harvesting</b><br>Classifies market into 4 regimes using VIX, ATR, Bollinger Bands, trend. Each regime has optimal strategies:<br>LOW_VOL_TRENDING: sell strangles | LOW_VOL_RANGEBOUND: iron condors | HIGH_VOL_TRENDING: buy spreads | HIGH_VOL_RANGEBOUND: iron butterflies</div>
+      <div style="margin-bottom:14px"><b style="color:var(--text1)">Risk Management</b><br>Max 2% capital per trade. All strategies use defined risk (spreads, condors). Default 5 simultaneous positions. Every signal includes stop loss rules.</div>
+      <div style="padding:12px;background:var(--bg1);border-radius:8px;border:1px solid var(--border);font-size:12px">
+        <b>Disclaimer:</b> These are algorithmic signals, not investment advice. Past performance does not guarantee future results. Consult a SEBI-registered advisor before trading.
+      </div>
+    </div>
+  </div>
+</div>
 <div class="panel" id="p-alphaoptions">
   <!-- Header -->
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px">
     <div>
-      <h2 style="margin:0;font-size:20px;font-weight:700;color:var(--text1)">Options Alpha Engine</h2>
-      <div style="font-size:12px;color:var(--text3);margin-top:4px">Volatility Regime + AlphaScore-Driven + Defined Risk + Auto-Close</div>
+      <h2 style="margin:0;font-size:18px;font-weight:800;color:var(--accent);letter-spacing:0.5px">OPTIONS ALPHA ENGINE</h2>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Automated F&O Signals — Volatility Regime + AlphaScore-Driven + Defined Risk + Auto-Close</div>
+    </div>
+    <span onclick="document.getElementById('ao-info-modal').style.display='flex'" style="cursor:pointer;color:var(--accent);font-size:18px;padding:4px 8px" title="How it works">&#9432;</span>
+    <div style="display:none">
     </div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <div style="display:flex;align-items:center;gap:4px"><span style="font-size:11px;color:var(--text3)">CAPITAL</span><select id="ao-capital" class="fi" style="width:130px;flex:none;font-size:12px"><option value="100000">Rs.1,00,000</option><option value="200000">Rs.2,00,000</option><option value="500000" selected>Rs.5,00,000</option><option value="1000000">Rs.10,00,000</option></select></div>
@@ -3212,6 +3239,7 @@ function toggleNavGroup(id){
       <button class="btn" onclick="window.loadAlphaOptionsSignals()" style="background:var(--accent);color:#fff;border:none;font-size:12px;padding:8px 20px">Generate Signals</button>
       <button class="btn btn-s" onclick="window.loadAlphaOptionsOpen()" style="font-size:11px;padding:6px 14px">Open Positions</button>
       <button class="btn btn-s" onclick="window.loadAlphaOptionsPerf()" style="font-size:11px;padding:6px 14px">Performance</button>
+      <button class="btn btn-s" onclick="window.loadAlphaOptionsHistory()" style="font-size:11px;padding:6px 14px">History</button>
     </div>
   </div>
 
@@ -6809,16 +6837,16 @@ let rsiSeries=null, macdLineSeries=null, macdSignalSeries=null, macdHistSeries=n
 let chartData=null, chartLoaded=false;
 
 const CHART_COLORS = {
-  bg:'#080c10', grid:'#111820', border:'#1e2a35', text:'#6b7f94',
-  up:'#00d4aa', dn:'#ef5350', sma20:'#42a5f5', sma50:'#ffa726', sma200:'#ab47bc',
-  bbBand:'rgba(66,165,245,0.15)', supertrend:'#e040fb',
-  rsiLine:'#42a5f5', macdLine:'#42a5f5', macdSignal:'#ffa726',
+  bg:'#ffffff', grid:'#f0f0f0', border:'#e5e7eb', text:'#374151',
+  up:'#16a34a', dn:'#dc2626', sma20:'#6b7280', sma50:'#dc2626', sma200:'#111827',
+  bbBand:'rgba(220,38,38,0.08)', supertrend:'#dc2626',
+  rsiLine:'#374151', macdLine:'#374151', macdSignal:'#dc2626',
 };
 
 function createChartInstance(container, height){
   return LightweightCharts.createChart(container, {
     width: container.clientWidth, height: height,
-    layout: {background:{type:'solid',color:CHART_COLORS.bg}, textColor:CHART_COLORS.text, fontFamily:'JetBrains Mono'},
+    layout: {background:{type:'solid',color:CHART_COLORS.bg}, textColor:CHART_COLORS.text, fontFamily:'Inter'},
     grid: {vertLines:{color:CHART_COLORS.grid}, horzLines:{color:CHART_COLORS.grid}},
     crosshair: {mode: LightweightCharts.CrosshairMode.Normal, vertLine:{color:'rgba(232,66,21,0.3)',width:1}, horzLine:{color:'rgba(232,66,21,0.3)',width:1}},
     rightPriceScale: {borderColor:CHART_COLORS.border},
@@ -13153,6 +13181,24 @@ window.publishAlphaOptionsCall=async function(){
 };
 window.logPaperTrade=async function(sym,strategy){
   try{toast("Logging paper trade...");await req("POST","/dyor/api/alpha-options/paper-trade",{signal:{symbol:sym,strategy_name:strategy,direction:"BULLISH",capital_required:100000,max_profit:10000,max_loss:5000}});toast("Paper trade logged: "+sym);}catch(e){toast(e.message,"er");}
+};
+
+
+window.loadAlphaOptionsHistory=async function(){
+  document.getElementById("ao-perf-card").style.display="block";
+  var el=document.getElementById("ao-perf-body");
+  el.innerHTML="<div style='color:var(--text3);padding:12px'>Loading trade history...</div>";
+  try{
+    var d=await req("GET","/dyor/api/alpha-options/signals/history?limit=30");
+    if(!d.trades||!d.trades.length){el.innerHTML="<div style='color:var(--text3);padding:12px'>No trade history yet</div>";return;}
+    var h="<table><thead><tr><th>Date</th><th>Symbol</th><th>Strategy</th><th>Direction</th><th>Status</th><th>P&L</th><th>Return</th><th>Close Reason</th></tr></thead><tbody>";
+    d.trades.forEach(function(t){
+      var pc=t.actual_pnl>=0?"var(--green)":"var(--accent)";
+      var sc=t.status.indexOf("PROFIT")>=0?"var(--green)":t.status.indexOf("LOSS")>=0?"var(--accent)":"var(--text2)";
+      h+="<tr><td>"+t.signal_date+"</td><td style='font-weight:600'>"+t.symbol+"</td><td>"+(t.strategy_name||t.strategy)+"</td><td>"+t.direction+"</td><td style='color:"+sc+"'>"+t.status.replace("CLOSED_","")+"</td><td style='color:"+pc+"'>Rs."+Math.round(t.actual_pnl||0).toLocaleString()+"</td><td style='color:"+pc+"'>"+(t.actual_pnl_pct||0).toFixed(1)+"%</td><td style='font-size:11px;color:var(--text3)'>"+(t.close_reason||"")+"</td></tr>";
+    });
+    el.innerHTML="<div style='font-size:12px;color:var(--text3);margin-bottom:8px'>Last "+d.trades.length+" trades</div>"+h+"</tbody></table>";
+  }catch(e){el.innerHTML="<div style='color:var(--accent)'>"+e.message+"</div>";}
 };
 
 </script>
