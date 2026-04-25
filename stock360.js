@@ -233,3 +233,28 @@ document.addEventListener('click', function(e){
     return;
   }
 });
+
+// Add publish button to Stock 360 header
+document.addEventListener('click', function(e){
+  var dashboard = document.getElementById('s360-dashboard');
+  if(!dashboard) return;
+  if(!window._isAmAdvisor) return;
+  if(document.getElementById('s360-pub-btn')) return;
+  var headerDiv = dashboard.querySelector('div > div:last-child');
+  if(headerDiv && headerDiv.querySelector('button')){
+    var pb = document.createElement('button');
+    pb.id = 's360-pub-btn';
+    pb.style.cssText = 'padding:6px 14px;border:1px solid var(--accent);border-radius:6px;background:rgba(220,38,38,0.08);color:var(--accent);font-size:10px;cursor:pointer;font-weight:600;margin-left:4px';
+    pb.textContent = 'Publish';
+    pb.onclick = function(ev){
+      ev.stopPropagation();
+      var symEl = dashboard.querySelector('[style*="font-size:26px"]') || dashboard.querySelector('[style*="font-size:22px"]');
+      var sym = symEl ? symEl.textContent.trim() : '';
+      var priceEls = dashboard.querySelectorAll('[style*="font-weight:800"]');
+      var price = 0;
+      for(var i=0;i<priceEls.length;i++){var m=priceEls[i].textContent.match(/[\d,.]+/);if(m&&parseFloat(m[0].replace(/,/g,''))>10){price=parseFloat(m[0].replace(/,/g,''));break;}}
+      if(sym && typeof openPublish === 'function') openPublish(sym, price, 'Stock 360 Analysis', false);
+    };
+    headerDiv.appendChild(pb);
+  }
+});

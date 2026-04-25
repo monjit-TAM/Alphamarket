@@ -4961,7 +4961,7 @@ async function abLoadSignals(){
     const signals=await r.json();
     const el=document.getElementById('ab-signals');
     if(!signals||signals.length===0){el.innerHTML='<div style="color:var(--text3);text-align:center;padding:20px">No active signals</div>';return;}
-    el.innerHTML='<table><thead><tr><th>TIME</th><th>STRATEGY</th><th>TYPE</th><th>INSTRUMENT</th><th>ENTRY</th><th>SL</th><th>TARGET</th><th>QTY</th><th>POTENTIAL</th></tr></thead><tbody>'+
+    el.innerHTML='<table><thead><tr><th>TIME</th><th>STRATEGY</th><th>TYPE</th><th>INSTRUMENT</th><th>ENTRY</th><th>SL</th><th>TARGET</th><th>QTY</th><th>POTENTIAL</th><th>ACTION</th></tr></thead><tbody>'+
       signals.map(s=>{
         const col=s.signal_type==='BUY'?'var(--green)':s.signal_type==='SHORT'?'var(--red)':'#f0c040';
         const _dt=(s.created_at||s.entry_time||'').replace(' ','T').replace(/Z?$/,'Z');const _d=new Date(_dt);const time=_d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',timeZone:'Asia/Kolkata'})+' '+_d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Kolkata'});
@@ -4969,7 +4969,8 @@ async function abLoadSignals(){
           '<td>'+s.symbol+' '+(s.strike||'')+' '+(s.instrument_type||'')+'</td>'+
           '<td>'+s.entry_price+'</td><td style="color:var(--red)">'+s.stop_loss+'</td>'+
           '<td style="color:var(--green)">'+s.target+'</td><td>'+s.quantity+'</td>'+
-          '<td style="color:var(--accent)">'+s.potential_pct+'%</td></tr>';
+          '<td style="color:var(--accent)">'+s.potential_pct+'%</td>'+
+          '<td>'+(window._isAmAdvisor?'<button onclick="event.stopPropagation();openPublish(\''+s.symbol+'\','+s.entry_price+',\'F&O Signal: '+s.signal_type+' '+(s.instrument_type||'FUT')+' Entry:'+s.entry_price+' SL:'+s.stop_loss+' Target:'+s.target+' Potential:'+s.potential_pct+'%+'\',true)" style="font-size:9px;padding:2px 6px;border:none;border-radius:6px;background:var(--accent);color:#fff;cursor:pointer">Publish</button>':'')+'</td></tr>';
       }).join('')+'</tbody></table>';
   }catch(e){console.error(e);}
 }
@@ -12079,15 +12080,56 @@ function generateRationale(type){
   if(!d) return 'Published from DYOR Research Platform';
   var f=d.fundamentals||{},r=d.ratings||{},a=d.assessment||{},t=d.technicals||{},p=d.patterns||{},s=d.summary||{};
   if(type==='fundamental'){
-    return 'FUNDAMENTAL ANALYSIS: '+d.symbol+
-      '\nP/E: '+(f.pe_trailing||'-')+' | P/B: '+(f.pb||'-')+' | ROE: '+(f.roe||'-')+'%'+
-      '\nD/E: '+(f.debt_equity||'-')+' | Div Yield: '+(f.dividend_yield||'-')+'%'+
-      '\nMargin: '+(f.profit_margin||'-')+'% | Op Margin: '+(f.operating_margin||'-')+'%'+
-      '\nRev Growth: '+(f.revenue_growth||'-')+'% | Earn Growth: '+(f.earnings_growth||'-')+'%'+
-      '\nPromoter Holding: '+(f.promoter_holding||'-')+'%'+
-      '\nValue Score: '+(a.value_score||'-')+'/100 ('+(a.value_verdict||'-')+')'+
-      '\nGrowth Score: '+(a.growth_score||'-')+'/100 ('+(a.growth_verdict||'-')+')'+
-      '\nQuality Score: '+(a.quality_score||'-')+'/100 ('+(a.quality_verdict||'-')+')';
+    var narr='FUNDAMENTAL ANALYSIS: '+d.symbol+' ('+d.name+')\n\n';
+    // Valuation
+    narr+='VALUATION: ';
+    if(f.pe_trailing && f.pe_trailing>0){
+      if(f.pe_trailing<15) narr+=d.symbol+' trades at an attractive P/E of '+f.pe_trailing.toFixed(1)+'x, suggesting undervaluation. ';
+      else if(f.pe_trailing<25) narr+='P/E of '+f.pe_trailing.toFixed(1)+'x indicates reasonable valuation. ';
+      else if(f.pe_trailing<40) narr+='P/E of '+f.pe_trailing.toFixed(1)+'x is on the expensive side — growth must justify premium. ';
+      else narr+='P/E of '+f.pe_trailing.toFixed(1)+'x is elevated — valuation risk exists. ';
+    }
+    if(f.pb) narr+='P/B: '+Number(f.pb).toFixed(1)+'x. ';
+    if(f.dividend_yield && f.dividend_yield>0) narr+='Dividend yield of '+Number(f.dividend_yield).toFixed(1)+'% provides income support. ';
+    narr+='\n\n';
+    // Profitability
+    narr+='PROFITABILITY: ';
+    if(f.roe && f.roe>0){
+      if(f.roe>20) narr+='ROE of '+Number(f.roe).toFixed(1)+'% reflects excellent capital efficiency. ';
+      else if(f.roe>12) narr+='ROE of '+Number(f.roe).toFixed(1)+'% shows good profitability. ';
+      else narr+='ROE of '+Number(f.roe).toFixed(1)+'% is average — room for improvement. ';
+    }
+    if(f.profit_margin) narr+='Net margin: '+Number(f.profit_margin).toFixed(1)+'%. ';
+    if(f.operating_margin) narr+='Operating margin: '+Number(f.operating_margin).toFixed(1)+'%. ';
+    narr+='\n\n';
+    // Growth
+    narr+='GROWTH: ';
+    if(f.revenue_growth) narr+='Revenue growth: '+Number(f.revenue_growth).toFixed(1)+'%. ';
+    if(f.earnings_growth){
+      if(f.earnings_growth>20) narr+='Earnings growth of '+Number(f.earnings_growth).toFixed(1)+'% is strong, signaling expanding profitability. ';
+      else if(f.earnings_growth>5) narr+='Earnings growth of '+Number(f.earnings_growth).toFixed(1)+'% is steady. ';
+      else narr+='Earnings growth of '+Number(f.earnings_growth).toFixed(1)+'% needs monitoring. ';
+    }
+    narr+='\n\n';
+    // Balance Sheet
+    narr+='BALANCE SHEET: ';
+    if(f.debt_equity!==undefined && f.debt_equity!==null){
+      if(f.debt_equity<0.5) narr+='D/E of '+Number(f.debt_equity).toFixed(2)+' indicates conservative leverage — strong balance sheet. ';
+      else if(f.debt_equity<1.5) narr+='D/E of '+Number(f.debt_equity).toFixed(2)+' is moderate. ';
+      else narr+='D/E of '+Number(f.debt_equity).toFixed(2)+' — elevated leverage is a risk factor. ';
+    }
+    if(f.promoter_holding){
+      if(f.promoter_holding>60) narr+='Promoter holding at '+Number(f.promoter_holding).toFixed(1)+'% shows strong conviction. ';
+      else if(f.promoter_holding>40) narr+='Promoter holding: '+Number(f.promoter_holding).toFixed(1)+'%. ';
+      else narr+='Low promoter holding at '+Number(f.promoter_holding).toFixed(1)+'% — institutional mix may dominate. ';
+    }
+    narr+='\n\n';
+    // Assessment
+    narr+='ASSESSMENT: ';
+    if(a.value_score) narr+='Value: '+a.value_score+'/100 ('+a.value_verdict+'). ';
+    if(a.growth_score) narr+='Growth: '+a.growth_score+'/100 ('+a.growth_verdict+'). ';
+    if(a.quality_score) narr+='Quality: '+a.quality_score+'/100 ('+a.quality_verdict+'). ';
+    return narr;
   }
   if(type==='technical'){
     var pats=(p.patterns||[]).map(function(x){return x.pattern||x.name}).join(', ')||'None';
@@ -12273,26 +12315,24 @@ function _loadPublishForm(symbol,price,rationale){
     if(type!=='custom') document.getElementById('pub-rationale').value=generateRationale(type);
     else document.getElementById('pub-rationale').value=rationale||'';
   } else {
-    // For non-AlphaView sections, use the passed rationale and fetch stock info
-    document.getElementById('pub-rationale').value=rationale||'Published from DYOR Research Platform';
+    // For non-AlphaView sections — auto-fetch full AlphaView data for rich rationale
+    document.getElementById('pub-rationale').value='Fetching comprehensive analysis for '+symbol+'...';
     document.getElementById('pub-theme').value='';
-    // Try to fetch basic info for the symbol
     if(symbol && symbol.indexOf('BASKET')<0){
-      fetch('/dyor/api/stock/fundamentals/'+encodeURIComponent(symbol),{credentials:'include'}).then(function(r){return r.json()}).then(function(info){
-        if(info && !info.error){
-          if(!document.getElementById('pub-theme').value) document.getElementById('pub-theme').value=(info.sector||'')+(info.industry?' / '+info.industry:'');
-          // If rationale is short/generic, enhance with fetched data
-          var rat=document.getElementById('pub-rationale').value;
-          if(rat && rat.length<100){
-            var extra='\n--- '+symbol+' ---';
-            if(info.pe_trailing) extra+='\nP/E: '+info.pe_trailing;
-            if(info.roe) extra+='\nROE: '+info.roe+'%';
-            if(info.market_cap) extra+='\nMkt Cap: '+Number(info.market_cap).toLocaleString('en-IN');
-            if(info.dividend_yield) extra+='\nDiv Yield: '+info.dividend_yield+'%';
-            document.getElementById('pub-rationale').value=rat+extra;
-          }
+      fetch('/dyor/api/alphaview/'+encodeURIComponent(symbol),{credentials:'include'}).then(function(r){return r.json()}).then(function(av){
+        if(av && !av.error && av.symbol){
+          window._lastAV=av;
+          if(!document.getElementById('pub-theme').value) document.getElementById('pub-theme').value=(av.sector||'')+(av.industry?' / '+av.industry:'');
+          var type=document.querySelector('input[name="pub-rat-type"]:checked').value;
+          if(type!=='custom') document.getElementById('pub-rationale').value=generateRationale(type);
+          else document.getElementById('pub-rationale').value=rationale||'';
+        } else {
+          // Fallback to basic context rationale
+          document.getElementById('pub-rationale').value=rationale||'Published from DYOR Research Platform';
         }
-      }).catch(function(){});
+      }).catch(function(){
+        document.getElementById('pub-rationale').value=rationale||'Published from DYOR Research Platform';
+      });
     }
   }
   // Options multi-leg data
@@ -13165,17 +13205,28 @@ window.loadAlphaOptionsPerf=async function(){
   }catch(e){el.innerHTML="<div style='color:var(--accent)'>"+e.message+"</div>";}
 };
 window.preparePublish=function(btn){
-  var card=document.getElementById("ao-publish-card");card.style.display="block";
-  card.dataset.sym=btn.dataset.sym||"";card.dataset.strategy=btn.dataset.str||"";card.dataset.direction=btn.dataset.dir||"";
-  document.getElementById("ao-publish-signal").innerHTML="<b>"+card.dataset.sym+"</b> - "+card.dataset.strategy+" ("+card.dataset.direction+")";
-  card.scrollIntoView({behavior:"smooth"});
+  var sym=btn.dataset.sym||"";
+  var strategy=btn.dataset.str||"";
+  var dir=btn.dataset.dir||"";
+  var cap=btn.dataset.cap||0;
+  var rat="Options Alpha: "+strategy+" ("+dir+") | Capital: Rs."+Math.round(cap).toLocaleString();
+  if(typeof openPublish==="function"){
+    openPublish(sym, 0, rat, true);
+  } else {
+    var card=document.getElementById("ao-publish-card");card.style.display="block";
+    card.dataset.sym=sym;card.dataset.strategy=strategy;card.dataset.direction=dir;
+    document.getElementById("ao-publish-signal").innerHTML="<b>"+sym+"</b> - "+strategy+" ("+dir+")";
+    card.scrollIntoView({behavior:"smooth"});
+  }
 };
 window.publishAlphaOptionsCall=async function(){
   var card=document.getElementById("ao-publish-card");
   var rationale=document.getElementById("ao-publish-rationale").value.trim();
   if(!rationale){toast("Add a brief rationale");return;}
   try{
-    await req("POST","/dyor/api/advisory/recommend",{symbol:card.dataset.sym,call_type:card.dataset.direction==="BEARISH"?"SELL":"BUY",rationale:"Options Alpha: "+card.dataset.strategy+" ("+card.dataset.direction+") - "+rationale,time_horizon:"short_term"});
+    var sym=card.dataset.sym;var dir=card.dataset.direction;var strat=card.dataset.strategy;
+    openPublish(sym,0,"Options Alpha: "+strat+" ("+dir+") - "+rationale,true);
+    card.style.display="none";document.getElementById("ao-publish-rationale").value="";return;
     toast("Published: "+card.dataset.sym);card.style.display="none";document.getElementById("ao-publish-rationale").value="";
   }catch(e){toast(e.message,"er");}
 };
@@ -13199,6 +13250,32 @@ window.loadAlphaOptionsHistory=async function(){
     });
     el.innerHTML="<div style='font-size:12px;color:var(--text3);margin-bottom:8px'>Last "+d.trades.length+" trades</div>"+h+"</tbody></table>";
   }catch(e){el.innerHTML="<div style='color:var(--accent)'>"+e.message+"</div>";}
+};
+
+
+window.publishFromAB=function(btn){
+  var sym=btn.dataset.sym||"";
+  var entry=parseFloat(btn.dataset.entry)||0;
+  var sl=btn.dataset.sl||"";
+  var tgt=btn.dataset.tgt||"";
+  var sigType=btn.dataset.type||"BUY";
+  var strat=btn.dataset.strat||"";
+  var inst=btn.dataset.inst||"";
+  var pot=btn.dataset.pot||"0";
+  var rat="F&O SIGNAL: "+sym+" "+strat+"\n\n";
+  rat+="Signal: "+sigType+" | Instrument: "+(inst||"FUT")+"\n";
+  rat+="Entry: "+entry+" | Stop Loss: "+sl+" | Target: "+tgt+"\n";
+  rat+="Potential Return: "+pot+"%\n\n";
+  var riskPct=entry>0&&sl?Math.abs((entry-parseFloat(sl))/entry*100).toFixed(1):"--";
+  var rewPct=entry>0&&tgt?Math.abs((parseFloat(tgt)-entry)/entry*100).toFixed(1):"--";
+  rat+="Risk: "+riskPct+"% | Reward: "+rewPct+"%\n";
+  rat+="R:R Ratio: 1:"+(riskPct!="--"&&rewPct!="--"?(parseFloat(rewPct)/parseFloat(riskPct)).toFixed(1):"--")+"\n\n";
+  if(strat.indexOf("Momentum")>=0) rat+="Strategy: Momentum-based entry using VWAP + price action confirmation.\n";
+  else if(strat.indexOf("Options Dir")>=0) rat+="Strategy: Directional options play based on index trend and momentum.\n";
+  else if(strat.indexOf("Strangle")>=0||strat.indexOf("Straddle")>=0) rat+="Strategy: Premium selling via OTM options writing. Targets theta decay.\n";
+  else if(strat.indexOf("Arbitrage")>=0) rat+="Strategy: Index arbitrage capturing basis spread.\n";
+  else rat+="Strategy: Multi-factor algorithmic signal.\n";
+  openPublish(sym, entry, rat, true);
 };
 
 </script>
