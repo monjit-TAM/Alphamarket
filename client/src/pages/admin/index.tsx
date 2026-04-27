@@ -21,6 +21,7 @@ import AdminHome from "./admin-home";
 import AdminMonetization from "./admin-monetization";
 import AdminAdvisorBreakup from "./admin-advisor-breakup";
 import BrokerAdmin from "./BrokerAdmin";
+import AdminCalls from "./admin-calls";
 
 const sidebarItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/admin" },
@@ -30,6 +31,7 @@ const sidebarItems = [
   { title: "Monetization", icon: IndianRupee, path: "/admin/monetization" },
   { title: "Settings", icon: Settings, path: "/admin/settings" },
   { title: "Broker Integrations", icon: Link2, path: "/admin/brokers" },
+  { title: "Closed Calls", icon: BarChart3, path: "/admin/calls" },
 ];
 
 export default function AdminDashboard() {
@@ -63,6 +65,7 @@ export default function AdminDashboard() {
     if (location === "/admin/monetization") return <AdminMonetization />;
     if (location === "/admin/advisors") return <AdminAdvisors />;
     if (location === "/admin/advisor-breakup") return <AdminAdvisorBreakup />;
+    if (location === "/admin/calls") return <AdminCalls />;
     if (location === "/admin/brokers") return <BrokerAdmin />;
     return <AdminHome />;
   };

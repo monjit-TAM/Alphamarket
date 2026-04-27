@@ -6980,7 +6980,80 @@ export async function registerRoutes(
     } catch(err:any){res.status(500).send(err.message);}
   });
 
-      // Initialize XTS Bridge
+
+  
+  
+
+  // ADMIN: Closed Calls Management
+
+  app.get("/api/admin/calls/closed", requireAdmin, async (req, res) => {
+    try {
+      const pg = parseInt(req.query.page as string) || 1;
+      const lim = 50;
+      const off = (pg - 1) * lim;
+      const countR = await db.execute(sql`SELECT COUNT(*) as total FROM calls WHERE status = 'Closed'`);
+      const total = Number(countR.rows[0]?.total || 0);
+      const rows = await db.execute(sql`SELECT c.*, st.name as strategy_name, st.type as strategy_type, us.username as advisor_name, us.email as advisor_email FROM calls c JOIN strategies st ON c.strategy_id = st.id JOIN users us ON st.advisor_id = us.id WHERE c.status = 'Closed' ORDER BY c.exit_date DESC NULLS LAST, c.call_date DESC LIMIT 50 OFFSET ${off}`);
+      res.json({ calls: rows.rows, total, page: pg, limit: lim, pages: Math.ceil(total / lim) });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  app.patch("/api/admin/calls/:id", requireAdmin, async (req, res) => {
+    try {
+      const cid = req.params.id;
+      const upd = req.body;
+      const ok = ["stock_name","action","buy_range_start","buy_range_end","target_price","profit_goal","stop_loss","rationale","status","entry_price","sell_price","gain_percent","exit_date","duration","duration_unit","theme","is_published","publish_mode"];
+      const st: string[] = [];
+      const vl: any[] = [];
+      for (const [key, value] of Object.entries(upd)) {
+        const dk = key.replace(/([A-Z])/g, "_$1").toLowerCase();
+        if (ok.includes(dk)) { st.push(dk + " = $" + (vl.length + 1)); vl.push(value); }
+      }
+      if (st.length === 0) return res.status(400).send("No valid fields");
+      vl.push(cid);
+      await db.execute(sql.raw("UPDATE calls SET " + st.join(", ") + " WHERE id = $" + vl.length, vl));
+      const updated = await db.execute(sql.raw("SELECT * FROM calls WHERE id = $1", [cid]));
+      res.json(updated.rows[0] || { status: "updated" });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  app.post("/api/admin/calls/:id/reactivate", requireAdmin, async (req, res) => {
+    try {
+      const cid = req.params.id;
+      await db.execute(sql.raw("UPDATE calls SET status = $1, exit_date = NULL, sell_price = NULL, gain_percent = NULL WHERE id = $2", ["Active", cid]));
+      res.json({ status: "reactivated", id: cid });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  app.post("/api/admin/calls/:id/close", requireAdmin, async (req, res) => {
+    try {
+      const cid = req.params.id;
+      const { sellPrice, gainPercent, exitDate } = req.body;
+      await db.execute(sql.raw("UPDATE calls SET status = $1, sell_price = $2, gain_percent = $3, exit_date = $4 WHERE id = $5", ["Closed", sellPrice || null, gainPercent || null, exitDate ? new Date(exitDate) : new Date(), cid]));
+      res.json({ status: "closed", id: cid });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  
+  // Admin delete a call permanently
+  app.delete("/api/admin/calls/:id", requireAdmin, async (req, res) => {
+    try {
+      const cid = req.params.id;
+      await db.execute(sql.raw("DELETE FROM calls WHERE id = $1", [cid]));
+      console.log("[ADMIN] Call " + cid + " permanently deleted");
+      res.json({ status: "deleted", id: cid });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  app.get("/api/admin/calls/strategies", requireAdmin, async (_req, res) => {
+    try {
+      const rows = await db.execute(sql`SELECT DISTINCT st.id, st.name, st.type, us.username as advisor_name FROM strategies st JOIN users us ON st.advisor_id = us.id JOIN calls cl ON cl.strategy_id = st.id AND cl.status = 'Closed' ORDER BY us.username, st.name`);
+      res.json(rows.rows);
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+
+  // Initialize XTS Bridge
   initXTSBridge();
   initBrokerAdapters();
 

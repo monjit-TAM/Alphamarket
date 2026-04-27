@@ -1,0 +1,7 @@
+ exchange_segment | exchange_instrument_id | instrument_type |   name    | description  | series | lot_size | tick_size | underlying_index_name | contract_expiration | strike_price | option_type | display_name |     isin     |          created_at           
+------------------+------------------------+-----------------+-----------+--------------+--------+----------+-----------+-----------------------+---------------------+--------------+-------------+--------------+--------------+-------------------------------
+ NSECM            | 25403                  | 8               | WCIL      | WCIL-EQ      | EQ     |          |           |                       |                     |              |             | WCIL         | INE0CJF01024 | 2026-04-17 06:54:26.812782+00
+ NSECM            | 757569                 | 8               | 743NIIF30 | 743NIIF30-N0 | N0     |          |           |                       |                     |              |             | 743NIIF30    | INE246R07814 | 2026-04-17 06:54:26.812782+00
+ NSECM            | 10783                  | 8               | 774TS45   | 774TS45-SG   | SG     |          |           |                       |                     |              |             | 774TS45      | IN4520220125 | 2026-04-17 06:54:26.812782+00
+(3 rows)
+
