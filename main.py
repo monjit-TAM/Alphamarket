@@ -7570,6 +7570,198 @@ async def sector_rrg(weeks: int = 12, user=Depends(get_current_user)):
 # TECHNICAL CHARTS DATA API
 # ══════════════════════════════════════════════════════════════════════════════
 
+
+
+# ═══ COMMODITY PRICE FEED (via Kite) ═══
+COMMODITY_SYMBOLS = {
+    "GOLD": {"exchange": "MCX", "name": "Gold", "lot_size": 100, "unit": "10 grams"},
+    "GOLDM": {"exchange": "MCX", "name": "Gold Mini", "lot_size": 10, "unit": "1 gram"},
+    "GOLDGUINEA": {"exchange": "MCX", "name": "Gold Guinea", "lot_size": 1, "unit": "8 grams"},
+    "GOLDPETAL": {"exchange": "MCX", "name": "Gold Petal", "lot_size": 1, "unit": "1 gram"},
+    "SILVER": {"exchange": "MCX", "name": "Silver", "lot_size": 30, "unit": "1 kg"},
+    "SILVERM": {"exchange": "MCX", "name": "Silver Mini", "lot_size": 5, "unit": "1 kg"},
+    "SILVERMIC": {"exchange": "MCX", "name": "Silver Micro", "lot_size": 1, "unit": "1 kg"},
+    "CRUDEOIL": {"exchange": "MCX", "name": "Crude Oil", "lot_size": 100, "unit": "1 barrel"},
+    "CRUDEOILM": {"exchange": "MCX", "name": "Crude Oil Mini", "lot_size": 10, "unit": "1 barrel"},
+    "NATURALGAS": {"exchange": "MCX", "name": "Natural Gas", "lot_size": 1250, "unit": "mmBtu"},
+    "COPPER": {"exchange": "MCX", "name": "Copper", "lot_size": 2500, "unit": "1 kg"},
+    "ZINC": {"exchange": "MCX", "name": "Zinc", "lot_size": 5000, "unit": "1 kg"},
+    "ALUMINIUM": {"exchange": "MCX", "name": "Aluminium", "lot_size": 5000, "unit": "1 kg"},
+    "LEAD": {"exchange": "MCX", "name": "Lead", "lot_size": 5000, "unit": "1 kg"},
+    "NICKEL": {"exchange": "MCX", "name": "Nickel", "lot_size": 1500, "unit": "1 kg"},
+    "MENTHAOIL": {"exchange": "MCX", "name": "Mentha Oil", "lot_size": 360, "unit": "1 kg"},
+    "COTTONCANDY": {"exchange": "MCX", "name": "Cotton", "lot_size": 25, "unit": "1 bale"},
+}
+
+@app.get("/api/commodity/symbols", tags=["Commodity"], summary="List all commodity symbols")
+async def commodity_symbols():
+    return {"symbols": COMMODITY_SYMBOLS}
+
+@app.get("/api/commodity/search/{query}", tags=["Commodity"], summary="Search commodity symbols (3+ chars)")
+async def commodity_search(query: str):
+    q = query.upper()
+    matches = {}
+    for sym, info in COMMODITY_SYMBOLS.items():
+        if q in sym or q in info["name"].upper():
+            matches[sym] = info
+    return {"matches": matches, "query": query}
+
+# MCX instruments cache
+_mcx_instruments: list = []
+_mcx_cache_time = 0
+
+async def _load_mcx_instruments():
+    """Load MCX instruments from Kite (cached 24h)"""
+    global _mcx_instruments, _mcx_cache_time
+    import time as _t
+    if _mcx_instruments and _t.time() - _mcx_cache_time < 86400:
+        return _mcx_instruments
+    import urllib.request, csv, io
+    try:
+        url = "https://api.kite.trade/instruments"
+        resp = urllib.request.urlopen(url, timeout=30)
+        data = resp.read().decode()
+        reader = csv.DictReader(io.StringIO(data))
+        _mcx_instruments = [r for r in reader if r.get("exchange") == "MCX"]
+        _mcx_cache_time = _t.time()
+        print(f"[Commodity] Loaded {len(_mcx_instruments)} MCX instruments")
+    except Exception as e:
+        print(f"[Commodity] Failed to load instruments: {e}")
+    return _mcx_instruments
+
+def _find_nearest_future(instruments: list, name: str) -> str:
+    """Find nearest expiry futures contract for a commodity"""
+    from datetime import date
+    today = date.today().isoformat()
+    futs = [i for i in instruments if i.get("name","").upper() == name.upper() and i.get("instrument_type") == "FUT" and i.get("expiry","") >= today]
+    futs.sort(key=lambda x: x.get("expiry",""))
+    return futs[0]["tradingsymbol"] if futs else ""
+
+@app.get("/api/commodity/quote/{symbol}", tags=["Commodity"], summary="Get commodity LTP via Kite (nearest futures)")
+async def commodity_quote(symbol: str):
+    sym = symbol.upper().strip()
+    if sym not in COMMODITY_SYMBOLS:
+        raise HTTPException(404, f"{sym} is not a recognized commodity symbol")
+    
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    if not _is_kite_connected():
+        raise HTTPException(503, "Kite not connected. Login via DYOR Settings.")
+    
+    instruments = await _load_mcx_instruments()
+    fut_sym = _find_nearest_future(instruments, sym)
+    if not fut_sym:
+        return {"symbol": sym, "exchange": "MCX", "ltp": 0, "error": f"No active futures contract for {sym}"}
+    
+    kite_sym = f"MCX:{fut_sym}"
+    try:
+        quotes = await _fetch_kite_quotes([kite_sym])
+        if quotes and kite_sym in quotes:
+            ltp = quotes[kite_sym].get("last_price", 0)
+            info = COMMODITY_SYMBOLS[sym]
+            return {
+                "symbol": sym, "trading_symbol": fut_sym, "exchange": "MCX",
+                "name": info["name"], "ltp": ltp, "lot_size": info["lot_size"],
+                "unit": info["unit"], "source": "kite",
+                "timestamp": __import__("time").time()
+            }
+        return {"symbol": sym, "exchange": "MCX", "ltp": 0, "error": "No quote data from Kite"}
+    except HTTPException: raise
+    except Exception as e:
+        return {"symbol": sym, "exchange": "MCX", "ltp": 0, "error": str(e)}
+
+@app.get("/api/commodity/futures/{symbol}", tags=["Commodity"], summary="List all futures contracts for a commodity")
+async def commodity_futures(symbol: str):
+    sym = symbol.upper().strip()
+    instruments = await _load_mcx_instruments()
+    from datetime import date
+    today = date.today().isoformat()
+    futs = [i for i in instruments if i.get("name","").upper() == sym and i.get("instrument_type") == "FUT" and i.get("expiry","") >= today]
+    futs.sort(key=lambda x: x.get("expiry",""))
+    return {"symbol": sym, "contracts": [{"tradingsymbol": f["tradingsymbol"], "expiry": f["expiry"], "lot_size": f["lot_size"]} for f in futs]}
+
+@app.get("/api/commodity/options/{symbol}", tags=["Commodity"], summary="Get options chain for a commodity")
+async def commodity_options(symbol: str, expiry: str = None):
+    sym = symbol.upper().strip()
+    instruments = await _load_mcx_instruments()
+    from datetime import date
+    today = date.today().isoformat()
+    
+    # Get available expiries
+    opts = [i for i in instruments if i.get("name","").upper() == sym and i.get("instrument_type") in ("CE","PE") and i.get("expiry","") >= today]
+    expiries = sorted(set(o.get("expiry","") for o in opts))
+    
+    if not expiry and expiries:
+        expiry = expiries[0]  # nearest
+    
+    chain = [i for i in opts if i.get("expiry") == expiry]
+    strikes = sorted(set(float(o.get("strike",0)) for o in chain))
+    
+    # Fetch LTPs for all options in chain
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    ltp_map = {}
+    if _is_kite_connected() and chain:
+        kite_syms = [f"MCX:{o['tradingsymbol']}" for o in chain[:60]]  # limit to 60
+        try:
+            quotes = await _fetch_kite_quotes(kite_syms)
+            if quotes:
+                for k, v in quotes.items():
+                    ltp_map[k.replace("MCX:","")] = v.get("last_price", 0)
+        except: pass
+    
+    result = []
+    for strike in strikes:
+        ce = next((o for o in chain if float(o.get("strike",0)) == strike and o.get("instrument_type") == "CE"), None)
+        pe = next((o for o in chain if float(o.get("strike",0)) == strike and o.get("instrument_type") == "PE"), None)
+        result.append({
+            "strike": strike,
+            "ce_symbol": ce["tradingsymbol"] if ce else None,
+            "ce_ltp": ltp_map.get(ce["tradingsymbol"], 0) if ce else 0,
+            "pe_symbol": pe["tradingsymbol"] if pe else None,
+            "pe_ltp": ltp_map.get(pe["tradingsymbol"], 0) if pe else 0,
+        })
+    
+    return {"symbol": sym, "expiry": expiry, "expiries": expiries, "chain": result, "total_strikes": len(strikes)}
+
+@app.post("/api/commodity/quotes", tags=["Commodity"], summary="Bulk commodity quotes (nearest futures)")
+async def commodity_quotes_bulk(req: dict):
+    symbols = req.get("symbols", [])
+    if not symbols:
+        raise HTTPException(400, "No symbols provided")
+    
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    if not _is_kite_connected():
+        raise HTTPException(503, "Kite not connected")
+    
+    instruments = await _load_mcx_instruments()
+    kite_syms = []
+    sym_map = {}  # kite_sym -> original sym
+    for s in symbols:
+        su = s.upper()
+        if su in COMMODITY_SYMBOLS:
+            fut = _find_nearest_future(instruments, su)
+            if fut:
+                ks = f"MCX:{fut}"
+                kite_syms.append(ks)
+                sym_map[ks] = su
+    
+    if not kite_syms:
+        raise HTTPException(400, "No valid commodity symbols with active futures")
+    
+    quotes = await _fetch_kite_quotes(kite_syms)
+    result = {}
+    for ks, orig in sym_map.items():
+        if quotes and ks in quotes:
+            info = COMMODITY_SYMBOLS.get(orig, {})
+            result[orig] = {
+                "ltp": quotes[ks].get("last_price", 0),
+                "name": info.get("name", orig),
+                "lot_size": info.get("lot_size", 0),
+                "exchange": "MCX",
+                "trading_symbol": ks.replace("MCX:","")
+            }
+    return {"quotes": result}
+
+
 @app.get("/api/chart/{symbol}", tags=["Technical Charts"], summary="Get chart data with indicators",
     description="Get OHLCV candlestick data for a stock with pre-computed technical indicators (SMA 20/50/200, EMA 9/21, RSI, MACD, Bollinger Bands, Supertrend, volume). Supports periods: 1m, 3m, 6m, 1y, 2y, 3y, 5y.")
 async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user=Depends(get_current_user)):

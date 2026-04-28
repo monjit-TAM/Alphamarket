@@ -189,7 +189,7 @@ class AlphaMarketAuthMiddleware(BaseHTTPMiddleware):
         path = request.url.path
 
         # Skip auth for public routes
-        if path in PUBLIC_PATHS or path.startswith("/api/docs") or path.startswith("/api/trading/") or path.startswith("/api/arbitrage/") or path.startswith("/api/alphabot/") or path.startswith("/api/alpha-intel/"):
+        if path in PUBLIC_PATHS or path.startswith("/api/docs") or path.startswith("/api/trading/") or path.startswith("/api/arbitrage/") or path.startswith("/api/alphabot/") or path.startswith("/api/alpha-intel/") or path.startswith("/api/commodity/"):
             return await call_next(request)
 
         # Skip auth for internal service calls (AIF → DYOR)
