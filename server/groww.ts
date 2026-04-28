@@ -410,6 +410,25 @@ export async function getLiveQuote(
     return cached.data;
   }
 
+  // Try DYOR Kite commodity feed for MCX symbols
+  const commodityList = ["CRUDEOIL","GOLD","GOLDM","SILVER","SILVERM","NATURALGAS","COPPER","ZINC","ALUMINIUM","LEAD","NICKEL","COTTONCANDY","CRUDEOILM","GOLDGUINEA","GOLDPETAL","SILVERMIC","MENTHAOIL"];
+  if (commodityList.includes(symbol.toUpperCase()) || strategyType === "Commodity" || strategyType === "CommodityFuture") {
+    try {
+      const dRes = await fetch("http://localhost:8001/api/commodity/quote/" + encodeURIComponent(symbol.toUpperCase()), { signal: AbortSignal.timeout(8000) });
+      if (dRes.ok) {
+        const d = await dRes.json();
+        if (d.ltp && d.ltp > 0) {
+          const lp: LivePrice = {
+            symbol: d.symbol, exchange: "MCX", ltp: d.ltp, change: 0,
+            changePercent: 0, high: 0, low: 0, open: 0, close: 0, timestamp: Date.now(),
+          };
+          priceCache.set(cacheKey, { data: lp, expiry: Date.now() + CACHE_TTL });
+          return lp;
+        }
+      }
+    } catch {}
+  }
+
   // Try Alpha Data Service first — works for plain symbols even in F&O strategies
   const isPlainSymbol = !symbol.match(/\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i);
   if (isPlainSymbol) {
