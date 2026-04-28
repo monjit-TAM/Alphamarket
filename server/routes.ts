@@ -442,6 +442,23 @@ export async function registerRoutes(
       const q = ((req.query.q as string) || "").toLowerCase().trim();
       const segment = (req.query.segment as string) || "";
       if (!q || q.length < 1) return res.json([]);
+      
+      // MCX Commodity symbols
+      if (segment === "Commodity") {
+        try {
+          const dRes = await fetch("http://localhost:8001/api/commodity/search/" + encodeURIComponent(q), { signal: AbortSignal.timeout(5000) });
+          if (dRes.ok) {
+            const d = await dRes.json();
+            const matches = Object.entries(d.matches || {}).map(([sym, info]: [string, any]) => ({
+              symbol: sym, name: info.name, exchange: "MCX", segment: "Commodity",
+              isFnO: true, lot_size: info.lot_size, unit: info.unit,
+            }));
+            return res.json(matches.slice(0, 20));
+          }
+        } catch {}
+        return res.json([]);
+      }
+
       let filtered = nseSymbols.filter((s: any) => {
         const matchesQuery = s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
         if (!matchesQuery) return false;
@@ -476,6 +493,17 @@ export async function registerRoutes(
       const now = new Date();
       const year = parseInt(req.query.year as string) || now.getFullYear();
       const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
+      // MCX commodities: use DYOR Kite API
+      if (exchange === "MCX") {
+        try {
+          const dRes = await fetch("http://localhost:8001/api/commodity/options/" + encodeURIComponent(symbol.toUpperCase()), { signal: AbortSignal.timeout(10000) });
+          if (dRes.ok) {
+            const d = await dRes.json();
+            return res.json(d.expiries || []);
+          }
+        } catch(e) { console.error("[MCX expiries]", e); }
+        return res.json([]);
+      }
       const expiries = await getOptionChainExpiries(exchange, symbol, year, month);
       res.json(expiries);
     } catch (err: any) {
@@ -489,6 +517,22 @@ export async function registerRoutes(
       const exchange = (req.query.exchange as string) || "NSE";
       const expiry = req.query.expiry as string;
       if (!expiry) return res.status(400).send("expiry query parameter is required");
+      // MCX commodities: use DYOR Kite API
+      if (exchange === "MCX") {
+        try {
+          const dRes = await fetch("http://localhost:8001/api/commodity/options/" + encodeURIComponent(symbol.toUpperCase()) + "?expiry=" + encodeURIComponent(expiry), { signal: AbortSignal.timeout(15000) });
+          if (dRes.ok) {
+            const d = await dRes.json();
+            const chain = (d.chain || []).map((s: any) => ({
+              strikePrice: s.strike,
+              ce: s.ce_symbol ? { symbol: s.ce_symbol, ltp: s.ce_ltp || 0 } : null,
+              pe: s.pe_symbol ? { symbol: s.pe_symbol, ltp: s.pe_ltp || 0 } : null,
+            }));
+            return res.json(chain);
+          }
+        } catch(e) { console.error("[MCX chain]", e); }
+        return res.json([]);
+      }
       const chain = await getOptionChain(exchange, symbol, expiry);
       res.json(chain);
     } catch (err: any) {

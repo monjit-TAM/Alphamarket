@@ -2489,9 +2489,10 @@ function AddPositionSheet({
     });
   };
 
-  const segmentForSearch = form.segment === "Equity" ? "Equity" : form.segment === "Index" ? "Index" : "FnO";
+  const segmentForSearch = isCommodity ? "Commodity" : form.segment === "Equity" ? "Equity" : form.segment === "Index" ? "Index" : "FnO";
   const isFnOSegment = form.segment === "Option" || form.segment === "Future" || form.segment === "Index";
-  const symbolExchange = form.segment === "Index" ? (["SENSEX", "BANKEX"].includes(form.symbol.toUpperCase()) ? "BSE" : "NSE") : "NSE";
+  const isCommodity = strategy?.type === "Commodity" || strategy?.type === "CommodityFuture";
+  const symbolExchange = isCommodity ? "MCX" : form.segment === "Index" ? (["SENSEX", "BANKEX"].includes(form.symbol.toUpperCase()) ? "BSE" : "NSE") : "NSE";
 
   const now = new Date();
   const { data: expiries, isLoading: expiriesLoading } = useQuery<string[]>({
