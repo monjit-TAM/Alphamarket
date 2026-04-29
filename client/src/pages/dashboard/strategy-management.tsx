@@ -1354,6 +1354,7 @@ function EditCallDialog({
   const [trailingSlEnabled, setTrailingSlEnabled] = useState(false);
   const [trailingSlType, setTrailingSlType] = useState("PERCENTAGE");
   const [trailingSlValue, setTrailingSlValue] = useState("");
+  const [rationaleAttachment, setRationaleAttachment] = useState("");
 
   useEffect(() => {
     if (call) {
@@ -1363,6 +1364,7 @@ function EditCallDialog({
       setTrailingSlEnabled((call as any).trailingSlEnabled || false);
       setTrailingSlType((call as any).trailingSlType || "PERCENTAGE");
       setTrailingSlValue((call as any).trailingSlValue || "");
+      setRationaleAttachment((call as any).rationaleAttachment || "");
     }
   }, [call]);
 
@@ -1439,10 +1441,33 @@ function EditCallDialog({
               placeholder="Add rationale (required before publishing)"
               data-testid="input-edit-rationale"
             />
+            <div className="mt-2 p-3 border border-dashed rounded-md bg-muted/30">
+              <p className="text-xs font-medium mb-1">Attach Research Document</p>
+              <p className="text-[10px] text-muted-foreground mb-2">PDF, Word, Image, Excel — Max 5MB</p>
+              {rationaleAttachment ? (
+                <div className="flex items-center gap-2">
+                  <a href={rationaleAttachment} target="_blank" rel="noreferrer" className="text-xs text-primary underline truncate max-w-[200px]">{rationaleAttachment.split("/").pop()}</a>
+                  <button type="button" onClick={() => setRationaleAttachment("")} className="text-xs text-destructive hover:underline">Remove</button>
+                </div>
+              ) : (
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.xlsx,.xls" className="text-xs" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 5 * 1024 * 1024) { alert("File must be under 5MB"); return; }
+                  const fd = new FormData(); fd.append("file", file);
+                  try {
+                    const res = await fetch("/api/advisor/rationale/upload", { method: "POST", body: fd, credentials: "include" });
+                    const data = await res.json();
+                    if (data.url) setRationaleAttachment(data.url);
+                    else alert(data.error || "Upload failed");
+                  } catch { alert("Upload failed"); }
+                }} />
+              )}
+            </div>
           </div>
           <Button
             className="w-full"
-            onClick={() => mutation.mutate({ targetPrice, stopLoss, rationale, trailingSlEnabled, trailingSlType: trailingSlEnabled ? trailingSlType : undefined, trailingSlValue: trailingSlEnabled ? trailingSlValue : undefined })}
+            onClick={() => mutation.mutate({ targetPrice, stopLoss, rationale, rationaleAttachment: rationaleAttachment || undefined, trailingSlEnabled, trailingSlType: trailingSlEnabled ? trailingSlType : undefined, trailingSlValue: trailingSlEnabled ? trailingSlValue : undefined })}
             disabled={mutation.isPending}
             data-testid="button-save-edit-call"
           >
@@ -2154,6 +2179,7 @@ function AddStockSheet({
     durationUnit: "Days",
     theme: "",
     rationale: "",
+    rationaleAttachment: "" as string,
     publishMode: "draft" as "draft" | "watchlist" | "live",
     isPublished: false,
   });
@@ -2182,6 +2208,7 @@ function AddStockSheet({
         durationUnit: "Days",
         theme: "",
         rationale: "",
+        rationaleAttachment: "",
         publishMode: "draft",
         isPublished: false,
       });
@@ -2211,6 +2238,7 @@ function AddStockSheet({
       duration: form.duration ? parseInt(form.duration) : undefined,
       durationUnit: form.duration ? form.durationUnit : undefined,
       theme: form.theme || undefined,
+      rationaleAttachment: form.rationaleAttachment || undefined,
     });
   };
 
@@ -2383,6 +2411,30 @@ function AddStockSheet({
             {form.publishMode === "live" && !form.rationale.trim() && (
               <p className="text-xs text-destructive">Rationale is required to publish</p>
             )}
+            {/* Rationale file upload */}
+            <div className="mt-2 p-3 border border-dashed rounded-md bg-muted/30">
+              <p className="text-xs font-medium mb-1">Attach Research Document (optional)</p>
+              <p className="text-[10px] text-muted-foreground mb-2">PDF, Word (.docx), Image (JPG/PNG), Excel (.xlsx) — Max 5MB</p>
+              {form.rationaleAttachment ? (
+                <div className="flex items-center gap-2">
+                  <a href={form.rationaleAttachment} target="_blank" rel="noreferrer" className="text-xs text-primary underline truncate max-w-[200px]">{form.rationaleAttachment.split("/").pop()}</a>
+                  <button type="button" onClick={() => setForm({...form, rationaleAttachment: ""})} className="text-xs text-destructive hover:underline">Remove</button>
+                </div>
+              ) : (
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.docx,.doc,.xlsx,.xls" className="text-xs" onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  if (file.size > 5 * 1024 * 1024) { alert("File must be under 5MB"); return; }
+                  const fd = new FormData(); fd.append("file", file);
+                  try {
+                    const res = await fetch("/api/advisor/rationale/upload", { method: "POST", body: fd, credentials: "include" });
+                    const data = await res.json();
+                    if (data.url) setForm({...form, rationaleAttachment: data.url});
+                    else alert(data.error || "Upload failed");
+                  } catch { alert("Upload failed"); }
+                }} />
+              )}
+            </div>
           </div>
           <div className="space-y-1.5">
             <Label>Publish Mode</Label>

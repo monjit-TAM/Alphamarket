@@ -1341,12 +1341,13 @@ export async function registerRoutes(
       if (call.status !== "Active") {
         return res.status(400).send("Can only edit active calls");
       }
-      const { targetPrice, stopLoss, rationale } = req.body;
-      const updated = await storage.updateCall(call.id, {
-        ...(targetPrice !== undefined ? { targetPrice } : {}),
-        ...(stopLoss !== undefined ? { stopLoss } : {}),
-        ...(rationale !== undefined ? { rationale } : {}),
-      });
+      const { targetPrice, stopLoss, rationale, rationaleAttachment } = req.body;
+      const updateData: any = {};
+      if (targetPrice !== undefined) updateData.targetPrice = targetPrice;
+      if (stopLoss !== undefined) updateData.stopLoss = stopLoss;
+      if (rationale !== undefined) updateData.rationale = rationale;
+      if (rationaleAttachment !== undefined) updateData.rationaleAttachment = rationaleAttachment;
+      const updated = await storage.updateCall(call.id, updateData);
       if (call.isPublished && (targetPrice !== undefined || stopLoss !== undefined)) {
         const changes: string[] = [];
         if (stopLoss !== undefined && stopLoss !== call.stopLoss) changes.push(`Stop Loss: ₹${stopLoss}`);
@@ -3405,7 +3406,33 @@ export async function registerRoutes(
     }
   });
 
-    // ─── Advisor Recommendation Engine ─────────────────────────────────
+    
+  // ─── Rationale File Upload (for calls and positions) ─────────────
+  app.post("/api/advisor/rationale/upload", requireAdvisor, async (req: any, res: any) => {
+    try {
+      if (!req.files || !req.files.file) return res.status(400).json({ error: "No file uploaded" });
+      const file = req.files.file;
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      const allowed = ["pdf", "jpg", "jpeg", "png", "xlsx", "xls", "docx", "doc"];
+      if (!allowed.includes(ext || "")) {
+        return res.status(400).json({ error: "Allowed file types: PDF, JPEG, PNG, Word (.docx), Excel (.xlsx). Max size: 5MB." });
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return res.status(400).json({ error: "File size must be under 5MB" });
+      }
+      const fileName = req.session.userId + "-rat-" + Date.now() + "." + ext;
+      const fs = require("fs");
+      const dir = "/var/www/alphamarket/uploads/rationale";
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      await file.mv(dir + "/" + fileName);
+      res.json({ url: "/uploads/rationale/" + fileName, name: file.name, size: file.size, type: ext });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  // ─── Advisor Recommendation Engine ─────────────────────────────────
 
   // Advisor: Create recommendation for subscriber
   app.post("/api/advisor/recommendation", requireAdvisor, async (req: any, res: any) => {

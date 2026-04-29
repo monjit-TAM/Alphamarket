@@ -483,30 +483,76 @@ export function RegisterPage() {
                     </button>
                     {agreement2Open && (
                       <div className="px-3 pb-3 max-h-60 overflow-y-auto text-xs text-muted-foreground leading-relaxed space-y-2 border-t" data-testid="content-agreement-2">
-                        <p className="pt-2 font-medium text-foreground">Investment Advisor and Research Analyst Services Agreement</p>
-                        <p>This document is an electronic record in terms of the Information Technology Act, 2000. The online platform www.thealphamarket.com is owned and operated by Edhaz Financial Services Private Limited.</p>
-                        <p className="font-medium text-foreground">Part A: Client Consent</p>
-                        <p>The Client has read and understood the terms and conditions of this Agreement facilitated by Edhaz Financial Services Private Limited through The AlphaMarket. The fee structure and charging mechanism are standardized between the Client and the SEBI Registered Investment Advisor/Research Analyst.</p>
-                        <p className="font-medium text-foreground">Part B: Declaration</p>
-                        <p>The advisory relationship commences after successful payment and completion of eKYC and Risk Profiling. The Advisor will not manage funds or securities on behalf of the Client and will only receive payments to cover the fees owed under this Agreement.</p>
-                        <p className="font-medium text-foreground">Part C: Fees per SEBI Regulations</p>
-                        <p>Clients pay subscription fees for strategies offered by RIAs/RAs. Fees are determined by the Advisor based on subscription duration. Clients may subscribe to multiple strategies from different Advisors simultaneously.</p>
-                        <p className="font-medium text-foreground">2. Appointment of the Investment Advisor</p>
-                        <p>The Client engages with SEBI Registered Investment Advisors and Research Analysts through The AlphaMarket. The advice will be akin to a model portfolio or generic in nature, and execution discretion lies solely with the Client.</p>
-                        <p className="font-medium text-foreground">3. Scope of Services</p>
-                        <p>RIAs and RAs provide advice related to investing in, purchasing, selling, or otherwise dealing in stocks. The final analysis and decision to adopt advice is entirely the Client's responsibility.</p>
-                        <p className="font-medium text-foreground">5. Obligations of the Investment Advisor</p>
-                        <p>The RIA and RA agree to uphold high standards of integrity and fairness, ensure continuous compliance with SEBI eligibility criteria, provide reports to clients, maintain required records, conduct periodic audits, and adhere to the code of conduct under SEBI Regulations.</p>
-                        <p className="font-medium text-foreground">7. Representations and Warranties</p>
-                        <p>All parties have full power and authority to execute this Agreement. The Agreement constitutes legal, valid, and binding obligations enforceable in accordance with its terms.</p>
-                        <p className="font-medium text-foreground">8. Disclaimers</p>
-                        <p>The Investment Advisory Services are intended solely as advisory. AlphaMarket and its RIAs/RAs shall not be liable for any losses due to market fluctuations, asset value changes, or performance of securities.</p>
-                        <p className="font-medium text-foreground">9-24. Additional Provisions</p>
-                        <p>This Agreement covers: Period & Termination, Fees & Billing, Confidentiality, Personal Data, Recording of Communications, Assignment, Amendment, Indemnity, Invalidity, No Waiver, Grievance Settlement (hello@thealphamarket.com), Governing Law (Indian law, Bangalore jurisdiction), Severability, Force Majeure, Entirety, and Relationship.</p>
-                        <p className="font-medium text-foreground">Annexure B: Risk Statements</p>
-                        <p>The Client acknowledges and understands the risks associated with investments in Securities, equity-linked investments, real estate, derivatives trading, and mutual funds. All investments involve risk of adverse market developments. Trading and investing in derivatives carry high levels of risk including potential for substantial losses.</p>
+                        <p className="pt-2 font-medium text-foreground text-base">Investment Advisor and Research Analyst Services Agreement</p>
+                        <p className="font-medium">Agreement Between Edhaz Financial Services Pvt. Ltd. and Advisors</p>
+                        <p>This Agreement ("Agreement") is made and entered into as of the date of electronic acceptance by and between Edhaz Financial Services Pvt. Ltd., a company incorporated under the laws of India with its registered office at H 101, Alpine Echo, Doddanekunddi, K R Puram Hobli, Outer Ring Road, Bangalore 560048 ("Edhaz", "AlphaMarket", "we", "us", or "our"), and You, the Advisor ("Advisor", "you", or "your").</p>
+                        <p>WHEREAS, Edhaz owns and operates a web-based platform located at www.thealphamarket.com ("Platform") that connects Investors with SEBI Registered Investment Advisors; and</p>
+                        <p>WHEREAS, Advisor is a SEBI Registered Investment Advisor in good standing and desires to utilize the Platform to offer Investment Advisory Services to Investors;</p>
+                        <p>NOW, THEREFORE, in consideration of the foregoing premises and the mutual covenants contained herein, the parties agree as follows:</p>
+
+                        <p className="font-medium text-foreground">1. Definitions</p>
+                        <p><strong>Applicable Law:</strong> All applicable laws, regulations, rules, ordinances, guidelines, or policies of any jurisdiction, including any administrative interpretations, writs, injunctions, directives, judgments, arbitral awards, decrees, orders, or government approvals, as well as any international tax treaties, that may be in force from time to time.</p>
+                        <p><strong>Advisor:</strong> An individual or entity registered or qualified to provide investment advice or manage investment portfolios in accordance with applicable laws and regulations.</p>
+                        <p><strong>Investor:</strong> An individual or entity that seeks to invest in financial instruments or strategies offered on the AlphaMarket platform.</p>
+                        <p><strong>Investment Strategy:</strong> A predefined plan or approach to investing in financial instruments, including but not limited to equities, fixed income securities, derivatives, and other asset classes.</p>
+                        <p><strong>AlphaMarket Platform:</strong> The online platform provided by Edhaz Financial Services Private Limited that connects Advisors with Investors for the purpose of creating, sharing, and executing investment strategies.</p>
+                        <p><strong>Confidential Information:</strong> Any information concerning the organization, business, proprietary information, technology, trade secrets, platform processes, algorithms, designs, specifications, systems and procedures, computer programs, software developments, source codes, and know-how, whether conveyed in written, oral, or any other form.</p>
+                        <p><strong>Intellectual Property Rights:</strong> All worldwide rights relating to intangible property, including patents, copyrights, trade secrets, domain names, mask work rights, database rights, inventions, algorithms, and business methods.</p>
+
+                        <p className="font-medium text-foreground">2. Scope of Work of the Parties</p>
+                        <p>2.1 (a) The Service Provider shall build and provide a Publisher Platform to the Advisor for creating, managing, and distributing Investment Strategies. (b) The Service Provider shall build and provide a micro-website to the Advisor displaying all Investment Strategies. (c) Investors will be able to invest in any Investment Strategy available on the micro-website. (d-f) The Service Provider will provide technology solutions for collecting information, payment, and disseminating information to Investors.</p>
+                        <p>2.2 The Advisor shall use the word "Investment Strategy" in all branding related to strategies created using the Publisher Platform.</p>
+                        <p>2.3 The Advisor agrees not to make any copies or modifications of the products, services, APIs, Publisher Platform, and related software.</p>
+                        <p>2.4 The Service Provider agrees not to make any modifications to strategies created by the Advisor nor copy or sell them for any commercial purpose.</p>
+                        <p>2.5 It is the responsibility of the Advisor to collect, authenticate, and maintain KYC records of Investors.</p>
+
+                        <p className="font-medium text-foreground">3. Consideration</p>
+                        <p>3.1 (a) A subscription-based fee of 25% + GST will be charged to the Advisor for payments made by Investors, facilitated through the payment solution on the micro-website. (b) Any change in fees will be decided mutually by the Parties in writing. (c) Fees are exclusive of all taxes including GST.</p>
+                        <p>3.2 The Service Provider shall provide a client revenue report with fee details and raise monthly invoices.</p>
+                        <p>3.3 The Advisor shall pay required charges within 15 days from invoice date. Delay results in 2% monthly penalty.</p>
+                        <p>3.4 Fee revisions require mutual written consent.</p>
+
+                        <p className="font-medium text-foreground">4. Services</p>
+                        <p>4.1 Edhaz shall provide Platform access to connect with Investors. 4.2 Advisor shall offer Investment Advisory Services through the Platform in accordance with applicable laws. 4.3 AlphaMarket is not responsible for the content, accuracy, or effectiveness of Advisory Services provided by Advisors.</p>
+
+                        <p className="font-medium text-foreground">5. Subscription Fees and Revenue Sharing</p>
+                        <p>5.1 Advisor may offer subscription-based services. 5.2 Subscription fee is determined solely by the Advisor. 5.3 Edhaz collects all subscription fees on behalf of Advisor. 5.4 Edhaz retains 25% as platform service fee. 5.5 Advisor receives 75% net of service fee. 5.6 Payments to Advisor upon request with valid invoice.</p>
+
+                        <p className="font-medium text-foreground">6. Advisor Registration and Profile</p>
+                        <p>6.1 Advisor must register with accurate information. 6.2 Advisor shall create a profile outlining services, experience, qualifications, and performance metrics. 6.3 Advisor is solely responsible for profile accuracy.</p>
+
+                        <p className="font-medium text-foreground">7. Disclaimers and Warranties</p>
+                        <p>7.1 AlphaMarket is not a financial advisor or broker-dealer. 7.2 Investors are solely responsible for their investment decisions. 7.3 AlphaMarket does not warrant success of any Advisory Services. 7.4 Advisor warrants SEBI registration in good standing and compliance with all applicable laws.</p>
+
+                        <p className="font-medium text-foreground">8. Term and Termination</p>
+                        <p>8.1 Effective from the Effective Date until terminated. 8.2 Lock-in Period of 365 days, after which either Party may terminate per Agreement provisions. 8.3 Either Party may terminate with immediate effect upon material breach not remedied within 30 calendar days of written notice.</p>
+
+                        <p className="font-medium text-foreground">9. Intellectual Property</p>
+                        <p>9.1 Edhaz owns all intellectual property rights associated with the Platform. 9.2 Advisor shall not copy, modify, or reverse engineer any part of the Platform.</p>
+
+                        <p className="font-medium text-foreground">10. Confidentiality</p>
+                        <p>10.1 Each party agrees to hold in confidence all Confidential Information. 10.2 Confidential Information includes any non-public information disclosed in connection with this Agreement. 10.3 This obligation does not apply to information already known, publicly known, or independently developed.</p>
+
+                        <p className="font-medium text-foreground">11. Limitation of Liability</p>
+                        <p>IN NO EVENT SHALL EITHER PARTY BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES ARISING OUT OF OR RELATING TO THIS AGREEMENT.</p>
+
+                        <p className="font-medium text-foreground">12. Communication and Alert Fees</p>
+                        <p>12.1 Edhaz may utilize WhatsApp and email for Advisory Alerts. 12.3 Fees: WhatsApp \u20b90.45/message, Email \u20b90.07/message. 12.4 Communication fees deducted from Advisor earnings. 12.5 Advisors can opt out by written notification.</p>
+
+                        <p className="font-medium text-foreground">13. Governing Law and Dispute Resolution</p>
+                        <p>13.1 Governed by laws of India. 13.2 Disputes settled by binding arbitration per Arbitration and Conciliation Act, 1996.</p>
+
+                        <p className="font-medium text-foreground">14. Principal to Principal Basis</p>
+                        <p>14.1 This Agreement is on a principal to principal basis — no employer-employee or principal-agent relationship. 14.2 Neither Party shall make statements on behalf of the other. 14.3 Binding on successors and permitted assigns.</p>
+
+                        <p className="font-medium text-foreground">15. Assignment</p>
+                        <p>15.1 Neither Party shall transfer or assign responsibilities without prior written consent. 15.2 Permission not required for takeover, merger, or amalgamation. 15.3 Concerned Party shall inform the other within 15 days.</p>
+
+                        <p className="font-medium text-foreground">16-24. Additional Provisions</p>
+                        <p>16. Entire Agreement — supersedes all prior communications. 17. Amendment — only by written instrument signed by both parties. 18. Notices — in writing to registered addresses. 19. Severability. 20. Waiver. 21. Force Majeure. 22. Assignment restrictions. 23. Headings for convenience only. 24. Counterparts.</p>
+
                         <p className="font-medium text-foreground">Agreement Acceptance</p>
-                        <p>By clicking "Agree" or "Submit", the Client consents to and agrees to abide by all terms of this Investment Advisor and Research Analyst Services Agreement. This Agreement is electronically executed.</p>
+                        <p>This Agreement constitutes a digital and electronic agreement between Edhaz Financial Services Private Limited ("AlphaMarket") and you, the Advisor. By clicking the "I Agree" button upon registration on the AlphaMarket platform, you acknowledge that you have read, understood, and agree to be bound by the terms and conditions set forth in this Agreement, and all other terms and conditions, disclosures, disclaimers, cancellation & refund policies, privacy policies, and legal agreements mentioned on the www.thealphamarket.com website. A copy of this Agreement will be sent to the email address provided during registration. This Agreement is binding on both AlphaMarket and you and becomes effective upon your electronic acceptance.</p>
                       </div>
                     )}
                     <div className="flex items-center gap-2 px-3 py-2 border-t bg-muted/30">

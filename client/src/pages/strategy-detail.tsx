@@ -739,6 +739,12 @@ export default function StrategyDetail() {
                             <tr key={`${call.id}-rationale`} className="border-b last:border-0">
                               <td colSpan={7} className="py-1.5 px-2">
                                 <p className="text-xs text-muted-foreground italic">{call.rationale}</p>
+                                {(call as any).rationaleAttachment && (
+                                  <a href={(call as any).rationaleAttachment} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                                    View Research Document
+                                  </a>
+                                )}
                               </td>
                             </tr>
                           )}
@@ -851,10 +857,16 @@ export default function StrategyDetail() {
                             )}
                           </td>
                         </tr>
-                        {call.rationale && (
+                        {(call.rationale || (call as any).rationaleAttachment) && (
                           <tr key={`${call.id}-rationale`} className="border-b last:border-0">
                             <td colSpan={6} className="py-1.5 px-2">
-                              <p className="text-xs text-muted-foreground italic">{call.rationale}</p>
+                              {call.rationale && <p className="text-xs text-muted-foreground italic">{call.rationale}</p>}
+                              {(call as any).rationaleAttachment && (
+                                <a href={(call as any).rationaleAttachment} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline">
+                                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                                  View Research Document
+                                </a>
+                              )}
                             </td>
                           </tr>
                         )}
