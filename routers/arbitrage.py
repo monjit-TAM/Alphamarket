@@ -279,22 +279,22 @@ async def _fetch_kite_quotes(symbols: list, _retry=False) -> dict:
 
 
 def _get_current_month_expiry():
-    """Calculate current month's last Thursday (F&O expiry)"""
+    """Calculate current/next month's last Thursday (F&O expiry).
+    Auto-rolls to next month when <=2 trading days remain — spreads converge near expiry
+    and new month contracts offer better opportunities."""
     now = datetime.now()
-    # Find last Thursday of current month
     import calendar
     year, month = now.year, now.month
 
-    # If we're past this month's expiry, use next month
     last_day = calendar.monthrange(year, month)[1]
     last_date = datetime(year, month, last_day)
-
-    # Find last Thursday
     while last_date.weekday() != 3:  # Thursday = 3
         last_date -= timedelta(days=1)
 
-    if now.date() > last_date.date():
-        # Move to next month
+    days_left = (last_date.date() - now.date()).days
+
+    # Roll to next month if expiry passed OR <=2 days remain
+    if now.date() > last_date.date() or days_left <= 2:
         if month == 12:
             year += 1
             month = 1
