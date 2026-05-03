@@ -33,7 +33,7 @@ export default function StrategiesMarketplace() {
   const [volatilityFilter, setVolatilityFilter] = useState("");
   const [horizonFilter, setHorizonFilter] = useState(initialHorizon);
   const [managementStyleFilter, setManagementStyleFilter] = useState("");
-  const [sortBy, setSortBy] = useState("newest");
+  const [sortBy, setSortBy] = useState("mostActive");
 
   const { user } = useAuth();
 
@@ -49,7 +49,17 @@ export default function StrategiesMarketplace() {
   const filtered = (strategies || []).filter((s) => {
     if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.advisor?.companyName || "").toLowerCase().includes(search.toLowerCase())) return false;
     if (typeFilter && typeFilter !== "all" && s.type !== typeFilter) return false;
-    if (themeFilter && themeFilter !== "all" && !(s.theme || []).some((t) => t.toLowerCase().includes(themeFilter.toLowerCase()))) return false;
+    if (themeFilter && themeFilter !== "all") {
+      const themes = (s.theme || []).map((t: string) => t.toLowerCase());
+      const ft = themeFilter.toLowerCase();
+      // Match against theme array, strategy type, and horizon
+      const themeMatch = themes.some((t: string) => t.includes(ft) || ft.includes(t));
+      const typeMatch = (s.type || "").toLowerCase().includes(ft) || ft.includes((s.type || "").toLowerCase());
+      const horizonMatch = (s.horizon || "").toLowerCase().includes(ft);
+      // Special: "F&O" matches Option, Future, CommodityFuture
+      const fnoMatch = ft === "f&o" && ["Option", "Future", "CommodityFuture"].includes(s.type);
+      if (!themeMatch && !typeMatch && !horizonMatch && !fnoMatch) return false;
+    }
     if (volatilityFilter && volatilityFilter !== "all" && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
     if (horizonFilter && horizonFilter !== "all" && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
     if (managementStyleFilter && managementStyleFilter !== "all" && s.managementStyle?.toLowerCase() !== managementStyleFilter.toLowerCase()) return false;
@@ -59,6 +69,16 @@ export default function StrategiesMarketplace() {
   const sorted = [...filtered].sort((a, b) => {
     if (sortBy === "newest") return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
     if (sortBy === "liveCalls") return (b.liveCalls || 0) - (a.liveCalls || 0);
+    // mostActive: live calls first, then by lastActivity (from backend), then type priority
+    if (sortBy === "mostActive") {
+      if ((a.liveCalls || 0) > 0 && (b.liveCalls || 0) === 0) return -1;
+      if ((b.liveCalls || 0) > 0 && (a.liveCalls || 0) === 0) return 1;
+      const aAct = (a as any).lastActivity || new Date(a.createdAt || 0).getTime();
+      const bAct = (b as any).lastActivity || new Date(b.createdAt || 0).getTime();
+      if (aAct !== bAct) return bAct - aAct;
+      const typePri: Record<string, number> = { "Option": 1, "Future": 2, "CommodityFuture": 3, "Commodity": 4, "Basket": 5, "Equity": 6 };
+      return (typePri[a.type] || 99) - (typePri[b.type] || 99);
+    }
     return 0;
   });
 
@@ -212,7 +232,8 @@ export default function StrategiesMarketplace() {
                     <SelectValue placeholder="Sort By" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="newest">Newest</SelectItem>
+                    <SelectItem value="mostActive">Most Active</SelectItem>
+                      <SelectItem value="newest">Newest</SelectItem>
                     <SelectItem value="liveCalls">Most Active</SelectItem>
                   </SelectContent>
                 </Select>

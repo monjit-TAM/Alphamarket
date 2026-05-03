@@ -48,7 +48,15 @@ export default function Home() {
 
   const filtered = (strategies || []).filter((s) => {
     if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.advisor?.companyName || "").toLowerCase().includes(search.toLowerCase())) return false;
-    if (themeFilter && themeFilter !== "all" && !(s.theme || []).some((t) => t.toLowerCase().includes(themeFilter.toLowerCase()))) return false;
+    if (themeFilter && themeFilter !== "all") {
+      const themes = (s.theme || []).map((t: string) => t.toLowerCase());
+      const ft = themeFilter.toLowerCase();
+      const themeMatch = themes.some((t: string) => t.includes(ft) || ft.includes(t));
+      const typeMatch = (s.type || "").toLowerCase().includes(ft) || ft.includes((s.type || "").toLowerCase());
+      const horizonMatch = (s.horizon || "").toLowerCase().includes(ft);
+      const fnoMatch = ft === "f&o" && ["Option", "Future", "CommodityFuture"].includes(s.type);
+      if (!themeMatch && !typeMatch && !horizonMatch && !fnoMatch) return false;
+    }
     if (volatilityFilter && volatilityFilter !== "all" && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
     if (horizonFilter && horizonFilter !== "all" && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
     return true;
