@@ -234,9 +234,43 @@ export class DatabaseStorage implements IStorage {
       const stratCalls = await db.select().from(calls).where(eq(calls.strategyId, s.id));
       const stratPositions = await db.select().from(positions).where(eq(positions.strategyId, s.id));
       const liveCalls = stratCalls.filter((c) => c.status === "Active").length + stratPositions.filter((p) => p.status === "Active").length;
+
+      // Calculate latest activity date (most recent call or position created/updated)
+      let lastActivity = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+      stratCalls.forEach((c: any) => {
+        const d = c.callDate || c.exitDate || c.createdAt;
+        if (d) { const t = new Date(d).getTime(); if (t > lastActivity) lastActivity = t; }
+      });
+      stratPositions.forEach((p: any) => {
+        const d = p.createdAt;
+        if (d) { const t = new Date(d).getTime(); if (t > lastActivity) lastActivity = t; }
+      });
+
       const { password: _, ...safeAdvisor } = advisor || {} as any;
-      result.push({ ...s, advisor: safeAdvisor, liveCalls });
+      result.push({ ...s, advisor: safeAdvisor, liveCalls, lastActivity });
     }
+
+    // Sort: 1) strategies with live calls first, 2) by last activity date, 3) by type priority
+    const typePriority: Record<string, number> = {
+      "Option": 1, "Future": 2, "CommodityFuture": 3, "Commodity": 4, "Basket": 5, "Equity": 6,
+    };
+
+    result.sort((a, b) => {
+      // First: strategies with active calls on top
+      if (a.liveCalls > 0 && b.liveCalls === 0) return -1;
+      if (b.liveCalls > 0 && a.liveCalls === 0) return 1;
+
+      // Second: most recently active first
+      if (a.lastActivity !== b.lastActivity) return b.lastActivity - a.lastActivity;
+
+      // Third: F&O > Intraday > others
+      const aPri = typePriority[a.type] || 99;
+      const bPri = typePriority[b.type] || 99;
+      if (aPri !== bPri) return aPri - bPri;
+
+      return 0;
+    });
+
     return result;
   }
 
