@@ -106,8 +106,8 @@ export default function Home() {
             {[
               { step: "1", title: "Browse Strategies", desc: "Explore 80+ strategies across Equity, F&O, Swing, Intraday, and Baskets. Filter by risk, horizon, and theme." },
               { step: "2", title: "Choose Your Advisor", desc: "Each strategy is managed by a SEBI-registered advisor. Review track record and win rate before subscribing." },
-              { step: "3", title: "Subscribe & Get Alerts", desc: "Pick a plan that fits your budget. Get real-time notifications for every Buy, Sell, or Exit call." },
-              { step: "4", title: "Execute & Track", desc: "Place trades at your broker (Zerodha, Groww, etc.). Track performance and P&L from your dashboard." },
+              { step: "3", title: "Subscribe & Get Alerts", desc: "Pick a plan that fits your budget. Get real-time alerts via Telegram, Email, and Push Notifications for every Buy, Sell, or Exit call." },
+              { step: "4", title: "Execute & Track", desc: "Execute trades at your own broker. Track performance and P&L from your dashboard." },
             ].map((item) => (
               <div key={item.step} className="text-center">
                 <div className="w-10 h-10 rounded-full bg-primary text-white text-sm font-bold flex items-center justify-center mx-auto mb-3">{item.step}</div>
