@@ -47,6 +47,13 @@ export function StrategyCard({ strategy, watchlistedIds }: { strategy: StrategyW
 
   const isBasket = strategy.type === "Basket";
 
+  const badges: Array<{ label: string; color: string }> = [];
+  if ((strategy.liveCalls || 0) >= 3) badges.push({ label: "Most Active", color: "bg-green-50 text-green-700 border-green-200" });
+  if (strategy.riskLevel?.toLowerCase() === "low") badges.push({ label: "Best for Beginners", color: "bg-blue-50 text-blue-700 border-blue-200" });
+  if (strategy.type === "Option" || strategy.type === "Future" || strategy.type === "CommodityFuture") badges.push({ label: "F&O", color: "bg-orange-50 text-orange-700 border-orange-200" });
+  if (strategy.horizon?.toLowerCase() === "intraday") badges.push({ label: "Intraday", color: "bg-purple-50 text-purple-700 border-purple-200" });
+  if (Number(strategy.cagr || 0) > 20) badges.push({ label: "High Returns", color: "bg-emerald-50 text-emerald-700 border-emerald-200" });
+
   return (
     <Card
       className={`hover-elevate overflow-visible ${isBasket ? "border-indigo-200 dark:border-indigo-800 ring-1 ring-indigo-100 dark:ring-indigo-900/50" : ""}`}
@@ -56,6 +63,13 @@ export function StrategyCard({ strategy, watchlistedIds }: { strategy: StrategyW
         <div className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-medium px-3 py-1.5 flex items-center gap-1.5 rounded-t-lg" data-testid={`badge-basket-${strategy.id}`}>
           <Package className="w-3 h-3" />
           Basket Strategy
+        </div>
+      )}
+      {badges.length > 0 && !isBasket && (
+        <div className="flex gap-1.5 px-3 pt-2 flex-wrap">
+          {badges.slice(0, 2).map((b) => (
+            <span key={b.label} className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${b.color}`}>{b.label}</span>
+          ))}
         </div>
       )}
       <CardContent className="p-5 space-y-3">

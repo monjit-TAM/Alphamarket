@@ -95,6 +95,31 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="bg-background py-12 md:py-16">
+        <div className="max-w-7xl mx-auto px-4 md:px-6">
+          <div className="text-center mb-10">
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest mb-2">Simple and Transparent</p>
+            <h2 className="text-2xl md:text-3xl font-bold tracking-tight">How AlphaMarket Works</h2>
+            <p className="text-muted-foreground mt-2 max-w-xl mx-auto text-sm">Start receiving expert trading and investment ideas in 4 simple steps</p>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { step: "1", title: "Browse Strategies", desc: "Explore 80+ strategies across Equity, F&O, Swing, Intraday, and Baskets. Filter by risk, horizon, and theme." },
+              { step: "2", title: "Choose Your Advisor", desc: "Each strategy is managed by a SEBI-registered advisor. Review track record and win rate before subscribing." },
+              { step: "3", title: "Subscribe & Get Alerts", desc: "Pick a plan that fits your budget. Get real-time notifications for every Buy, Sell, or Exit call." },
+              { step: "4", title: "Execute & Track", desc: "Place trades at your broker (Zerodha, Groww, etc.). Track performance and P&L from your dashboard." },
+            ].map((item) => (
+              <div key={item.step} className="text-center">
+                <div className="w-10 h-10 rounded-full bg-primary text-white text-sm font-bold flex items-center justify-center mx-auto mb-3">{item.step}</div>
+                <h3 className="font-semibold text-sm mb-1">{item.title}</h3>
+                <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-xs text-muted-foreground mt-6">No algo trading. No automated orders. You always decide when and how much to trade.</p>
+        </div>
+      </section>
+
       <section className="bg-muted/20 border-y">
         <div className="max-w-7xl mx-auto px-4 md:px-6 py-10 md:py-14">
           <div className="max-w-3xl mx-auto text-center space-y-4 mb-8">
