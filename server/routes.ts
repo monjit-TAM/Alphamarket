@@ -7073,25 +7073,34 @@ export async function registerRoutes(
     try {
       const cid = req.params.id;
       const upd = req.body;
-      const ok = ["stock_name","action","buy_range_start","buy_range_end","target_price","profit_goal","stop_loss","rationale","status","entry_price","sell_price","gain_percent","exit_date","duration","duration_unit","theme","is_published","publish_mode"];
-      const st: string[] = [];
-      const vl: any[] = [];
-      for (const [key, value] of Object.entries(upd)) {
-        const dk = key.replace(/([A-Z])/g, "_$1").toLowerCase();
-        if (ok.includes(dk)) { st.push(dk + " = $" + (vl.length + 1)); vl.push(value); }
-      }
-      if (st.length === 0) return res.status(400).send("No valid fields");
-      vl.push(cid);
-      await db.execute(sql.raw("UPDATE calls SET " + st.join(", ") + " WHERE id = $" + vl.length, vl));
-      const updated = await db.execute(sql.raw("SELECT * FROM calls WHERE id = $1", [cid]));
-      res.json(updated.rows[0] || { status: "updated" });
+      // Build update using drizzle ORM
+      const updateData: any = {};
+      if (upd.stockName !== undefined) updateData.stockName = upd.stockName;
+      if (upd.stock_name !== undefined) updateData.stockName = upd.stock_name;
+      if (upd.action !== undefined) updateData.action = upd.action;
+      if (upd.buyRangeStart !== undefined) updateData.buyRangeStart = upd.buyRangeStart;
+      if (upd.buyRangeEnd !== undefined) updateData.buyRangeEnd = upd.buyRangeEnd;
+      if (upd.targetPrice !== undefined) updateData.targetPrice = upd.targetPrice;
+      if (upd.profitGoal !== undefined) updateData.profitGoal = upd.profitGoal;
+      if (upd.stopLoss !== undefined) updateData.stopLoss = upd.stopLoss;
+      if (upd.rationale !== undefined) updateData.rationale = upd.rationale;
+      if (upd.status !== undefined) updateData.status = upd.status;
+      if (upd.entryPrice !== undefined) updateData.entryPrice = upd.entryPrice;
+      if (upd.sellPrice !== undefined) updateData.sellPrice = upd.sellPrice;
+      if (upd.gainPercent !== undefined) updateData.gainPercent = upd.gainPercent;
+      if (upd.exitDate !== undefined) updateData.exitDate = upd.exitDate ? new Date(upd.exitDate) : null;
+      if (upd.theme !== undefined) updateData.theme = upd.theme;
+      if (upd.rationaleAttachment !== undefined) updateData.rationaleAttachment = upd.rationaleAttachment;
+      if (Object.keys(updateData).length === 0) return res.status(400).send("No valid fields");
+      const [updated] = await db.update(calls).set(updateData).where(eq(calls.id, cid)).returning();
+      res.json(updated || { status: "updated" });
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
   app.post("/api/admin/calls/:id/reactivate", requireAdmin, async (req, res) => {
     try {
       const cid = req.params.id;
-      await db.execute(sql.raw("UPDATE calls SET status = $1, exit_date = NULL, sell_price = NULL, gain_percent = NULL WHERE id = $2", ["Active", cid]));
+      await db.update(calls).set({ status: "Active", exitDate: null, sellPrice: null, gainPercent: null }).where(eq(calls.id, cid));
       res.json({ status: "reactivated", id: cid });
     } catch (err: any) { res.status(500).send(err.message); }
   });
@@ -7100,7 +7109,12 @@ export async function registerRoutes(
     try {
       const cid = req.params.id;
       const { sellPrice, gainPercent, exitDate } = req.body;
-      await db.execute(sql.raw("UPDATE calls SET status = $1, sell_price = $2, gain_percent = $3, exit_date = $4 WHERE id = $5", ["Closed", sellPrice || null, gainPercent || null, exitDate ? new Date(exitDate) : new Date(), cid]));
+      await db.update(calls).set({
+        status: "Closed",
+        sellPrice: sellPrice || null,
+        gainPercent: gainPercent || null,
+        exitDate: exitDate ? new Date(exitDate) : new Date(),
+      }).where(eq(calls.id, cid));
       res.json({ status: "closed", id: cid });
     } catch (err: any) { res.status(500).send(err.message); }
   });
@@ -7110,7 +7124,7 @@ export async function registerRoutes(
   app.delete("/api/admin/calls/:id", requireAdmin, async (req, res) => {
     try {
       const cid = req.params.id;
-      await db.execute(sql.raw("DELETE FROM calls WHERE id = $1", [cid]));
+      await db.delete(calls).where(eq(calls.id, cid));
       console.log("[ADMIN] Call " + cid + " permanently deleted");
       res.json({ status: "deleted", id: cid });
     } catch (err: any) { res.status(500).send(err.message); }
