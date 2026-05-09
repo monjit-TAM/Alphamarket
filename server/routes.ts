@@ -6848,10 +6848,37 @@ export async function registerRoutes(
   });
   app.get("/api/admin/broker-connections/:id/publish-log", requireAdmin, async (req, res) => {
     try {
-      const limit=Math.min(parseInt(req.query.limit as string||'50'),200);
-      const status=req.query.status as string;
-      const result=await db.execute(sql`SELECT xl.*,u.company_name as advisor_name,s.name as strategy_name FROM xts_publish_log xl LEFT JOIN users u ON u.id=xl.advisor_id LEFT JOIN strategies s ON s.id=xl.strategy_id WHERE xl.broker_connection_id=${req.params.id} ${status?sql`AND xl.status=${status}`:sql``} ORDER BY xl.published_at DESC LIMIT ${limit}`);
-      res.json(result.rows);
+      const limit = Math.min(parseInt(req.query.limit as string || '50'), 5000);
+      const offset = parseInt(req.query.offset as string || '0');
+      const status = req.query.status as string;
+      const from = req.query.from as string;
+      const to = req.query.to as string;
+      const format = req.query.format as string;
+
+      const conditions = [sql`xl.broker_connection_id=${req.params.id}`];
+      if (status) conditions.push(sql`xl.status=${status}`);
+      if (from) conditions.push(sql`xl.published_at >= ${from}::timestamptz`);
+      if (to) conditions.push(sql`xl.published_at <= ${to}::timestamptz + INTERVAL '1 day'`);
+
+      const where = sql.join(conditions, sql` AND `);
+
+      const countResult = await db.execute(sql`SELECT COUNT(*)::int as total FROM xts_publish_log xl WHERE ${where}`);
+      const total = (countResult.rows[0] as any).total;
+
+      const result = await db.execute(sql`SELECT xl.*, u.company_name as advisor_name, s.name as strategy_name FROM xts_publish_log xl LEFT JOIN users u ON u.id=xl.advisor_id LEFT JOIN strategies s ON s.id=xl.strategy_id WHERE ${where} ORDER BY xl.published_at DESC LIMIT ${limit} OFFSET ${offset}`);
+
+      if (format === 'csv') {
+        const rows = result.rows as any[];
+        const header = 'published_at,event_type,symbol,advisor_name,strategy_name,status,error_message,retry_count\n';
+        const csv = header + rows.map((r: any) =>
+          [r.published_at, r.event_type, r.symbol, r.advisor_name || '', r.strategy_name || '', r.status, (r.error_message || '').replace(/,/g, ';'), r.retry_count].join(',')
+        ).join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=xts-publish-log.csv');
+        return res.send(csv);
+      }
+
+      res.json({ rows: result.rows, total, limit, offset });
     } catch(err:any){res.status(500).send(err.message);}
   });
   app.get("/api/admin/xts-dashboard", requireAdmin, async (_req, res) => {
@@ -7032,9 +7059,35 @@ export async function registerRoutes(
 
   app.get("/api/admin/pull-api/brokers/:id/webhook-logs", requireAdmin, async (req, res) => {
     try {
-      const limit = Math.min(parseInt(req.query.limit as string)||50, 200);
-      const logs = await db.execute(sql`SELECT * FROM broker_webhook_logs WHERE api_key_id=${req.params.id} ORDER BY created_at DESC LIMIT ${limit}`);
-      res.json(logs.rows);
+      const limit = Math.min(parseInt(req.query.limit as string || '50'), 5000);
+      const offset = parseInt(req.query.offset as string || '0');
+      const from = req.query.from as string;
+      const to = req.query.to as string;
+      const format = req.query.format as string;
+
+      const conditions = [sql`api_key_id=${req.params.id}`];
+      if (from) conditions.push(sql`created_at >= ${from}::timestamptz`);
+      if (to) conditions.push(sql`created_at <= ${to}::timestamptz + INTERVAL '1 day'`);
+
+      const where = sql.join(conditions, sql` AND `);
+
+      const countResult = await db.execute(sql`SELECT COUNT(*)::int as total FROM broker_webhook_logs WHERE ${where}`);
+      const total = (countResult.rows[0] as any).total;
+
+      const logs = await db.execute(sql`SELECT * FROM broker_webhook_logs WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`);
+
+      if (format === 'csv') {
+        const rows = logs.rows as any[];
+        const header = 'created_at,event,status_code,delivered,error_message,delivered_at\n';
+        const csv = header + rows.map((r: any) =>
+          [r.created_at, r.event, r.status_code, r.delivered, (r.error_message || '').replace(/,/g, ';'), r.delivered_at || ''].join(',')
+        ).join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=webhook-logs.csv');
+        return res.send(csv);
+      }
+
+      res.json({ rows: logs.rows, total, limit, offset });
     } catch(err:any){res.status(500).send(err.message);}
   });
 
