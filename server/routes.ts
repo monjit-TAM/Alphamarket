@@ -6918,7 +6918,10 @@ export async function registerRoutes(
   app.put("/api/admin/pull-api/brokers/:id/advisors", requireAdmin, async (req, res) => {
     try {
       const { advisorIds } = req.body;
-      await db.execute(sql`UPDATE broker_api_keys SET allowed_advisors=${advisorIds||null} WHERE id=${req.params.id}`);
+      const pgArray = Array.isArray(advisorIds) && advisorIds.length > 0
+        ? '{' + advisorIds.map((id: string) => '"' + id.replace(/"/g, '\\"') + '"').join(',') + '}'
+        : null;
+      await db.execute(sql`UPDATE broker_api_keys SET allowed_advisors = ${pgArray}::text[] WHERE id=${req.params.id}`);
       res.json({status:"updated"});
     } catch(err:any){res.status(500).send(err.message);}
   });
@@ -7012,10 +7015,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "strategyIds must be an array" });
       }
       // Empty array → null (no restriction). Non-empty → array of UUIDs.
-      const value = strategyIds.length > 0 ? strategyIds : null;
+      const pgArray = strategyIds.length > 0
+        ? '{' + strategyIds.map((id: string) => '"' + id.replace(/"/g, '\\"') + '"').join(',') + '}'
+        : null;
       await db.execute(sql`
         UPDATE broker_api_keys
-        SET allowed_strategies = ${value}
+        SET allowed_strategies = ${pgArray}::text[]
         WHERE id = ${brokerId}
       `);
       res.json({ status: "UPDATED", count: strategyIds.length });
