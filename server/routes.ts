@@ -7074,7 +7074,21 @@ export async function registerRoutes(
       const countResult = await db.execute(sql`SELECT COUNT(*)::int as total FROM broker_webhook_logs WHERE ${where}`);
       const total = (countResult.rows[0] as any).total;
 
-      const logs = await db.execute(sql`SELECT * FROM broker_webhook_logs WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`);
+      const logs = await db.execute(sql`SELECT 
+        bwl.*,
+        bwl.payload->'data'->'equityCall'->>'symbol' AS symbol,
+        bwl.payload->'data'->'equityCall'->>'name' AS stock_name,
+        bwl.payload->'data'->'equityCall'->>'status' AS call_status,
+        bwl.payload->'data'->'equityCall'->>'callType' AS call_type,
+        bwl.payload->'data'->'equityCall'->>'exitType' AS exit_type,
+        bwl.payload->'data'->'equityCall'->>'buyPrice' AS buy_price,
+        bwl.payload->'data'->'equityCall'->>'sellPrice' AS sell_price,
+        bwl.payload->'data'->'equityCall'->>'profitLossPercent' AS pnl_percent,
+        bwl.payload->'data'->>'advisorName' AS advisor_name,
+        bwl.payload->'data'->>'strategyName' AS strategy_name,
+        bwl.payload->'data'->>'strategyType' AS strategy_type,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->>'symbol') AS display_symbol
+      FROM broker_webhook_logs bwl WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`);
 
       if (format === 'csv') {
         const rows = logs.rows as any[];
