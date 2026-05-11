@@ -882,8 +882,7 @@ export async function registerRoutes(
       const { symbol } = req.params;
       const strategyType = req.query.strategyType as string | undefined;
       const exchange = req.query.exchange as string | undefined;
-      const quote = await getLiveQuote(symbol, strategyType);
-      if (quote && exchange) quote.exchange = exchange;
+      const quote = await getLiveQuote(symbol, strategyType, exchange);
       if (!quote) return res.status(404).json({ error: "Price not available" });
       res.json(quote);
     } catch (err: any) {

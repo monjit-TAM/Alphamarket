@@ -402,12 +402,35 @@ function parseOHLC(ohlcStr: string): { open: number; high: number; low: number; 
 
 export async function getLiveQuote(
   symbol: string,
-  strategyType?: string
+  strategyType?: string,
+  exchange?: string
 ): Promise<LivePrice | null> {
-  const cacheKey = `${symbol}_${strategyType || ""}`;
+  const cacheKey = `${symbol}_${strategyType || ""}_${exchange || ""}`;
   const cached = priceCache.get(cacheKey);
   if (cached && cached.expiry > Date.now()) {
     return cached.data;
+  }
+
+  // BSE price feed via Kite (through DYOR BSE endpoint)
+  if (exchange === "BSE") {
+    try {
+      const bseRes = await fetch(`http://localhost:8001/api/bse/quote/${encodeURIComponent(symbol)}`, { signal: AbortSignal.timeout(8000) });
+      if (bseRes.ok) {
+        const d = await bseRes.json();
+        if (d.ltp && d.ltp > 0) {
+          const lp: LivePrice = {
+            symbol: d.symbol || symbol, exchange: "BSE", ltp: d.ltp,
+            change: d.change || 0, changePercent: d.changePercent || 0,
+            high: d.high || 0, low: d.low || 0, open: d.open || 0,
+            close: d.close || 0, timestamp: Date.now(),
+          };
+          priceCache.set(cacheKey, { data: lp, expiry: Date.now() + CACHE_TTL });
+          return lp;
+        }
+      }
+    } catch {}
+    // If BSE fails, don't fall through to NSE — return null
+    return null;
   }
 
   // Try DYOR Kite commodity feed for MCX symbols
