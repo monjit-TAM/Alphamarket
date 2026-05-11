@@ -459,8 +459,15 @@ export async function registerRoutes(
         return res.json([]);
       }
 
-      let filtered = nseSymbols.filter((s: any) => {
-        const matchesQuery = s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q);
+      // Sensex 30 stocks available on BSE
+      const sensex30 = ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","ITC","SBIN","BHARTIARTL","KOTAKBANK","LT","AXISBANK","ASIANPAINT","MARUTI","BAJFINANCE","TITAN","SUNPHARMA","HCLTECH","WIPRO","ULTRACEMCO","NESTLEIND","TECHM","M&M","TATAMOTORS","POWERGRID","NTPC","INDUSINDBK","BAJAJFINSV","ADANIPORTS","JSWSTEEL"];
+      // Create BSE-tagged versions of NSE symbols for Sensex stocks
+      const bseSymbols = nseSymbols
+        .filter((s: any) => sensex30.includes(s.symbol))
+        .map((s: any) => ({ ...s, exchange: "BSE", segment: s.segment, displayName: s.name + " (BSE)" }));
+      const allSymbols = [...nseSymbols, ...bseSymbols];
+      let filtered = allSymbols.filter((s: any) => {
+        const matchesQuery = s.symbol.toLowerCase().includes(q) || s.name.toLowerCase().includes(q) || (s.displayName || "").toLowerCase().includes(q);
         if (!matchesQuery) return false;
         if (segment === "Equity") return s.segment === "Equity";
         if (segment === "FnO") return s.isFnO === true;
@@ -874,7 +881,9 @@ export async function registerRoutes(
     try {
       const { symbol } = req.params;
       const strategyType = req.query.strategyType as string | undefined;
+      const exchange = req.query.exchange as string | undefined;
       const quote = await getLiveQuote(symbol, strategyType);
+      if (quote && exchange) quote.exchange = exchange;
       if (!quote) return res.status(404).json({ error: "Price not available" });
       res.json(quote);
     } catch (err: any) {
