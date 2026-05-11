@@ -5054,6 +5054,53 @@ export async function registerRoutes(
     }
   });
 
+  // Upload advisor professional photo (for Upstox/broker integrations)
+  // Photo specs: JPEG/PNG, max 2MB, min 400x400px recommended, white/plain background, professional headshot
+  app.post("/api/advisor/profile/upload-photo", requireAdvisor, async (req: any, res: any) => {
+    try {
+      if (!req.files || !req.files.file) {
+        return res.status(400).json({ error: "No file uploaded. Please upload a professional headshot photo (JPEG or PNG, max 2MB, minimum 400x400px, white/plain background)." });
+      }
+      const file = req.files.file;
+      const ext = file.name.split(".").pop()?.toLowerCase();
+      if (!["jpg", "jpeg", "png"].includes(ext || "")) {
+        return res.status(400).json({ error: "Only JPEG or PNG files allowed. Please upload a .jpg or .png photo." });
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        return res.status(400).json({ error: "File too large. Maximum size is 2MB. Please compress or resize your photo." });
+      }
+      const fileName = req.session.userId + "-photo-" + Date.now() + "." + ext;
+      const uploadDir = "/var/www/alphamarket/uploads/photos";
+      const fs = require("fs");
+      if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+      await file.mv(uploadDir + "/" + fileName);
+      const url = "/uploads/photos/" + fileName;
+      await db.execute(sql`UPDATE users SET photo_url = ${url} WHERE id = ${req.session.userId}`);
+      res.json({ url, fileName, specs: { maxSize: "2MB", formats: "JPEG, PNG", recommended: "400x400px minimum, white/plain background, professional headshot" } });
+    } catch (err: any) {
+      console.error("[Profile] Photo upload error:", err.message);
+      res.status(500).json({ error: "Failed to upload photo" });
+    }
+  });
+
+  // Update advisor investment methodology
+  app.put("/api/advisor/profile/investment-methodology", requireAdvisor, async (req: any, res: any) => {
+    try {
+      const { investmentMethodology } = req.body;
+      if (!investmentMethodology || typeof investmentMethodology !== "string") {
+        return res.status(400).json({ error: "investmentMethodology is required (string, max 5000 chars)" });
+      }
+      if (investmentMethodology.length > 5000) {
+        return res.status(400).json({ error: "Investment methodology text too long. Maximum 5000 characters." });
+      }
+      await db.execute(sql`UPDATE users SET investment_methodology = ${investmentMethodology} WHERE id = ${req.session.userId}`);
+      res.json({ status: "updated", length: investmentMethodology.length });
+    } catch (err: any) {
+      console.error("[Profile] Methodology update error:", err.message);
+      res.status(500).json({ error: "Failed to update investment methodology" });
+    }
+  });
+
   // Get advisor branding settings
   app.get("/api/advisor/branding", requireAdvisor, async (req: any, res: any) => {
     try {
