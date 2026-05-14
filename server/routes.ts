@@ -6974,25 +6974,44 @@ export async function registerRoutes(
 
   app.patch("/api/admin/pull-api/brokers/:id", requireAdmin, async (req, res) => {
     try {
-      const { brokerName, isActive, contactEmail, contactName, permissions, rateLimit, ipWhitelist, webhookUrl, webhookEvents, notes, webhookPayloadVersion, allowedSegments, allowedStrategies, webhookTimeoutMs } = req.body;
-      const sets: string[] = [];
-      const vals: any[] = [];
-      if (brokerName !== undefined) { sets.push("broker_name=$" + (vals.length+1)); vals.push(brokerName); }
-      if (isActive !== undefined) { sets.push("is_active=$" + (vals.length+1)); vals.push(isActive); }
-      if (contactEmail !== undefined) { sets.push("contact_email=$" + (vals.length+1)); vals.push(contactEmail); }
-      if (contactName !== undefined) { sets.push("contact_name=$" + (vals.length+1)); vals.push(contactName); }
-      if (permissions !== undefined) { sets.push("permissions=$" + (vals.length+1)); vals.push(permissions); }
-      if (rateLimit !== undefined) { sets.push("rate_limit=$" + (vals.length+1)); vals.push(rateLimit); }
-      if (webhookUrl !== undefined) { sets.push("webhook_url=$" + (vals.length+1)); vals.push(webhookUrl); }
-      if (webhookPayloadVersion !== undefined) { sets.push("webhook_payload_version=$" + (vals.length+1)); vals.push(webhookPayloadVersion); }
-      if (allowedSegments !== undefined) { sets.push("allowed_segments=$" + (vals.length+1)); vals.push(allowedSegments); }
-      if (allowedStrategies !== undefined) { sets.push("allowed_strategies=$" + (vals.length+1)); vals.push(allowedStrategies); }
-      if (webhookTimeoutMs !== undefined) { sets.push("webhook_timeout_ms=$" + (vals.length+1)); vals.push(webhookTimeoutMs); }
-      if (webhookEvents !== undefined) { sets.push("webhook_events=$" + (vals.length+1)); vals.push(webhookEvents); }
-      if (notes !== undefined) { sets.push("notes=$" + (vals.length+1)); vals.push(notes); }
-      if (sets.length === 0) return res.json({status:"no changes"});
-      vals.push(req.params.id);
-      await db.execute({text: "UPDATE broker_api_keys SET " + sets.join(",") + " WHERE id=$" + vals.length, values: vals} as any);
+      const b = req.body;
+      const id = req.params.id;
+      const parts: any[] = [];
+      if (b.brokerName !== undefined) parts.push(sql`broker_name = ${b.brokerName}`);
+      if (b.isActive !== undefined) parts.push(sql`is_active = ${b.isActive}`);
+      if (b.contactEmail !== undefined) parts.push(sql`contact_email = ${b.contactEmail}`);
+      if (b.contactName !== undefined) parts.push(sql`contact_name = ${b.contactName}`);
+      if (b.rateLimit !== undefined) parts.push(sql`rate_limit = ${b.rateLimit}`);
+      if (b.webhookUrl !== undefined) parts.push(sql`webhook_url = ${b.webhookUrl}`);
+      if (b.webhookPayloadVersion !== undefined) parts.push(sql`webhook_payload_version = ${b.webhookPayloadVersion}`);
+      if (b.webhookTimeoutMs !== undefined) parts.push(sql`webhook_timeout_ms = ${b.webhookTimeoutMs}`);
+      if (b.notes !== undefined) parts.push(sql`notes = ${b.notes}`);
+      if (b.allowedSegments !== undefined) {
+        const v = Array.isArray(b.allowedSegments) && b.allowedSegments.length > 0
+          ? '{"' + b.allowedSegments.join('","') + '"}'
+          : null;
+        parts.push(sql`allowed_segments = ${v}::text[]`);
+      }
+      if (b.allowedStrategies !== undefined) {
+        const v = Array.isArray(b.allowedStrategies) && b.allowedStrategies.length > 0
+          ? '{"' + b.allowedStrategies.join('","') + '"}'
+          : null;
+        parts.push(sql`allowed_strategies = ${v}::text[]`);
+      }
+      if (b.webhookEvents !== undefined) {
+        const v = Array.isArray(b.webhookEvents) && b.webhookEvents.length > 0
+          ? '{"' + b.webhookEvents.join('","') + '"}'
+          : null;
+        parts.push(sql`webhook_events = ${v}::text[]`);
+      }
+      if (b.ipWhitelist !== undefined) {
+        const v = Array.isArray(b.ipWhitelist) && b.ipWhitelist.length > 0
+          ? '{"' + b.ipWhitelist.join('","') + '"}'
+          : null;
+        parts.push(sql`ip_whitelist = ${v}::text[]`);
+      }
+      if (parts.length === 0) return res.json({status:"no changes"});
+      await db.execute(sql`UPDATE broker_api_keys SET ${sql.join(parts, sql`, `)} WHERE id = ${id}`);
       res.json({status:"updated"});
     } catch(err:any){res.status(500).send(err.message);}
   });
