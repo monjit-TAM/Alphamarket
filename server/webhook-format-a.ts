@@ -101,12 +101,12 @@ export interface FormatAEnvelope {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-/** Convert Date/string to "YYYY-MM-DDTHH:mm:ss.sss+00:00" form. */
+/** Convert Date/string to "YYYY-MM-DDTHH:mm:ss.sss+05:30" form (IST). */
 function toThealphamarketISO(d: Date | string | null | undefined): string {
-  if (!d) return new Date().toISOString().replace("Z", "+00:00");
-  const date = d instanceof Date ? d : new Date(d);
-  if (isNaN(date.getTime())) return new Date().toISOString().replace("Z", "+00:00");
-  return date.toISOString().replace("Z", "+00:00");
+  const date = d ? (d instanceof Date ? d : new Date(d)) : new Date();
+  if (isNaN(date.getTime())) return toThealphamarketISO(null);
+  const istShifted = new Date(date.getTime() + 330 * 60 * 1000);
+  return istShifted.toISOString().replace(/Z$/, "+05:30");
 }
 
 function toStringArray(s: string | null | undefined | string[]): string[] | null {
