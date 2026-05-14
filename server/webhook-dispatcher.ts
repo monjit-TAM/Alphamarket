@@ -206,8 +206,9 @@ async function deliverWebhook(
     `);
   } catch {}
 
-  // Retry if failed
-  if (!delivered && attempt <= RETRY_DELAYS.length) {
+  // Retry if failed — but NOT on 4xx client errors (Bad Request, Unauthorized, etc.)
+  const is4xx = statusCode !== null && statusCode >= 400 && statusCode < 500;
+  if (!delivered && !is4xx && attempt <= RETRY_DELAYS.length) {
     const delay = RETRY_DELAYS[attempt - 1];
     console.log(
       `[Webhook] ${target.broker_name} delivery failed (attempt ${attempt}), retrying in ${delay / 1000}s...`
