@@ -19,14 +19,14 @@ export interface EquityCallFormatA {
   legName: string | null;
   symbol: string;
   name: string;
-  buyDate: string;
+  buyDate: number;
   buyPrice: number;
   buyPriceRangeEnd: number | null;
   buyPriceRangeStart: number | null;
   callType: string;
   profitLossPercent?: number;
   sellPrice: number | null;
-  sellDate: string | null;
+  sellDate: number | null;
   targetPriceRange: string | null;
   profitGoal: string | null;
   stopLoss: string | null;
@@ -34,13 +34,13 @@ export interface EquityCallFormatA {
   exitType?: string | null;
   rationals: Array<{
     rational: string;
-    date: string;
+    date: number;
     name: string | null;
     path: string | null;
     fileName: string | null;
     createdBy: string | null;
   }>;
-  creationDate: string;
+  creationDate: number;
   status: string;
 }
 
@@ -52,25 +52,25 @@ export interface FnoCallFormatA {
   name: string;
   series: string;
   isStoppLossAbsolute: { code: string; name: string };
-  expiryDate: string;
+  expiryDate: number;
   lotSize: number;
   strike: number;
   profitLossPercent?: number | null;
   optionType: string;
-  buyDate: string;
+  buyDate: number;
   buyPrice: number;
   buyPriceRangeEnd: number | null;
   buyPriceRangeStart: number | null;
   callType: string;
   sellPrice: number | null;
-  sellDate: string | null;
+  sellDate: number | null;
   targetPriceRange: string | null;
   profitGoal: string | null;
   stopLoss: string | null;
   exitType?: string | null;
   rational: string | null;
   rationals: Array<any>;
-  creationDate: string;
+  creationDate: number;
   status: string;
 }
 
@@ -101,12 +101,12 @@ export interface FormatAEnvelope {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-/** Convert Date/string to "YYYY-MM-DDTHH:mm:ss.sss+00:00" form (UTC). */
-function toThealphamarketISO(d: Date | string | null | undefined): string {
-  if (!d) return new Date().toISOString().replace("Z", "+00:00");
+/** Convert Date/string to Unix epoch milliseconds (number). Upstox UAT requires epoch millis, not ISO strings. */
+function toThealphamarketEpoch(d: Date | string | null | undefined): number {
+  if (!d) return Date.now();
   const date = d instanceof Date ? d : new Date(d);
-  if (isNaN(date.getTime())) return new Date().toISOString().replace("Z", "+00:00");
-  return date.toISOString().replace("Z", "+00:00");
+  if (isNaN(date.getTime())) return Date.now();
+  return date.getTime();
 }
 
 function toStringArray(s: string | null | undefined | string[]): string[] | null {
@@ -236,18 +236,18 @@ export function buildFormatAEquity(params: {
     legName: null,
     symbol: call.stock_name,
     name: call.stock_name,
-    buyDate: toThealphamarketISO(call.call_date),
+    buyDate: toThealphamarketEpoch(call.call_date),
     buyPrice: buyPriceNum,
     buyPriceRangeEnd: toNum(call.buy_range_end),
     buyPriceRangeStart: toNum(call.buy_range_start),
     callType: String(call.action || "BUY").toUpperCase(),
     sellPrice: isClosed ? toNum(call.sell_price) : null,
-    sellDate: isClosed ? toThealphamarketISO(call.exit_date) : null,
+    sellDate: isClosed ? toThealphamarketEpoch(call.exit_date) : null,
     targetPriceRange: numToStr(call.target_price),
     profitGoal: numToStr(call.profit_goal),
     stopLoss: numToStr(call.stop_loss),
     rational: call.rationale || null,
-    creationDate: toThealphamarketISO(call.created_at || call.call_date),
+    creationDate: toThealphamarketEpoch(call.created_at || call.call_date),
     status: mapStatusForEvent(event, call.status),
     rationals: [],
   };
@@ -267,7 +267,7 @@ export function buildFormatAEquity(params: {
   if (call.rationale) {
     equityCall.rationals = [{
       rational: call.rationale,
-      date: toThealphamarketISO(call.created_at || call.call_date),
+      date: toThealphamarketEpoch(call.created_at || call.call_date),
       name: null,
       path: null,
       fileName: null,
@@ -323,23 +323,23 @@ export function buildFormatAFno(params: {
     name: position.symbol,
     series: mapSeries(position.segment),
     isStoppLossAbsolute: { code: "Y", name: "Yes" },
-    expiryDate: toThealphamarketISO(position.expiry),
+    expiryDate: toThealphamarketEpoch(position.expiry),
     lotSize: lotSize,
     strike: strike,
     optionType: optType,
-    buyDate: toThealphamarketISO(position.created_at),
+    buyDate: toThealphamarketEpoch(position.created_at),
     buyPrice: buyPriceNum,
     buyPriceRangeEnd: null,
     buyPriceRangeStart: null,
     callType: String(position.buy_sell || "BUY").toUpperCase(),
     sellPrice: isClosed ? toNum(position.exit_price) : null,
-    sellDate: isClosed ? toThealphamarketISO(position.exit_date) : null,
+    sellDate: isClosed ? toThealphamarketEpoch(position.exit_date) : null,
     targetPriceRange: numToStr(position.target),
     profitGoal: null,
     stopLoss: numToStr(position.stop_loss),
     rational: position.rationale || null,
     rationals: [],
-    creationDate: toThealphamarketISO(position.created_at),
+    creationDate: toThealphamarketEpoch(position.created_at),
     status: mapStatusForEvent(event, position.status),
   };
 
