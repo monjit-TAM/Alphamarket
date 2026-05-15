@@ -90,6 +90,7 @@ export default function AdminAdvisors() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("newest");
   const [editUser, setEditUser] = useState<SafeUser | null>(null);
   const [bankPayUser, setBankPayUser] = useState<SafeUser | null>(null);
   const [editForm, setEditForm] = useState({
@@ -165,9 +166,16 @@ export default function AdminAdvisors() {
     return true;
   });
 
-  const advisors = filtered.filter((u) => u.role === "advisor");
-  const investors = filtered.filter((u) => u.role === "investor");
-  const admins = filtered.filter((u) => u.role === "admin");
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === "newest") return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+    if (sortBy === "oldest") return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+    if (sortBy === "alpha") return (a.companyName || a.username || "").localeCompare(b.companyName || b.username || "");
+    if (sortBy === "alpha-desc") return (b.companyName || b.username || "").localeCompare(a.companyName || a.username || "");
+    return 0;
+  });
+  const advisors = sorted.filter((u) => u.role === "advisor");
+  const investors = sorted.filter((u) => u.role === "investor");
+  const admins = sorted.filter((u) => u.role === "admin");
 
   return (
     <div className="space-y-6 max-w-5xl">
@@ -193,6 +201,17 @@ export default function AdminAdvisors() {
               <SelectItem value="advisor">Advisors</SelectItem>
               <SelectItem value="investor">Investors</SelectItem>
               <SelectItem value="admin">Admins</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-36" data-testid="admin-sort-users">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest First</SelectItem>
+              <SelectItem value="oldest">Oldest First</SelectItem>
+              <SelectItem value="alpha">A → Z</SelectItem>
+              <SelectItem value="alpha-desc">Z → A</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -781,6 +800,10 @@ function UserRow({
           )}
         </div>
         <p className="text-xs text-muted-foreground">{user.email}</p>
+        <p className="text-xs text-muted-foreground flex items-center gap-1">
+          <Clock className="w-3 h-3" />
+          Registered: {user.createdAt ? new Date(user.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) + " at " + new Date(user.createdAt).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "N/A"}
+        </p>
         {user.sebiRegNumber && (
           <p className="text-xs text-muted-foreground">SEBI: {user.sebiRegNumber}</p>
         )}
