@@ -26,8 +26,9 @@ export default function StrategiesMarketplace() {
   const searchParams = useSearch();
   const urlParams = new URLSearchParams(searchParams);
   const initialHorizon = urlParams.get("horizon") || "";
+  const initialSearch = urlParams.get("search") || "";
 
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(initialSearch);
   const [typeFilter, setTypeFilter] = useState("");
   const [themeFilter, setThemeFilter] = useState("");
   const [volatilityFilter, setVolatilityFilter] = useState("");
@@ -47,7 +48,15 @@ export default function StrategiesMarketplace() {
   });
 
   const filtered = (strategies || []).filter((s) => {
-    if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.advisor?.companyName || "").toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const haystack = [
+        s.name, s.advisor?.companyName, s.advisor?.username, s.description,
+        s.type, s.horizon, s.volatility, s.riskLevel, s.managementStyle, s.benchmark,
+        ...(s.theme || []), ...(s.keySectors || []),
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
     if (typeFilter && typeFilter !== "all" && s.type !== typeFilter) return false;
     if (themeFilter && themeFilter !== "all") {
       const themes = (s.theme || []).map((t: string) => t.toLowerCase());

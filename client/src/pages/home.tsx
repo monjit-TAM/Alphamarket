@@ -47,7 +47,15 @@ export default function Home() {
   });
 
   const filtered = (strategies || []).filter((s) => {
-    if (search && !s.name.toLowerCase().includes(search.toLowerCase()) && !(s.advisor?.companyName || "").toLowerCase().includes(search.toLowerCase())) return false;
+    if (search) {
+      const q = search.toLowerCase();
+      const haystack = [
+        s.name, s.advisor?.companyName, s.advisor?.username, s.description,
+        s.type, s.horizon, s.volatility, s.riskLevel, s.managementStyle,
+        ...(s.theme || []), ...(s.keySectors || []),
+      ].filter(Boolean).join(" ").toLowerCase();
+      if (!haystack.includes(q)) return false;
+    }
     if (themeFilter && themeFilter !== "all") {
       const themes = (s.theme || []).map((t: string) => t.toLowerCase());
       const ft = themeFilter.toLowerCase();

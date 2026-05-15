@@ -23,6 +23,16 @@ export function Navbar() {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [, navigate] = useLocation();
+
+  const handleSearch = () => {
+    if (searchQuery.trim()) {
+      navigate("/strategies?search=" + encodeURIComponent(searchQuery.trim()));
+      setSearchQuery("");
+      setSearchOpen(false);
+    }
+  };
 
   const isActive = (href: string) => location === href || location.startsWith(href + "/");
 
@@ -50,8 +60,11 @@ export function Navbar() {
                   type="text"
                   placeholder="Search strategies, advisors, stocks..."
                   className="flex-1 h-9 px-3 text-sm bg-white text-gray-900 border-0 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
                 />
-                <button className="h-9 px-3 bg-red-600 hover:bg-red-700 rounded-r-md transition-colors">
+                <button className="h-9 px-3 bg-red-600 hover:bg-red-700 rounded-r-md transition-colors" onClick={handleSearch}>
                   <Search className="h-4 w-4 text-white" />
                 </button>
               </div>
