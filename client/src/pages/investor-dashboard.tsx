@@ -545,12 +545,13 @@ export default function InvestorDashboard() {
                             {activePositions.map(pos => {
                               const lp = livePrices?.[pos.symbol || ""];
                               const entryPrice = Number(pos.entryPrice || 0);
+                              const targetPrice = Number(pos.target || 0);
                               const isFnO = !!(pos.strikePrice && pos.callPut && pos.expiry);
                               const premiumLTP = isFnO ? getOptionPremiumLTP(pos) : null;
                               const currentPrice = isFnO && premiumLTP != null ? premiumLTP : (lp?.ltp || 0);
                               const isSell = pos.buySell === "Sell";
-                              const pnl = entryPrice > 0 && currentPrice > 0
-                                ? (isSell ? ((entryPrice - currentPrice) / entryPrice) * 100 : ((currentPrice - entryPrice) / entryPrice) * 100)
+                              const pnl = entryPrice > 0 && targetPrice > 0
+                                ? (isSell ? ((entryPrice - targetPrice) / entryPrice) * 100 : ((targetPrice - entryPrice) / entryPrice) * 100)
                                 : null;
                               const symbolLabel = `${pos.symbol || ""} ${pos.expiry || ""} ${pos.strikePrice || ""} ${pos.callPut || ""}`.trim();
                               const displayLtp = isFnO && premiumLTP != null ? premiumLTP : (lp?.ltp ?? null);
