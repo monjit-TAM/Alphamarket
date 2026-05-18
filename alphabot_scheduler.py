@@ -130,7 +130,7 @@ async def run_scheduler():
                 if now_ts - last_monitor >= MONITOR_INTERVAL:
                     result = await call_api(session, "monitor")
                     # Also trigger basket auto-squareoff at 3:20 PM
-                    now_ist = datetime.now(IST)
+                    now_ist = current_ist()
                     if now_ist.time() >= dtime(15, 20):
                         try:
                             async with session.post("http://127.0.0.1:8001/api/basket/auto-squareoff") as resp:

@@ -80,12 +80,19 @@ async def ds_fundamentals(symbol: str) -> dict:
     return {}
 
 async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
-    """Get OHLCV history from data service (cached 1 day)"""
+    """Get OHLCV history from data service with error logging"""
     try:
-        async with _httpx.AsyncClient(timeout=20) as c:
+        async with _httpx.AsyncClient(timeout=30) as c:
             r = await c.get(f"{DATA_SERVICE_URL}/data/equity/ohlcv/{symbol}?period={period}")
-            if r.status_code == 200: return r.json().get("data", [])
-    except: pass
+            if r.status_code == 200:
+                data = r.json().get("data", [])
+                if len(data) < 5:
+                    logger.warning(f"ds_ohlcv: {symbol} returned only {len(data)} rows — possible data issue")
+                return data
+            else:
+                logger.error(f"ds_ohlcv: {symbol} returned HTTP {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        logger.error(f"ds_ohlcv: {symbol} connection failed: {type(e).__name__}: {e}")
     return []
 
 from routers.arbitrage import router as arbitrage_router
@@ -168,6 +175,12 @@ app.include_router(upstox_router)
 app.include_router(basket_router)
 app.include_router(options_bt_router)
 app.include_router(alpha_intel_router)
+from routers.alpha_fundamentals import router as alpha_fundamentals_router
+app.include_router(alpha_fundamentals_router)
+from routers.alpha_ideas import router as alpha_ideas_router
+app.include_router(alpha_ideas_router)
+from routers.alpha_conviction import router as alpha_conviction_router
+app.include_router(alpha_conviction_router)
 
 # DYOR Auth Bridge — validate AlphaMarket session cookies
 from middleware.alphamarket_auth import AlphaMarketAuthMiddleware
@@ -7668,6 +7681,66 @@ async def commodity_quote(symbol: str):
     except HTTPException: raise
     except Exception as e:
         return {"symbol": sym, "exchange": "MCX", "ltp": 0, "error": str(e)}
+
+
+# ── BSE Equity Quotes (no auth — internal use by AlphaMarket) ─────────────
+@app.get("/api/bse/quote/{symbol}", tags=["BSE"], summary="Get BSE equity quote via Groww")
+async def bse_quote(symbol: str):
+    """Get BSE equity quote via Kite Connect API."""
+    import json as _json, urllib.request as _req, urllib.error as _uerr, psycopg2 as _pg
+    sym = symbol.upper().strip()
+    try:
+        cn = _pg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost:5432/dyor_db")
+        cr = cn.cursor(); cr.execute("SELECT value FROM api_settings WHERE key='kite_token'")
+        row = cr.fetchone(); cr.close(); cn.close()
+        if not row: raise HTTPException(503, "Kite token not available")
+        tk = _json.loads(row[0]).get("access_token")
+        url = f"https://api.kite.trade/quote?i=BSE:{sym}"
+        rq = _req.Request(url, headers={"Authorization": f"token wmwpq34kw5th0y2l:{tk}"})
+        rsp = _req.urlopen(rq, timeout=10)
+        data = _json.loads(rsp.read().decode())
+        if data.get("status") == "success":
+            q = data["data"].get(f"BSE:{sym}", {})
+            return {"symbol": sym, "exchange": "BSE", "ltp": q.get("last_price", 0),
+                    "change": q.get("net_change", 0), "changePercent": q.get("ohlc", {}).get("close", 0) and round((q.get("net_change", 0) / q["ohlc"]["close"]) * 100, 2) if q.get("ohlc", {}).get("close") else 0,
+                    "open": q.get("ohlc", {}).get("open", 0), "high": q.get("ohlc", {}).get("high", 0),
+                    "low": q.get("ohlc", {}).get("low", 0), "close": q.get("ohlc", {}).get("close", 0),
+                    "volume": q.get("volume", 0), "source": "kite_bse"}
+    except _uerr.HTTPError as e:
+        if e.code == 403: raise HTTPException(503, "Kite session expired. Please re-login.")
+        raise HTTPException(502, f"Kite error: {e.code}")
+    except HTTPException: raise
+    except Exception as e:
+        raise HTTPException(500, f"BSE quote error: {str(e)[:100]}")
+
+
+@app.get("/api/bse/ltp", tags=["BSE"], summary="Get BSE LTP for multiple symbols")
+async def bse_ltp(symbols: str = ""):
+    """Get BSE LTP for multiple symbols via Kite Connect API."""
+    import json as _json, urllib.request as _req, urllib.error as _uerr, psycopg2 as _pg
+    symbol_list = [s.strip().upper() for s in symbols.split(",") if s.strip()]
+    if not symbol_list: raise HTTPException(400, "No symbols provided")
+    try:
+        cn = _pg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost:5432/dyor_db")
+        cr = cn.cursor(); cr.execute("SELECT value FROM api_settings WHERE key='kite_token'")
+        row = cr.fetchone(); cr.close(); cn.close()
+        if not row: raise HTTPException(503, "Kite token not available")
+        tk = _json.loads(row[0]).get("access_token")
+        params = "&".join([f"i=BSE:{s}" for s in symbol_list])
+        url = f"https://api.kite.trade/quote/ltp?{params}"
+        rq = _req.Request(url, headers={"Authorization": f"token wmwpq34kw5th0y2l:{tk}"})
+        rsp = _req.urlopen(rq, timeout=10)
+        data = _json.loads(rsp.read().decode())
+        result = {}
+        if data.get("status") == "success":
+            for k, v in data["data"].items():
+                sym = k.replace("BSE:", "")
+                result[sym] = {"ltp": v.get("last_price", 0), "exchange": "BSE", "source": "kite_bse"}
+        return result
+    except HTTPException: raise
+    except Exception as e:
+        raise HTTPException(500, f"BSE LTP error: {str(e)[:100]}")
+
 
 @app.get("/api/commodity/futures/{symbol}", tags=["Commodity"], summary="List all futures contracts for a commodity")
 async def commodity_futures(symbol: str):
