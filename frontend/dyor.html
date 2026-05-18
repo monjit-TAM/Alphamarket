@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
+    .ai-tab{border:1px solid var(--border)!important;cursor:pointer!important;color:var(--text2)!important}.ai-tab:hover{border-color:var(--accent)!important;color:var(--accent)!important}.ai-tab.active{background:var(--accent)!important;color:#000!important;font-weight:700!important;border-color:var(--accent)!important}
 *{margin:0;padding:0;box-sizing:border-box}
 :root{--bg:#f8f9fa;--bg0:#ffffff;--bg1:#f1f3f5;--bg2:#ffffff;--bg3:#e9ecef;--border:#dee2e6;--border2:#ced4da;--text:#111111;--text1:#000000;--text2:#4b5563;--text3:#6b7280;--accent:#dc2626;--red:#ef4444;--green:#16a34a;--yellow:#f59e0b;--card:#ffffff}
 html,body{background:var(--bg);color:var(--text);font-family:'Inter','Segoe UI',system-ui,sans-serif;font-size:14px;min-height:100vh;color-scheme:light}
@@ -244,6 +245,7 @@ tr:last-child td{border-bottom:none}
 @keyframes modalIn { from { opacity:0; transform:translateY(-20px) scale(0.97); } to { opacity:1; transform:translateY(0) scale(1); } }
 </style>
 <style>
+    .ai-tab{border:1px solid var(--border)!important;cursor:pointer!important;color:var(--text2)!important}.ai-tab:hover{border-color:var(--accent)!important;color:var(--accent)!important}.ai-tab.active{background:var(--accent)!important;color:#000!important;font-weight:700!important;border-color:var(--accent)!important}
 /* Override: Convert topbar to left sidebar like testalpha.in */
 #am-topbar {
   margin-left: 160px !important;
@@ -488,6 +490,7 @@ tr:last-child td{border-bottom:none}
       <button class="nbtn" onclick="nav('dcf_calc',this)" style="color:#3b82f6;font-weight:700">DCF CALC</button>
       <button class="nbtn" onclick="nav('screenbuilder',this)" style="color:#06b6d4;font-weight:700">SCREEN BUILDER</button>
       <button class="nbtn" onclick="nav('dividends_tab',this)" style="color:#ef4444;font-weight:700">DIVIDENDS</button>
+      <button class="nbtn" onclick="nav('alphaideas',this)" style="color:#8b5cf6;font-weight:700">ALPHA IDEAS</button>
       <button class="nbtn" onclick="nav('guide',this)" style="color:var(--yellow)">📖 GUIDE</button>
       <button class="nbtn" id="mnav" style="display:none;color:#3b82f6" onclick="loadMethodology()">METHODOLOGY</button>
       <button class="nbtn" id="anav" style="display:none" style="display:none" onclick="nav('admin',this)">ADMIN</button>
@@ -3013,6 +3016,21 @@ tr:last-child td{border-bottom:none}
   </div>
 </div>
 
+<div class="panel" id="p-alphaideas" style="padding:16px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <div><div style="font-size:20px;font-weight:800;color:#8b5cf6">ALPHA IDEAS</div>
+    <div style="font-size:12px;color:var(--text3)">Horizon-based trade and investment recommendations</div></div>
+    <div style="display:flex;gap:8px"><button class="btn" onclick="loadAlphaIdeas()" style="font-size:11px;padding:6px 12px">Refresh</button>
+    <button class="btn" onclick="aiExportCSV()" style="font-size:11px;padding:6px 12px">CSV</button></div>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:12px">
+    <button class="btn ai-tab active" data-tab="ideas" onclick="aiSwitchTab('ideas')" style="font-size:11px;padding:6px 14px;border-radius:4px">IDEAS</button>
+    <button class="btn ai-tab" data-tab="conviction" onclick="aiSwitchTab('conviction')" style="font-size:11px;padding:6px 14px;border-radius:4px">CONVICTION</button>
+    <button class="btn ai-tab" data-tab="intraday" onclick="aiSwitchTab('intraday')" style="font-size:11px;padding:6px 14px;border-radius:4px">INTRADAY LEVELS</button>
+    <button class="btn ai-tab" data-tab="performance" onclick="aiSwitchTab('performance')" style="font-size:11px;padding:6px 14px;border-radius:4px">PERFORMANCE</button>
+  </div>
+  <div id="alpha-ideas-content"></div>
+</div>
 <div class="panel" id="p-guide">
       <div style="max-width:900px;margin:0 auto">
 
@@ -4158,6 +4176,7 @@ function nav(p,btn){
   if(p==='mtf'){}
   if(p==='admin'){loadAdmin();checkToken();}
   if(p==='morning_brief')loadMorningBrief();
+  if(p==='alphaideas')loadAlphaIdeas();
   if(p==='patterns'){}
   if(p==='heatmap_tab')loadSectorHeatmap();
   if(p==='dcf_calc'){}
@@ -8327,6 +8346,7 @@ return`<div style="margin-bottom:20px"><div style="font-size:20px;font-weight:70
 
 function printMorningBrief(){const c=document.getElementById('mb-content').innerHTML,fn=document.getElementById('mb-firm-name').value.trim(),t=document.getElementById('mb-report-title').textContent;
 const w=window.open('','_blank');w.document.write(`<!DOCTYPE html><html><head><title>${fn||'AlphaLab'} - ${t}</title><style>body{font-family:-apple-system,sans-serif;max-width:900px;margin:20px auto;padding:20px;color:#1a1a2e;font-size:15px;line-height:1.6}table{width:100%;border-collapse:collapse;margin:10px 0;font-size:14px}th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #eee}th{background:#f5f5f5;font-weight:700;font-size:13px}.up{color:#00c853}.dn{color:#ef5350}.badge{display:inline-block;padding:2px 8px;border-radius:3px;font-size:12px;font-weight:700}.badge.buy{background:rgba(0,200,83,0.15);color:#00c853}.badge.sell{background:rgba(239,83,80,0.15);color:#ef5350}
+    .ai-tab{border:1px solid var(--border)!important;cursor:pointer!important;color:var(--text2)!important}.ai-tab:hover{border-color:var(--accent)!important;color:var(--accent)!important}.ai-tab.active{background:var(--accent)!important;color:#000!important;font-weight:700!important;border-color:var(--accent)!important}
     @media print{body{margin:0;padding:10px}@page{margin:12mm}}
   </style></head><body>${c}
 
@@ -8460,6 +8480,7 @@ function copyMorningBrief(){
 </script>
 <!-- AlphaLab AI Assistant — Ariv -->
 <style>
+    .ai-tab{border:1px solid var(--border)!important;cursor:pointer!important;color:var(--text2)!important}.ai-tab:hover{border-color:var(--accent)!important;color:var(--accent)!important}.ai-tab.active{background:var(--accent)!important;color:#000!important;font-weight:700!important;border-color:var(--accent)!important}
 #al-chat-btn{position:fixed;bottom:20px;right:76px;width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#e84215,#ff6b3d);color:#fff;border:none;font-size:22px;cursor:pointer;box-shadow:0 4px 16px rgba(232,66,21,0.4);z-index:901;display:flex;align-items:center;justify-content:center;transition:all .2s;overflow:hidden;padding:0}
 #al-chat-btn:hover{transform:scale(1.1);box-shadow:0 6px 24px rgba(232,66,21,0.5)}
 #al-chat-btn .pulse{position:absolute;width:100%;height:100%;border-radius:50%;background:rgba(232,66,21,0.3);animation:al-pulse 2s infinite}
@@ -11744,4 +11765,5 @@ function submitPublish(){
 })();
 </script>
 
+<script src="/alpha-ideas.js"></script>
 </body></html>
