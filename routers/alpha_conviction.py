@@ -7,6 +7,36 @@ from services.data_service import af_bulk, ds_ohlcv
 
 router = APIRouter(tags=["Alpha Conviction & Intraday"])
 
+async def _enrich_live_prices(ideas):
+    """Replace cached EOD prices with live quotes from Groww."""
+    if not ideas: return ideas
+    import httpx
+    syms = list(set(i["symbol"] for i in ideas))
+    live = {}
+    async with httpx.AsyncClient(timeout=8) as client:
+        for sym in syms:
+            try:
+                r = await client.get(f"https://data.alphamarket.co.in/data/equity/quote/{sym}")
+                if r.status_code == 200:
+                    d = r.json()
+                    if d.get("price") and d["price"] > 0:
+                        live[sym] = float(d["price"])
+            except: pass
+    for idea in ideas:
+        sym = idea["symbol"]
+        if sym in live and idea.get("entry", 0) > 0:
+            old_price = idea["entry"]
+            new_price = live[sym]
+            ratio = new_price / old_price if old_price > 0 else 1
+            idea["entry"] = round(new_price, 2)
+            idea["price"] = round(new_price, 2)
+            idea["target"] = round(idea["target"] * ratio, 2)
+            idea["stop"] = round(idea["stop"] * ratio, 2)
+            idea["risk_pct"] = round((idea["entry"] - idea["stop"]) / idea["entry"] * 100, 1) if idea["entry"] > idea["stop"] else idea.get("risk_pct", 5)
+            idea["reward_pct"] = round((idea["target"] - idea["entry"]) / idea["entry"] * 100, 1)
+            idea["rr_ratio"] = round(idea["reward_pct"] / idea["risk_pct"], 1) if idea["risk_pct"] > 0 else 0
+    return ideas
+
 def _sf(v):
     if v is None: return None
     try: return float(v)
@@ -95,7 +125,7 @@ def _score_volume(s):
 @router.get("/api/alpha-conviction", summary="Multi-signal conviction picks")
 async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), sector: Optional[str] = None, cap: Optional[str] = None, sort: str = Query("composite"), limit: int = Query(30, ge=1, le=100)):
     try:
-        redis = await aioredis.from_url("redis://localhost:6379", decode_responses=True)
+        redis = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
         cached = await redis.get("sb_universe") or await redis.get("sb_universe_enriched")
         await redis.close()
         if not cached: raise HTTPException(503, "Universe cache not ready")
@@ -147,6 +177,7 @@ async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), secto
     results = results[:limit]
     sectors = {}
     for r in results: sectors[r["sector"]] = sectors.get(r["sector"], 0) + 1
+    results = await _enrich_live_prices(results)
     return {"picks": results, "count": len(results), "min_dimensions": min_dimensions, "timestamp": datetime.now().isoformat(), "date": datetime.now().strftime("%d-%b-%Y"), "sector_distribution": dict(sorted(sectors.items(), key=lambda x: x[1], reverse=True))}
 
 def _compute_pivots(h, l, c):
@@ -188,7 +219,7 @@ async def get_intraday_levels(symbol: str):
     candle = "DOJI" if body_pct < 0.1 else ("BULLISH" if c > o else "BEARISH")
     tech = {}
     try:
-        redis = await aioredis.from_url("redis://localhost:6379", decode_responses=True)
+        redis = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
         enr = await redis.get("sb_universe") or await redis.get("sb_universe_enriched")
         await redis.close()
         if enr:
@@ -226,7 +257,7 @@ async def get_intraday_batch(symbols: str = Query(None, description="Comma-separ
     else:
         # Auto-pick diverse set from universe cache
         try:
-            redis = await aioredis.from_url("redis://localhost:6379", decode_responses=True)
+            redis = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
             cached = await redis.get("sb_universe") or await redis.get("sb_universe_enriched")
             await redis.close()
             if cached:

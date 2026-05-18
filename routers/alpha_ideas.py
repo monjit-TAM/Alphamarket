@@ -9,6 +9,36 @@ import json, asyncio
 from datetime import datetime, date
 from services.idea_reasoning import breakout_reason, reversion_reason, momentum_reason, squeeze_reason, quality_reason, value_reason, garp_reason
 
+async def _enrich_live_prices(ideas):
+    """Replace cached EOD prices with live quotes from Groww."""
+    if not ideas: return ideas
+    import httpx
+    syms = list(set(i["symbol"] for i in ideas))
+    live = {}
+    async with httpx.AsyncClient(timeout=8) as client:
+        for sym in syms:
+            try:
+                r = await client.get(f"https://data.alphamarket.co.in/data/equity/quote/{sym}")
+                if r.status_code == 200:
+                    d = r.json()
+                    if d.get("price") and d["price"] > 0:
+                        live[sym] = float(d["price"])
+            except: pass
+    for idea in ideas:
+        sym = idea["symbol"]
+        if sym in live and idea.get("entry", 0) > 0:
+            old_price = idea["entry"]
+            new_price = live[sym]
+            ratio = new_price / old_price if old_price > 0 else 1
+            idea["entry"] = round(new_price, 2)
+            idea["price"] = round(new_price, 2)
+            idea["target"] = round(idea["target"] * ratio, 2)
+            idea["stop"] = round(idea["stop"] * ratio, 2)
+            idea["risk_pct"] = round((idea["entry"] - idea["stop"]) / idea["entry"] * 100, 1) if idea["entry"] > idea["stop"] else idea.get("risk_pct", 5)
+            idea["reward_pct"] = round((idea["target"] - idea["entry"]) / idea["entry"] * 100, 1)
+            idea["rr_ratio"] = round(idea["reward_pct"] / idea["risk_pct"], 1) if idea["risk_pct"] > 0 else 0
+    return ideas
+
 def _sf(v):
     if v is None: return None
     try: return float(v)
@@ -125,7 +155,7 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
     from services.data_service import af_bulk
     import redis.asyncio as aioredis
     try:
-        redis = await aioredis.from_url("redis://localhost:6379", decode_responses=True)
+        redis = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
         cached = await redis.get("sb_universe") or await redis.get("sb_universe_enriched")
         await redis.close()
         if not cached:
@@ -187,6 +217,7 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
         h = idea["horizon"]
         if h not in by_horizon: by_horizon[h] = []
         by_horizon[h].append(idea)
+    deduped = await _enrich_live_prices(deduped)
     return {"ideas": deduped, "count": len(deduped), "timestamp": now.isoformat(), "date": now.strftime("%d-%b-%Y"), "market_date": now.strftime("%A, %d %B %Y"), "summary": {h: {"count": len(ideas), "top": ideas[0]["symbol"] if ideas else None} for h, ideas in by_horizon.items()}, "filters": {"horizon": horizon, "strategy": strategy, "sector": sector, "min_confidence": min_confidence}}
 
 @router.get("/horizons", summary="Ideas grouped by horizon")
