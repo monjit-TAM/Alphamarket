@@ -54,6 +54,10 @@ API_TAGS = [
     {"name": "Basket Publisher", "description": "Advisor basket strategies — publish F&O/Equity intraday baskets, per-advisor API keys for broker polling, webhook registration, auto-squareoff at 3:20PM IST"},
     {"name": "Upstox", "description": "Upstox OAuth integration, basket pre-fill from AlphaBot signals and Nifty50 movers, basket order placement"},
     {"name": "AlphaBot", "description": "Algorithmic signal generator for Index F&O. Automated strategies for NIFTY/BANKNIFTY futures, options directional, options writing (straddle/strangle), and index arbitrage. Signals pushed to Upstox/XTS for auto-execution."},
+    {"name": "Alpha Fundamentals", "description": "Fundamental data from TrueData XBRL — 696+ companies, 40+ ratios including ROE, ROCE, PE, PB, D/E, EBITDA margin, revenue growth, PAT growth. Quarterly history, raw financials, bulk lookup, screening, sector aggregates."},
+    {"name": "Alpha Ideas", "description": "Daily actionable trade and investment ideas across 4 horizons: SWING (1-5d), SHORT (1-4w), MEDIUM (1-3m), LONG (6m+). 6 strategies: Breakout, Mean Reversion, Momentum, Volatility Squeeze, Quality+Momentum, Deep Value, GARP. Live price enrichment, performance tracking."},
+    {"name": "Alpha Conviction", "description": "Multi-dimensional conviction scoring — 5 independent dimensions (Trend 25%, Momentum 25%, Quality 20%, Value 15%, Volume 15%) scored 0-100. Stocks where 4+ dimensions agree are high-conviction picks. Live price adjusted entry/target/stop."},
+    {"name": "Intraday Levels", "description": "Daily pivot levels (Standard/Fibonacci/Camarilla), Central Pivot Range (CPR) with narrow detection, ATR-based expected range, and actionable setups (Breakout Long/Short, Mean Reversion, Range Trade, Bullish/Bearish Setup). Dynamic stock selection from top-volume diverse sectors."},
     {"name": "Alpha Intelligence", "description": "AlphaScore™ (0-100 composite rating), Confluence Engine™ (cross-signal conviction probability), Smart Money Flow™ (institutional accumulation tracker). Patent pending."},
 ]
 
@@ -141,13 +145,21 @@ Authorization: Bearer <your_jwt_token>
 - Other endpoints: 60 requests/minute
 
 ### Data Sources
-Market data sourced from Yahoo Finance with PostgreSQL caching. Options data via NSE + Black-Scholes synthetic pricing.
+Market data sourced from Yahoo Finance with PostgreSQL caching.
+
+### v3.3.0 (May 18, 2026)
+- Alpha Fundamentals API (696+ companies, 40+ ratios from TrueData XBRL)
+- Alpha Ideas Engine (6 strategies, 4 horizons, live price enrichment)
+- Alpha Conviction Engine (5-dimension independent scoring)
+- Intraday Levels Engine (pivots, CPR, ATR, dynamic stock selection)
+- Performance tracking for all ideas
+- Push-to-Paper-Trade + Push-to-AlphaMarket integration Options data via NSE + Black-Scholes synthetic pricing.
 
 ### Contact
 - **Email**: hello@thealphamarket.com
 - **Website**: https://alphamarket.co.in
 """,
-    version="3.2.5",
+    version="3.3.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",

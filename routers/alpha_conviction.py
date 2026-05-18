@@ -16,7 +16,7 @@ async def _enrich_live_prices(ideas):
     async with httpx.AsyncClient(timeout=8) as client:
         for sym in syms:
             try:
-                r = await client.get(f"https://data.alphamarket.co.in/data/equity/quote/{sym}")
+                r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
                 if r.status_code == 200:
                     d = r.json()
                     if d.get("price") and d["price"] > 0:
