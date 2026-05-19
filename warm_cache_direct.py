@@ -21,28 +21,41 @@ async def main():
     universe = udata.get('universe', [])[:923]
     print(f"[{time.strftime('%H:%M:%S')}] Universe: {len(universe)} stocks")
 
-    # Fetch all OHLCV in parallel batches
+    # Fetch all OHLCV from Alpha Fundamentals (localhost:5015) in bulk batches of 50
     all_data = {}
     t0 = time.time()
     async with aiohttp.ClientSession() as session:
-        for i in range(0, len(universe), 30):
-            batch = universe[i:i+30]
-            tasks = []
-            for sym in batch:
-                tasks.append(session.get(f'http://127.0.0.1:5004/data/equity/ohlcv/{sym}',
-                                        timeout=aiohttp.ClientTimeout(total=15)))
-            responses = await asyncio.gather(*tasks, return_exceptions=True)
-            for sym, resp in zip(batch, responses):
-                try:
-                    if isinstance(resp, Exception):
-                        continue
-                    d = await resp.json()
-                    rows = d.get('data', [])
-                    if rows and len(rows) >= 30:
-                        all_data[sym] = rows
-                except:
-                    pass
-            done = min(i+30, len(universe))
+        for i in range(0, len(universe), 50):
+            batch = universe[i:i+50]
+            syms_param = ",".join(batch)
+            try:
+                resp = await session.get(
+                    f'http://localhost:5015/api/fundamentals/prices/bulk?symbols={syms_param}&days=400',
+                    timeout=aiohttp.ClientTimeout(total=30))
+                d = await resp.json()
+                if d.get('success') and d.get('data'):
+                    batch_matched = 0
+                    for sym, rows in d['data'].items():
+                        if rows and len(rows) >= 30:
+                            normalized = []
+                            for r in rows:
+                                try:
+                                    o = float(r.get('open') or 0)
+                                    h = float(r.get('high') or 0)
+                                    l = float(r.get('low') or 0)
+                                    cl = float(r.get('close') or 0)
+                                    v = int(float(r.get('volume') or 0))
+                                    if cl > 0:
+                                        normalized.append({'date': r.get('trade_date', r.get('date', '')), 'open': o, 'high': h, 'low': l, 'close': cl, 'volume': v})
+                                except (ValueError, TypeError):
+                                    pass
+                            all_data[sym] = normalized
+            except Exception as e:
+                print(f"[{time.strftime('%H:%M:%S')}] Batch error at {i}: {e}")
+                print(f"[{time.strftime('%H:%M:%S')}] Failed batch symbols: {batch[:5]}...")
+            else:
+                    print(f"[{time.strftime('%H:%M:%S')}] Batch {i}-{i+50}: API returned success={d.get('success')}, data keys={len(d.get('data',{}))}")
+            done = min(i+50, len(universe))
             print(f"[{time.strftime('%H:%M:%S')}] {done}/{len(universe)} stocks fetched ({len(all_data)} with data)")
 
     print(f"[{time.strftime('%H:%M:%S')}] Fetch complete: {len(all_data)} stocks in {time.time()-t0:.1f}s")
