@@ -7081,9 +7081,54 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
 
     tech_data["alpha_metrics"] = alpha_data
 
-    # Generate rationale
+    # Generate rationale — include screener strategy context if available
     rationale_type = req.get("rationale_type", "quantamental")
-    rationale = req.get("rationale", "") or generate_rationale(symbol, call_type, tech_data, fund_data, rationale_type)
+    screener_strategy = req.get("screener_strategy", "")
+    screener_signals = req.get("signals", {})
+
+    # Build screener context prefix
+    screener_prefix = ""
+    if screener_strategy:
+        strategy_descriptions = {
+            "momentum": f"{symbol} was identified by the Momentum Screener. The stock shows strong price momentum with consistent higher highs and higher lows, indicating institutional accumulation.",
+            "oversold": f"{symbol} was flagged by the Oversold Screener. RSI has dropped to deeply oversold levels, historically a zone where sharp reversals occur in quality stocks.",
+            "overbought": f"{symbol} was flagged by the Overbought Screener. RSI is in overbought territory, suggesting the stock may be due for a pullback or consolidation.",
+            "breakout": f"{symbol} was detected by the Breakout Screener. The stock is breaking above key resistance levels with increasing volume, a classic sign of trend continuation.",
+            "golden_cross": f"{symbol} triggered a Golden Cross signal. The 50-day moving average has crossed above the 200-day moving average, one of the most reliable long-term bullish signals.",
+            "death_cross": f"{symbol} triggered a Death Cross signal. The 50-day moving average has crossed below the 200-day moving average, a bearish structural signal.",
+            "bb_squeeze": f"{symbol} was identified by the Bollinger Band Squeeze Screener. Narrowing bands indicate compressed volatility, often preceding a significant directional move.",
+            "minervini": f"{symbol} passes the Mark Minervini Trend Template criteria. The stock exhibits Stage 2 uptrend characteristics: price above key moving averages, rising earnings momentum, and strong relative strength.",
+            "pullback_buy": f"{symbol} was flagged by the Pullback Buy Screener. The stock has pulled back to key support levels within an ongoing uptrend, offering a favourable risk-reward entry.",
+            "volume": f"{symbol} was detected by the Volume Surge Screener. Abnormally high trading volume suggests significant institutional activity or a catalyst-driven move.",
+            "up_on_volume": f"{symbol} was identified by the Up-on-Volume Screener. Price advance accompanied by heavy volume indicates strong buying conviction.",
+            "relative_strength": f"{symbol} ranks high on Relative Strength. The stock is outperforming the broader market significantly over the past 1-3 months.",
+            "trend_strong": f"{symbol} was identified by the Strong Trend Screener. ADX above 25 confirms a well-established directional trend with high probability of continuation.",
+            "52w_high": f"{symbol} is trading near its 52-week high. Stocks making new highs tend to continue higher, especially when backed by strong fundamentals.",
+            "52w_low": f"{symbol} is near its 52-week low. This could represent a deep value opportunity if fundamentals remain intact.",
+            "macd_crossover": f"{symbol} has triggered a MACD bullish crossover. The MACD line crossing above the signal line is a widely followed buy signal.",
+            "macd_bearish": f"{symbol} shows a bearish MACD signal. The MACD line has crossed below the signal line, indicating weakening momentum.",
+            "supertrend_buy": f"{symbol} is trading above the Supertrend indicator, confirming bullish trend continuation with defined trailing support.",
+            "growth_momentum": f"{symbol} was identified by the Growth Momentum Screener. The stock combines strong earnings growth with positive price momentum.",
+            "safe_haven": f"{symbol} qualifies as a Safe Haven pick. Low volatility, consistent dividends, and strong balance sheet make it suitable for conservative portfolios.",
+            "high_roe": f"{symbol} ranks among high ROE stocks, indicating superior management efficiency in generating returns on shareholder equity.",
+            "low_pe": f"{symbol} was flagged by the Low PE Screener. Trading at an attractive earnings multiple relative to peers, suggesting potential undervaluation.",
+            "dividend_yield": f"{symbol} offers an attractive dividend yield, providing regular income alongside potential capital appreciation.",
+            "sector_rotation": f"{symbol} was identified by the Sector Rotation Screener. The stock belongs to a sector showing improving relative strength and fund flows.",
+            "multi_timeframe": f"{symbol} shows bullish alignment across multiple timeframes (daily, weekly), a high-conviction setup when both trends agree.",
+            "gap_up": f"{symbol} opened with a significant gap up, indicating strong overnight buying interest or a positive catalyst.",
+            "gap_down": f"{symbol} gapped down significantly, which may present a mean-reversion opportunity if fundamentals remain sound.",
+            "range_breakout": f"{symbol} has broken out of a well-defined trading range, suggesting the start of a new trending move.",
+            "recent_breakout": f"{symbol} recently broke through key resistance. Fresh breakouts with volume confirmation offer high-probability trade setups.",
+            "turnaround": f"{symbol} was identified by the Turnaround Screener. The stock shows early signs of recovery from a prolonged downtrend.",
+            "volume_dry": f"{symbol} exhibits a volume dry-up pattern. Decreasing volume during consolidation often precedes a breakout.",
+            "high_beta": f"{symbol} is a high-beta stock, offering amplified returns in bullish markets but requiring disciplined risk management.",
+        }
+        screener_prefix = strategy_descriptions.get(screener_strategy, f"{symbol} was identified by the {screener_strategy.replace('_',' ').title()} strategy screener.")
+
+    rationale = req.get("rationale", "")
+    if not rationale:
+        base_rationale = generate_rationale(symbol, call_type, tech_data, fund_data, rationale_type)
+        rationale = (screener_prefix + " " + base_rationale).strip() if screener_prefix else base_rationale
     entry_price = req.get("entry_price") or tech_data.get("price", 0)
     target_price = req.get("target_price") or (entry_price * 1.15 if call_type == "BUY" else entry_price * 0.85)
     stop_loss = req.get("stop_loss") or (entry_price * 0.92 if call_type == "BUY" else entry_price * 1.08)
