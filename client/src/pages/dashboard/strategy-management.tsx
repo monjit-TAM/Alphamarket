@@ -2498,6 +2498,77 @@ function AddPositionSheet({
     trailingSlValue: "",
   });
   const [manualEntry, setManualEntry] = useState(false);
+  const [legs, setLegs] = useState<Array<{
+    segment: string; callPut: string; buySell: string; symbol: string;
+    expiry: string; strikePrice: string; entryPrice: string; lots: string; legName: string;
+    target: string; stopLoss: string; _expiries?: string[]; _chain?: any[];
+  }>>([
+    { segment: "Option", callPut: "Call", buySell: "Buy", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: "Leg 1", target: "", stopLoss: "", _expiries: [], _chain: [] },
+    { segment: "Option", callPut: "Call", buySell: "Sell", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: "Leg 2", target: "", stopLoss: "", _expiries: [], _chain: [] },
+  ]);
+
+  const addLeg = () => setLegs([...legs, { segment: "Option", callPut: "Call", buySell: "Buy", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: `Leg ${legs.length + 1}`, target: "", stopLoss: "", _expiries: [], _chain: [] }]);
+
+  const loadLegChain = async (idx: number) => {
+    const leg = legs[idx];
+    if (!leg.symbol) return;
+    const exchange = ["SENSEX","BANKEX"].includes(leg.symbol.toUpperCase()) ? "BSE" : leg.segment === "Equity" ? "NSE" : "NSE";
+    try {
+      const now = new Date();
+      const expRes = await fetch(\`/api/option-chain/expiries?symbol=\${encodeURIComponent(leg.symbol)}&exchange=\${exchange}&year=\${now.getFullYear()}&month=\${now.getMonth()+1}\`);
+      const expiries = expRes.ok ? await expRes.json() : [];
+      const updated = [...legs];
+      updated[idx]._expiries = expiries;
+      if (expiries.length > 0 && !leg.expiry) updated[idx].expiry = expiries[0];
+      setLegs(updated);
+      const expiry = updated[idx].expiry;
+      if (expiry) {
+        const chainRes = await fetch(\`/api/option-chain?symbol=\${encodeURIComponent(leg.symbol)}&exchange=\${exchange}&expiry=\${encodeURIComponent(expiry)}\`);
+        const chain = chainRes.ok ? await chainRes.json() : [];
+        const updated2 = [...legs];
+        updated2[idx]._expiries = expiries;
+        updated2[idx]._chain = chain;
+        setLegs(updated2);
+      }
+    } catch(e) { console.error("Load chain error:", e); }
+  };
+
+  const loadLegStrikes = async (idx: number) => {
+    const leg = legs[idx];
+    if (!leg.symbol || !leg.expiry) return;
+    const exchange = ["SENSEX","BANKEX"].includes(leg.symbol.toUpperCase()) ? "BSE" : "NSE";
+    try {
+      const chainRes = await fetch(\`/api/option-chain?symbol=\${encodeURIComponent(leg.symbol)}&exchange=\${exchange}&expiry=\${encodeURIComponent(leg.expiry)}\`);
+      const chain = chainRes.ok ? await chainRes.json() : [];
+      const updated = [...legs];
+      updated[idx]._chain = chain;
+      setLegs(updated);
+    } catch(e) { console.error("Load strikes error:", e); }
+  };
+  const removeLeg = (idx: number) => { if (legs.length > 2) setLegs(legs.filter((_, i) => i !== idx)); };
+  const updateLeg = (idx: number, field: string, value: string) => {
+    const updated = [...legs];
+    (updated[idx] as any)[field] = value;
+    if (field === "segment") { updated[idx].expiry = ""; updated[idx].strikePrice = ""; }
+    if (field === "expiry") { updated[idx].strikePrice = ""; }
+    setLegs(updated);
+  };
+
+  const multiLegMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const res = await apiRequest("POST", `/api/strategies/${strategy?.id}/positions/multi-leg`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/advisor/strategies"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/advisor/strategies", strategy?.id, "positions"] });
+      onOpenChange(false);
+      toast({ title: "Multi-leg position published" });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
   const mutation = useMutation({
     mutationFn: async (data: any) => {
@@ -2522,6 +2593,42 @@ function AddPositionSheet({
       toast({ title: "Rationale is required to publish a position", variant: "destructive" });
       return;
     }
+
+    if (form.enableLeg) {
+      // Multi-leg submission
+      const validLegs = legs.filter(l => l.symbol && l.entryPrice);
+      if (validLegs.length < 2) {
+        toast({ title: "Multi-leg requires at least 2 legs with symbol and entry price", variant: "destructive" });
+        return;
+      }
+      multiLegMutation.mutate({
+        legs: validLegs.map(l => ({
+          segment: l.segment,
+          callPut: l.callPut || undefined,
+          buySell: l.buySell,
+          symbol: l.symbol,
+          expiry: l.expiry || undefined,
+          strikePrice: l.strikePrice || undefined,
+          entryPrice: l.entryPrice || undefined,
+          lots: l.lots ? parseInt(l.lots) : undefined,
+          legName: l.legName,
+          usePercentage: form.usePercentage,
+          target: l.target || form.target || undefined,
+          stopLoss: l.stopLoss || form.stopLoss || undefined,
+          trailingSlEnabled: form.trailingSlEnabled,
+          trailingSlType: form.trailingSlEnabled ? form.trailingSlType : undefined,
+          trailingSlValue: form.trailingSlEnabled ? form.trailingSlValue : undefined,
+        })),
+        rationale: form.rationale,
+        publishMode: form.publishMode,
+        duration: form.duration ? parseInt(form.duration) : undefined,
+        durationUnit: form.duration ? form.durationUnit : undefined,
+        theme: form.theme || undefined,
+        enableLeg: true,
+      });
+      return;
+    }
+
     mutation.mutate({
       ...form,
       isPublished,
@@ -2596,8 +2703,110 @@ function AddPositionSheet({
               onCheckedChange={(v) => setForm({ ...form, enableLeg: !!v })}
               data-testid="checkbox-enable-leg"
             />
-            <Label className="text-sm">Enable Leg</Label>
+            <Label className="text-sm">Enable Multi-Leg</Label>
           </div>
+
+          {form.enableLeg ? (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-semibold">Multi-Leg Position Builder</Label>
+                <Button type="button" variant="outline" size="sm" onClick={addLeg}>+ Add Leg</Button>
+              </div>
+              {legs.map((leg, idx) => (
+                <div key={idx} className="rounded-lg border p-3 space-y-2 bg-muted/20">
+                  <div className="flex items-center justify-between">
+                    <Input
+                      value={leg.legName}
+                      onChange={(e) => updateLeg(idx, "legName", e.target.value)}
+                      className="w-32 h-7 text-xs font-semibold"
+                      placeholder={`Leg ${idx+1}`}
+                    />
+                    <div className="flex gap-1">
+                      <Button type="button" variant="outline" size="sm" className="h-6 text-xs px-2" onClick={() => loadLegChain(idx)}>Load Chain</Button>
+                      {legs.length > 2 && (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => removeLeg(idx)} className="h-6 w-6 p-0 text-destructive">✕</Button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {["Equity","Index","Future","Option"].map((seg) => (
+                      <Button key={seg} type="button" variant={leg.segment === seg ? "default" : "outline"} size="sm" className="h-6 text-xs px-2"
+                        onClick={() => updateLeg(idx, "segment", seg)}>
+                        {seg}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="flex gap-1">
+                    {leg.segment !== "Future" && ["Call","Put"].map((cp) => (
+                      <Button key={cp} type="button" variant={leg.callPut === cp ? "default" : "outline"} size="sm" className="h-6 text-xs px-2"
+                        onClick={() => updateLeg(idx, "callPut", cp)}>
+                        {cp}
+                      </Button>
+                    ))}
+                    {["Buy","Sell"].map((bs) => (
+                      <Button key={bs} type="button" variant={leg.buySell === bs ? "default" : "outline"} size="sm" className="h-6 text-xs px-2"
+                        onClick={() => updateLeg(idx, "buySell", bs)}>
+                        {bs}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2 items-end">
+                    <Input value={leg.symbol} onChange={(e) => updateLeg(idx, "symbol", e.target.value.toUpperCase())}
+                      placeholder="Symbol (e.g. NIFTY)" className="h-8 text-sm flex-1" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {leg._expiries && leg._expiries.length > 0 ? (
+                      <select value={leg.expiry} onChange={(e) => { updateLeg(idx, "expiry", e.target.value); setTimeout(() => loadLegStrikes(idx), 100); }}
+                        className="h-8 text-xs rounded-md border border-input bg-background px-2">
+                        <option value="">Select expiry</option>
+                        {(leg._expiries || []).map((exp: string) => (
+                          <option key={exp} value={exp}>{new Date(exp).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input value={leg.expiry} onChange={(e) => updateLeg(idx, "expiry", e.target.value)}
+                        placeholder="Expiry (YYYY-MM-DD)" className="h-8 text-xs" />
+                    )}
+                    {leg._chain && leg._chain.length > 0 ? (
+                      <select value={leg.strikePrice} onChange={(e) => {
+                        updateLeg(idx, "strikePrice", e.target.value);
+                        const strike = (leg._chain || []).find((s: any) => String(s.strikePrice) === e.target.value);
+                        if (strike) {
+                          const ltp = leg.callPut === "Put" ? strike.pe?.ltp : strike.ce?.ltp;
+                          if (ltp) updateLeg(idx, "entryPrice", String(ltp));
+                        }
+                      }}
+                        className="h-8 text-xs rounded-md border border-input bg-background px-2">
+                        <option value="">Select strike</option>
+                        {(leg._chain || []).map((s: any) => {
+                          const ceLtp = s.ce?.ltp ? \`CE:₹\${s.ce.ltp.toFixed(1)}\` : "";
+                          const peLtp = s.pe?.ltp ? \`PE:₹\${s.pe.ltp.toFixed(1)}\` : "";
+                          return <option key={s.strikePrice} value={String(s.strikePrice)}>₹{Number(s.strikePrice).toLocaleString("en-IN")} {ceLtp} {peLtp}</option>;
+                        })}
+                      </select>
+                    ) : (
+                      <Input value={leg.strikePrice} onChange={(e) => updateLeg(idx, "strikePrice", e.target.value)}
+                        placeholder="Strike" type="number" className="h-8 text-xs" />
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input value={leg.entryPrice} onChange={(e) => updateLeg(idx, "entryPrice", e.target.value)}
+                      placeholder="Entry ₹" type="number" step="0.01" className="h-8 text-xs" />
+                    <Input value={leg.lots} onChange={(e) => updateLeg(idx, "lots", e.target.value)}
+                      placeholder="Lots" type="number" className="h-8 text-xs" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input value={leg.target} onChange={(e) => updateLeg(idx, "target", e.target.value)}
+                      placeholder="Target ₹" type="number" step="0.01" className="h-8 text-xs" />
+                    <Input value={leg.stopLoss} onChange={(e) => updateLeg(idx, "stopLoss", e.target.value)}
+                      placeholder="Stop Loss ₹" type="number" step="0.01" className="h-8 text-xs" />
+                  </div>
+                </div>
+              ))}
+              <div className="text-xs text-muted-foreground text-center">{legs.length} legs configured</div>
+            </div>
+          ) : (
+          <>
           <div className="space-y-1.5">
             <Label>Segment</Label>
             <div className="flex flex-wrap gap-1">
@@ -2773,6 +2982,8 @@ function AddPositionSheet({
               data-testid="input-lots"
             />
           </div>
+          </>
+          )}
           <div className="flex items-center gap-2">
             <Checkbox
               checked={form.usePercentage}
@@ -2914,9 +3125,11 @@ function AddPositionSheet({
               {form.publishMode === "live" && "Published as an active trade recommendation"}
             </p>
           </div>
-          <Button type="submit" className="w-full" disabled={mutation.isPending} data-testid="button-save-position">
-            {mutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-            {form.publishMode === "live" ? "Publish Live" : form.publishMode === "watchlist" ? "Add to Watchlist" : "Save Draft"}
+          <Button type="submit" className="w-full" disabled={mutation.isPending || multiLegMutation.isPending} data-testid="button-save-position">
+            {(mutation.isPending || multiLegMutation.isPending) && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+            {form.enableLeg
+              ? (form.publishMode === "live" ? `Publish ${legs.length} Legs Live` : form.publishMode === "watchlist" ? `Add ${legs.length} Legs to Watchlist` : `Save ${legs.length} Legs as Draft`)
+              : (form.publishMode === "live" ? "Publish Live" : form.publishMode === "watchlist" ? "Add to Watchlist" : "Save Draft")}
           </Button>
         </form>
       </SheetContent>

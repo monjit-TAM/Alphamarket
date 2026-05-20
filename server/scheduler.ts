@@ -288,6 +288,11 @@ async function checkStopLossAndTargets() {
             notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
             const wlPayload = buildPositionClosedWatchlistNotification(pos, gp, strategy.name);
             notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
+
+            // Fire webhook for broker integrations
+            const posEvtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
+            const closedPos = { ...pos, exitPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed" };
+            fireWebhookEvent(posEvtType, buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
           }
         } catch (priceErr) {
           console.error(`[Scheduler] Price fetch error for ${pos.symbol}:`, priceErr);
@@ -322,6 +327,10 @@ async function recoverySquareOff() {
           exitDate: new Date(),
         });
         console.warn(`[Scheduler] Recovery close: call ${call.id} (${call.stockName}) closed at entry price fallback`);
+        if (call.isPublished) {
+          const closedCall = { ...call, sellPrice: String(entryPrice.toFixed(2)), gainPercent: "0.00", status: "Closed" };
+          fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
+        }
         recovered++;
       }
 
@@ -336,6 +345,10 @@ async function recoverySquareOff() {
           exitDate: new Date(),
         });
         console.warn(`[Scheduler] Recovery close: position ${pos.id} (${pos.symbol}) closed at entry price fallback`);
+        if (pos.isPublished) {
+          const closedPos = { ...pos, exitPrice: String(entryPx.toFixed(2)), gainPercent: "0.00", status: "Closed" };
+          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
+        }
         recovered++;
       }
     }

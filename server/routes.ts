@@ -999,6 +999,11 @@ export async function registerRoutes(
         await storage.updatePosition(pos.id, {
           status: "Closed", exitPrice: String(exitPx), exitDate: now, gainPercent,
         });
+        if (pos.isPublished) {
+          const closedPos = { ...pos, exitPrice: String(exitPx), gainPercent, status: "Closed", exitDate: now };
+          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[routes basket/close-all] POSITION_CLOSED webhook failed:", err));
+        }
         results.closedPositions++;
       }
 
@@ -1010,6 +1015,11 @@ export async function registerRoutes(
         await storage.updateCall(call.id, {
           status: "Closed", sellPrice: String(exitPx), exitDate: now, gainPercent: gainPercent || "0",
         });
+        if (call.isPublished) {
+          const closedCall = { ...call, sellPrice: String(exitPx), gainPercent: gainPercent || "0", status: "Closed", exitDate: now };
+          fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[routes basket/close-all] CALL_CLOSED webhook failed:", err));
+        }
         results.closedCalls++;
       }
 
@@ -7378,6 +7388,19 @@ export async function registerRoutes(
         gainPercent: gainPercent || null,
         exitDate: exitDate ? new Date(exitDate) : new Date(),
       }).where(eq(calls.id, cid));
+
+      // Fire webhook for admin close
+      try {
+        const closedCall = await storage.getCall(cid);
+        if (closedCall) {
+          const strategy = await storage.getStrategy(closedCall.strategyId);
+          if (strategy && closedCall.isPublished) {
+            fireWebhookEvent("CALL_CLOSED", buildCallEventData({ ...closedCall, sellPrice, gainPercent, status: "Closed" }, strategy), strategy.advisorId)
+              .catch((err: any) => console.error("[admin /close] CALL_CLOSED webhook failed:", err));
+          }
+        }
+      } catch (whErr: any) { console.error("[admin /close] webhook error:", whErr.message); }
+
       res.json({ status: "closed", id: cid });
     } catch (err: any) { res.status(500).send(err.message); }
   });
