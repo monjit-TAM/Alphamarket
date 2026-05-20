@@ -857,5 +857,26 @@ X-RateLimit-Reset: 1728950400</code></pre>
   AlphaMarket Broker Integration API v2.1.0 &nbsp;·&nbsp; © 2026 AlphaMarket &nbsp;·&nbsp; <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a>
 </footer>
 
+
+<div style="margin-top:40px;padding:20px;border:2px solid #8b5cf6;border-radius:8px;background:#f5f3ff">
+<h3 style="color:#8b5cf6;margin-top:0">Multi-Leg Positions (Spreads, Straddles, Combos)</h3>
+<p>AlphaMarket supports multi-leg F&O positions. When an advisor creates a multi-leg trade (e.g. Bull Call Spread, Iron Condor), each leg is published as a separate <code>POSITION_CREATED</code> webhook event, but all legs share the same <code>legGroupId</code> UUID.</p>
+<h4>Identifying Multi-Leg Trades</h4>
+<ul>
+<li><code>legGroupId</code> (string, nullable) — UUID shared across all legs of the same trade. Null for single-leg positions.</li>
+<li><code>legName</code> (string, nullable) — Human label like "Leg 1", "Leg 2". Null for single-leg.</li>
+<li><code>isMultiLeg</code> (boolean) — True if part of a multi-leg trade.</li>
+</ul>
+<h4>Closing Multi-Leg Trades</h4>
+<p>Each leg can be closed independently via <code>POSITION_CLOSED</code>. When all legs in a group are closed, the trade is fully closed. Advisors can also close all legs simultaneously using the "Close All Legs" action, which fires separate <code>POSITION_CLOSED</code> events for each leg.</p>
+<h4>Example: Bull Call Spread</h4>
+<p>Two webhook events with the same <code>legGroupId</code>:</p>
+<pre style="background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:6px;font-size:12px;overflow-x:auto">
+Leg 1: NIFTY 23600 CE Buy  @ ₹220, legGroupId: "abc-123", legName: "Leg 1"
+Leg 2: NIFTY 23800 CE Sell @ ₹120, legGroupId: "abc-123", legName: "Leg 2"
+Net Premium: ₹100 (debit spread)
+</pre>
+</div>
+
 </body>
 </html>

@@ -1412,6 +1412,20 @@
           "isActive": {
             "type": "boolean",
             "example": true
+          },
+          "legGroupId": {
+            "type": "string",
+            "nullable": true,
+            "description": "UUID grouping multiple positions in a multi-leg trade (e.g. spreads, straddles). All legs share the same legGroupId. Null for single-leg positions."
+          },
+          "legName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Human-readable leg label (e.g. 'Leg 1', 'Bear Put Spread - Long'). Null for single-leg positions."
+          },
+          "isMultiLeg": {
+            "type": "boolean",
+            "description": "True if this position is part of a multi-leg trade."
           }
         }
       },
