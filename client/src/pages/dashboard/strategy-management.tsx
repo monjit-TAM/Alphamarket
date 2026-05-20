@@ -1040,6 +1040,7 @@ function PositionRow({
           <Badge variant={position.buySell === "Buy" ? "default" : "secondary"}>
             {position.buySell}
           </Badge>
+          {(position as any).legGroupId && <Badge variant="outline" className="bg-purple-50 text-purple-700 border-purple-300">{(position as any).legName || "Multi-Leg"}</Badge>}
           {!isActive && <Badge variant="secondary">Closed</Badge>}
           {isActive && (position as any).publishMode === "watchlist" && <Badge variant="secondary">Watchlist</Badge>}
           {isActive && (position as any).publishMode === "live" && <Badge variant="default">Live</Badge>}
@@ -2501,13 +2502,13 @@ function AddPositionSheet({
   const [legs, setLegs] = useState<Array<{
     segment: string; callPut: string; buySell: string; symbol: string;
     expiry: string; strikePrice: string; entryPrice: string; lots: string; legName: string;
-    target: string; stopLoss: string; _expiries?: string[]; _chain?: any[];
+    target: string; stopLoss: string; rationale: string; _expiries?: string[]; _chain?: any[];
   }>>([
-    { segment: "Option", callPut: "Call", buySell: "Buy", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: "Leg 1", target: "", stopLoss: "", _expiries: [], _chain: [] },
-    { segment: "Option", callPut: "Call", buySell: "Sell", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: "Leg 2", target: "", stopLoss: "", _expiries: [], _chain: [] },
+    { segment: "Option", callPut: "Call", buySell: "Buy", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: "Leg 1", target: "", stopLoss: "", rationale: "", _expiries: [], _chain: [] },
+    { segment: "Option", callPut: "Call", buySell: "Sell", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: "Leg 2", target: "", stopLoss: "", rationale: "", _expiries: [], _chain: [] },
   ]);
 
-  const addLeg = () => setLegs([...legs, { segment: "Option", callPut: "Call", buySell: "Buy", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: `Leg ${legs.length + 1}`, target: "", stopLoss: "", _expiries: [], _chain: [] }]);
+  const addLeg = () => setLegs([...legs, { segment: "Option", callPut: "Call", buySell: "Buy", symbol: "", expiry: "", strikePrice: "", entryPrice: "", lots: "", legName: `Leg ${legs.length + 1}`, target: "", stopLoss: "", rationale: "", _expiries: [], _chain: [] }]);
 
   const loadLegChain = async (idx: number) => {
     const leg = legs[idx];
@@ -2612,6 +2613,7 @@ function AddPositionSheet({
           entryPrice: l.entryPrice || undefined,
           lots: l.lots ? parseInt(l.lots) : undefined,
           legName: l.legName,
+          rationale: l.rationale || form.rationale || undefined,
           usePercentage: form.usePercentage,
           target: l.target || form.target || undefined,
           stopLoss: l.stopLoss || form.stopLoss || undefined,
@@ -2801,6 +2803,8 @@ function AddPositionSheet({
                     <Input value={leg.stopLoss} onChange={(e) => updateLeg(idx, "stopLoss", e.target.value)}
                       placeholder="Stop Loss ₹" type="number" step="0.01" className="h-8 text-xs" />
                   </div>
+                  <Textarea value={leg.rationale || ""} onChange={(e) => updateLeg(idx, "rationale", e.target.value)}
+                    placeholder={`Rationale for ${leg.legName || 'this leg'}...`} rows={2} className="text-xs" />
                 </div>
               ))}
               <div className="text-xs text-muted-foreground text-center">{legs.length} legs configured</div>
@@ -2984,6 +2988,7 @@ function AddPositionSheet({
           </div>
           </>
           )}
+          {!form.enableLeg && (<>
           <div className="flex items-center gap-2">
             <Checkbox
               checked={form.usePercentage}
@@ -3055,6 +3060,7 @@ function AddPositionSheet({
               </div>
             )}
           </div>
+          </>)}
           <div className="space-y-1.5">
             <Label>Duration</Label>
             <div className="flex gap-2">

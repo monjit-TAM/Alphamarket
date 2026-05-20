@@ -7294,8 +7294,8 @@ export async function registerRoutes(
           bwl.payload->'data'->'fnoCall'->0->>'name'
         ) AS display_symbol,
         CASE
-          WHEN jsonb_array_length(COALESCE(bwl.payload->'data'->'fnoCall', '[]'::jsonb)) > 1 THEN 'Multileg'
-          WHEN bwl.payload->'data'->'fnoCall' IS NOT NULL AND jsonb_array_length(COALESCE(bwl.payload->'data'->'fnoCall', '[]'::jsonb)) = 1 THEN
+          WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') > 1 THEN 'Multileg'
+          WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') = 1 THEN
             COALESCE(bwl.payload->'data'->'fnoCall'->0->>'optionType', 'F&O')
           WHEN bwl.payload->'data'->'equityCall' IS NOT NULL THEN 'Equity'
           ELSE 'Unknown'
