@@ -7291,10 +7291,13 @@ export async function registerRoutes(
         COALESCE(
           bwl.payload->'data'->'equityCall'->>'symbol',
           bwl.payload->'data'->'fnoCall'->0->>'symbol',
-          bwl.payload->'data'->'fnoCall'->0->>'name'
+          bwl.payload->'data'->'fnoCall'->0->>'name',
+          bwl.payload->'data'->>'symbol'
         ) AS display_symbol,
+        bwl.payload->'data'->>'legGroupId' AS leg_group_id,
         CASE
           WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') > 1 THEN 'Multileg'
+          WHEN (bwl.payload->'data'->>'isMultiLeg')::text = 'true' THEN 'Multileg'
           WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') = 1 THEN
             CASE
               WHEN bwl.payload->'data'->'horizon' ? 'Intraday' THEN 'FnO Intraday'
@@ -7310,7 +7313,13 @@ export async function registerRoutes(
               WHEN bwl.payload->'data'->'horizon' ? 'Positional' THEN 'Positional'
               ELSE 'Equity'
             END
-          ELSE 'Unknown'
+          ELSE
+            CASE
+              WHEN (bwl.payload->'data'->>'isMultiLeg')::text = 'true' THEN 'Multileg'
+              WHEN bwl.payload->'data'->'horizon' ? 'Intraday' THEN 'FnO Intraday'
+              WHEN bwl.payload->'data'->>'strategyType' IN ('Option','Future') THEN 'F&O'
+              ELSE 'Unknown'
+            END
         END AS instrument_type
       FROM broker_webhook_logs bwl WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`);
 

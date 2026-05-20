@@ -307,6 +307,8 @@ export function buildPositionEventData(position: any, strategy?: any, advisor?: 
         }
       : { enabled: false },
     status: p.status === "Active" ? "ACTIVE" : "CLOSED",
+    legGroupId: p.legGroupId ?? p.leg_group_id ?? null,
+    isMultiLeg: !!(p.legGroupId ?? p.leg_group_id),
   };
 }
 
