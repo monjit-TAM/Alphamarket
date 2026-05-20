@@ -90,6 +90,10 @@ async function autoSquareOffIntraday() {
           exitDate: new Date(),
         });
         console.log(`[Scheduler] Auto-squared off intraday call ${call.id} (${call.stockName}) at ${"\u20B9"}${sellPrice.toFixed(2)}, P&L: ${gainPercent.toFixed(2)}% [source: ${callPriceSource}]`);
+        if (call.isPublished) {
+          const closedCall = { ...call, sellPrice: String(sellPrice.toFixed(2)), gainPercent: String(gainPercent.toFixed(2)), status: "Closed" };
+          fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
+        }
       }
 
       const activePositions = await db
@@ -144,6 +148,10 @@ async function autoSquareOffIntraday() {
           exitDate: new Date(),
         });
         console.log(`[Scheduler] Auto-squared off intraday position ${pos.id} (${pos.symbol}) at \u20B9${exitPx.toFixed(2)}, P&L: ${posGainPercent.toFixed(2)}% [source: ${priceSource}]`);
+        if (pos.isPublished) {
+          const closedPos = { ...pos, exitPrice: String(exitPx.toFixed(2)), gainPercent: String(posGainPercent.toFixed(2)), status: "Closed" };
+          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
+        }
       }
     }
   } catch (err) {

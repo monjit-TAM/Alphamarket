@@ -2515,7 +2515,7 @@ function AddPositionSheet({
     const exchange = ["SENSEX","BANKEX"].includes(leg.symbol.toUpperCase()) ? "BSE" : leg.segment === "Equity" ? "NSE" : "NSE";
     try {
       const now = new Date();
-      const expRes = await fetch(\`/api/option-chain/expiries?symbol=\${encodeURIComponent(leg.symbol)}&exchange=\${exchange}&year=\${now.getFullYear()}&month=\${now.getMonth()+1}\`);
+      const expRes = await fetch(`/api/option-chain/expiries?symbol=${encodeURIComponent(leg.symbol)}&exchange=${exchange}&year=${now.getFullYear()}&month=${now.getMonth()+1}`);
       const expiries = expRes.ok ? await expRes.json() : [];
       const updated = [...legs];
       updated[idx]._expiries = expiries;
@@ -2523,7 +2523,7 @@ function AddPositionSheet({
       setLegs(updated);
       const expiry = updated[idx].expiry;
       if (expiry) {
-        const chainRes = await fetch(\`/api/option-chain?symbol=\${encodeURIComponent(leg.symbol)}&exchange=\${exchange}&expiry=\${encodeURIComponent(expiry)}\`);
+        const chainRes = await fetch(`/api/option-chain?symbol=${encodeURIComponent(leg.symbol)}&exchange=${exchange}&expiry=${encodeURIComponent(expiry)}`);
         const chain = chainRes.ok ? await chainRes.json() : [];
         const updated2 = [...legs];
         updated2[idx]._expiries = expiries;
@@ -2538,7 +2538,7 @@ function AddPositionSheet({
     if (!leg.symbol || !leg.expiry) return;
     const exchange = ["SENSEX","BANKEX"].includes(leg.symbol.toUpperCase()) ? "BSE" : "NSE";
     try {
-      const chainRes = await fetch(\`/api/option-chain?symbol=\${encodeURIComponent(leg.symbol)}&exchange=\${exchange}&expiry=\${encodeURIComponent(leg.expiry)}\`);
+      const chainRes = await fetch(`/api/option-chain?symbol=${encodeURIComponent(leg.symbol)}&exchange=${exchange}&expiry=${encodeURIComponent(leg.expiry)}`);
       const chain = chainRes.ok ? await chainRes.json() : [];
       const updated = [...legs];
       updated[idx]._chain = chain;
@@ -2779,8 +2779,8 @@ function AddPositionSheet({
                         className="h-8 text-xs rounded-md border border-input bg-background px-2">
                         <option value="">Select strike</option>
                         {(leg._chain || []).map((s: any) => {
-                          const ceLtp = s.ce?.ltp ? \`CE:₹\${s.ce.ltp.toFixed(1)}\` : "";
-                          const peLtp = s.pe?.ltp ? \`PE:₹\${s.pe.ltp.toFixed(1)}\` : "";
+                          const ceLtp = s.ce?.ltp ? `CE:₹${s.ce.ltp.toFixed(1)}` : "";
+                          const peLtp = s.pe?.ltp ? `PE:₹${s.pe.ltp.toFixed(1)}` : "";
                           return <option key={s.strikePrice} value={String(s.strikePrice)}>₹{Number(s.strikePrice).toLocaleString("en-IN")} {ceLtp} {peLtp}</option>;
                         })}
                       </select>
