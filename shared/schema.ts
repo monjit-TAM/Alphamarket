@@ -115,6 +115,8 @@ export const positions = pgTable("positions", {
   durationUnit: text("duration_unit"),
   theme: text("theme"),
   enableLeg: boolean("enable_leg").default(false),
+  legGroupId: varchar("leg_group_id"),
+  legName: text("leg_name"),
   usePercentage: boolean("use_percentage").default(false),
   exitPrice: numeric("exit_price"),
   exitDate: timestamp("exit_date"),

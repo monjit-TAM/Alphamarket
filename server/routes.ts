@@ -1312,6 +1312,118 @@ export async function registerRoutes(
     }
   });
 
+  // ── Multi-Leg Position Creation (added 20 May 2026) ──
+  app.post("/api/strategies/:id/positions/multi-leg", requireAdvisor, async (req, res) => {
+    try {
+      const { legs, rationale, publishMode, duration, durationUnit, theme, enableLeg, legName } = req.body;
+      if (!legs || !Array.isArray(legs) || legs.length < 2) {
+        return res.status(400).send("Multi-leg requires at least 2 legs");
+      }
+      const validModes = ["draft", "watchlist", "live"];
+      const mode = publishMode || "draft";
+      if (!validModes.includes(mode)) return res.status(400).send("Invalid publishMode");
+      const isPublished = mode === "live" || mode === "watchlist";
+      if (isPublished && (!rationale || !rationale.trim())) {
+        return res.status(400).send("Rationale is required to publish");
+      }
+
+      const { randomUUID } = await import("crypto");
+      const legGroupId = randomUUID();
+      const strategy = await storage.getStrategy(req.params.id);
+      if (!strategy || strategy.advisorId !== req.session.userId) {
+        return res.status(403).send("Not authorized");
+      }
+
+      const created: any[] = [];
+      for (let i = 0; i < legs.length; i++) {
+        const leg = legs[i];
+        const p = await storage.createPosition({
+          ...sanitizeBody(leg),
+          strategyId: req.params.id,
+          publishMode: mode,
+          isPublished,
+          enableLeg: true,
+          legGroupId,
+          legName: leg.legName || legName || `Leg ${i + 1}`,
+          rationale,
+          duration: duration ? parseInt(duration) : undefined,
+          durationUnit: duration ? durationUnit : undefined,
+          theme: theme || undefined,
+        });
+        created.push(p);
+
+        if (isPublished) {
+          const subPayload = buildNewPositionSubscriberNotification(p, strategy.name);
+          notifyStrategySubscribers(req.params.id, strategy.name, "new_position", subPayload);
+          const wlPayload = buildNewPositionWatchlistNotification(p, strategy.name);
+          notifyWatchlistUsers(req.params.id, strategy.name, "new_position_masked", wlPayload);
+          fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[routes multi-leg] fireWebhookEvent failed:", err));
+        }
+      }
+      console.log(`[MultiLeg] Created ${created.length} legs with group ${legGroupId}`);
+      res.json({ legGroupId, legs: created });
+    } catch (err: any) {
+      res.status(500).send(err.message);
+    }
+  });
+
+  // ── Close All Legs in a Group (added 20 May 2026) ──
+  app.post("/api/positions/close-group/:legGroupId", requireAdvisor, async (req, res) => {
+    try {
+      const { legGroupId } = req.params;
+      const exitPrice = req.body.exitPrice || null;
+      
+      // Find all active positions in this leg group
+      const allPositions = await db.select().from(positions).where(
+        sql`leg_group_id = ${legGroupId} AND status = 'Active'`
+      );
+      
+      if (!allPositions.length) return res.status(404).send("No active positions in this leg group");
+      
+      // Verify ownership
+      const strategy = await storage.getStrategy(allPositions[0].strategyId);
+      if (!strategy || strategy.advisorId !== req.session.userId) {
+        return res.status(403).send("Not authorized");
+      }
+
+      const closed: any[] = [];
+      for (const pos of allPositions) {
+        const entryPx = Number(pos.entryPrice || 0);
+        const legExitPrice = req.body.legExitPrices?.[pos.id] || exitPrice || null;
+        const exitPx = Number(legExitPrice || entryPx || 0);
+        let gainPercent: string | null = null;
+        if (entryPx > 0 && exitPx > 0) {
+          const isSell = pos.buySell === "Sell";
+          gainPercent = (isSell ? ((entryPx - exitPx) / entryPx) * 100 : ((exitPx - entryPx) / entryPx) * 100).toFixed(2);
+        }
+        const updated = await storage.updatePosition(pos.id, {
+          status: "Closed",
+          exitPrice: String(exitPx),
+          exitDate: new Date(),
+          gainPercent: gainPercent,
+        });
+        closed.push(updated);
+
+        if (pos.isPublished) {
+          const subPayload = buildPositionClosedSubscriberNotification(pos, exitPx, gainPercent || "0", strategy.name);
+          notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
+          const wlPayload = buildPositionClosedWatchlistNotification(pos, gainPercent || "0", strategy.name);
+          notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
+
+          // Fire webhook for broker integrations (Upstox, Dreamstreet, etc.)
+          const closedPos = { ...pos, exitPrice: String(exitPx), gainPercent, status: "Closed", exitDate: new Date() };
+          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[routes close-group] fireWebhookEvent POSITION_CLOSED failed:", err));
+        }
+      }
+      console.log(`[MultiLeg] Closed ${closed.length} legs in group ${legGroupId}`);
+      res.json({ legGroupId, closed });
+    } catch (err: any) {
+      res.status(500).send(err.message);
+    }
+  });
+
   app.get("/api/advisor/strategies/:id/calls", requireAdvisor, async (req, res) => {
     try {
       const strategy = await storage.getStrategy(req.params.id as string);
@@ -1589,6 +1701,11 @@ export async function registerRoutes(
         notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
         const wlPayload = buildPositionClosedWatchlistNotification(pos, gainPercent || "0", strategy.name);
         notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
+
+        // Fire webhook for broker integrations (Upstox, Dreamstreet, etc.)
+        const closedPos = { ...pos, exitPrice: String(exitPx), gainPercent, status: "Closed", exitDate: new Date() };
+        fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId)
+          .catch((err: any) => console.error("[routes /close] fireWebhookEvent POSITION_CLOSED failed:", err));
       }
       res.json(updated);
     } catch (err: any) {

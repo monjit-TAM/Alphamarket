@@ -767,6 +767,25 @@ export async function getOptionChain(
   underlying: string,
   expiryDate: string
 ): Promise<OptionChainStrike[]> {
+  // ── Try DYOR/Kite first (Groww option-chain API broken since ~May 2026) ──
+  try {
+    const kiteRes = await fetch(`http://127.0.0.1:8001/api/nfo/option-chain/${encodeURIComponent(underlying)}?expiry=${encodeURIComponent(expiryDate)}`, { signal: AbortSignal.timeout(15000) });
+    if (kiteRes.ok) {
+      const kiteData = await kiteRes.json();
+      if (kiteData.chain && kiteData.chain.length > 0) {
+        console.log(`[Kite] Option chain OK: ${underlying} ${expiryDate} — ${kiteData.chain.length} strikes`);
+        return kiteData.chain.map((s: any) => ({
+          strikePrice: s.strikePrice,
+          ce: s.ce ? { ltp: s.ce.ltp || 0, change: 0, oi: 0, volume: 0, tradingSymbol: s.ce.tradingSymbol } : undefined,
+          pe: s.pe ? { ltp: s.pe.ltp || 0, change: 0, oi: 0, volume: 0, tradingSymbol: s.pe.tradingSymbol } : undefined,
+        }));
+      }
+    }
+  } catch (kiteErr) {
+    console.error("[Kite] Option chain fallback error:", kiteErr);
+  }
+
+  // ── Fallback to Groww if Kite unavailable ──
   try {
     const accessToken = await getAccessToken();
     const url = `${GROWW_API_BASE}/option-chain/exchange/${exchange}/underlying/${underlying}?expiry_date=${expiryDate}`;
