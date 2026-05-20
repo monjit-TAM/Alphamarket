@@ -7296,8 +7296,20 @@ export async function registerRoutes(
         CASE
           WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') > 1 THEN 'Multileg'
           WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') = 1 THEN
-            COALESCE(bwl.payload->'data'->'fnoCall'->0->>'optionType', 'F&O')
-          WHEN bwl.payload->'data'->'equityCall' IS NOT NULL THEN 'Equity'
+            CASE
+              WHEN bwl.payload->'data'->'horizon' ? 'Intraday' THEN 'FnO Intraday'
+              WHEN bwl.payload->'data'->>'strategyType' = 'Future' THEN 'Futures'
+              WHEN bwl.payload->'data'->>'strategyType' = 'CommodityFuture' THEN 'Commodity'
+              ELSE COALESCE('FnO ' || (bwl.payload->'data'->'fnoCall'->0->>'optionType'), 'F&O')
+            END
+          WHEN bwl.payload->'data'->'equityCall' IS NOT NULL THEN
+            CASE
+              WHEN bwl.payload->'data'->'horizon' ? 'Intraday' THEN 'Equity Intraday'
+              WHEN bwl.payload->'data'->'horizon' ? 'BTST' THEN 'BTST'
+              WHEN bwl.payload->'data'->'horizon' ? 'Short Term' THEN 'Short Term'
+              WHEN bwl.payload->'data'->'horizon' ? 'Positional' THEN 'Positional'
+              ELSE 'Equity'
+            END
           ELSE 'Unknown'
         END AS instrument_type
       FROM broker_webhook_logs bwl WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`);
