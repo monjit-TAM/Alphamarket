@@ -9971,16 +9971,140 @@ async def bridge_publish_call(req: dict, user=Depends(get_current_user)):
     email = user.get("email")
     if not email:
         raise HTTPException(400, "User email not found")
+
+    symbol = (req.get("stock_name") or "").upper()
+    rationale = req.get("rationale", "")
+
+    # Auto-generate rich rationale if basic/empty
+    if not rationale or rationale.startswith("Screener:") or rationale == "Published from DYOR Research Platform" or len(rationale) < 50:
+        try:
+            parts = []
+            screener_strat = req.get("screener_strategy", "")
+
+            # ── SCREENER CONTEXT: Why this stock was filtered ──
+            if screener_strat:
+                strat_label = screener_strat.replace("_", " ").title()
+                screener_reasons = {
+                    "momentum": "strong price momentum with consistent higher highs, above-average volume, and positive relative strength vs the broader market",
+                    "oversold": "RSI dropping to oversold levels while fundamentals remain intact, presenting a high-probability mean-reversion entry",
+                    "overbought": "RSI reaching overbought territory, signaling potential for profit-taking or a short-term pullback",
+                    "breakout": "breaking above key resistance with volume confirmation, indicating a fresh trend initiation",
+                    "golden_cross": "50-day moving average crossing above 200-day MA (Golden Cross), one of the most reliable long-term bullish signals",
+                    "death_cross": "50-day MA crossing below 200-day MA (Death Cross), indicating structural bearish shift",
+                    "bb_squeeze": "Bollinger Bands narrowing to a tight squeeze, indicating compressed volatility that often precedes an explosive directional move",
+                    "minervini": "passing Mark Minervini's Stage 2 trend template criteria: price above key MAs, rising earnings momentum, strong relative strength",
+                    "pullback_buy": "pulling back to key support within a confirmed uptrend, offering low-risk entry near moving average support",
+                    "up_on_volume": "advancing with significantly higher-than-average volume, indicating strong institutional buying conviction",
+                    "volume": "abnormally high volume surge suggesting institutional activity or catalyst-driven accumulation",
+                    "relative_strength": "outperforming the broader market significantly over the past 1-3 months, indicating sustained institutional demand",
+                    "trend_strong": "ADX above 25 confirming a well-established directional trend with high probability of continuation",
+                    "52w_high": "trading near its 52-week high with sustained buying pressure, often a sign of continued upside in quality stocks",
+                    "52w_low": "near 52-week low, potentially offering deep value if business fundamentals remain intact",
+                    "macd_crossover": "MACD line crossing above signal line with positive histogram, a widely followed momentum buy trigger",
+                    "macd_bearish": "MACD showing bearish divergence, signaling weakening upward momentum",
+                    "supertrend_buy": "trading above Supertrend indicator, confirming bullish trend with dynamic trailing support",
+                    "growth_momentum": "combining strong earnings/revenue growth trajectory with positive price momentum",
+                    "safe_haven": "low volatility, strong balance sheet, and consistent dividends, suitable for capital preservation",
+                    "high_roe": "high Return on Equity indicating superior management efficiency in generating shareholder value",
+                    "low_pe": "low P/E ratio relative to sector peers, suggesting potential undervaluation at current earnings",
+                    "dividend_yield": "attractive dividend yield providing regular income alongside capital appreciation potential",
+                    "sector_rotation": "belonging to a sector showing improving relative strength and increasing institutional fund flows",
+                    "multi_timeframe": "bullish alignment across daily and weekly timeframes, a high-conviction setup",
+                    "gap_up": "opening with a significant gap up on heavy volume, indicating strong overnight buying or positive catalyst",
+                    "gap_down": "gapping down significantly, presenting potential mean-reversion opportunity if fundamentals are sound",
+                    "range_breakout": "breaking out of a well-defined consolidation range, suggesting the start of a new trending leg",
+                    "recent_breakout": "recent breakout through key resistance with volume confirmation",
+                    "turnaround": "showing early signs of recovery from a prolonged downtrend with improving technicals",
+                    "volume_dry": "volume drying up during consolidation, a classic pre-breakout setup",
+                    "high_beta": "high-beta stock offering amplified upside in bullish markets",
+                    "top_losers": "among the day's biggest losers, may present contrarian entry if decline is overdone",
+                }
+                reason = screener_reasons.get(screener_strat, "meeting the screener's quantitative filtering criteria")
+                parts.append(f"SCREENER SIGNAL: {symbol} was identified by the {strat_label} Screener for {reason}.")
+
+            # ── Screener signals data from cache ──
+            if screener_strat and redis_client:
+                try:
+                    cache_key = f"screener:{screener_strat}:50:10000::::"
+                    scr_cached = await redis_client.get(cache_key)
+                    if scr_cached:
+                        scr_data = json.loads(scr_cached)
+                        scr_stocks = scr_data.get("stocks", [])
+                        stock_data = next((s for s in scr_stocks if s.get("symbol") == symbol), None)
+                        if stock_data:
+                            sig_parts = []
+                            rsi = stock_data.get("rsi")
+                            if rsi: sig_parts.append(f"RSI at {rsi:.1f}")
+                            vol_r = stock_data.get("vol_ratio")
+                            if vol_r and vol_r > 1.2: sig_parts.append(f"Volume {vol_r:.1f}x above average")
+                            if stock_data.get("above_200dma"): sig_parts.append("trading above 200-day MA")
+                            if stock_data.get("above_50dma"): sig_parts.append("above 50-day MA")
+                            if stock_data.get("macd_cross_up"): sig_parts.append("MACD bullish crossover active")
+                            if stock_data.get("above_supertrend"): sig_parts.append("above Supertrend support")
+                            rs3m = stock_data.get("rs_3m")
+                            if rs3m and rs3m > 5: sig_parts.append(f"3-month relative strength +{rs3m:.1f}%")
+                            mini = stock_data.get("minervini_score")
+                            if mini and mini >= 4: sig_parts.append(f"Minervini score {mini}/7")
+                            pct52h = stock_data.get("pct_from_52h")
+                            if pct52h is not None and pct52h > -5: sig_parts.append(f"within {abs(pct52h):.1f}% of 52-week high")
+                            pe = stock_data.get("pe_ratio")
+                            if pe and pe > 0: sig_parts.append(f"P/E {pe:.1f}")
+                            roe = stock_data.get("roe")
+                            if roe and roe > 12: sig_parts.append(f"ROE {roe:.1f}%")
+                            if sig_parts:
+                                parts.append("KEY SIGNALS: " + ", ".join(sig_parts) + ".")
+                except Exception as _e:
+                    pass
+
+            # ── Stock360 AlphaScore ──
+            try:
+                s360 = await stock360(symbol, user)
+                ascore = s360.get("alphascore", {})
+                if ascore and ascore.get("alphascore"):
+                    dims = ascore.get("dimensions", {})
+                    parts.append(f"ALPHASCORE: {ascore['alphascore']}/100 (Grade {ascore.get('grade','N/A')}, Signal: {ascore.get('signal','N/A')}). Technical: {dims.get('technical',0):.0f}, Fundamental: {dims.get('fundamental',0):.0f}, Ownership: {dims.get('ownership',0):.0f}, Momentum: {dims.get('momentum',0):.0f}, Risk: {dims.get('risk_alpha',0):.0f}.")
+
+                conf = s360.get("confluence", {})
+                if conf and conf.get("probability"):
+                    parts.append(f"CONFLUENCE: {conf['probability']}% probability ({conf.get('conviction','N/A')} conviction). Estimated return: {conf.get('estimated_return',0)}% over {conf.get('holding_period_days',30)} days.")
+
+                sm = s360.get("smart_money", {})
+                if sm and sm.get("smart_money_score"):
+                    pos_signals = [s.get("text","") for s in sm.get("positive_signals", [])]
+                    risk_flags = [s.get("text","") for s in sm.get("risk_flags", [])]
+                    parts.append(f"SMART MONEY: Score {sm['smart_money_score']}/100 ({sm.get('verdict','N/A')}).")
+                    if pos_signals:
+                        parts.append("Bullish signals: " + "; ".join(pos_signals[:3]) + ".")
+                    if risk_flags:
+                        parts.append("Risk flags: " + "; ".join(risk_flags[:2]) + ".")
+
+                pat = s360.get("patterns", {})
+                if pat and pat.get("narrative"):
+                    narr = pat["narrative"]
+                    if len(narr) > 400: narr = narr[:400] + "..."
+                    parts.append(f"TECHNICAL OUTLOOK: {narr}")
+            except Exception as _e360:
+                print(f"[Bridge] Stock360 failed for {symbol}: {_e360}")
+
+            if parts:
+                rationale = " ".join(parts)
+            else:
+                rationale = req.get("rationale") or "Published from DYOR Research Platform"
+            print(f"[Bridge] Rich rationale for {symbol}: {len(rationale)} chars")
+        except Exception as e:
+            print(f"[Bridge] Rationale generation failed for {symbol}: {e}")
+            rationale = req.get("rationale") or "Published from DYOR Research Platform"
+
     payload = {
         "advisor_email": email,
         "strategy_id": req.get("strategy_id"),
-        "stock_name": req.get("stock_name"),
+        "stock_name": symbol,
         "action": req.get("action", "BUY"),
         "buy_range_start": req.get("buy_range_start"),
         "buy_range_end": req.get("buy_range_end"),
         "target_price": req.get("target_price"),
         "stop_loss": req.get("stop_loss"),
-        "rationale": req.get("rationale", "Published from DYOR Research Platform"),
+        "rationale": rationale,
         "profit_goal": req.get("profit_goal"),
         "publish_mode": req.get("publish_mode", "live"),
     }
