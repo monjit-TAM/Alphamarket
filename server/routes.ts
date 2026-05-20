@@ -7279,16 +7279,27 @@ export async function registerRoutes(
         bwl.*,
         bwl.payload->'data'->'equityCall'->>'symbol' AS symbol,
         bwl.payload->'data'->'equityCall'->>'name' AS stock_name,
-        bwl.payload->'data'->'equityCall'->>'status' AS call_status,
-        bwl.payload->'data'->'equityCall'->>'callType' AS call_type,
-        bwl.payload->'data'->'equityCall'->>'exitType' AS exit_type,
-        bwl.payload->'data'->'equityCall'->>'buyPrice' AS buy_price,
-        bwl.payload->'data'->'equityCall'->>'sellPrice' AS sell_price,
-        bwl.payload->'data'->'equityCall'->>'profitLossPercent' AS pnl_percent,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'status', bwl.payload->'data'->'fnoCall'->0->>'status') AS call_status,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'callType', bwl.payload->'data'->'fnoCall'->0->>'callType') AS call_type,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'exitType', bwl.payload->'data'->'fnoCall'->0->>'exitType') AS exit_type,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'buyPrice', bwl.payload->'data'->'fnoCall'->0->>'buyPrice') AS buy_price,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'sellPrice', bwl.payload->'data'->'fnoCall'->0->>'sellPrice') AS sell_price,
+        COALESCE(bwl.payload->'data'->'equityCall'->>'profitLossPercent', bwl.payload->'data'->'fnoCall'->0->>'profitLossPercent') AS pnl_percent,
         bwl.payload->'data'->>'advisorName' AS advisor_name,
         bwl.payload->'data'->>'strategyName' AS strategy_name,
         bwl.payload->'data'->>'strategyType' AS strategy_type,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->>'symbol') AS display_symbol
+        COALESCE(
+          bwl.payload->'data'->'equityCall'->>'symbol',
+          bwl.payload->'data'->'fnoCall'->0->>'symbol',
+          bwl.payload->'data'->'fnoCall'->0->>'name'
+        ) AS display_symbol,
+        CASE
+          WHEN jsonb_array_length(COALESCE(bwl.payload->'data'->'fnoCall', '[]'::jsonb)) > 1 THEN 'Multileg'
+          WHEN bwl.payload->'data'->'fnoCall' IS NOT NULL AND jsonb_array_length(COALESCE(bwl.payload->'data'->'fnoCall', '[]'::jsonb)) = 1 THEN
+            COALESCE(bwl.payload->'data'->'fnoCall'->0->>'optionType', 'F&O')
+          WHEN bwl.payload->'data'->'equityCall' IS NOT NULL THEN 'Equity'
+          ELSE 'Unknown'
+        END AS instrument_type
       FROM broker_webhook_logs bwl WHERE ${where} ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`);
 
       if (format === 'csv') {
