@@ -196,6 +196,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   payload.strategyType = "Equity";
   payload.advisorName = advisor?.company_name || advisor?.username;
   payload.profilePic = advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : "";
+  if (advisor?.sebi_cert_url) payload.certificateURl = advisor.sebi_cert_url;
   payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
   payload.equityCall = equityCall;
   payload.status = "SEND";
@@ -286,6 +287,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any): Pro
   payload.strategyType = rootType;
   payload.advisorName = advisor?.company_name || advisor?.username;
   payload.profilePic = advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : "";
+  if (advisor?.sebi_cert_url) payload.certificateURl = advisor.sebi_cert_url;
   payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
   payload.fnoCall = [fnoCall];
   payload.status = "SEND";
