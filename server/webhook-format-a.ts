@@ -1,11 +1,17 @@
 /**
  * server/webhook-format-a.ts
  *
- * Format A payload builder — matches thealphamarket.com's webhook format exactly.
- * Used for brokers integrated against the old backend (Upstox and any future broker
- * requesting backward-compatible shape).
+ * Format A payload builder — matches Upstox UAT expected schema exactly.
+ * Used for brokers with webhook_payload_version = 'v1_thealphamarket'.
  *
- * Brokers opt-in via broker_api_keys.webhook_payload_version = 'v1_thealphamarket'.
+ * Key fields required by Upstox:
+ *   - recommendationId (unique per recommendation, from DB sequence)
+ *   - advisorId (slug format: "company-name.NNNNNN")
+ *   - clientId ("upstox")
+ *   - env ("uat" or "production")
+ *   - callStatus, symbol, callType at root level
+ *   - equityCall or fnoCall with full details
+ *   - dayMonth (DDMM format)
  */
 
 import { db } from "./db";
@@ -13,100 +19,65 @@ import { sql } from "drizzle-orm";
 
 // ─── Types ──────────────────────────────────────────────────────
 
-export interface EquityCallFormatA {
-  exchange: string;
-  legId: string;
-  legName: string | null;
-  symbol: string;
-  name: string;
-  buyDate: number;
-  buyPrice: number;
-  buyPriceRangeEnd: number | null;
-  buyPriceRangeStart: number | null;
-  callType: string;
-  profitLossPercent?: number;
-  sellPrice: number | null;
-  sellDate: number | null;
-  targetPriceRange: string | null;
-  profitGoal: string | null;
-  stopLoss: string | null;
-  rational: string | null; // note: no 'e' — thealphamarket's original spelling
-  exitType?: string | null;
-  rationals: Array<{
-    rational: string;
-    date: number;
-    name: string | null;
-    path: string | null;
-    fileName: string | null;
-    createdBy: string | null;
-  }>;
-  creationDate: number;
-  status: string;
-}
-
-export interface FnoCallFormatA {
-  exchange: string;
-  legId: string;
-  legName: string | null;
-  symbol: string;
-  name: string;
-  series: string;
-  isStoppLossAbsolute: { code: string; name: string };
-  expiryDate: number;
-  lotSize: number;
-  strike: number;
-  profitLossPercent?: number | null;
-  optionType: string;
-  buyDate: number;
-  buyPrice: number;
-  buyPriceRangeEnd: number | null;
-  buyPriceRangeStart: number | null;
-  callType: string;
-  sellPrice: number | null;
-  sellDate: number | null;
-  targetPriceRange: string | null;
-  profitGoal: string | null;
-  stopLoss: string | null;
-  exitType?: string | null;
-  rational: string | null;
-  rationals: Array<any>;
-  creationDate: number;
-  status: string;
-}
-
 export interface FormatAEnvelope {
+  advisorId: string;
+  clientId: string;
+  env: string;
+  callStatus: string;
+  dayMonth: string;
+  symbol: string;
+  callType: string;
+  strategyId: string;
+  recommendationId: string;
+  rational: string | null;
+  theme: string[] | null;
+  thematicCollection: string[] | null;
+  managementStyle: string[] | null;
+  volatility: string[] | null;
+  horizon: string[] | null;
+  strategyName: string;
+  strategyDescription: string | null;
+  benchmark: string | null;
+  strategyType: string;
+  advisorName: string;
+  profilePic: string | null;
+  advisorSebiRegistrationNo: string | null;
+  equityCall: any | null;
+  fnoCall: any[] | null;
   status: string;
-  statusCode: number;
-  message: { key: string; message: string };
-  data: {
-    strategyId: string;  // Uses strategies.slug (e.g. "growth-365")
-    theme: string[] | null;
-    managementStyle: string[] | null;
-    volatility: string[] | null;
-    marketCap: string[] | null;
-    horizon: string[] | null;
-    keySector: string[] | null;
-    strategyName: string;
-    strategyDescription: string | null;
-    benchmark: string | null;
-    strategyType: string;
-    advisorName: string;
-    profilePic: string | null;
-    certificateURl: string | null; // note: lowercase 'l' per Format A spec
-    advisorSebiRegistrationNo: string | null;
-    equityCall: EquityCallFormatA | null;
-    fnoCall: FnoCallFormatA[] | null;
-  };
+  creationDate: { $date: string };
+  isActive: boolean;
+  _class: string;
+  // Legacy wrapper fields for backward compat
+  data?: any;
+  statusCode?: number;
+  message?: any;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-/** Convert Date/string to Unix epoch milliseconds (number). Upstox UAT requires epoch millis, not ISO strings. */
-function toThealphamarketEpoch(d: Date | string | null | undefined): number {
+function toDateObj(d: Date | string | number | null | undefined): { $date: string } {
+  if (!d) return { $date: new Date().toISOString() };
+  if (typeof d === "number") return { $date: new Date(d).toISOString() };
+  const date = d instanceof Date ? d : new Date(d);
+  if (isNaN(date.getTime())) return { $date: new Date().toISOString() };
+  return { $date: date.toISOString() };
+}
+
+function toEpoch(d: Date | string | number | null | undefined): number {
   if (!d) return Date.now();
+  if (typeof d === "number") return d;
   const date = d instanceof Date ? d : new Date(d);
   if (isNaN(date.getTime())) return Date.now();
   return date.getTime();
+}
+
+function getDayMonth(d?: Date | string | number | null): string {
+  const date = d ? (typeof d === "number" ? new Date(d) : new Date(d)) : new Date();
+  if (isNaN(date.getTime())) return "0000";
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return day + month;
 }
 
 function toStringArray(s: string | null | undefined | string[]): string[] | null {
@@ -128,7 +99,7 @@ function toNum(n: number | string | null | undefined): number | null {
   return Number.isFinite(num) ? num : null;
 }
 
-function mapStatusForEvent(eventType: string, internalStatus: string): string {
+function mapCallStatus(eventType: string, internalStatus: string): string {
   const CLOSING = new Set([
     "CALL_CLOSED", "POSITION_CLOSED",
     "TARGET_ACHIEVED", "STOPLOSS_TRIGGERED", "TRAILING_SL_TRIGGERED",
@@ -150,31 +121,13 @@ function mapExitType(eventType: string, internalStatus: string): string | null {
   }
 }
 
-function legIdFromUuid(id: string): string {
-  // Format A uses "00807"-style. Our IDs are UUIDs. Default: use first 5 hex chars.
-  // If Upstox requires strict counter, swap for a real sequence column.
-  const first = String(id || "").replace(/-/g, "").substring(0, 5);
-  return first || "00000";
+function buildAdvisorSlug(companyName: string | null, advisorId: string): string {
+  const name = (companyName || "advisor").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const suffix = (advisorId || "000000").replace(/-/g, "").substring(0, 6);
+  return `${name}.${suffix}`;
 }
 
-function mapOptionType(segment: string | null, callPut: string | null): string {
-  if (segment === "Future") return "Future";
-  if (segment === "Option") {
-    if (!callPut) return "Option";
-    const cp = callPut.toUpperCase();
-    if (cp.startsWith("C") || cp === "CE") return "Call";
-    if (cp.startsWith("P") || cp === "PE") return "Put";
-    return "Option";
-  }
-  return segment || "";
-}
-
-function buildFnoSymbol(
-  underlying: string,
-  expiry: string | null,
-  optionType: string,
-  strike: number | null,
-): string {
+function buildFnoSymbol(underlying: string, expiry: string | null, optionType: string, strike: number | null): string {
   if (!expiry) return underlying;
   const d = new Date(expiry);
   if (isNaN(d.getTime())) return underlying;
@@ -187,197 +140,220 @@ function buildFnoSymbol(
   return `${underlying}${year}${mon}${strk}${cp}`;
 }
 
-function mapSeries(segment: string | null): string {
-  if (!segment || segment === "Equity") return "EQ";
-  return "XX"; // futures + options per thealphamarket.com sample
+function mapOptionType(segment: string | null, callPut: string | null): string {
+  if (segment === "Future") return "Future";
+  if (segment === "Option" || segment === "Equity") {
+    if (!callPut) return "Option";
+    const cp = callPut.toUpperCase();
+    if (cp.startsWith("C") || cp === "CE") return "Call";
+    if (cp.startsWith("P") || cp === "PE") return "Put";
+    return "Option";
+  }
+  return segment || "";
 }
 
-// ─── Metadata fallbacks ─────────────────────────────────────────
-// AlphaMarket strategies sometimes have empty theme[]/managementStyle/keySector
-// in the DB (optional fields on strategy creation). Format A consumers expect
-// meaningful categorization, so we derive fallbacks from what we do have.
+async function getNextRecommendationId(): Promise<string> {
+  try {
+    const result = await db.execute(sql`SELECT nextval('recommendation_id_seq')::text as rec_id`);
+    return (result.rows[0] as any)?.rec_id || String(Date.now());
+  } catch {
+    return String(Date.now());
+  }
+}
 
-function deriveThemeFallback(strategy: any): string[] | null {
+function deriveTheme(strategy: any): string[] | null {
   const t = strategy?.theme;
   if (Array.isArray(t) && t.length > 0) return t;
-  // Fallback: derive from strategy.type
   const type = strategy?.type;
   if (!type) return null;
   if (type === "Equity") return ["Equity"];
   if (type === "Future" || type === "Option" || type === "FnO") return ["F&O"];
+  if (type === "CommodityFuture") return ["Commodity"];
   if (type === "Basket") return ["Equity", "Basket"];
   return [String(type)];
 }
 
-function deriveManagementStyleFallback(strategy: any): string[] | null {
-  const m = strategy?.management_style;
-  if (Array.isArray(m) && m.length > 0) return m;
-  if (typeof m === "string" && m.trim().length > 0) return [m];
-  // AlphaMarket is an active-advisor platform. Default to "Active".
-  return ["Active"];
-}
-
 // ─── Main builders ──────────────────────────────────────────────
 
-export function buildFormatAEquity(params: {
+export async function buildFormatAEquity(params: {
   event: string;
   call: any;
   strategy: any;
   advisor: any;
-}): FormatAEnvelope {
+}): Promise<FormatAEnvelope> {
   const { event, call, strategy, advisor } = params;
 
-  const isClosed = mapStatusForEvent(event, call.status) === "CLOSED";
+  const callStatus = mapCallStatus(event, call.status);
+  const isClosed = callStatus === "CLOSED";
   const buyPriceNum = toNum(call.entry_price) ?? toNum(call.buy_range_start) ?? 0;
+  const recId = await getNextRecommendationId();
+  const legId = recId;
 
-  const equityCall: EquityCallFormatA = {
+  const equityCall: any = {
     exchange: "NSE",
-    legId: legIdFromUuid(call.id),
-    legName: null,
+    legId,
+    exchangeToken: null,
     symbol: call.stock_name,
     name: call.stock_name,
-    buyDate: toThealphamarketEpoch(call.call_date),
+    buyDate: toDateObj(call.call_date),
     buyPrice: buyPriceNum,
     buyPriceRangeEnd: toNum(call.buy_range_end),
     buyPriceRangeStart: toNum(call.buy_range_start),
     callType: String(call.action || "BUY").toUpperCase(),
-    sellPrice: isClosed ? toNum(call.sell_price) : null,
-    sellDate: isClosed ? toThealphamarketEpoch(call.exit_date) : null,
     targetPriceRange: numToStr(call.target_price),
     profitGoal: numToStr(call.profit_goal),
     stopLoss: numToStr(call.stop_loss),
-    rational: call.rationale || null,
-    creationDate: toThealphamarketEpoch(call.created_at || call.call_date),
-    status: mapStatusForEvent(event, call.status),
-    rationals: [],
+    status: callStatus,
   };
 
-  if (isClosed && call.gain_percent != null) {
-    equityCall.profitLossPercent = toNum(call.gain_percent) ?? undefined;
+  if (isClosed) {
+    equityCall.sellPrice = toNum(call.sell_price);
+    equityCall.sellDate = toDateObj(call.exit_date);
+    equityCall.exitType = mapExitType(event, call.status);
+    equityCall.profitLossPercent = toNum(call.gain_percent);
+    equityCall.rational = equityCall.exitType || "ManualClose";
   }
 
-  const exitType = mapExitType(event, call.status);
-  if (exitType) {
-    equityCall.exitType = exitType;
-    if (event === "TARGET_ACHIEVED") equityCall.rational = "TargetAchieved";
-    else if (event === "STOPLOSS_TRIGGERED") equityCall.rational = "StoplossTriggered";
-    else if (event === "TRAILING_SL_TRIGGERED") equityCall.rational = "TrailingSLTriggered";
-  }
-
+  // Rationals array
   if (call.rationale) {
+    equityCall.rational = call.rationale;
     equityCall.rationals = [{
       rational: call.rationale,
-      date: toThealphamarketEpoch(call.created_at || call.call_date),
-      name: null,
-      path: null,
-      fileName: null,
+      date: toDateObj(call.created_at || call.call_date),
+      name: null, path: null, fileName: null,
       createdBy: advisor?.username || null,
     }];
   }
 
   return {
-    status: "success",
-    statusCode: 200,
-    message: { key: "GET", message: "Get Successfully" },
-    data: {
-      strategyId: strategy.slug || strategy.id, // prefer slug, fall back to UUID if missing
-      theme: deriveThemeFallback(strategy),
-      managementStyle: deriveManagementStyleFallback(strategy),
-      volatility: toStringArray(strategy.volatility),
-      marketCap: null,
-      horizon: toStringArray(strategy.horizon),
-      keySector: toStringArray(strategy.key_sectors),
-      strategyName: strategy.name,
-      strategyDescription: strategy.description,
-      benchmark: strategy.benchmark,
-      strategyType: strategy.type || "Equity",
-      advisorName: advisor?.company_name || advisor?.username,
-      profilePic: advisor?.logo_url,
-      certificateURl: advisor?.sebi_cert_url,
-      advisorSebiRegistrationNo: advisor?.sebi_reg_number,
-      equityCall,
-      fnoCall: null,
-    },
+    advisorId: buildAdvisorSlug(advisor?.company_name, advisor?.id),
+    clientId: "upstox",
+    env: "uat",
+    callStatus,
+    dayMonth: getDayMonth(call.call_date || call.created_at),
+    symbol: call.stock_name,
+    callType: String(call.action || "BUY").toUpperCase(),
+    strategyId: strategy.slug || strategy.id,
+    recommendationId: recId,
+    rational: call.rationale || null,
+    theme: deriveTheme(strategy),
+    thematicCollection: null,
+    managementStyle: toStringArray(strategy.management_style) || ["Active"],
+    volatility: toStringArray(strategy.volatility),
+    horizon: toStringArray(strategy.horizon),
+    strategyName: strategy.name,
+    strategyDescription: strategy.description || null,
+    benchmark: strategy.benchmark || "Nifty 50",
+    strategyType: "Equity",
+    advisorName: advisor?.company_name || advisor?.username,
+    profilePic: advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : null,
+    advisorSebiRegistrationNo: advisor?.sebi_reg_number || null,
+    equityCall,
+    fnoCall: null,
+    status: "SEND",
+    creationDate: toDateObj(call.created_at || call.call_date),
+    isActive: !isClosed,
+    _class: "com.alpha.market.dao.StrategyIntegration",
   };
 }
 
-export function buildFormatAFno(params: {
+export async function buildFormatAFno(params: {
   event: string;
   position: any;
   strategy: any;
   advisor: any;
-  lotSize?: number;
-}): FormatAEnvelope {
-  const { event, position, strategy, advisor, lotSize = 1 } = params;
+}): Promise<FormatAEnvelope> {
+  const { event, position, strategy, advisor } = params;
 
-  const optType = mapOptionType(position.segment, position.call_put);
-  const isClosed = mapStatusForEvent(event, position.status) === "CLOSED";
+  const callStatus = mapCallStatus(event, position.status);
+  const isClosed = callStatus === "CLOSED";
   const buyPriceNum = toNum(position.entry_price) ?? 0;
   const strike = toNum(position.strike_price) ?? 0;
+  const optType = mapOptionType(position.segment, position.call_put);
+  const recId = await getNextRecommendationId();
+  const legId = recId;
+  const fnoSymbol = buildFnoSymbol(position.symbol, position.expiry, optType, strike);
 
-  const fnoCall: FnoCallFormatA = {
+  const fnoCall: any = {
     exchange: "NSE",
-    legId: legIdFromUuid(position.id),
-    legName: null,
-    symbol: buildFnoSymbol(position.symbol, position.expiry, optType, strike),
+    legId,
+    series: position.segment === "Equity" ? "EQ" : "XX",
+    symbol: fnoSymbol,
     name: position.symbol,
-    series: mapSeries(position.segment),
     isStoppLossAbsolute: { code: "Y", name: "Yes" },
-    expiryDate: toThealphamarketEpoch(position.expiry),
-    lotSize: lotSize,
-    strike: strike,
+    expiryDate: toEpoch(position.expiry),
+    lotSize: toNum(position.lots) || 1,
+    strike,
     optionType: optType,
-    buyDate: toThealphamarketEpoch(position.created_at),
+    buyDate: toDateObj(position.created_at),
     buyPrice: buyPriceNum,
     buyPriceRangeEnd: null,
     buyPriceRangeStart: null,
     callType: String(position.buy_sell || "BUY").toUpperCase(),
-    sellPrice: isClosed ? toNum(position.exit_price) : null,
-    sellDate: isClosed ? toThealphamarketEpoch(position.exit_date) : null,
     targetPriceRange: numToStr(position.target),
     profitGoal: null,
     stopLoss: numToStr(position.stop_loss),
-    rational: position.rationale || null,
-    rationals: [],
-    creationDate: toThealphamarketEpoch(position.created_at),
-    status: mapStatusForEvent(event, position.status),
+    status: callStatus,
+    creationDate: toEpoch(position.created_at),
   };
 
-  if (isClosed && position.gain_percent != null) {
+  if (isClosed) {
+    fnoCall.sellPrice = toNum(position.exit_price);
+    fnoCall.sellDate = toEpoch(position.exit_date);
+    fnoCall.exitType = mapExitType(event, position.status);
     fnoCall.profitLossPercent = toNum(position.gain_percent);
+    fnoCall.rational = fnoCall.exitType || "ManualClose";
   }
 
-  const exitType = mapExitType(event, position.status);
-  if (exitType) fnoCall.exitType = exitType;
+  if (position.rationale) {
+    fnoCall.rational = position.rationale;
+    fnoCall.rationals = [{
+      rational: position.rationale,
+      date: toEpoch(position.created_at),
+      name: null, path: null, fileName: null,
+      createdBy: advisor?.username || null,
+    }];
+  }
+
+  // Determine strategy type for root level
+  let rootStrategyType = "Option";
+  if (optType === "Future") rootStrategyType = "Future";
+  if (strategy?.type === "CommodityFuture") rootStrategyType = "CommodityFuture";
 
   return {
-    status: "success",
-    statusCode: 200,
-    message: { key: "GET", message: "Get Successfully" },
-    data: {
-      strategyId: strategy.slug || strategy.id,
-      theme: deriveThemeFallback(strategy),
-      managementStyle: deriveManagementStyleFallback(strategy),
-      volatility: toStringArray(strategy.volatility),
-      marketCap: null,
-      horizon: toStringArray(strategy.horizon),
-      keySector: toStringArray(strategy.key_sectors),
-      strategyName: strategy.name,
-      strategyDescription: strategy.description,
-      benchmark: strategy.benchmark,
-      strategyType: optType === "Future" ? "Future" : (optType === "Call" || optType === "Put" ? "Option" : strategy.type || "FnO"),
-      advisorName: advisor?.company_name || advisor?.username,
-      profilePic: advisor?.logo_url,
-      certificateURl: advisor?.sebi_cert_url,
-      advisorSebiRegistrationNo: advisor?.sebi_reg_number,
-      equityCall: null,
-      fnoCall: [fnoCall],
-    },
+    advisorId: buildAdvisorSlug(advisor?.company_name, advisor?.id),
+    clientId: "upstox",
+    env: "uat",
+    callStatus,
+    dayMonth: getDayMonth(position.created_at),
+    symbol: position.symbol || fnoSymbol,
+    callType: String(position.buy_sell || "BUY").toUpperCase(),
+    strategyId: strategy.slug || strategy.id,
+    recommendationId: recId,
+    rational: position.rationale || null,
+    theme: deriveTheme(strategy),
+    thematicCollection: null,
+    managementStyle: toStringArray(strategy.management_style) || ["Active"],
+    volatility: toStringArray(strategy.volatility),
+    horizon: toStringArray(strategy.horizon),
+    strategyName: strategy.name,
+    strategyDescription: strategy.description || null,
+    benchmark: strategy.benchmark || "Nifty 50",
+    strategyType: rootStrategyType,
+    advisorName: advisor?.company_name || advisor?.username,
+    profilePic: advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : null,
+    advisorSebiRegistrationNo: advisor?.sebi_reg_number || null,
+    equityCall: null,
+    fnoCall: [fnoCall],
+    status: "SEND",
+    creationDate: toDateObj(position.created_at),
+    isActive: !isClosed,
+    _class: "com.alpha.market.dao.StrategyIntegration",
   };
 }
 
 /**
- * Fetch strategy + advisor + slug. Returns null if strategy not found.
+ * Fetch strategy + advisor. Returns null if strategy not found.
  */
 export async function loadStrategyAndAdvisor(strategyId: string) {
   const result = await db.execute(sql`
@@ -397,34 +373,23 @@ export async function loadStrategyAndAdvisor(strategyId: string) {
 
   return {
     strategy: {
-      id: row.s_id,
-      slug: row.s_slug,
-      advisor_id: row.advisor_id,
-      name: row.s_name,
-      type: row.s_type,
-      description: row.s_description,
-      theme: row.s_theme,
-      management_style: row.management_style,
-      horizon: row.horizon,
-      volatility: row.volatility,
-      key_sectors: row.key_sectors,
-      benchmark: row.benchmark,
+      id: row.s_id, slug: row.s_slug, advisor_id: row.advisor_id,
+      name: row.s_name, type: row.s_type, description: row.s_description,
+      theme: row.s_theme, management_style: row.management_style,
+      horizon: row.horizon, volatility: row.volatility,
+      key_sectors: row.key_sectors, benchmark: row.benchmark,
     },
     advisor: {
-      id: row.u_id,
-      username: row.username,
-      company_name: row.company_name,
-      email: row.email,
-      sebi_reg_number: row.sebi_reg_number,
-      logo_url: row.logo_url,
-      sebi_cert_url: row.sebi_cert_url,
+      id: row.u_id, username: row.username, company_name: row.company_name,
+      email: row.email, sebi_reg_number: row.sebi_reg_number,
+      logo_url: row.logo_url, sebi_cert_url: row.sebi_cert_url,
     },
   };
 }
 
 /**
- * Top-level: build Format A payload for a dispatch event, given raw internal data.
- * Used by webhook-dispatcher when broker's webhook_payload_version === 'v1_thealphamarket'.
+ * Top-level: build Format A payload for a dispatch event.
+ * Called by webhook-dispatcher when broker's webhook_payload_version === 'v1_thealphamarket'.
  */
 export async function buildFormatAPayload(
   event: string,
@@ -436,64 +401,47 @@ export async function buildFormatAPayload(
   const loaded = await loadStrategyAndAdvisor(strategyId);
   if (!loaded) throw new Error(`Strategy ${strategyId} not found`);
 
-  const isFno =
-    data.type === "FnO" ||
-    data.segment === "Option" ||
-    data.segment === "Future";
-
+  const isFno = data.type === "FnO" || data.segment === "Option" || data.segment === "Future" || data.segment === "Commodity";
   const normalized = denormalizeForBuilder(data);
 
   if (isFno) {
-    return buildFormatAFno({
-      event,
-      position: normalized,
-      strategy: loaded.strategy,
-      advisor: loaded.advisor,
-    });
+    return buildFormatAFno({ event, position: normalized, strategy: loaded.strategy, advisor: loaded.advisor });
   }
-
-  return buildFormatAEquity({
-    event,
-    call: normalized,
-    strategy: loaded.strategy,
-    advisor: loaded.advisor,
-  });
+  return buildFormatAEquity({ event, call: normalized, strategy: loaded.strategy, advisor: loaded.advisor });
 }
 
 /**
- * Internal data travels with camelCase keys (uid, stockName, buyRangeStart) because
- * the webhook-dispatcher's buildCallEventData outputs that shape. The Format A builder
- * expects snake_case (id, stock_name, buy_range_start) to match the DB schema. Map both.
+ * Map camelCase webhook-dispatcher output to snake_case for builder.
  */
 function denormalizeForBuilder(data: Record<string, any>): any {
   return {
     id: data.id ?? data.uid,
     strategy_id: data.strategy_id ?? data.strategyId,
     stock_name: data.stock_name ?? data.stockName ?? data.symbol,
-    action: data.action,
-    buy_range_start: data.buy_range_start ?? data.buyRangeStart,
+    action: data.action ?? data.buySell ?? data.buy_sell,
+    buy_range_start: data.buy_range_start ?? data.buyRangeStart ?? data.entryPrice,
     buy_range_end: data.buy_range_end ?? data.buyRangeEnd,
-    target_price: data.target_price ?? data.targetPrice,
+    target_price: data.target_price ?? data.targetPrice ?? data.target,
     profit_goal: data.profit_goal ?? data.profitGoal,
     stop_loss: data.stop_loss ?? data.stopLoss,
     rationale: data.rationale,
     status: data.status === "ACTIVE" ? "Active" : (data.status === "CLOSED" ? "Closed" : data.status),
     entry_price: data.entry_price ?? data.entryPrice,
     sell_price: data.sell_price ?? data.sellPrice,
-    gain_percent: data.gain_percent ?? data.gainPercent ?? data.gainOrLossPercentage,
+    exit_price: data.exit_price ?? data.exitPrice,
+    gain_percent: data.gain_percent ?? data.gainPercent,
     call_date: data.call_date ?? data.callDate ?? data.creationDate,
     exit_date: data.exit_date ?? data.exitDate,
     created_at: data.created_at ?? data.createdAt ?? data.call_date ?? data.callDate,
-    theme: data.theme,
     segment: data.segment,
     call_put: data.call_put ?? data.callPut,
     buy_sell: data.buy_sell ?? data.buySell ?? data.action,
-    symbol: data.symbol,
+    symbol: data.symbol ?? data.stock_name ?? data.stockName,
     expiry: data.expiry,
     strike_price: data.strike_price ?? data.strikePrice,
     lots: data.lots,
     target: data.target ?? data.target_price ?? data.targetPrice,
-    exit_price: data.exit_price ?? data.exitPrice,
+    leg_group_id: data.leg_group_id ?? data.legGroupId,
   };
 }
 
@@ -503,14 +451,10 @@ function denormalizeForBuilder(data: Record<string, any>): any {
 export function inferSegment(event: string, data: Record<string, any>): string | null {
   const type = data.type;
   const segment = data.segment;
-  const durUnit = data.duration_unit || data.durationUnit;
-
   if (segment === "Option") return "fno_options";
   if (segment === "Future") return "fno_futures";
   if (type === "FnO") return "fno_options";
-
-  if (durUnit === "Intraday" || data.publishMode === "intraday") return "equity_intraday";
-  if (durUnit === "Swing") return "equity_swing";
-  if (durUnit === "Positional" || data.horizon === "Positional") return "equity_positional";
+  if (data.publishMode === "intraday") return "equity_intraday";
+  if (data.horizon === "Positional") return "equity_positional";
   return "equity_cash";
 }
