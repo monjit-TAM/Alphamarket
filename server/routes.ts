@@ -7277,27 +7277,30 @@ export async function registerRoutes(
 
       const logs = await db.execute(sql`SELECT 
         bwl.*,
-        bwl.payload->'data'->'equityCall'->>'symbol' AS symbol,
-        bwl.payload->'data'->'equityCall'->>'name' AS stock_name,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'status', bwl.payload->'data'->'fnoCall'->0->>'status') AS call_status,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'callType', bwl.payload->'data'->'fnoCall'->0->>'callType') AS call_type,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'exitType', bwl.payload->'data'->'fnoCall'->0->>'exitType') AS exit_type,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'buyPrice', bwl.payload->'data'->'fnoCall'->0->>'buyPrice') AS buy_price,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'sellPrice', bwl.payload->'data'->'fnoCall'->0->>'sellPrice') AS sell_price,
-        COALESCE(bwl.payload->'data'->'equityCall'->>'profitLossPercent', bwl.payload->'data'->'fnoCall'->0->>'profitLossPercent') AS pnl_percent,
-        bwl.payload->'data'->>'advisorName' AS advisor_name,
-        bwl.payload->'data'->>'strategyName' AS strategy_name,
-        bwl.payload->'data'->>'strategyType' AS strategy_type,
+        COALESCE(bwl.payload->'equityCall'->>'symbol', bwl.payload->'data'->'equityCall'->>'symbol') AS symbol,
+        COALESCE(bwl.payload->'equityCall'->>'name', bwl.payload->'data'->'equityCall'->>'name', bwl.payload->>'symbol') AS stock_name,
+        COALESCE(bwl.payload->>'callStatus', bwl.payload->'data'->'equityCall'->>'status', bwl.payload->'data'->'fnoCall'->0->>'status') AS call_status,
+        COALESCE(bwl.payload->>'callType', bwl.payload->'data'->'equityCall'->>'callType', bwl.payload->'data'->'fnoCall'->0->>'callType') AS call_type,
+        COALESCE(bwl.payload->'equityCall'->>'exitType', bwl.payload->'data'->'equityCall'->>'exitType', bwl.payload->'data'->'fnoCall'->0->>'exitType') AS exit_type,
+        COALESCE(bwl.payload->'equityCall'->>'buyPrice', bwl.payload->'data'->'equityCall'->>'buyPrice', bwl.payload->'data'->'fnoCall'->0->>'buyPrice') AS buy_price,
+        COALESCE(bwl.payload->'equityCall'->>'sellPrice', bwl.payload->'data'->'equityCall'->>'sellPrice', bwl.payload->'data'->'fnoCall'->0->>'sellPrice') AS sell_price,
+        COALESCE(bwl.payload->'equityCall'->>'profitLossPercent', bwl.payload->'data'->'equityCall'->>'profitLossPercent', bwl.payload->'data'->'fnoCall'->0->>'profitLossPercent') AS pnl_percent,
+        COALESCE(bwl.payload->>'advisorName', bwl.payload->'data'->>'advisorName') AS advisor_name,
+        COALESCE(bwl.payload->>'strategyName', bwl.payload->'data'->>'strategyName') AS strategy_name,
+        COALESCE(bwl.payload->>'strategyType', bwl.payload->'data'->>'strategyType') AS strategy_type,
         COALESCE(
+          bwl.payload->>'symbol',
+          bwl.payload->'equityCall'->>'symbol',
           bwl.payload->'data'->'equityCall'->>'symbol',
+          bwl.payload->'fnoCall'->0->>'symbol',
           bwl.payload->'data'->'fnoCall'->0->>'symbol',
-          bwl.payload->'data'->'fnoCall'->0->>'name',
           bwl.payload->'data'->>'symbol'
         ) AS display_symbol,
-        bwl.payload->'data'->>'legGroupId' AS leg_group_id,
+        COALESCE(bwl.payload->>'legGroupId', bwl.payload->'data'->>'legGroupId') AS leg_group_id,
+        bwl.payload->>'recommendationId' AS recommendation_id,
         CASE
           WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') > 1 THEN 'Multileg'
-          WHEN (bwl.payload->'data'->>'isMultiLeg')::text = 'true' THEN 'Multileg'
+          WHEN (COALESCE(bwl.payload->>'isMultiLeg', bwl.payload->'data'->>'isMultiLeg'))::text = 'true' THEN 'Multileg'
           WHEN jsonb_typeof(bwl.payload->'data'->'fnoCall') = 'array' AND jsonb_array_length(bwl.payload->'data'->'fnoCall') = 1 THEN
             CASE
               WHEN bwl.payload->'data'->'horizon' ? 'Intraday' THEN 'FnO Intraday'
@@ -7315,7 +7318,7 @@ export async function registerRoutes(
             END
           ELSE
             CASE
-              WHEN (bwl.payload->'data'->>'isMultiLeg')::text = 'true' THEN 'Multileg'
+              WHEN (COALESCE(bwl.payload->>'isMultiLeg', bwl.payload->'data'->>'isMultiLeg'))::text = 'true' THEN 'Multileg'
               WHEN bwl.payload->'data'->'horizon' ? 'Intraday' THEN 'FnO Intraday'
               WHEN bwl.payload->'data'->>'strategyType' IN ('Option','Future') THEN 'F&O'
               ELSE 'Unknown'
