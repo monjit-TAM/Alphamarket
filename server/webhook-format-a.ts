@@ -56,12 +56,12 @@ export interface FormatAEnvelope {
 
 // ─── Helpers ────────────────────────────────────────────────────
 
-function toDateObj(d: Date | string | number | null | undefined): { $date: string } {
-  if (!d) return { $date: new Date().toISOString() };
-  if (typeof d === "number") return { $date: new Date(d).toISOString() };
+function toDateObj(d: Date | string | number | null | undefined): number {
+  if (!d) return Date.now();
+  if (typeof d === "number") return d;
   const date = d instanceof Date ? d : new Date(d);
-  if (isNaN(date.getTime())) return { $date: new Date().toISOString() };
-  return { $date: date.toISOString() };
+  if (isNaN(date.getTime())) return Date.now();
+  return date.getTime();
 }
 
 function toEpoch(d: Date | string | number | null | undefined): number {
@@ -192,7 +192,7 @@ export async function buildFormatAEquity(params: {
   const equityCall: any = {
     exchange: "NSE",
     legId,
-    exchangeToken: "",
+    exchangeToken: null,
     symbol: call.stock_name,
     name: call.stock_name,
     buyDate: toDateObj(call.call_date),
@@ -200,9 +200,9 @@ export async function buildFormatAEquity(params: {
     buyPriceRangeEnd: toNum(call.buy_range_end),
     buyPriceRangeStart: toNum(call.buy_range_start),
     callType: String(call.action || "BUY").toUpperCase(),
-    targetPriceRange: numToStr(call.target_price),
-    profitGoal: numToStr(call.profit_goal) || "",
-    stopLoss: numToStr(call.stop_loss),
+    targetPriceRange: toNum(call.target_price),
+    profitGoal: toNum(call.profit_goal),
+    stopLoss: toNum(call.stop_loss),
     status: callStatus,
   };
 
@@ -293,9 +293,9 @@ export async function buildFormatAFno(params: {
     buyPriceRangeEnd: null,
     buyPriceRangeStart: null,
     callType: String(position.buy_sell || "BUY").toUpperCase(),
-    targetPriceRange: numToStr(position.target),
+    targetPriceRange: toNum(position.target),
     profitGoal: null,
-    stopLoss: numToStr(position.stop_loss),
+    stopLoss: toNum(position.stop_loss),
     status: callStatus,
     creationDate: toEpoch(position.created_at),
   };
