@@ -225,7 +225,7 @@ export async function buildFormatAEquity(params: {
     }];
   }
 
-  return {
+  const innerData = {
     advisorId: buildAdvisorSlug(advisor?.company_name, advisor?.id),
     clientId: "upstox",
     env: "uat",
@@ -251,11 +251,13 @@ export async function buildFormatAEquity(params: {
     certificateURl: "",
     advisorSebiRegistrationNo: advisor?.sebi_reg_number || "",
     equityCall,
+    fnoCall: null,
     status: "SEND",
     creationDate: toDateObj(call.created_at || call.call_date),
     isActive: !isClosed,
     _class: "com.alpha.market.dao.StrategyIntegration",
-  } as any;
+  };
+  return { status: "SEND", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: innerData } as any;
 }
 
 export async function buildFormatAFno(params: {
@@ -321,7 +323,7 @@ export async function buildFormatAFno(params: {
   if (optType === "Future") rootStrategyType = "Future";
   if (strategy?.type === "CommodityFuture") rootStrategyType = "CommodityFuture";
 
-  return {
+  const innerData = {
     advisorId: buildAdvisorSlug(advisor?.company_name, advisor?.id),
     clientId: "upstox",
     env: "uat",
@@ -352,7 +354,8 @@ export async function buildFormatAFno(params: {
     creationDate: toDateObj(position.created_at),
     isActive: !isClosed,
     _class: "com.alpha.market.dao.StrategyIntegration",
-  } as any;
+  };
+  return { status: "SEND", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: innerData } as any;
 }
 
 /**
