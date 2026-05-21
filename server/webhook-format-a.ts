@@ -257,7 +257,7 @@ export async function buildFormatAEquity(params: {
     isActive: !isClosed,
     _class: "com.alpha.market.dao.StrategyIntegration",
   };
-  return innerData as any;
+  return { status: "success", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: innerData } as any;
 }
 
 export async function buildFormatAFno(params: {
@@ -355,7 +355,7 @@ export async function buildFormatAFno(params: {
     isActive: !isClosed,
     _class: "com.alpha.market.dao.StrategyIntegration",
   };
-  return innerData as any;
+  return { status: "success", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: innerData } as any;
 }
 
 /**
