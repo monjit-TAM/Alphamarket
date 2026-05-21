@@ -369,7 +369,7 @@ function normalize(data: Record<string, any>): any {
 
 async function lookupInstrument(symbol: string): Promise<{companyName: string, token: string}> {
   try {
-    const r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} LIMIT 1`);
+    const r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
     const row = (r.rows[0] as any);
     return { companyName: row?.company_name || symbol, token: row?.instrument_token || "" };
   } catch { return { companyName: symbol, token: "" }; }
