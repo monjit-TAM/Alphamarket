@@ -122,7 +122,7 @@ async function nextRecId(): Promise<string> {
 // ─── Equity Builder ─────────────────────────────────────────────
 // Field order matches Upstox accepted SAIL/HDFCBANK/TATAPOWER payloads EXACTLY
 
-async function buildEquity(event: string, c: any, strategy: any, advisor: any): Promise<any> {
+async function buildEquity(event: string, c: any, strategy: any, advisor: any, inst?: {companyName: string, token: string}): Promise<any> {
   const cs = mapCallStatus(event, c.status);
   const isClosed = cs === "CLOSED";
   const recId = await nextRecId();
@@ -133,16 +133,16 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   const equityCall: any = {
     exchange: "NSE",
     legId: legId,
-    exchangeToken: "",
+    exchangeToken: inst?.token || "",
     symbol: c.stock_name,
-    name: c.stock_name,
+    name: inst?.companyName || c.stock_name,
     buyDate: mongoDate(c.call_date),
     buyPrice: toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0,
     buyPriceRangeEnd: toNum(c.buy_range_end),
     buyPriceRangeStart: toNum(c.buy_range_start) ?? toNum(c.entry_price),
     callType: action,
     targetPriceRange: toStr(c.target_price),
-    profitGoal: toStr(c.profit_goal),
+    profitGoal: toStr(c.profit_goal) || "",
     stopLoss: toStr(c.stop_loss),
     status: cs,
   };
@@ -196,7 +196,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   payload.strategyType = "Equity";
   payload.advisorName = advisor?.company_name || advisor?.username;
   payload.profilePic = advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : "";
-  if (advisor?.sebi_cert_url) payload.certificateURl = advisor.sebi_cert_url;
+  payload.certificateURl = advisor?.sebi_cert_url || "";
   payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
   payload.equityCall = equityCall;
   payload.status = "SEND";
@@ -287,7 +287,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any): Pro
   payload.strategyType = rootType;
   payload.advisorName = advisor?.company_name || advisor?.username;
   payload.profilePic = advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : "";
-  if (advisor?.sebi_cert_url) payload.certificateURl = advisor.sebi_cert_url;
+  payload.certificateURl = advisor?.sebi_cert_url || "";
   payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
   payload.fnoCall = [fnoCall];
   payload.status = "SEND";
@@ -367,6 +367,14 @@ function normalize(data: Record<string, any>): any {
 
 // ─── Entry Point ────────────────────────────────────────────────
 
+async function lookupInstrument(symbol: string): Promise<{companyName: string, token: string}> {
+  try {
+    const r = await db.execute(sql\`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = \${symbol} LIMIT 1\`);
+    const row = (r.rows[0] as any);
+    return { companyName: row?.company_name || symbol, token: row?.instrument_token || "" };
+  } catch { return { companyName: symbol, token: "" }; }
+}
+
 export async function buildFormatAPayload(
   event: string,
   data: Record<string, any>,
@@ -383,7 +391,8 @@ export async function buildFormatAPayload(
   if (isFno) {
     return buildFno(event, n, loaded.strategy, loaded.advisor);
   }
-  return buildEquity(event, n, loaded.strategy, loaded.advisor);
+  const inst = await lookupInstrument(n.stock_name || n.symbol || "");
+  return buildEquity(event, n, loaded.strategy, loaded.advisor, inst);
 }
 
 export function inferSegment(event: string, data: Record<string, any>): string | null {
