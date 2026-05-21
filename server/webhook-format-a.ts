@@ -110,8 +110,14 @@ function deriveTheme(strategy: any): string[] {
 async function nextRecId(): Promise<string> {
   try {
     const r = await db.execute(sql`SELECT nextval('recommendation_id_seq')::text as v`);
-    return (r.rows[0] as any)?.v || String(Date.now());
-  } catch { return String(Date.now()); }
+    const val = (r.rows[0] as any)?.v;
+    if (val) return val;
+    console.error("[Format A] nextRecId: sequence returned null, falling back to timestamp");
+    return String(Date.now());
+  } catch (err: any) {
+    console.error("[Format A] nextRecId sequence error:", err.message);
+    return String(Date.now());
+  }
 }
 
 // ─── Equity Builder ─────────────────────────────────────────────
@@ -126,7 +132,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   const eq: any = {
     exchange: "NSE",
     legId: legId,
-    exchangeToken: null,
+    exchangeToken: "",
     symbol: c.stock_name,
     name: c.stock_name,
     buyDate: mongoDate(c.call_date),
