@@ -2,40 +2,16 @@
  * server/webhook-format-a.ts
  *
  * Format A payload builder — matches Upstox UAT accepted payload EXACTLY.
- * Verified field-by-field against SAIL/HDFCBANK/TATAPOWER accepted payloads.
+ * Verified against F&O BANKNIFTY accepted sample + SAIL/HDFCBANK equity samples.
  *
- * Brokers opt-in via broker_api_keys.webhook_payload_version = 'v1_thealphamarket'.
+ * Root envelope: { status: "success", statusCode: 200, message: {...}, data: {...} }
+ * Inside data: strategyId first, then fields, then equityCall/fnoCall, NO extra fields.
  */
 
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { randomBytes } from "crypto";
 
 // ─── Helpers ────────────────────────────────────────────────────
-
-function mongoDate(d: Date | string | number | null | undefined): { $date: string } {
-  if (!d) return { $date: new Date().toISOString() };
-  if (typeof d === "number") return { $date: new Date(d).toISOString() };
-  const date = d instanceof Date ? d : new Date(d);
-  return isNaN(date.getTime()) ? { $date: new Date().toISOString() } : { $date: date.toISOString() };
-}
-
-function mongoOid(): { $oid: string } {
-  return { $oid: randomBytes(12).toString("hex") };
-}
-
-function epochMs(d: Date | string | number | null | undefined): number {
-  if (!d) return Date.now();
-  if (typeof d === "number") return d;
-  const date = d instanceof Date ? d : new Date(d);
-  return isNaN(date.getTime()) ? Date.now() : date.getTime();
-}
-
-function getDayMonth(d?: Date | string | number | null): string {
-  const date = d ? (typeof d === "number" ? new Date(d) : new Date(d)) : new Date();
-  if (isNaN(date.getTime())) return "0000";
-  return String(date.getDate()).padStart(2, "0") + String(date.getMonth() + 1).padStart(2, "0");
-}
 
 function toArr(s: string | null | undefined | string[]): string[] | null {
   if (!s) return null;
@@ -54,46 +30,11 @@ function toStr(n: number | string | null | undefined): string | null {
   return String(n);
 }
 
-function advisorSlug(companyName: string | null, id: string): string {
-  const name = (companyName || "advisor").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
-  const suffix = (id || "000000").replace(/-/g, "").substring(0, 6);
-  return `${name}.${suffix}`;
-}
-
-function mapCallStatus(eventType: string, internalStatus: string): string {
-  const CLOSING = new Set(["CALL_CLOSED","POSITION_CLOSED","TARGET_ACHIEVED","STOPLOSS_TRIGGERED","TRAILING_SL_TRIGGERED"]);
-  if (CLOSING.has(eventType)) return "CLOSED";
-  if (internalStatus === "Closed") return "CLOSED";
-  return "PUBLISHED";
-}
-
-function mapExitType(eventType: string, internalStatus: string): string | null {
-  switch (eventType) {
-    case "TARGET_ACHIEVED": return "TargetAchieved";
-    case "STOPLOSS_TRIGGERED": return "StoplossTriggered";
-    case "TRAILING_SL_TRIGGERED": return "TrailingSLTriggered";
-    case "CALL_CLOSED": case "POSITION_CLOSED": return "ManualClose";
-    default: return internalStatus === "Closed" ? "ManualClose" : null;
-  }
-}
-
-function mapOptionType(segment: string | null, callPut: string | null): string {
-  if (segment === "Future") return "Future";
-  if (!callPut) return "Option";
-  const cp = callPut.toUpperCase();
-  if (cp.startsWith("C") || cp === "CE") return "Call";
-  if (cp.startsWith("P") || cp === "PE") return "Put";
-  return "Option";
-}
-
-function buildFnoSymbol(underlying: string, expiry: string | null, opt: string, strike: number | null): string {
-  if (!expiry) return underlying;
-  const d = new Date(expiry);
-  if (isNaN(d.getTime())) return underlying;
-  const yr = String(d.getUTCFullYear()).slice(-2);
-  const mn = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"][d.getUTCMonth()];
-  if (opt === "Future") return `${underlying}${yr}${mn}FUT`;
-  return `${underlying}${yr}${mn}${strike ? Math.round(strike) : 0}${opt === "Call" ? "CE" : "PE"}`;
+function epochMs(d: Date | string | number | null | undefined): number {
+  if (!d) return Date.now();
+  if (typeof d === "number") return d;
+  const date = d instanceof Date ? d : new Date(d);
+  return isNaN(date.getTime()) ? Date.now() : date.getTime();
 }
 
 function deriveTheme(strategy: any): string[] {
@@ -102,7 +43,6 @@ function deriveTheme(strategy: any): string[] {
   const type = strategy?.type;
   if (type === "Equity") return ["Equity"];
   if (type === "Future" || type === "Option" || type === "FnO") return ["F&O"];
-  if (type === "CommodityFuture") return ["Commodity"];
   return ["Equity"];
 }
 
@@ -119,198 +59,175 @@ async function nextRecId(): Promise<string> {
   }
 }
 
-// ─── Equity Builder ─────────────────────────────────────────────
-// Field order matches Upstox accepted SAIL/HDFCBANK/TATAPOWER payloads EXACTLY
+async function lookupInstrument(symbol: string): Promise<{companyName: string, token: string}> {
+  try {
+    const r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
+    const row = (r.rows[0] as any);
+    return { companyName: row?.company_name || symbol, token: row?.instrument_token || "" };
+  } catch { return { companyName: symbol, token: "" }; }
+}
 
-async function buildEquity(event: string, c: any, strategy: any, advisor: any, inst?: {companyName: string, token: string}): Promise<any> {
-  const cs = mapCallStatus(event, c.status);
-  const isClosed = cs === "CLOSED";
+function mapExitType(eventType: string, internalStatus: string): string | null {
+  switch (eventType) {
+    case "TARGET_ACHIEVED": return "TargetAchieved";
+    case "STOPLOSS_TRIGGERED": return "StoplossTriggered";
+    case "TRAILING_SL_TRIGGERED": return "TrailingSLTriggered";
+    case "CALL_CLOSED": case "POSITION_CLOSED": return "ManualClose";
+    default: return internalStatus === "Closed" ? "ManualClose" : null;
+  }
+}
+
+// ─── Equity Builder ─────────────────────────────────────────────
+
+async function buildEquity(event: string, c: any, strategy: any, advisor: any): Promise<any> {
+  const isClosed = event === "CALL_CLOSED" || event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || c.status === "Closed";
   const recId = await nextRecId();
   const legId = String(Number(recId) + 1);
+  const inst = await lookupInstrument(c.stock_name || c.symbol || "");
   const action = String(c.action || "BUY").toUpperCase();
+  const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0;
+  const tp = toNum(c.target_price);
+  const profitGoal = toStr(c.profit_goal) || ((bp > 0 && tp) ? String(Math.round(((tp - bp) / bp) * 100)) : null);
 
-  // Build equityCall — field order matches accepted payload
+  // equityCall object
   const equityCall: any = {
     exchange: "NSE",
     legId: legId,
-    exchangeToken: inst?.token || "",
+    exchangeToken: inst.token || null,
     symbol: c.stock_name,
-    name: inst?.companyName || c.stock_name,
-    buyDate: mongoDate(c.call_date),
-    buyPrice: toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0,
+    name: inst.companyName,
+    buyDate: epochMs(c.call_date),
+    buyPrice: bp,
     buyPriceRangeEnd: toNum(c.buy_range_end),
-    buyPriceRangeStart: toNum(c.buy_range_start) ?? toNum(c.entry_price),
+    buyPriceRangeStart: toNum(c.buy_range_start) ?? bp,
     callType: action,
+    sellPrice: isClosed ? toNum(c.sell_price) : null,
+    sellDate: isClosed ? epochMs(c.exit_date) : null,
     targetPriceRange: toStr(c.target_price),
-    profitGoal: toStr(c.profit_goal) || (() => {
-      const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0;
-      const tp = toNum(c.target_price);
-      return (bp > 0 && tp) ? String(Math.round(((tp - bp) / bp) * 100)) : "";
-    })(),
+    profitGoal: profitGoal,
     stopLoss: toStr(c.stop_loss),
-    thematicCollection: toArr(strategy.key_sectors),
-    status: cs,
+    exitType: isClosed ? mapExitType(event, c.status) : null,
+    status: isClosed ? "CLOSED" : "PUBLISHED",
   };
 
-  // Close-specific fields
-  if (isClosed) {
-    equityCall.sellPrice = toNum(c.sell_price);
-    equityCall.sellDate = mongoDate(c.exit_date);
-    equityCall.exitType = mapExitType(event, c.status);
-    equityCall.profitLossPercent = toNum(c.gain_percent);
-    equityCall.rational = mapExitType(event, c.status) || "ManualClose";
-    equityCall.rationals = [{
-      rational: mapExitType(event, c.status) || c.rationale || "ManualClose",
-      date: mongoDate(c.exit_date || c.created_at),
-      name: null, path: null, fileName: null,
-      createdBy: advisor?.username || null,
-    }];
-  }
-
-  // Rationals for publish
-  if (!isClosed && c.rationale) {
+  if (c.rationale) {
+    equityCall.rational = c.rationale;
     equityCall.rationals = [{
       rational: c.rationale,
-      date: mongoDate(c.created_at || c.call_date),
+      date: epochMs(c.created_at || c.call_date),
       name: null, path: null, fileName: null,
       createdBy: advisor?.username || null,
     }];
   }
 
-  // Root payload — EXACT field order matching Upstox accepted SAIL payload
-  const payload: any = {};
-  payload._id = mongoOid();
-  payload.advisorId = advisorSlug(advisor?.company_name, advisor?.id);
-  payload.clientId = "upstox";
-  payload.env = "uat";
-  payload.callStatus = cs;
-  payload.dayMonth = getDayMonth(c.call_date || c.created_at);
-  payload.symbol = c.stock_name;
-  payload.callType = action;
-  payload.strategyId = strategy.slug || strategy.id;
-  payload.recommendationId = recId;
-  payload.rational = c.rationale || null;
-  payload.theme = deriveTheme(strategy);
-  payload.thematicCollection = toArr(strategy.key_sectors);
-  payload.managementStyle = toArr(strategy.management_style) || ["Active"];
-  payload.volatility = toArr(strategy.volatility);
-  payload.horizon = toArr(strategy.horizon);
-  payload.strategyName = strategy.name;
-  payload.strategyDescription = strategy.description || null;
-  payload.benchmark = strategy.benchmark || "Nifty 50";
-  payload.strategyType = "Equity";
-  payload.advisorName = advisor?.company_name || advisor?.username;
-  payload.profilePic = advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : "";
-  payload.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : "";
-  payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
-  payload.equityCall = equityCall;
-  payload.fnoCall = null;
-  payload.status = "SEND";
-  payload.creationDate = mongoDate(c.created_at || c.call_date);
-  payload.isActive = !isClosed;
-  payload._class = "com.alpha.market.dao.StrategyIntegration";
+  if (isClosed) {
+    equityCall.profitLossPercent = toNum(c.gain_percent);
+  }
 
+  // data object — field order matches Upstox accepted payload
+  const data: any = {};
+  data.strategyId = strategy.slug || strategy.id;
+  data.recommendationId = recId;
+  data.rational = c.rationale || null;
+  data.creationDate = epochMs(c.created_at || c.call_date);
+  data.theme = deriveTheme(strategy);
+  data.managementStyle = toArr(strategy.management_style) || ["Active"];
+  data.volatility = toArr(strategy.volatility);
+  data.marketCap = null;
+  data.horizon = toArr(strategy.horizon);
+  data.keySector = toArr(strategy.key_sectors);
+  data.strategyName = strategy.name;
+  data.strategyDescription = strategy.description || null;
+  data.benchmark = strategy.benchmark || "Nifty 50";
+  data.strategyType = "Equity";
+  data.advisorName = advisor?.company_name || advisor?.username;
+  data.profilePic = advisor?.logo_url ? "https://alphamarket.co.in" + advisor.logo_url : null;
+  data.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : null;
+  data.advisorSebiRegistrationNo = advisor?.sebi_reg_number || null;
+  data.equityCall = equityCall;
+  data.fnoCall = null;
+
+  // Root envelope
   const envelope: any = {};
   envelope.status = "success";
   envelope.statusCode = 200;
   envelope.message = { key: "GET", message: "Get Successfully" };
-  envelope.data = payload;
+  envelope.data = data;
   return envelope;
 }
 
 // ─── FnO Builder ────────────────────────────────────────────────
 
 async function buildFno(event: string, p: any, strategy: any, advisor: any): Promise<any> {
-  const cs = mapCallStatus(event, p.status);
-  const isClosed = cs === "CLOSED";
-  const opt = mapOptionType(p.segment, p.call_put);
-  const strike = toNum(p.strike_price) ?? 0;
+  const isClosed = event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || p.status === "Closed";
   const recId = await nextRecId();
   const legId = String(Number(recId) + 1);
-  const sym = buildFnoSymbol(p.symbol, p.expiry, opt, strike);
   const action = String(p.buy_sell || "BUY").toUpperCase();
+  const strike = toNum(p.strike_price) ?? 0;
 
-  const fnoCall: any = {
+  const cp = p.call_put ? String(p.call_put).toUpperCase() : "";
+  let series = "CE";
+  let optionType = "Option";
+  if (cp.startsWith("P") || cp === "PE") { series = "PE"; }
+  if (p.segment === "Future") { series = "XX"; optionType = "Future"; }
+
+  const fnoLeg: any = {
     exchange: "NSE",
     legId: legId,
-    series: p.segment === "Equity" ? "EQ" : "XX",
-    symbol: sym,
+    exchangeToken: null,
+    symbol: p.symbol,
     name: p.symbol,
+    series: series,
     isStoppLossAbsolute: { code: "Y", name: "Yes" },
     expiryDate: epochMs(p.expiry),
     lotSize: toNum(p.lots) || 1,
     strike: strike,
-    optionType: opt,
-    buyDate: mongoDate(p.created_at),
+    profitLossPercent: isClosed ? toNum(p.gain_percent) : null,
+    optionType: optionType,
+    buyDate: epochMs(p.created_at),
     buyPrice: toNum(p.entry_price) ?? 0,
     buyPriceRangeEnd: null,
     buyPriceRangeStart: null,
     callType: action,
-    targetPriceRange: toStr(p.target),
+    sellPrice: isClosed ? toNum(p.exit_price) : null,
+    sellDate: isClosed ? epochMs(p.exit_date) : null,
+    targetPriceRange: toNum(p.target),
     profitGoal: null,
-    stopLoss: toStr(p.stop_loss),
-    status: cs,
-    creationDate: epochMs(p.created_at),
+    stopLoss: toNum(p.stop_loss),
+    exitType: isClosed ? mapExitType(event, p.status) : null,
+    status: isClosed ? "CLOSED" : "PUBLISHED",
   };
 
-  if (isClosed) {
-    fnoCall.sellPrice = toNum(p.exit_price);
-    fnoCall.sellDate = epochMs(p.exit_date);
-    fnoCall.exitType = mapExitType(event, p.status);
-    fnoCall.profitLossPercent = toNum(p.gain_percent);
-    fnoCall.rational = mapExitType(event, p.status) || "ManualClose";
-  }
-
-  if (p.rationale) {
-    fnoCall.rational = p.rationale;
-    fnoCall.rationals = [{
-      rational: p.rationale,
-      date: epochMs(p.created_at),
-      name: null, path: null, fileName: null,
-      createdBy: advisor?.username || null,
-    }];
-  }
-
   let rootType = "Option";
-  if (opt === "Future") rootType = "Future";
-  if (strategy?.type === "CommodityFuture") rootType = "CommodityFuture";
+  if (optionType === "Future") rootType = "Future";
 
-  const payload: any = {};
-  payload._id = mongoOid();
-  payload.advisorId = advisorSlug(advisor?.company_name, advisor?.id);
-  payload.clientId = "upstox";
-  payload.env = "uat";
-  payload.callStatus = cs;
-  payload.dayMonth = getDayMonth(p.created_at);
-  payload.symbol = p.symbol || sym;
-  payload.callType = action;
-  payload.strategyId = strategy.slug || strategy.id;
-  payload.recommendationId = recId;
-  payload.rational = p.rationale || null;
-  payload.theme = deriveTheme(strategy);
-  payload.thematicCollection = toArr(strategy.key_sectors);
-  payload.managementStyle = toArr(strategy.management_style) || ["Active"];
-  payload.volatility = toArr(strategy.volatility);
-  payload.horizon = toArr(strategy.horizon);
-  payload.strategyName = strategy.name;
-  payload.strategyDescription = strategy.description || null;
-  payload.benchmark = strategy.benchmark || "Nifty 50";
-  payload.strategyType = rootType;
-  payload.advisorName = advisor?.company_name || advisor?.username;
-  payload.profilePic = advisor?.logo_url ? `https://alphamarket.co.in${advisor.logo_url}` : "";
-  payload.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : "";
-  payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
-  payload.fnoCall = [fnoCall];
-  payload.status = "SEND";
-  payload.creationDate = mongoDate(p.created_at);
-  payload.isActive = !isClosed;
-  payload._class = "com.alpha.market.dao.StrategyIntegration";
+  const data: any = {};
+  data.strategyId = strategy.slug || strategy.id;
+  data.recommendationId = recId;
+  data.rational = p.rationale || null;
+  data.creationDate = epochMs(p.created_at);
+  data.theme = deriveTheme(strategy);
+  data.managementStyle = toArr(strategy.management_style) || ["Active"];
+  data.volatility = toArr(strategy.volatility);
+  data.marketCap = null;
+  data.horizon = toArr(strategy.horizon);
+  data.keySector = toArr(strategy.key_sectors);
+  data.strategyName = strategy.name;
+  data.strategyDescription = strategy.description || null;
+  data.benchmark = strategy.benchmark || "Nifty 50";
+  data.strategyType = rootType;
+  data.advisorName = advisor?.company_name || advisor?.username;
+  data.profilePic = advisor?.logo_url ? "https://alphamarket.co.in" + advisor.logo_url : null;
+  data.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : null;
+  data.advisorSebiRegistrationNo = advisor?.sebi_reg_number || null;
+  data.equityCall = null;
+  data.fnoCall = [fnoLeg];
 
   const envelope: any = {};
   envelope.status = "success";
   envelope.statusCode = 200;
   envelope.message = { key: "GET", message: "Get Successfully" };
-  envelope.data = payload;
+  envelope.data = data;
   return envelope;
 }
 
@@ -383,14 +300,6 @@ function normalize(data: Record<string, any>): any {
 
 // ─── Entry Point ────────────────────────────────────────────────
 
-async function lookupInstrument(symbol: string): Promise<{companyName: string, token: string}> {
-  try {
-    const r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
-    const row = (r.rows[0] as any);
-    return { companyName: row?.company_name || symbol, token: row?.instrument_token || "" };
-  } catch { return { companyName: symbol, token: "" }; }
-}
-
 export async function buildFormatAPayload(
   event: string,
   data: Record<string, any>,
@@ -407,8 +316,7 @@ export async function buildFormatAPayload(
   if (isFno) {
     return buildFno(event, n, loaded.strategy, loaded.advisor);
   }
-  const inst = await lookupInstrument(n.stock_name || n.symbol || "");
-  return buildEquity(event, n, loaded.strategy, loaded.advisor, inst);
+  return buildEquity(event, n, loaded.strategy, loaded.advisor);
 }
 
 export function inferSegment(event: string, data: Record<string, any>): string | null {

@@ -172,7 +172,9 @@ async function deliverWebhook(
         delete clean.__signature;
         delete clean.__event;
         delete clean.__event_id;
-        return JSON.stringify(clean);
+        const jsonStr = JSON.stringify(clean);
+        console.log("[Webhook] SENDING to " + target.broker_name + " first 200 chars: " + jsonStr.substring(0, 200));
+        return jsonStr;
       })(),
       signal: controller.signal,
     });
