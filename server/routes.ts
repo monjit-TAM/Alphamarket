@@ -1486,6 +1486,9 @@ export async function registerRoutes(
           const updatePayload = buildCallUpdateSubscriberNotification(call, changes, strategy.name);
           notifyStrategySubscribers(call.strategyId, strategy.name, "call_update", updatePayload);
         }
+        // Fire CALL_MODIFIED webhook to all brokers (Upstox, Dreamstreet, etc.)
+        fireWebhookEvent('CALL_MODIFIED', buildCallEventData(updated || call, strategy), strategy.advisorId)
+          .catch((err: any) => console.error('[routes PATCH /calls/:id] CALL_MODIFIED webhook failed:', err));
       }
       res.json(updated);
     } catch (err: any) {
@@ -1652,6 +1655,9 @@ export async function registerRoutes(
           const updatePayload = buildPositionUpdateSubscriberNotification(pos, changes, strategy.name);
           notifyStrategySubscribers(pos.strategyId, strategy.name, "position_update", updatePayload);
         }
+        // Fire POSITION_MODIFIED webhook to all brokers
+        fireWebhookEvent('POSITION_MODIFIED', buildPositionEventData(updated || pos, strategy), strategy.advisorId)
+          .catch((err: any) => console.error('[routes PATCH /positions/:id] POSITION_MODIFIED webhook failed:', err));
       }
       res.json(updated);
     } catch (err: any) {
@@ -7401,6 +7407,16 @@ export async function registerRoutes(
       if (upd.rationaleAttachment !== undefined) updateData.rationaleAttachment = upd.rationaleAttachment;
       if (Object.keys(updateData).length === 0) return res.status(400).send("No valid fields");
       const [updated] = await db.update(calls).set(updateData).where(eq(calls.id, cid)).returning();
+      // Fire CALL_MODIFIED webhook if target or SL changed (admin edit)
+      if (updated && (upd.targetPrice !== undefined || upd.stopLoss !== undefined)) {
+        try {
+          const strat = await storage.getStrategy(updated.strategyId);
+          if (strat) {
+            fireWebhookEvent("CALL_MODIFIED", buildCallEventData(updated, strat), strat.advisorId)
+              .catch((err: any) => console.error("[routes admin PATCH /calls/:id] CALL_MODIFIED webhook failed:", err));
+          }
+        } catch (whErr: any) { console.error("[routes admin PATCH] webhook lookup failed:", whErr.message); }
+      }
       res.json(updated || { status: "updated" });
     } catch (err: any) { res.status(500).send(err.message); }
   });
