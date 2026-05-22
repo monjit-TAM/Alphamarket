@@ -345,10 +345,12 @@ export async function buildFormatAPayload(
 
 export function inferSegment(event: string, data: Record<string, any>): string | null {
   const segment = data.segment;
+  if (segment === "Commodity" || data.type === "CommodityFuture") return "commodity_futures";
   if (segment === "Option") return "fno_options";
   if (segment === "Future") return "fno_futures";
   if (data.type === "FnO") return "fno_options";
   if (data.publishMode === "intraday") return "equity_intraday";
   if (data.horizon === "Positional") return "equity_positional";
+  if (data.horizon === "Swing" || data.publishMode === "swing") return "equity_swing";
   return "equity_cash";
 }
