@@ -479,8 +479,32 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
     # ── Safety: remove penny stocks and ASM/GSM ──
     filtered = [s for s in filtered if s.get("price", 0) >= 50 and not is_asm_gsm(s.get("symbol", ""))]
 
+    # ── Cap-balanced output: 35% large, 35% mid, 25% small, 5% micro ──
+    if not cap_segment:  # Only balance when no specific cap filter is set
+        _cap_quotas = {"large": 0.35, "mid": 0.35, "small": 0.25, "micro": 0.05}
+        _by_cap = {"large": [], "mid": [], "small": [], "micro": [], "unknown": []}
+        for _s in filtered:
+            _seg = _s.get("cap_segment", "unknown")
+            if _seg not in _by_cap: _seg = "unknown"
+            _by_cap[_seg].append(_s)
+        _balanced = []; _seen = set(); _limit = 50
+        for _cap, _quota in _cap_quotas.items():
+            _cap_limit = max(2, int(_limit * _quota))
+            for _s in _by_cap.get(_cap, []):
+                if _s["symbol"] not in _seen and len([x for x in _balanced if x.get("cap_segment") == _cap]) < _cap_limit:
+                    _seen.add(_s["symbol"]); _balanced.append(_s)
+        _remaining = _limit - len(_balanced)
+        if _remaining > 0:
+            for _cap in ["large", "mid", "small", "micro", "unknown"]:
+                for _s in _by_cap.get(_cap, []):
+                    if _s["symbol"] not in _seen and _remaining > 0:
+                        _seen.add(_s["symbol"]); _balanced.append(_s); _remaining -= 1
+        filtered_display = _balanced
+    else:
+        filtered_display = filtered[:50]
+
     result = {
-        "stocks": filtered[:50], "count": len(filtered),
+        "stocks": filtered_display, "count": len(filtered),
         "strategy": strategy, "as_of": end,
         "universe_size": len(NIFTY_UNIVERSE), "scanned": len(symbols_to_scan),
         "cached": False
