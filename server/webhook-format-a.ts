@@ -142,8 +142,13 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, i
     buyPriceRangeStart: toNum(c.buy_range_start) ?? toNum(c.entry_price),
     callType: action,
     targetPriceRange: toStr(c.target_price),
-    profitGoal: toStr(c.profit_goal) || "",
+    profitGoal: toStr(c.profit_goal) || (() => {
+      const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0;
+      const tp = toNum(c.target_price);
+      return (bp > 0 && tp) ? String(Math.round(((tp - bp) / bp) * 100)) : "";
+    })(),
     stopLoss: toStr(c.stop_loss),
+    thematicCollection: toArr(strategy.key_sectors),
     status: cs,
   };
 
