@@ -146,6 +146,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   data.advisorSebiRegistrationNo = advisor?.sebi_reg_number || null;
   data.equityCall = equityCall;
   data.fnoCall = null;
+  data.thematicCollection = toArr(strategy.key_sectors);
 
   // Root envelope
   const envelope: any = {};
@@ -222,6 +223,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any): Pro
   data.advisorSebiRegistrationNo = advisor?.sebi_reg_number || null;
   data.equityCall = null;
   data.fnoCall = [fnoLeg];
+  data.thematicCollection = toArr(strategy.key_sectors);
 
   const envelope: any = {};
   envelope.status = "success";
