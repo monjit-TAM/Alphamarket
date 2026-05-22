@@ -269,10 +269,13 @@ async function checkStopLossAndTargets() {
         if (entryPx === 0 || (sl === 0 && tgt === 0)) continue;
         try {
           let ltp = 0;
-          if (pos.strikePrice && pos.expiry && pos.callPut) {
+          const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity";
+          if (!isFutureSegment && pos.strikePrice && pos.expiry && pos.callPut) {
+            // Option: fetch premium LTP
             const p = await getOptionPremiumLTP(pos.symbol || "", pos.expiry, Number(pos.strikePrice), pos.callPut);
             if (p != null && p > 0) ltp = p;
           } else {
+            // Equity, Future, Commodity: fetch regular quote
             const q = await getLiveQuote(pos.symbol || "", strategy.type);
             if (q && q.ltp > 0) ltp = q.ltp;
           }
