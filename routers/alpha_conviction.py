@@ -181,8 +181,8 @@ async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), secto
     
     # ── Safety: remove penny stocks and ASM/GSM ──
     from main import is_asm_gsm
-    picks = [p for p in picks if p.get("price", 0) >= 50 and not is_asm_gsm(p.get("symbol", ""))]
-return {"picks": results, "count": len(results), "min_dimensions": min_dimensions, "timestamp": datetime.now().isoformat(), "date": datetime.now().strftime("%d-%b-%Y"), "sector_distribution": dict(sorted(sectors.items(), key=lambda x: x[1], reverse=True))}
+    results = [r for r in results if r.get("price", 0) >= 50 and not is_asm_gsm(r.get("symbol", ""))]
+    return {"picks": results, "count": len(results), "min_dimensions": min_dimensions, "timestamp": datetime.now().isoformat(), "date": datetime.now().strftime("%d-%b-%Y"), "sector_distribution": dict(sorted(sectors.items(), key=lambda x: x[1], reverse=True))}
 
 def _compute_pivots(h, l, c):
     pp = round((h + l + c) / 3, 2)
