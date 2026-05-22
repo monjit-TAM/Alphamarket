@@ -210,7 +210,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, i
   payload.isActive = !isClosed;
   payload._class = "com.alpha.market.dao.StrategyIntegration";
 
-  return payload;
+  return { status: "success", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: payload };
 }
 
 // ─── FnO Builder ────────────────────────────────────────────────
@@ -301,7 +301,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any): Pro
   payload.isActive = !isClosed;
   payload._class = "com.alpha.market.dao.StrategyIntegration";
 
-  return payload;
+  return { status: "success", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: payload };
 }
 
 // ─── DB Loader ──────────────────────────────────────────────────
