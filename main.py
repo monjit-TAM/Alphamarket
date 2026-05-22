@@ -2447,6 +2447,8 @@ async def generate_forward_signals(fwd_test: dict) -> list:
 
     # Sort: new signals first, then by strength desc
     signals.sort(key=lambda s: (0 if s["is_new"] else 1, -s["strength"]))
+        # ── Safety: remove penny stocks and ASM/GSM ──
+    signals = [s for s in signals if s.get("price", 0) >= 50 and not is_asm_gsm(s.get("symbol", ""))]
     return signals
 
 
