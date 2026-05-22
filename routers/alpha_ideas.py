@@ -207,11 +207,37 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
     if strategy:
         all_ideas = [i for i in all_ideas if strategy.lower() in i["strategy"].lower()]
     all_ideas = [i for i in all_ideas if i["confidence"] >= min_confidence]
-    seen = {}; deduped = []
+    # ── Safety filters: remove penny stocks (<Rs50) and ASM/GSM stocks ──
+    from main import is_asm_gsm
+    all_ideas = [i for i in all_ideas if i.get("price", 0) >= 50 and not is_asm_gsm(i["symbol"])]
+
+    # ── Cap-balanced selection (SEBI/AMFI aligned) ──
+    # Target: 35% large, 35% mid, 25% small, 5% micro
+    cap_quotas = {"large": 0.35, "mid": 0.35, "small": 0.25, "micro": 0.05}
+    by_cap = {"large": [], "mid": [], "small": [], "micro": [], "unknown": []}
     for idea in sorted(all_ideas, key=lambda x: x["confidence"], reverse=True):
-        if idea["symbol"] not in seen:
-            seen[idea["symbol"]] = True; deduped.append(idea)
-    deduped = deduped[:limit]
+        seg = idea.get("cap_segment", "unknown")
+        if seg not in by_cap: seg = "unknown"
+        by_cap[seg].append(idea)
+    
+    seen = {}; deduped = []
+    # First pass: fill quotas
+    for cap, quota in cap_quotas.items():
+        cap_limit = max(2, int(limit * quota))
+        for idea in by_cap.get(cap, []):
+            if idea["symbol"] not in seen and len([d for d in deduped if d.get("cap_segment") == cap]) < cap_limit:
+                seen[idea["symbol"]] = True
+                deduped.append(idea)
+    # Second pass: fill remaining slots with best confidence (any cap)
+    remaining = limit - len(deduped)
+    if remaining > 0:
+        for cap in ["large", "mid", "small", "micro", "unknown"]:
+            for idea in by_cap.get(cap, []):
+                if idea["symbol"] not in seen and remaining > 0:
+                    seen[idea["symbol"]] = True
+                    deduped.append(idea)
+                    remaining -= 1
+    deduped = sorted(deduped, key=lambda x: x["confidence"], reverse=True)[:limit]
     by_horizon = {}
     for idea in deduped:
         h = idea["horizon"]

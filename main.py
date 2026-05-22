@@ -476,6 +476,8 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
     if cap_segment:
         cs = cap_segment.lower()
         filtered = [s for s in filtered if s.get("cap_segment", "") == cs]
+    # ── Safety: remove penny stocks and ASM/GSM ──
+    filtered = [s for s in filtered if s.get("price", 0) >= 50 and not is_asm_gsm(s.get("symbol", ""))]
 
     result = {
         "stocks": filtered[:50], "count": len(filtered),
@@ -2976,9 +2978,57 @@ MIDCAP_SYMBOLS = {
 }
 
 def get_cap_segment(symbol):
+    """Classify by real market cap from Redis cache (SEBI/AMFI standard).
+    Falls back to hardcoded lists if cache unavailable."""
+    try:
+        import redis as _redis
+        _r = _redis.Redis()
+        _cached = _r.get("mcap_classifications")
+        _r.close()
+        if _cached:
+            _data = json.loads(_cached)
+            _cls = _data.get("classifications", {}).get(symbol)
+            if _cls and _cls.get("cap_segment") != "unknown":
+                return _cls["cap_segment"]
+    except:
+        pass
+    # Fallback to hardcoded
     if symbol in LARGE_CAP_SYMBOLS: return "large"
     if symbol in MIDCAP_SYMBOLS: return "mid"
     return "small"
+
+def is_asm_gsm(symbol):
+    """Check if stock is under ASM/GSM surveillance."""
+    try:
+        import redis as _redis
+        _r = _redis.Redis()
+        _cached = _r.get("mcap_classifications")
+        _r.close()
+        if _cached:
+            _data = json.loads(_cached)
+            _cls = _data.get("classifications", {}).get(symbol)
+            if _cls:
+                return _cls.get("is_asm_gsm", False)
+            return symbol in _data.get("asm_gsm_list", [])
+    except:
+        pass
+    return False
+
+def get_mcap_crores(symbol):
+    """Get market cap in crores from Redis cache."""
+    try:
+        import redis as _redis
+        _r = _redis.Redis()
+        _cached = _r.get("mcap_classifications")
+        _r.close()
+        if _cached:
+            _data = json.loads(_cached)
+            _cls = _data.get("classifications", {}).get(symbol)
+            if _cls:
+                return _cls.get("market_cap_cr", 0)
+    except:
+        pass
+    return 0
 
 SECTOR_MAP = {
     # Energy / Oil & Gas
@@ -7852,6 +7902,128 @@ async def commodity_options(symbol: str, expiry: str = None):
     
     return {"symbol": sym, "expiry": expiry, "expiries": expiries, "chain": result, "total_strikes": len(strikes)}
 
+
+# ── NFO Option Chain via Kite (added 20 May 2026) ────────────────────────
+@app.get("/api/nfo/option-chain/{symbol}", tags=["NFO"], summary="Get NFO option chain via Kite")
+async def nfo_option_chain(symbol: str, expiry: str = None):
+    """Fetch live option chain for NSE F&O symbols using Kite instrument_master + LTP quotes.
+    No auth required (bypass in alphamarket_auth.py). Used by AlphaMarket advisory dashboard."""
+    import asyncpg
+    from datetime import date
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+
+    sym = symbol.upper().strip()
+    today = date.today()
+
+    # Get instruments from instrument_master (alphamarket_db)
+    conn = await asyncpg.connect(
+        host="127.0.0.1", port=5432,
+        user="alphamarket_user", password="AlphaMkt2026",
+        database="alphamarket_db"
+    )
+    try:
+        # Get available expiries
+        expiry_rows = await conn.fetch("""
+            SELECT DISTINCT expiry::text AS expiry
+            FROM instrument_master
+            WHERE exchange='NFO' AND name=$1
+              AND instrument_type IN ('CE','PE')
+              AND expiry >= $2
+            ORDER BY expiry
+        """, sym, today)
+        expiries = [r["expiry"].isoformat() if hasattr(r["expiry"], "isoformat") else str(r["expiry"]) for r in expiry_rows]
+
+        if not expiry and expiries:
+            expiry = expiries[0]
+
+        if not expiry:
+            return {"symbol": sym, "expiry": None, "expiries": expiries, "chain": [], "total_strikes": 0}
+
+        # Get all CE/PE instruments for this expiry
+        inst_rows = await conn.fetch("""
+            SELECT tradingsymbol, instrument_type, strike, instrument_token
+            FROM instrument_master
+            WHERE exchange='NFO' AND name=$1
+              AND instrument_type IN ('CE','PE')
+              AND expiry=$2
+            ORDER BY strike
+        """, sym, date.fromisoformat(expiry))
+    finally:
+        await conn.close()
+
+    if not inst_rows:
+        return {"symbol": sym, "expiry": expiry, "expiries": expiries, "chain": [], "total_strikes": 0}
+
+    # Build strike map
+    strikes_map = {}
+    for r in inst_rows:
+        strike = float(r["strike"])
+        if strike not in strikes_map:
+            strikes_map[strike] = {"strike": strike}
+        if r["instrument_type"] == "CE":
+            strikes_map[strike]["ce_symbol"] = r["tradingsymbol"]
+            strikes_map[strike]["ce_token"] = r["instrument_token"]
+        else:
+            strikes_map[strike]["pe_symbol"] = r["tradingsymbol"]
+            strikes_map[strike]["pe_token"] = r["instrument_token"]
+
+    sorted_strikes = sorted(strikes_map.keys())
+
+    # Limit to ~120 strikes nearest ATM (60 above, 60 below midpoint)
+    if len(sorted_strikes) > 120:
+        mid = len(sorted_strikes) // 2
+        lo = max(0, mid - 60)
+        hi = min(len(sorted_strikes), mid + 60)
+        sorted_strikes = sorted_strikes[lo:hi]
+
+    # Batch fetch LTPs from Kite
+    ltp_map = {}
+    if _is_kite_connected():
+        kite_syms = []
+        for s in sorted_strikes:
+            info = strikes_map[s]
+            if "ce_symbol" in info:
+                kite_syms.append(f"NFO:{info['ce_symbol']}")
+            if "pe_symbol" in info:
+                kite_syms.append(f"NFO:{info['pe_symbol']}")
+
+        # Kite allows ~500 per call; batch if needed
+        for i in range(0, len(kite_syms), 200):
+            batch = kite_syms[i:i+200]
+            try:
+                quotes = await _fetch_kite_quotes(batch)
+                if quotes:
+                    for k, v in quotes.items():
+                        ts = k.replace("NFO:", "")
+                        ltp_map[ts] = v.get("last_price", 0)
+            except Exception as e:
+                print(f"[NFO chain] Kite LTP batch error: {e}")
+
+    # Build response in same shape as commodity options
+    chain = []
+    for s in sorted_strikes:
+        info = strikes_map[s]
+        chain.append({
+            "strikePrice": s,
+            "ce": {
+                "ltp": ltp_map.get(info.get("ce_symbol", ""), 0),
+                "tradingSymbol": info.get("ce_symbol", ""),
+            } if "ce_symbol" in info else None,
+            "pe": {
+                "ltp": ltp_map.get(info.get("pe_symbol", ""), 0),
+                "tradingSymbol": info.get("pe_symbol", ""),
+            } if "pe_symbol" in info else None,
+        })
+
+    return {
+        "symbol": sym,
+        "expiry": expiry,
+        "expiries": expiries,
+        "chain": chain,
+        "total_strikes": len(chain),
+        "source": "kite"
+    }
+
 @app.post("/api/commodity/quotes", tags=["Commodity"], summary="Bulk commodity quotes (nearest futures)")
 async def commodity_quotes_bulk(req: dict):
     symbols = req.get("symbols", [])
@@ -9964,6 +10136,58 @@ async def bridge_get_strategies(user=Depends(get_current_user)):
                 return {"error": "api_error", "message": r.text}
     except Exception as e:
         return {"error": "connection_error", "message": str(e)}
+
+@app.get("/api/bridge/rationale-preview/{symbol}", tags=["Advisory & Reports"], summary="Get rich rationale preview for a stock")
+async def bridge_rationale_preview(symbol: str, strategy: str = "", user=Depends(get_current_user)):
+    """Returns auto-generated rationale for pre-filling the publish form."""
+    sym = symbol.upper()
+    parts = []
+    try:
+        if strategy:
+            screener_reasons = {
+                "momentum": "strong price momentum with consistent higher highs, above-average volume, and positive relative strength",
+                "oversold": "RSI dropping to oversold levels while fundamentals remain intact, presenting a mean-reversion entry",
+                "breakout": "breaking above key resistance with volume confirmation",
+                "golden_cross": "50-day MA crossing above 200-day MA (Golden Cross)",
+                "bb_squeeze": "Bollinger Bands narrowing to a tight squeeze, indicating compressed volatility",
+                "minervini": "passing Minervini Stage 2 trend template criteria",
+                "pullback_buy": "pulling back to key support within a confirmed uptrend",
+                "up_on_volume": "advancing with significantly higher-than-average volume",
+                "relative_strength": "outperforming the broader market over 1-3 months",
+                "trend_strong": "ADX above 25 confirming a well-established directional trend",
+                "supertrend_buy": "trading above Supertrend indicator, confirming bullish trend",
+                "growth_momentum": "combining strong earnings growth with positive price momentum",
+                "safe_haven": "low volatility, strong balance sheet, and consistent dividends",
+                "high_roe": "high ROE indicating superior management efficiency",
+                "low_pe": "low P/E ratio suggesting potential undervaluation",
+                "dividend_yield": "attractive dividend yield providing regular income",
+                "recent_breakout": "recently broke through key resistance with volume confirmation",
+                "52w_high": "trading near 52-week high with sustained buying pressure",
+                "macd_crossover": "MACD bullish crossover with positive histogram",
+            }
+            reason = screener_reasons.get(strategy, "meeting quantitative screening criteria")
+            strat_label = strategy.replace("_", " ").title()
+            parts.append(f"SCREENER SIGNAL: {sym} was identified by the {strat_label} Screener for {reason}.")
+
+        s360 = await stock360(sym, user)
+        ascore = s360.get("alphascore", {})
+        if ascore and ascore.get("alphascore"):
+            dims = ascore.get("dimensions", {})
+            parts.append(f"ALPHASCORE: {ascore['alphascore']}/100 (Grade {ascore.get('grade','N/A')}, Signal: {ascore.get('signal','N/A')}). Technical: {dims.get('technical',0):.0f}, Fundamental: {dims.get('fundamental',0):.0f}, Ownership: {dims.get('ownership',0):.0f}, Momentum: {dims.get('momentum',0):.0f}.")
+        conf = s360.get("confluence", {})
+        if conf and conf.get("probability"):
+            parts.append(f"CONFLUENCE: {conf['probability']}% probability ({conf.get('conviction','N/A')} conviction). Estimated return: {conf.get('estimated_return',0)}%.")
+        sm = s360.get("smart_money", {})
+        if sm and sm.get("smart_money_score"):
+            pos_sigs = [s.get("text","") for s in sm.get("positive_signals", [])]
+            parts.append(f"SMART MONEY: {sm['smart_money_score']}/100 ({sm.get('verdict','N/A')}). {'; '.join(pos_sigs[:3])}")
+        pat = s360.get("patterns", {})
+        if pat and pat.get("narrative"):
+            narr = pat["narrative"][:400]
+            parts.append(f"TECHNICAL OUTLOOK: {narr}")
+    except Exception as e:
+        parts.append(f"Analysis pending for {sym}.")
+    return {"symbol": sym, "rationale": " ".join(parts), "strategy": strategy}
 
 @app.post("/api/bridge/publish-call", tags=["Advisory & Reports"], summary="Publish stock call to AlphaMarket",
     description="Publishes a stock recommendation (BUY/SELL) to a strategy on AlphaMarket.")
