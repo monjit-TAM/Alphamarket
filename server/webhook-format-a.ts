@@ -154,6 +154,17 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   envelope.statusCode = 200;
   envelope.message = { key: "GET", message: "Get Successfully" };
   envelope.data = data;
+
+  // ── SAFETY: Validate payload before returning ──
+  const requiredDataFields = ["strategyId","recommendationId","rational","creationDate","theme","managementStyle","volatility","marketCap","horizon","keySector","strategyName","benchmark","strategyType","advisorName","profilePic","certificateURl","advisorSebiRegistrationNo","equityCall","fnoCall"];
+  for (const f of requiredDataFields) {
+    if (!(f in data)) {
+      console.error("[Format A] MISSING FIELD in equity payload:", f);
+      data[f] = null; // Ensure field exists even if null
+    }
+  }
+  if (!("thematicCollection" in data)) data.thematicCollection = null;
+
   return envelope;
 }
 
@@ -230,6 +241,17 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any): Pro
   envelope.statusCode = 200;
   envelope.message = { key: "GET", message: "Get Successfully" };
   envelope.data = data;
+
+  // ── SAFETY: Validate payload before returning ──
+  const requiredDataFields = ["strategyId","recommendationId","rational","creationDate","theme","managementStyle","volatility","marketCap","horizon","keySector","strategyName","benchmark","strategyType","advisorName","profilePic","certificateURl","advisorSebiRegistrationNo","equityCall","fnoCall"];
+  for (const f of requiredDataFields) {
+    if (!(f in data)) {
+      console.error("[Format A] MISSING FIELD in fno payload:", f);
+      data[f] = null;
+    }
+  }
+  if (!("thematicCollection" in data)) data.thematicCollection = null;
+
   return envelope;
 }
 

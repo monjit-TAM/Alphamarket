@@ -115,7 +115,11 @@ export async function fireWebhookEvent(
 
       // Attach signature in a way that doesn't mutate the canonical body used for verification.
       // We store it on the wrapper so the deliverWebhook function can send it as header.
-      webhookQueue.push({ target, payload: { ...payloadBody, __signature: signature, __event: event } as any, attempt: 1 });
+      // Preserve envelope structure — attach metadata without spreading
+      const queuePayload = payloadBody;
+      (queuePayload as any).__signature = signature;
+      (queuePayload as any).__event = event;
+      webhookQueue.push({ target, payload: queuePayload as any, attempt: 1 });
     }
 
     // Process queue
