@@ -204,6 +204,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, i
   payload.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : "";
   payload.advisorSebiRegistrationNo = advisor?.sebi_reg_number || "";
   payload.equityCall = equityCall;
+  payload.fnoCall = null;
   payload.status = "SEND";
   payload.creationDate = mongoDate(c.created_at || c.call_date);
   payload.isActive = !isClosed;
