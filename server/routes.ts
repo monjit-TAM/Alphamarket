@@ -89,6 +89,7 @@ export async function registerRoutes(
   // ═══ BROKER INTEGRATION SWAGGER (separate from XTS docs) ═══
   app.get("/api/broker-spec.json", (_req: any, res: any) => { try { const s = require("fs").readFileSync(require("path").join(__dirname, "public", "broker-swagger.json"), "utf-8"); res.type("json").send(s); } catch { res.json({}); } });
   app.get("/api/broker-guide", (_req: any, res: any) => { try { res.sendFile(require("path").join(__dirname, "public", "broker-guide.html")); } catch { res.status(404).send("Not found"); } });
+  app.get("/api/webhook-docs", (_req: any, res: any) => { try { res.sendFile(require("path").join(__dirname, "public", "webhook-api.html")); } catch { res.status(404).send("Not found"); } });
   app.get("/api/broker-docs", (_req: any, res: any) => {
     res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>AlphaMarket Broker Integration API</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" /><style>body{margin:0;background:#fafafa}.swagger-ui .topbar{display:none}.swagger-ui .info hgroup.main h2{font-size:14px;color:#666}</style></head><body><div id="swagger-ui"></div><script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"><\/script><script>SwaggerUIBundle({url:"/api/broker-spec.json",dom_id:"#swagger-ui",deepLinking:true,layout:"BaseLayout",defaultModelsExpandDepth:2,docExpansion:"list"});<\/script></body></html>`);
   });

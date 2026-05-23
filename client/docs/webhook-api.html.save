@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webhook API — AlphaMarket</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+
+q
+
+x
+
+
+
+
+
+    :root {
+      --bg: #FAFAFA;
+      --surface: #FFFFFF;
+      --text: #1A1A1A;
+      --text-secondary: #5A5A5A;
+      --text-muted: #8A8A8A;
+      --border: #E5E5E5;
+      --border-light: #F0F0F0;
+      --accent: #E8432F;
+      --accent-soft: #FFF0EE;
+      --code-bg: #1B1B1F;
+      --code-text: #D4D4D8;
+      --code-key: #7DD3FC;
+      --code-str: #86EFAC;
+      --code-num: #FDE68A;
+      --code-comment: #6B7280;
+      --tag-bg: #F3F4F6;
+      --tag-text: #374151;
+      --table-header: #F8F8F8;
+      --table-alt: #FCFCFC;
+      --nav-width: 260px;
+      --content-max: 780px;
+    }
+
+    html { scroll-behavior: smooth; scroll-padding-top: 40px; }
+
+    body {
+      font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.65;
+      font-size: 15px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Top Bar ── */
+    .topbar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      height: 56px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 32px; gap: 16px;
+    }
+    .topbar-logo {
+      font-weight: 700; font-size: 17px; color: var(--accent); letter-spacing: -0.3px;
+    }
+    .topbar-logo span { color: var(--text); }
+    .topbar-divider { width: 1px; height: 24px; background: var(--border); }
+    .topbar-label { font-size: 13px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.5px; text-transform: uppercase; }
+    .topbar-hamburger {
+      display: none; background: none; border: none; cursor: pointer; padding: 4px;
+    }
+    .topbar-hamburger svg { width: 22px; height: 22px; stroke: var(--text); }
+
+    /* ── Side Nav ── */
+    .sidenav {
+      position: fixed; top: 56px; left: 0; bottom: 0;
+      width: var(--nav-width);
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      padding: 24px 0;
+      z-index: 90;
+      transition: transform 0.25s ease;
+    }
+    .sidenav-section { padding: 0 20px; margin-bottom: 20px; }
+    .sidenav-title {
+      font-size: 11px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px;
+    }
+    .sidenav a {
+      display: block; padding: 6px 12px; margin: 1px 0;
+      font-size: 13.5px; color: var(--text-secondary); text-decoration: none;
+      border-radius: 6px; transition: all 0.15s;
+    }
+    .sidenav a:hover { background: var(--border-light); color: var(--text); }
+    .sidenav a.active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+
+    /* ── Main Content ── */
+    .main {
+      margin-left: var(--nav-width); padding-top: 56px;
+    }
+    .content {
+      max-width: var(--content-max);
+      margin: 0 auto;
+      padding: 48px 40px 120px;
+    }
+
+    /* ── Typography ── */
+    h1 {
+      font-size: 32px; font-weight: 700; letter-spacing: -0.5px;
+      margin-bottom: 8px; color: var(--text);
+    }
+    .page-desc {
+      font-size: 16px; color: var(--text-secondary); margin-bottom: 40px; line-height: 1.6;
+    }
+    h2 {
+      font-size: 22px; font-weight: 700; letter-spacing: -0.3px;
+      margin-top: 56px; margin-bottom: 16px;
+      padding-top: 24px;
+      border-top: 1px solid var(--border-light);
+      color: var(--text);
+    }
+    h2:first-of-type { border-top: none; margin-top: 0; padding-top: 0; }
+    h3 {
+      font-size: 16px; font-weight: 600; margin-top: 32px; margin-bottom: 10px;
+      color: var(--text);
+    }
+    p { margin-bottom: 14px; }
+    p + p { margin-top: 0; }
+
+    /* ── Code ── */
+    code {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px; background: var(--tag-bg);
+      padding: 2px 6px; border-radius: 4px; color: var(--accent);
+    }
+    pre {
+      background: var(--code-bg);
+      border-radius: 8px;
+      padding: 20px 24px;
+      overflow-x: auto;
+      margin: 16px 0 20px;
+      line-height: 1.55;
+    }
+    pre code {
+      font-size: 13px; background: none; padding: 0;
+      color: var(--code-text); border-radius: 0;
+    }
+    .ck { color: var(--code-key); }
+    .cs { color: var(--code-str); }
+    .cn { color: var(--code-num); }
+    .cc { color: var(--code-comment); font-style: italic; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; margin: 16px 0 24px; }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 14px;
+    }
+    th {
+      text-align: left; font-weight: 600; font-size: 12px;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      color: var(--text-muted); padding: 10px 14px;
+      border-bottom: 2px solid var(--border);
+      background: var(--table-header);
+    }
+    td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border-light);
+      vertical-align: top;
+    }
+    tr:nth-child(even) td { background: var(--table-alt); }
+    td:first-child code { color: var(--text); font-weight: 500; background: none; padding: 0; }
+    td .type { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--text-muted); }
+    .required { display: inline-block; font-size: 10px; font-weight: 600; color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 3px; margin-left: 4px; }
+
+    /* ── Tags / Badges ── */
+    .event-tag {
+      display: inline-block; font-family: 'IBM Plex Mono', monospace;
+      font-size: 12px; font-weight: 500;
+      padding: 3px 8px; border-radius: 4px; margin: 2px 4px 2px 0;
+    }
+    .event-tag.create { background: #DCFCE7; color: #166534; }
+    .event-tag.close { background: #FEE2E2; color: #991B1B; }
+    .event-tag.modify { background: #FEF3C7; color: #92400E; }
+    .event-tag.trigger { background: #E0E7FF; color: #3730A3; }
+
+    /* ── Callout ── */
+    .callout {
+      border-left: 3px solid var(--accent);
+      padding: 14px 18px;
+      background: var(--accent-soft);
+      border-radius: 0 6px 6px 0;
+      margin: 16px 0 20px;
+      font-size: 14px; color: #6B2114;
+    }
+    .callout-info {
+      border-left-color: #3B82F6;
+      background: #EFF6FF;
+      color: #1E40AF;
+    }
+    .callout strong { font-weight: 600; }
+
+    /* ── Section Anchor ── */
+    .section-anchor { scroll-margin-top: 80px; }
+
+    /* ── Version badge ── */
+    .version {
+      display: inline-block; font-size: 11px; font-weight: 600;
+      background: var(--tag-bg); color: var(--text-muted);
+      padding: 3px 10px; border-radius: 20px; margin-bottom: 24px;
+    }
+
+    /* ── Mobile ── */
+    @media (max-width: 860px) {
+      .sidenav { transform: translateX(-100%); }
+      .sidenav.open { transform: translateX(0); box-shadow: 4px 0 20px rgba(0,0,0,0.08); }
+      .main { margin-left: 0; }
+      .content { padding: 32px 20px 80px; }
+      .topbar-hamburger { display: block; }
+      h1 { font-size: 26px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <div class="topbar">
+    <button class="topbar-hamburger" onclick="document.querySelector('.sidenav').classList.toggle('open')">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="topbar-logo"><span>Alpha</span>Market</div>
+    <div class="topbar-divider"></div>
+    <div class="topbar-label">API Documentation</div>
+  </div>
+
+  <!-- Side Nav -->
+  <nav class="sidenav" id="sidenav">
+    <div class="sidenav-section">
+      <div class="sidenav-title">Getting Started</div>
+      <a href="#overview" class="active">Overview</a>
+      <a href="#authentication">Authentication</a>
+    </div>
+    <div class="sidenav-section">
+      <div class="sidenav-title">Webhook</div>
+      <a href="#events">Events</a>
+      <a href="#payload">Payload Structure</a>
+      <a href="#data-fields">Data Fields</a>
+      <a href="#equity-call">equityCall Object</a>
+      <a href="#fno-call">fnoCall Array</a>
+    </div>
+    <div class="sidenav-section">
+      <div class="sidenav-title">Integration</div>
+      <a href="#response">Response &amp; Retries</a>
+      <a href="#security">Security</a>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <div class="main">
+    <div class="content">
+
+      <div class="version">v1.0 &mdash; May 2026</div>
+      <h1>Webhook API</h1>
+      <p class="page-desc">Receive real-time trading recommendations from AlphaMarket advisors. This page documents the webhook payload contract your endpoint needs to implement.</p>
+
+      <!-- Overview -->
+      <h2 id="overview" class="section-anchor">Overview</h2>
+      <p>AlphaMarket sends HTTP POST requests with a JSON body to your registered endpoint whenever an advisor publishes, modifies, or closes a recommendation. Your endpoint accepts the payload and responds with any 2xx status code.</p>
+      <p>The payload format is standardised across all AlphaMarket partner integrations. One endpoint receives all event types — use the <code>callStatus</code> field to route internally.</p>
+
+      <!-- Authentication -->
+      <h2 id="authentication" class="section-anchor">Authentication</h2>
+      <p>Every webhook POST includes these headers:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Header</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>X-AlphaMarket-Signature</code></td><td>HMAC-SHA256 hex digest of the raw request body, signed with the shared secret provided during onboarding.</td></tr>
+            <tr><td><code>X-AlphaMarket-Timestamp</code></td><td>ISO 8601 dispatch timestamp. Reject requests older than 5 minutes to prevent replay attacks.</td></tr>
+            <tr><td><code>X-AlphaMarket-Event</code></td><td>Event name (e.g. <code>CALL_CREATED</code>) for routing convenience.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h3>Signature Verification</h3>
+<pre><code><span class="ck">expected</span> = HMAC_SHA256(<span class="cs">shared_secret</span>, <span class="cs">raw_request_body</span>)
+<span class="ck">actual</span>   = request.headers[<span class="cs">"X-AlphaMarket-Signature"</span>]
+
+<span class="ck">if</span> not constant_time_equal(expected, actual):
+    <span class="ck">return</span> <span class="cn">401</span> Unauthorized</code></pre>
+
+      <!-- Events -->
+      <h2 id="events" class="section-anchor">Events</h2>
+      <p>These events cover the full recommendation lifecycle:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Event</th><th>When it fires</th><th>callStatus</th></tr></thead>
+          <tbody>
+            <tr><td><span class="event-tag create">CALL_CREATED</span></td><td>Advisor publishes an equity call</td><td><code>PUBLISHED</code></td></tr>
+            <tr><td><span class="event-tag close">CALL_CLOSED</span></td><td>Advisor manually closes a call</td><td><code>CLOSED</code></td></tr>
+            <tr><td><span class="event-tag modify">CALL_MODIFIED</span></td><td>Advisor changes target or stop-loss</td><td><code>MODIFIED</code></td></tr>
+            <tr><td><span class="event-tag create">POSITION_CREATED</span></td><td>Advisor publishes F&amp;O position</td><td><code>PUBLISHED</code></td></tr>
+            <tr><td><span class="event-tag close">POSITION_CLOSED</span></td><td>Advisor closes F&amp;O position</td><td><code>CLOSED</code></td></tr>
+            <tr><td><span class="event-tag modify">POSITION_MODIFIED</span></td><td>Advisor changes F&amp;O target or SL</td><td><code>MODIFIED</code></td></tr>
+            <tr><td><span class="event-tag trigger">TARGET_ACHIEVED</span></td><td>Price hits target (automatic)</td><td><code>CLOSED</code></td></tr>
+            <tr><td><span class="event-tag trigger">STOPLOSS_TRIGGERED</span></td><td>Price hits stop-loss (automatic)</td><td><code>CLOSED</code></td></tr>
+            <tr><td><span class="event-tag trigger">TRAILING_SL_TRIGGERED</span></td><td>Trailing stop-loss triggered</td><td><code>CLOSED</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Payload Structure -->
+      <h2 id="payload" class="section-anchor">Payload Structure</h2>
+      <p>The root JSON has a status wrapper. All recommendation data is inside the <code>data</code> object:</p>
+<pre><code>{
+  <span class="ck">"status"</span>: <span class="cs">"success"</span>,
+  <span class="ck">"statusCode"</span>: <span class="cn">200</span>,
+  <span class="ck">"message"</span>: {<span class="ck">"key"</span>: <span class="cs">"GET"</span>, <span class="ck">"message"</span>: <span class="cs">"Get Successfully"</span>},
+  <span class="ck">"data"</span>: {
+    <span class="ck">"strategyId"</span>:      <span class="cs">"equity-short-term"</span>,
+    <span class="ck">"recommendationId"</span>: <span class="cs">"20015"</span>,
+    <span class="ck">"rational"</span>:        <span class="cs">"Breakout above 145 resistance..."</span>,
+    <span class="ck">"creationDate"</span>:    <span class="cn">1716370200000</span>,
+    <span class="ck">"theme"</span>:           [<span class="cs">"Equity"</span>],
+    <span class="ck">"horizon"</span>:         [<span class="cs">"Short Term"</span>],
+    <span class="ck">"strategyName"</span>:    <span class="cs">"Equity Short Term"</span>,
+    <span class="ck">"strategyType"</span>:    <span class="cs">"Equity"</span>,
+    <span class="ck">"advisorName"</span>:     <span class="cs">"Front Wave Research LLP"</span>,
+    <span class="ck">"advisorSebiRegistrationNo"</span>: <span class="cs">"INH000018407"</span>,
+    <span class="ck">"equityCall"</span>:      { ... },     <span class="cc">// present for equity recs</span>
+    <span class="ck">"fnoCall"</span>:         [ {...} ],   <span class="cc">// present for F&amp;O recs</span>
+    ...
+  }
+}</code></pre>
+      <div class="callout callout-info">
+        <strong>Note:</strong> Only one of <code>equityCall</code> or <code>fnoCall</code> is present per payload. The other is <code>null</code>.
+      </div>
+
+      <!-- Data Fields -->
+      <h2 id="data-fields" class="section-anchor">Data Fields</h2>
+      <p>Fields inside the <code>data</code> object:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>strategyId</code></td><td><span class="type">string</span></td><td>Strategy slug identifier</td></tr>
+            <tr><td><code>recommendationId</code></td><td><span class="type">string</span></td><td>Unique ID (numeric string, from 20000)</td></tr>
+            <tr><td><code>rational</code></td><td><span class="type">string</span></td><td>Advisor rationale text</td></tr>
+            <tr><td><code>creationDate</code></td><td><span class="type">number</span></td><td>Epoch milliseconds of creation</td></tr>
+            <tr><td><code>theme</code></td><td><span class="type">string[]</span></td><td><code>["Equity"]</code> or <code>["F&amp;O"]</code></td></tr>
+            <tr><td><code>horizon</code></td><td><span class="type">string[]</span></td><td><code>["Short Term"]</code>, <code>["Intraday"]</code>, <code>["Positional"]</code>, etc.</td></tr>
+            <tr><td><code>volatility</code></td><td><span class="type">string[]</span></td><td><code>["Medium"]</code>, <code>["High"]</code>, etc.</td></tr>
+            <tr><td><code>managementStyle</code></td><td><span class="type">string[]</span></td><td><code>["Active"]</code> or <code>["Passive"]</code></td></tr>
+            <tr><td><code>strategyName</code></td><td><span class="type">string</span></td><td>Strategy display name</td></tr>
+            <tr><td><code>strategyType</code></td><td><span class="type">string</span></td><td>Equity, Option, Future, or Commodity</td></tr>
+            <tr><td><code>advisorName</code></td><td><span class="type">string</span></td><td>Advisor / company name</td></tr>
+            <tr><td><code>profilePic</code></td><td><span class="type">string | null</span></td><td>Advisor logo URL (absolute)</td></tr>
+            <tr><td><code>advisorSebiRegistrationNo</code></td><td><span class="type">string</span></td><td>SEBI registration number</td></tr>
+            <tr><td><code>certificateURl</code></td><td><span class="type">string | null</span></td><td>SEBI certificate URL</td></tr>
+            <tr><td><code>benchmark</code></td><td><span class="type">string</span></td><td>"Nifty 50", "Nifty Bank", etc.</td></tr>
+            <tr><td><code>equityCall</code></td><td><span class="type">object | null</span></td><td>Equity instrument details</td></tr>
+            <tr><td><code>fnoCall</code></td><td><span class="type">array | null</span></td><td>F&amp;O leg array</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- equityCall -->
+      <h2 id="equity-call" class="section-anchor">equityCall Object</h2>
+      <p>Present only for equity recommendations. Contains instrument details, price levels, and trade parameters.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>exchange</code></td><td><span class="type">string</span></td><td>NSE or BSE</td></tr>
+            <tr><td><code>legId</code></td><td><span class="type">string</span></td><td>Leg identifier</td></tr>
+            <tr><td><code>exchangeToken</code></td><td><span class="type">string | null</span></td><td>Exchange instrument token</td></tr>
+            <tr><td><code>symbol</code></td><td><span class="type">string</span></td><td>Trading symbol, e.g. SAIL</td></tr>
+            <tr><td><code>name</code></td><td><span class="type">string</span></td><td>Full company name from exchange</td></tr>
+            <tr><td><code>buyDate</code></td><td><span class="type">number</span></td><td>Buy date as epoch milliseconds</td></tr>
+            <tr><td><code>buyPrice</code></td><td><span class="type">number</span></td><td>Recommended buy price</td></tr>
+            <tr><td><code>buyPriceRangeStart</code></td><td><span class="type">number</span></td><td>Lower end of buy range</td></tr>
+            <tr><td><code>buyPriceRangeEnd</code></td><td><span class="type">number | null</span></td><td>Upper end of buy range</td></tr>
+            <tr><td><code>callType</code></td><td><span class="type">string</span></td><td>BUY or SELL</td></tr>
+            <tr><td><code>targetPriceRange</code></td><td><span class="type">string</span> <span class="required">STRING</span></td><td>Target price as string, e.g. "163"</td></tr>
+            <tr><td><code>profitGoal</code></td><td><span class="type">string</span> <span class="required">STRING</span></td><td>Expected profit % as string, e.g. "10"</td></tr>
+            <tr><td><code>stopLoss</code></td><td><span class="type">string</span> <span class="required">STRING</span></td><td>Stop-loss as string, e.g. "138"</td></tr>
+            <tr><td><code>status</code></td><td><span class="type">string</span></td><td>PUBLISHED or CLOSED</td></tr>
+            <tr><td><code>sellPrice</code></td><td><span class="type">number | null</span></td><td>Exit price (close events only)</td></tr>
+            <tr><td><code>sellDate</code></td><td><span class="type">number | null</span></td><td>Exit date as epoch ms (close events only)</td></tr>
+            <tr><td><code>exitType</code></td><td><span class="type">string | null</span></td><td>ManualClose, TargetAchieved, StoplossTriggered, or TrailingSLTriggered</td></tr>
+            <tr><td><code>profitLossPercent</code></td><td><span class="type">number | null</span></td><td>Realised P&amp;L percentage (close events only)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <strong>Important:</strong> <code>targetPriceRange</code>, <code>profitGoal</code>, and <code>stopLoss</code> inside equityCall are <strong>strings</strong>, not numbers. Parse them accordingly in your receiver.
+      </div>
+
+      <!-- fnoCall -->
+      <h2 id="fno-call" class="section-anchor">fnoCall Array</h2>
+      <p>Present only for F&amp;O positions. This is an array — single-leg positions have one element, multi-leg strategies (straddles, strangles, spreads) have multiple.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td><code>legId</code></td><td><span class="type">string</span></td><td>Unique leg ID</td></tr>
+            <tr><td><code>symbol</code></td><td><span class="type">string</span></td><td>Underlying symbol, e.g. NIFTY</td></tr>
+            <tr><td><code>exchange</code></td><td><span class="type">string</span></td><td>NSE, BSE, or MCX</td></tr>
+            <tr><td><code>series</code></td><td><span class="type">string</span></td><td>CE, PE, or XX (futures)</td></tr>
+            <tr><td><code>strike</code></td><td><span class="type">number</span></td><td>Strike price</td></tr>
+            <tr><td><code>expiryDate</code></td><td><span class="type">number</span></td><td>Expiry as epoch milliseconds</td></tr>
+            <tr><td><code>lotSize</code></td><td><span class="type">number</span></td><td>Number of lots</td></tr>
+            <tr><td><code>optionType</code></td><td><span class="type">string</span></td><td>"Option" or "Future"</td></tr>
+            <tr><td><code>buyPrice</code></td><td><span class="type">number</span></td><td>Entry price</td></tr>
+            <tr><td><code>callType</code></td><td><span class="type">string</span></td><td>BUY or SELL for this leg</td></tr>
+            <tr><td><code>targetPriceRange</code></td><td><span class="type">number</span></td><td>Target price (number for F&amp;O, unlike equity)</td></tr>
+            <tr><td><code>stopLoss</code></td><td><span class="type">number</span></td><td>Stop-loss price (number for F&amp;O)</td></tr>
+            <tr><td><code>sellPrice</code></td><td><span class="type">number | null</span></td><td>Exit price (close events only)</td></tr>
+            <tr><td><code>exitType</code></td><td><span class="type">string | null</span></td><td>Exit type (close events only)</td></tr>
+            <tr><td><code>profitLossPercent</code></td><td><span class="type">number | null</span></td><td>P&amp;L % (close events only)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Response -->
+      <h2 id="response" class="section-anchor">Response &amp; Retries</h2>
+      <p>Return any 2xx status code. A minimal response is fine:</p>
+<pre><code>HTTP <span class="cn">200</span> OK
+
+{<span class="ck">"status"</span>: <span class="cs">"received"</span>}</code></pre>
+      <p>Non-2xx responses trigger retries on this schedule:</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Attempt</th><th>Delay</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>1 (initial)</td><td>Immediate</td><td>First delivery</td></tr>
+            <tr><td>2</td><td>30 seconds</td><td>First retry</td></tr>
+            <tr><td>3</td><td>2 minutes</td><td>Second retry</td></tr>
+            <tr><td>4</td><td>10 minutes</td><td>Final retry — marked failed after this</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout callout-info">
+        <strong>Tip:</strong> Process recommendations asynchronously after responding. Don't block the HTTP response with downstream logic. We wait up to 10 seconds before timing out.
+      </div>
+
+      <!-- Security -->
+      <h2 id="security" class="section-anchor">Security</h2>
+      <p>Your endpoint must use <strong>HTTPS</strong>. Additionally:</p>
+      <p><strong>Verify signatures</strong> — check the HMAC-SHA256 signature on every request and reject invalid ones.</p>
+      <p><strong>Reject stale requests</strong> — if <code>X-AlphaMarket-Timestamp</code> is older than 5 minutes, reject.</p>
+      <p><strong>Idempotent processing</strong> — use <code>recommendationId</code> + event as a deduplication key. Retries may deliver the same event twice.</p>
+      <p><strong>Secret rotation</strong> — contact tech@alphamarket.co.in to rotate your shared secret at any time.</p>
+
+      <div style="margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--border-light); text-align: center; color: var(--text-muted); font-size: 13px;">
+        Questions or integration support: <a href="mailto:tech@alphamarket.co.in" style="color: var(--accent); text-decoration: none;">tech@alphamarket.co.in</a>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Active nav highlighting on scroll
+    const sections = document.querySelectorAll('.section-anchor');
+    const navLinks = document.querySelectorAll('.sidenav a');
+
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          navLinks.forEach(l => l.classList.remove('active'));
+          const link = document.querySelector(`.sidenav a[href="#${entry.target.id}"]`);
+          if (link) link.classList.add('active');
+        }
+      });
+    }, { rootMargin: '-80px 0px -60% 0px' });
+
+    sections.forEach(s => observer.observe(s));
+
+    // Close mobile nav on link click
+    navLinks.forEach(l => l.addEventListener('click', () => {
+      document.querySelector('.sidenav').classList.remove('open');
+    }));
+  </script>
+</body>
+</html>
