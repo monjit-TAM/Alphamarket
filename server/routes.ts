@@ -7100,7 +7100,7 @@ export async function registerRoutes(
       const apiKey = "amk_live_" + crypto.randomBytes(24).toString("hex");
       const apiSecret = crypto.randomBytes(32).toString("hex");
       const result = await db.execute(sql`INSERT INTO broker_api_keys (broker_name, api_key, api_secret, contact_email, contact_name, permissions, rate_limit, ip_whitelist, webhook_url, webhook_events, webhook_payload_version, allowed_segments, allowed_strategies, webhook_timeout_ms)
-        VALUES (${brokerName}, ${apiKey}, ${apiSecret}, ${contactEmail||null}, ${contactName||null}, ${permissions||['read']}, ${rateLimit||100}, ${ipWhitelist||null}, ${webhookUrl||null}, ${webhookEvents||null}, ${webhookPayloadVersion||'v1_flat'}, ${allowedSegments||null}, ${allowedStrategies||null}, ${webhookTimeoutMs||10000})
+        VALUES (${brokerName}, ${apiKey}, ${apiSecret}, ${contactEmail||null}, ${contactName||null}, ${permissions||['read']}, ${rateLimit||100}, ${ipWhitelist||null}, ${webhookUrl||null}, ${webhookEvents||null}, ${webhookPayloadVersion||'v1_thealphamarket'}, ${allowedSegments||null}, ${allowedStrategies||null}, ${webhookTimeoutMs||10000})
         RETURNING *`);
       res.status(201).json({...result.rows[0], api_key: apiKey, api_secret: apiSecret});
     } catch(err:any){res.status(500).send(err.message);}
