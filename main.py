@@ -8,6 +8,8 @@ import asyncpg
 import redis.asyncio as aioredis
 import os
 import json
+import logging
+logger = logging.getLogger("dyor")
 import hashlib
 import secrets
 import jwt
@@ -75,11 +77,49 @@ async def ds_quote(symbol: str) -> dict:
     return {}
 
 async def ds_fundamentals(symbol: str) -> dict:
-    """Get fundamentals from data service (cached 1 week)"""
+    """Get fundamentals: Alpha Fundamentals (5015) PRIMARY, Data Service (5004) FALLBACK"""
+    # 1. Try Alpha Fundamentals API first (rich TrueData XBRL data)
+    try:
+        async with _httpx.AsyncClient(timeout=10) as c:
+            r = await c.get(f"http://localhost:5015/api/fundamentals/{symbol}")
+            if r.status_code == 200:
+                af = r.json()
+                if af.get("success") and af.get("data"):
+                    d = af["data"]
+                    comp = af.get("company", {})
+                    # Map AF fields to standard format expected by AlphaView
+                    return {
+                        "symbol": symbol, "name": comp.get("company_name", symbol),
+                        "sector": comp.get("sector", ""), "industry": comp.get("industry", ""),
+                        "market_cap": float(d.get("market_cap", 0) or 0),
+                        "pe_trailing": float(d.get("pe_ttm", 0) or 0),
+                        "pe_forward": float(d.get("pe_forward", 0) or 0),
+                        "pb": float(d.get("pb_ratio", 0) or 0),
+                        "ps": float(d.get("ps_ratio", 0) or 0),
+                        "roe": float(d.get("roe", 0) or 0),
+                        "roce": float(d.get("roce", 0) or 0),
+                        "roa": float(d.get("roa", 0) or 0),
+                        "debt_equity": float(d.get("debt_to_equity", 0) or 0),
+                        "dividend_yield": float(d.get("dividend_yield", 0) or 0),
+                        "ev_ebitda": float(d.get("ev_ebitda", 0) or 0),
+                        "ebitda_margin": float(d.get("ebitda_margin", 0) or 0),
+                        "profit_margin": float(d.get("profit_margin", 0) or 0),
+                        "revenue_growth": float(d.get("revenue_growth", 0) or 0),
+                        "eps": float(d.get("eps", 0) or 0),
+                        "book_value": float(d.get("book_value", 0) or 0),
+                        "face_value": float(comp.get("face_value", 0) or 0),
+                        "source": "alpha_fundamentals"
+                    }
+    except Exception as e:
+        logger.warning(f"Alpha Fundamentals fallback for {symbol}: {e}")
+    # 2. Fallback to Data Service (Yahoo Finance)
     try:
         async with _httpx.AsyncClient(timeout=15) as c:
             r = await c.get(f"{DATA_SERVICE_URL}/data/equity/fundamentals/{symbol}")
-            if r.status_code == 200: return r.json()
+            if r.status_code == 200:
+                result = r.json()
+                result["source"] = "yahoo"
+                return result
     except: pass
     return {}
 
