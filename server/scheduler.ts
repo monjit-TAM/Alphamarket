@@ -4,7 +4,7 @@ import { handleXTSEvent } from "./xts-bridge";
 import { db } from "./db";
 import { calls, positions, strategies } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { getLiveQuote, getOptionPremiumLTP } from "./groww";
+import { getLiveQuote, getOptionPremiumLTP, getBulkLTP } from "./groww";
 import {
   notifyStrategySubscribers,
   notifyWatchlistUsers,
@@ -167,147 +167,229 @@ async function checkStopLossAndTargets() {
     const minutes = ist.getMinutes();
     if (hours < 9 || (hours === 9 && minutes < 15) || hours > 15 || (hours === 15 && minutes > 30)) return;
 
-    const allStrategies = await db.select().from(strategies);
+    // ── Phase 1: Load all active calls + positions + strategies in parallel ──
+    const [allStrategies, allActiveCalls, allActivePositions] = await Promise.all([
+      db.select().from(strategies),
+      db.select().from(calls).where(and(eq(calls.status, "Active"), eq(calls.isPublished, true))),
+      db.select().from(positions).where(and(eq(positions.status, "Active"))),
+    ]);
 
-    for (const strategy of allStrategies) {
-      if (strategy.horizon === "Intraday" && strategy.type === "Basket") continue;
+    const strategyMap = new Map(allStrategies.map(s => [s.id, s]));
 
-      const activeCalls = await db.select().from(calls).where(
-        and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active"), eq(calls.isPublished, true))
-      );
+    // Filter out Basket Intraday strategies
+    const filteredCalls = allActiveCalls.filter(c => {
+      const strat = strategyMap.get(c.strategyId);
+      return strat && !(strat.horizon === "Intraday" && strat.type === "Basket");
+    });
+    const filteredPositions = allActivePositions.filter(p => {
+      const strat = strategyMap.get(p.strategyId);
+      if (!strat) return false;
+      if (strat.horizon === "Intraday") return true; // Intraday: check all active
+      return (p as any).isPublished === true;
+    });
 
-      for (const call of activeCalls) {
-        const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
-        const stopLoss = Number(call.stopLoss || 0);
-        const targetPrice = Number(call.targetPrice || 0);
-        if (entryPrice === 0 || (stopLoss === 0 && targetPrice === 0)) continue;
+    // ── Phase 2: Collect all symbols that need equity/futures prices ──
+    const bulkSymbols: Array<{ symbol: string; strategyType?: string }> = [];
+    const seenSymbols = new Set<string>();
 
-        try {
-          const quote = await getLiveQuote(call.stockName, strategy.type);
-          if (!quote || !quote.ltp || quote.ltp <= 0) continue;
-          const ltp = quote.ltp;
-          const isSellAction = call.action === "Sell";
-          let triggered: "SL" | "TARGET" | null = null;
+    for (const call of filteredCalls) {
+      const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
+      const sl = Number(call.stopLoss || 0);
+      const tp = Number(call.targetPrice || 0);
+      if (entryPrice === 0 || (sl === 0 && tp === 0)) continue;
+      const sym = call.stockName || "";
+      const strat = strategyMap.get(call.strategyId);
+      const key = `${sym}_${strat?.type || ""}`;
+      if (!seenSymbols.has(key) && sym) {
+        seenSymbols.add(key);
+        bulkSymbols.push({ symbol: sym, strategyType: strat?.type });
+      }
+    }
 
-          if (isSellAction) {
-            if (stopLoss > 0 && ltp >= stopLoss) triggered = "SL";
-            else if (targetPrice > 0 && ltp <= targetPrice) triggered = "TARGET";
-          } else {
-            if (stopLoss > 0 && ltp <= stopLoss) triggered = "SL";
-            else if (targetPrice > 0 && ltp >= targetPrice) triggered = "TARGET";
-          }
-
-          if (triggered) {
-            const gainPercent = isSellAction
-              ? (((entryPrice - ltp) / entryPrice) * 100).toFixed(2)
-              : (((ltp - entryPrice) / entryPrice) * 100).toFixed(2);
-            await storage.updateCall(call.id, {
-              status: "Closed",
-              sellPrice: String(ltp.toFixed(2)),
-              gainPercent,
-              exitDate: new Date(),
-            });
-            const reason = triggered === "SL" ? "Stop Loss triggered automatically" : "Target achieved automatically";
-            const evtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
-            const closedCall = {...call, sellPrice: String(ltp.toFixed(2)), gainPercent, status: "Closed"};
-            fireWebhookEvent(evtType, buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
-            handleXTSEvent(evtType, buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
-            console.log(`[Scheduler] ${reason}: ${call.stockName} at \u20B9${ltp.toFixed(2)}, P&L: ${gainPercent}%`);
-            const subPayload = buildCallClosedSubscriberNotification(call, ltp, gainPercent, reason, strategy.name);
-            notifyStrategySubscribers(call.strategyId, strategy.name, "call_closed", subPayload);
-            const wlPayload = buildCallClosedWatchlistNotification(call, gainPercent, strategy.name);
-            notifyWatchlistUsers(call.strategyId, strategy.name, "call_closed_masked", wlPayload);
-          }
-
-          if (!triggered && call.trailing_sl_enabled && call.trailing_sl_value) {
-            const trailValue = Number(call.trailing_sl_value);
-            const highestPrice = Number(call.trailing_sl_highest_price || entryPrice);
-            const currentSL = Number(call.trailing_sl_current_sl || stopLoss);
-            if (ltp > highestPrice) {
-              let newSL = currentSL;
-              if (call.trailing_sl_type === "PERCENTAGE") {
-                newSL = ltp * (1 - trailValue / 100);
-              } else {
-                newSL = ltp - trailValue;
-              }
-              if (newSL > currentSL) {
-                await storage.updateCall(call.id, {
-                  trailing_sl_highest_price: String(ltp.toFixed(2)),
-                  trailing_sl_current_sl: String(newSL.toFixed(2)),
-                });
-              }
-            } else if (currentSL > 0 && ltp <= currentSL) {
-              const gp = (((ltp - entryPrice) / entryPrice) * 100).toFixed(2);
-              await storage.updateCall(call.id, {
-                status: "Closed", sellPrice: String(ltp.toFixed(2)), gainPercent: gp,
-                exitDate: new Date(), trailing_sl_triggered_at: new Date().toISOString(),
-              });
-              fireWebhookEvent("TRAILING_SL_TRIGGERED", buildCallEventData({...call, sellPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed"}, strategy), strategy.advisorId).catch(() => {});
-              handleXTSEvent("TRAILING_SL_TRIGGERED", buildCallEventData({...call, sellPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed"}, strategy), strategy.advisorId).catch(() => {});
-              console.log(`[Scheduler] Trailing SL triggered: ${call.stockName} at \u20B9${ltp.toFixed(2)}`);
-              const reason = "Trailing Stop Loss triggered automatically";
-              const subPayload = buildCallClosedSubscriberNotification(call, ltp, gp, reason, strategy.name);
-              notifyStrategySubscribers(call.strategyId, strategy.name, "call_closed", subPayload);
-              const wlPayload = buildCallClosedWatchlistNotification(call, gp, strategy.name);
-              notifyWatchlistUsers(call.strategyId, strategy.name, "call_closed_masked", wlPayload);
-            }
-          }
-        } catch (priceErr) {
-          console.error(`[Scheduler] Price fetch error for call ${call.stockName}:`, priceErr);
+    // Non-option positions also need bulk LTP
+    const optionPositions: typeof filteredPositions = [];
+    const equityPositions: typeof filteredPositions = [];
+    for (const pos of filteredPositions) {
+      const entryPx = Number(pos.entryPrice || 0);
+      const sl = Number(pos.stopLoss || 0);
+      const tgt = Number(pos.target || 0);
+      if (entryPx === 0 || (sl === 0 && tgt === 0)) continue;
+      const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity";
+      if (!isFutureSegment && pos.strikePrice && pos.expiry && pos.callPut) {
+        optionPositions.push(pos);
+      } else {
+        equityPositions.push(pos);
+        const sym = pos.symbol || "";
+        const strat = strategyMap.get(pos.strategyId);
+        const key = `${sym}_${strat?.type || ""}`;
+        if (!seenSymbols.has(key) && sym) {
+          seenSymbols.add(key);
+          bulkSymbols.push({ symbol: sym, strategyType: strat?.type });
         }
       }
+    }
 
-      const activePositions = await db.select().from(positions).where(
-        and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active"),
-          strategy.horizon === "Intraday" ? undefined : eq(positions.isPublished, true))
-      );
+    // ── Phase 3: Fetch all prices in parallel ──
+    const [bulkPrices, ...optionPrices] = await Promise.all([
+      bulkSymbols.length > 0 ? getBulkLTP(bulkSymbols) : Promise.resolve({} as Record<string, any>),
+      ...optionPositions.map(pos =>
+        getOptionPremiumLTP(pos.symbol || "", pos.expiry!, Number(pos.strikePrice), pos.callPut!)
+          .then(ltp => ({ posId: pos.id, ltp }))
+          .catch(() => ({ posId: pos.id, ltp: null }))
+      ),
+    ]);
 
-      for (const pos of activePositions) {
-        const entryPx = Number(pos.entryPrice || 0);
-        const sl = Number(pos.stopLoss || 0);
-        const tgt = Number(pos.target || 0);
-        if (entryPx === 0 || (sl === 0 && tgt === 0)) continue;
-        try {
-          let ltp = 0;
-          const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity";
-          if (!isFutureSegment && pos.strikePrice && pos.expiry && pos.callPut) {
-            // Option: fetch premium LTP
-            const p = await getOptionPremiumLTP(pos.symbol || "", pos.expiry, Number(pos.strikePrice), pos.callPut);
-            if (p != null && p > 0) ltp = p;
+    const optionLTPMap = new Map<string, number>();
+    for (const op of optionPrices) {
+      if (op && op.ltp != null && op.ltp > 0) optionLTPMap.set(op.posId, op.ltp);
+    }
+
+    // ── Phase 4: Check calls against bulk prices ──
+    for (const call of filteredCalls) {
+      const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
+      const stopLoss = Number(call.stopLoss || 0);
+      const targetPrice = Number(call.targetPrice || 0);
+      if (entryPrice === 0 || (stopLoss === 0 && targetPrice === 0)) continue;
+
+      const sym = call.stockName || "";
+      const quote = bulkPrices[sym];
+      if (!quote || !quote.ltp || quote.ltp <= 0) continue;
+      const ltp = quote.ltp;
+      const strategy = strategyMap.get(call.strategyId)!;
+      const isSellAction = call.action === "Sell";
+      let triggered: "SL" | "TARGET" | null = null;
+
+      if (isSellAction) {
+        if (stopLoss > 0 && ltp >= stopLoss) triggered = "SL";
+        else if (targetPrice > 0 && ltp <= targetPrice) triggered = "TARGET";
+      } else {
+        if (stopLoss > 0 && ltp <= stopLoss) triggered = "SL";
+        else if (targetPrice > 0 && ltp >= targetPrice) triggered = "TARGET";
+      }
+
+      if (triggered) {
+        const gainPercent = isSellAction
+          ? (((entryPrice - ltp) / entryPrice) * 100).toFixed(2)
+          : (((ltp - entryPrice) / entryPrice) * 100).toFixed(2);
+        await storage.updateCall(call.id, {
+          status: "Closed",
+          sellPrice: String(ltp.toFixed(2)),
+          gainPercent,
+          exitDate: new Date(),
+        });
+        const reason = triggered === "SL" ? "Stop Loss triggered automatically" : "Target achieved automatically";
+        const evtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
+        const closedCall = {...call, sellPrice: String(ltp.toFixed(2)), gainPercent, status: "Closed"};
+        fireWebhookEvent(evtType, buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
+        handleXTSEvent(evtType, buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
+        console.log(`[Scheduler] ${reason}: ${call.stockName} at \u20B9${ltp.toFixed(2)}, P&L: ${gainPercent}%`);
+        const subPayload = buildCallClosedSubscriberNotification(call, ltp, gainPercent, reason, strategy.name);
+        notifyStrategySubscribers(call.strategyId, strategy.name, "call_closed", subPayload);
+        const wlPayload = buildCallClosedWatchlistNotification(call, gainPercent, strategy.name);
+        notifyWatchlistUsers(call.strategyId, strategy.name, "call_closed_masked", wlPayload);
+      }
+
+      // Trailing SL check
+      if (!triggered && call.trailing_sl_enabled && call.trailing_sl_value) {
+        const trailValue = Number(call.trailing_sl_value);
+        const highestPrice = Number(call.trailing_sl_highest_price || entryPrice);
+        const currentSL = Number(call.trailing_sl_current_sl || stopLoss);
+        if (ltp > highestPrice) {
+          let newSL = currentSL;
+          if (call.trailing_sl_type === "PERCENTAGE") {
+            newSL = ltp * (1 - trailValue / 100);
           } else {
-            // Equity, Future, Commodity: fetch regular quote
-            const q = await getLiveQuote(pos.symbol || "", strategy.type);
-            if (q && q.ltp > 0) ltp = q.ltp;
+            newSL = ltp - trailValue;
           }
-          if (ltp <= 0) continue;
-          const isSell = pos.buySell === "Sell";
-          let triggered: "SL" | "TARGET" | null = null;
-          if (isSell) {
-            if (sl > 0 && ltp >= sl) triggered = "SL";
-            else if (tgt > 0 && ltp <= tgt) triggered = "TARGET";
-          } else {
-            if (sl > 0 && ltp <= sl) triggered = "SL";
-            else if (tgt > 0 && ltp >= tgt) triggered = "TARGET";
-          }
-          if (triggered) {
-            const gp = isSell ? (((entryPx - ltp) / entryPx) * 100).toFixed(2) : (((ltp - entryPx) / entryPx) * 100).toFixed(2);
-            await storage.updatePosition(pos.id, {
-              status: "Closed", exitPrice: String(ltp.toFixed(2)), gainPercent: gp, exitDate: new Date(),
+          if (newSL > currentSL) {
+            await storage.updateCall(call.id, {
+              trailing_sl_highest_price: String(ltp.toFixed(2)),
+              trailing_sl_current_sl: String(newSL.toFixed(2)),
             });
-            console.log(`[Scheduler] Position ${triggered === "SL" ? "Stop Loss" : "Target"}: ${pos.symbol} at \u20B9${ltp.toFixed(2)}, P&L: ${gp}%`);
-            const subPayload = buildPositionClosedSubscriberNotification(pos, ltp, gp, strategy.name);
-            notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
-            const wlPayload = buildPositionClosedWatchlistNotification(pos, gp, strategy.name);
-            notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
-
-            // Fire webhook for broker integrations
-            const posEvtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
-            const closedPos = { ...pos, exitPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed" };
-            fireWebhookEvent(posEvtType, buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
           }
-        } catch (priceErr) {
-          console.error(`[Scheduler] Price fetch error for ${pos.symbol}:`, priceErr);
+        } else if (currentSL > 0 && ltp <= currentSL) {
+          const gp = (((ltp - entryPrice) / entryPrice) * 100).toFixed(2);
+          await storage.updateCall(call.id, {
+            status: "Closed", sellPrice: String(ltp.toFixed(2)), gainPercent: gp,
+            exitDate: new Date(), trailing_sl_triggered_at: new Date().toISOString(),
+          });
+          fireWebhookEvent("TRAILING_SL_TRIGGERED", buildCallEventData({...call, sellPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed"}, strategy), strategy.advisorId).catch(() => {});
+          handleXTSEvent("TRAILING_SL_TRIGGERED", buildCallEventData({...call, sellPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed"}, strategy), strategy.advisorId).catch(() => {});
+          console.log(`[Scheduler] Trailing SL triggered: ${call.stockName} at \u20B9${ltp.toFixed(2)}`);
+          const reason = "Trailing Stop Loss triggered automatically";
+          const subPayload = buildCallClosedSubscriberNotification(call, ltp, gp, reason, strategy.name);
+          notifyStrategySubscribers(call.strategyId, strategy.name, "call_closed", subPayload);
+          const wlPayload = buildCallClosedWatchlistNotification(call, gp, strategy.name);
+          notifyWatchlistUsers(call.strategyId, strategy.name, "call_closed_masked", wlPayload);
         }
+      }
+    }
+
+    // ── Phase 5: Check equity/future positions against bulk prices ──
+    for (const pos of equityPositions) {
+      const entryPx = Number(pos.entryPrice || 0);
+      const sl = Number(pos.stopLoss || 0);
+      const tgt = Number(pos.target || 0);
+      const sym = pos.symbol || "";
+      const quote = bulkPrices[sym];
+      if (!quote || !quote.ltp || quote.ltp <= 0) continue;
+      const ltp = quote.ltp;
+      const strategy = strategyMap.get(pos.strategyId)!;
+      const isSell = pos.buySell === "Sell";
+      let triggered: "SL" | "TARGET" | null = null;
+      if (isSell) {
+        if (sl > 0 && ltp >= sl) triggered = "SL";
+        else if (tgt > 0 && ltp <= tgt) triggered = "TARGET";
+      } else {
+        if (sl > 0 && ltp <= sl) triggered = "SL";
+        else if (tgt > 0 && ltp >= tgt) triggered = "TARGET";
+      }
+      if (triggered) {
+        const gp = isSell ? (((entryPx - ltp) / entryPx) * 100).toFixed(2) : (((ltp - entryPx) / entryPx) * 100).toFixed(2);
+        await storage.updatePosition(pos.id, {
+          status: "Closed", exitPrice: String(ltp.toFixed(2)), gainPercent: gp, exitDate: new Date(),
+        });
+        console.log(`[Scheduler] Position ${triggered === "SL" ? "Stop Loss" : "Target"}: ${pos.symbol} at \u20B9${ltp.toFixed(2)}, P&L: ${gp}%`);
+        const subPayload = buildPositionClosedSubscriberNotification(pos, ltp, gp, strategy.name);
+        notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
+        const wlPayload = buildPositionClosedWatchlistNotification(pos, gp, strategy.name);
+        notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
+        const posEvtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
+        const closedPos = { ...pos, exitPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed" };
+        fireWebhookEvent(posEvtType, buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
+      }
+    }
+
+    // ── Phase 6: Check option positions against parallel-fetched premiums ──
+    for (const pos of optionPositions) {
+      const entryPx = Number(pos.entryPrice || 0);
+      const sl = Number(pos.stopLoss || 0);
+      const tgt = Number(pos.target || 0);
+      const ltp = optionLTPMap.get(pos.id) || 0;
+      if (ltp <= 0) continue;
+      const strategy = strategyMap.get(pos.strategyId)!;
+      const isSell = pos.buySell === "Sell";
+      let triggered: "SL" | "TARGET" | null = null;
+      if (isSell) {
+        if (sl > 0 && ltp >= sl) triggered = "SL";
+        else if (tgt > 0 && ltp <= tgt) triggered = "TARGET";
+      } else {
+        if (sl > 0 && ltp <= sl) triggered = "SL";
+        else if (tgt > 0 && ltp >= tgt) triggered = "TARGET";
+      }
+      if (triggered) {
+        const gp = isSell ? (((entryPx - ltp) / entryPx) * 100).toFixed(2) : (((ltp - entryPx) / entryPx) * 100).toFixed(2);
+        await storage.updatePosition(pos.id, {
+          status: "Closed", exitPrice: String(ltp.toFixed(2)), gainPercent: gp, exitDate: new Date(),
+        });
+        console.log(`[Scheduler] Option Position ${triggered === "SL" ? "Stop Loss" : "Target"}: ${pos.symbol} at \u20B9${ltp.toFixed(2)}, P&L: ${gp}%`);
+        const subPayload = buildPositionClosedSubscriberNotification(pos, ltp, gp, strategy.name);
+        notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
+        const wlPayload = buildPositionClosedWatchlistNotification(pos, gp, strategy.name);
+        notifyWatchlistUsers(pos.strategyId, strategy.name, "position_closed_masked", wlPayload);
+        const posEvtType = triggered === "SL" ? "STOPLOSS_TRIGGERED" : "TARGET_ACHIEVED";
+        const closedPos = { ...pos, exitPrice: String(ltp.toFixed(2)), gainPercent: gp, status: "Closed" };
+        fireWebhookEvent(posEvtType, buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
       }
     }
   } catch (err) {
@@ -374,13 +456,18 @@ let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 export function startScheduler() {
   if (schedulerInterval) return;
 
+  // SL/Target check runs every 15 seconds for fast detection
   schedulerInterval = setInterval(() => {
-    autoSquareOffIntraday();
     checkStopLossAndTargets();
+  }, 15 * 1000);
+
+  // Intraday square-off and recovery run every 60 seconds (only trigger at specific times anyway)
+  setInterval(() => {
+    autoSquareOffIntraday();
     recoverySquareOff();
   }, 60 * 1000);
 
-  console.log("[Scheduler] Started: Intraday auto-square-off + SL/Target monitoring (every minute)");
+  console.log("[Scheduler] Started: SL/Target monitoring (every 15s) + Intraday auto-square-off (every 60s)");
 }
 
 export function stopScheduler() {
