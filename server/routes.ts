@@ -90,6 +90,249 @@ export async function registerRoutes(
   app.get("/api/broker-spec.json", (_req: any, res: any) => { try { const s = require("fs").readFileSync(require("path").join(__dirname, "public", "broker-swagger.json"), "utf-8"); res.type("json").send(s); } catch { res.json({}); } });
   app.get("/api/broker-guide", (_req: any, res: any) => { try { res.sendFile(require("path").join(__dirname, "public", "broker-guide.html")); } catch { res.status(404).send("Not found"); } });
   app.get("/api/webhook-docs", (_req: any, res: any) => { try { res.sendFile(require("path").join(__dirname, "public", "webhook-api.html")); } catch { res.status(404).send("Not found"); } });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // OAuth SSO — Partner Platform Integration (NOREN/Kambala)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // POST /api/oauth/noren/session — Create authenticated session for partner user
+  app.post("/api/oauth/noren/session", async (req: any, res: any) => {
+    try {
+      const { partner_key, hashed_key, broker_id, product, timestamp, signature } = req.body;
+      if (!partner_key || !hashed_key || !broker_id || !product) {
+        return res.status(400).json({ status: "error", message: "Missing required fields: partner_key, hashed_key, broker_id, product" });
+      }
+      if (!["alphamarket", "alphalab", "alphalens"].includes(product)) {
+        return res.status(400).json({ status: "error", message: "Invalid product. Must be: alphamarket, alphalab, or alphalens" });
+      }
+
+      // 1. Validate partner
+      const partnerResult = await db.execute(sql`SELECT id, partner_name, partner_secret, is_active FROM partner_configs WHERE partner_key = ${partner_key} LIMIT 1`);
+      const partner = (partnerResult.rows as any[])[0];
+      if (!partner) return res.status(401).json({ status: "error", message: "Invalid partner_key" });
+      if (!partner.is_active) return res.status(403).json({ status: "error", message: "Partner account is inactive" });
+
+      // 2. Verify HMAC signature
+      if (signature) {
+        const crypto = require("crypto");
+        const rawBody = JSON.stringify(req.body);
+        const expected = crypto.createHmac("sha256", partner.partner_secret).update(rawBody).digest("hex");
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          return res.status(401).json({ status: "error", message: "Invalid signature" });
+        }
+      }
+
+      // 3. Check timestamp freshness (5 min window)
+      if (timestamp) {
+        const tsAge = Math.abs(Date.now() - new Date(timestamp).getTime());
+        if (tsAge > 300000) {
+          return res.status(401).json({ status: "error", message: "Timestamp too old (>5 min)" });
+        }
+      }
+
+      // 4. Check broker activation
+      const brokerResult = await db.execute(sql`SELECT id, products_enabled, is_active FROM partner_broker_configs WHERE partner_id = ${partner.id} AND broker_id = ${broker_id} LIMIT 1`);
+      const brokerConfig = (brokerResult.rows as any[])[0];
+      if (brokerConfig) {
+        if (!brokerConfig.is_active) return res.status(403).json({ status: "error", message: "Broker is inactive" });
+        if (brokerConfig.products_enabled && !brokerConfig.products_enabled.includes(product)) {
+          return res.status(403).json({ status: "error", message: "Product not enabled for this broker" });
+        }
+      }
+      // If no broker config exists, allow access (default: all products enabled)
+
+      // 5. Create or find shadow user
+      const shadowResult = await db.execute(sql`
+        INSERT INTO partner_shadow_users (partner_id, hashed_key, broker_id)
+        VALUES (${partner.id}, ${hashed_key}, ${broker_id})
+        ON CONFLICT (hashed_key, broker_id) DO UPDATE SET last_seen = NOW()
+        RETURNING id
+      `);
+      const shadowUserId = (shadowResult.rows as any[])[0].id;
+
+      // 6. Generate session token
+      const crypto = require("crypto");
+      const sessionToken = "nst_" + crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+      await db.execute(sql`
+        INSERT INTO partner_sessions (token, shadow_user_id, partner_id, product, expires_at)
+        VALUES (${sessionToken}, ${shadowUserId}, ${partner.id}, ${product}, ${expiresAt})
+      `);
+
+      // 7. Build embed URL based on product
+      const embedUrls: Record<string, string> = {
+        alphamarket: "https://alphamarket.co.in/embed?token=" + sessionToken,
+        alphalens: "https://stocks.alphamarket.co.in/embed?token=" + sessionToken,
+        alphalab: "https://testalpha.in/embed?token=" + sessionToken,
+      };
+
+      console.log("[OAuth] Session created for partner=" + partner.partner_name + " broker=" + broker_id + " product=" + product);
+
+      res.json({
+        status: "success",
+        session_token: sessionToken,
+        embed_url: embedUrls[product],
+        expires_in: 86400,
+      });
+    } catch (err: any) {
+      console.error("[OAuth] Session error:", err.message);
+      res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+  });
+
+  // POST /api/oauth/noren/grant-access — Grant strategy access (broker-managed billing)
+  app.post("/api/oauth/noren/grant-access", async (req: any, res: any) => {
+    try {
+      const { partner_key, hashed_key, broker_id, strategy_ids, valid_until, signature } = req.body;
+      if (!partner_key || !hashed_key || !broker_id || !strategy_ids || !Array.isArray(strategy_ids)) {
+        return res.status(400).json({ status: "error", message: "Missing required fields" });
+      }
+
+      // Validate partner
+      const partnerResult = await db.execute(sql`SELECT id, partner_secret, is_active FROM partner_configs WHERE partner_key = ${partner_key} LIMIT 1`);
+      const partner = (partnerResult.rows as any[])[0];
+      if (!partner || !partner.is_active) return res.status(401).json({ status: "error", message: "Invalid or inactive partner" });
+
+      // Verify signature
+      if (signature) {
+        const crypto = require("crypto");
+        const expected = crypto.createHmac("sha256", partner.partner_secret).update(JSON.stringify(req.body)).digest("hex");
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          return res.status(401).json({ status: "error", message: "Invalid signature" });
+        }
+      }
+
+      // Find shadow user
+      const shadowResult = await db.execute(sql`SELECT id FROM partner_shadow_users WHERE hashed_key = ${hashed_key} AND broker_id = ${broker_id} LIMIT 1`);
+      const shadowUser = (shadowResult.rows as any[])[0];
+      if (!shadowUser) return res.status(404).json({ status: "error", message: "Shadow user not found. Create a session first." });
+
+      // Grant access for each strategy
+      const validUntil = valid_until ? new Date(valid_until) : null;
+      let granted = 0;
+      for (const strategyId of strategy_ids) {
+        await db.execute(sql`
+          INSERT INTO partner_access_grants (shadow_user_id, strategy_id, granted_by, valid_until)
+          VALUES (${shadowUser.id}, ${strategyId}, ${broker_id}, ${validUntil})
+          ON CONFLICT (shadow_user_id, strategy_id) DO UPDATE SET valid_until = ${validUntil}, granted_by = ${broker_id}
+        `);
+        granted++;
+      }
+
+      console.log("[OAuth] Access granted: " + granted + " strategies for broker=" + broker_id);
+      res.json({ status: "success", granted, shadow_user_id: shadowUser.id });
+    } catch (err: any) {
+      console.error("[OAuth] Grant access error:", err.message);
+      res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+  });
+
+  // POST /api/oauth/noren/broker-config — Configure broker product activation
+  app.post("/api/oauth/noren/broker-config", async (req: any, res: any) => {
+    try {
+      const { partner_key, broker_id, broker_name, products_enabled, signature } = req.body;
+      if (!partner_key || !broker_id) {
+        return res.status(400).json({ status: "error", message: "Missing partner_key and broker_id" });
+      }
+
+      const partnerResult = await db.execute(sql`SELECT id, partner_secret, is_active FROM partner_configs WHERE partner_key = ${partner_key} LIMIT 1`);
+      const partner = (partnerResult.rows as any[])[0];
+      if (!partner || !partner.is_active) return res.status(401).json({ status: "error", message: "Invalid or inactive partner" });
+
+      if (signature) {
+        const crypto = require("crypto");
+        const expected = crypto.createHmac("sha256", partner.partner_secret).update(JSON.stringify(req.body)).digest("hex");
+        if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+          return res.status(401).json({ status: "error", message: "Invalid signature" });
+        }
+      }
+
+      const products = products_enabled || ["alphamarket", "alphalab", "alphalens"];
+      await db.execute(sql`
+        INSERT INTO partner_broker_configs (partner_id, broker_id, broker_name, products_enabled)
+        VALUES (${partner.id}, ${broker_id}, ${broker_name || broker_id}, ${products})
+        ON CONFLICT (partner_id, broker_id) DO UPDATE SET
+          broker_name = COALESCE(${broker_name}, partner_broker_configs.broker_name),
+          products_enabled = ${products}
+      `);
+
+      console.log("[OAuth] Broker configured: " + broker_id + " products=" + products.join(","));
+      res.json({ status: "success", broker_id, products_enabled: products });
+    } catch (err: any) {
+      console.error("[OAuth] Broker config error:", err.message);
+      res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+  });
+
+  // GET /api/oauth/noren/validate — Validate a session token (used by AlphaLens + AlphaLab for cross-domain validation)
+  app.get("/api/oauth/noren/validate", async (req: any, res: any) => {
+    try {
+      const token = req.query.token as string;
+      if (!token) return res.status(400).json({ status: "error", message: "Token required" });
+
+      const result = await db.execute(sql`
+        SELECT ps.id, ps.product, ps.expires_at, psu.hashed_key, psu.broker_id, pc.partner_name
+        FROM partner_sessions ps
+        JOIN partner_shadow_users psu ON psu.id = ps.shadow_user_id
+        JOIN partner_configs pc ON pc.id = ps.partner_id
+        WHERE ps.token = ${token} AND ps.expires_at > NOW()
+        LIMIT 1
+      `);
+      const session = (result.rows as any[])[0];
+      if (!session) return res.status(401).json({ status: "error", message: "Invalid or expired token" });
+
+      res.json({
+        status: "success",
+        valid: true,
+        product: session.product,
+        partner: session.partner_name,
+        broker_id: session.broker_id,
+        hashed_key: session.hashed_key,
+        expires_at: session.expires_at,
+      });
+    } catch (err: any) {
+      res.status(500).json({ status: "error", message: "Internal server error" });
+    }
+  });
+
+  // GET /embed — Serve the app without top navigation (for iFrame/WebView embedding)
+  app.get("/embed", async (req: any, res: any) => {
+    try {
+      const token = req.query.token as string;
+      if (!token) return res.status(401).send("Missing token");
+
+      // Validate token
+      const result = await db.execute(sql`
+        SELECT ps.id, ps.product, ps.expires_at, psu.id as shadow_user_id, psu.hashed_key, psu.broker_id
+        FROM partner_sessions ps
+        JOIN partner_shadow_users psu ON psu.id = ps.shadow_user_id
+        WHERE ps.token = ${token} AND ps.expires_at > NOW()
+        LIMIT 1
+      `);
+      const session = (result.rows as any[])[0];
+      if (!session) return res.status(401).send("Invalid or expired token");
+
+      // Update last seen
+      await db.execute(sql`UPDATE partner_shadow_users SET last_seen = NOW() WHERE id = ${session.shadow_user_id}`);
+
+      // Serve the SPA with embed mode flag
+      const indexPath = require("path").resolve(__dirname, "public", "index.html");
+      let html = require("fs").readFileSync(indexPath, "utf-8");
+
+      // Inject embed mode script before </head> — hides navigation
+      const embedScript = '<script>window.__EMBED_MODE__=true;window.__EMBED_TOKEN__="' + token + '";window.__EMBED_PRODUCT__="' + session.product + '";</script>';
+      html = html.replace("</head>", embedScript + "</head>");
+
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
+    } catch (err: any) {
+      console.error("[OAuth] Embed error:", err.message);
+      res.status(500).send("Internal server error");
+    }
+  });
+
+
   app.get("/api/broker-docs", (_req: any, res: any) => {
     res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>AlphaMarket Broker Integration API</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" /><style>body{margin:0;background:#fafafa}.swagger-ui .topbar{display:none}.swagger-ui .info hgroup.main h2{font-size:14px;color:#666}</style></head><body><div id="swagger-ui"></div><script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"><\/script><script>SwaggerUIBundle({url:"/api/broker-spec.json",dom_id:"#swagger-ui",deepLinking:true,layout:"BaseLayout",defaultModelsExpandDepth:2,docExpansion:"list"});<\/script></body></html>`);
   });
