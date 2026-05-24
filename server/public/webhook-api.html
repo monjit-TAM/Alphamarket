@@ -168,9 +168,15 @@ td code{font-size:12px}
   </div>
   <div class="nav-sec">
     <div class="nav-title">Go Live</div>
-    <a href="#testing"><span class="nav-num">13</span>Testing &amp; Sandbox</a>
-    <a href="#checklist"><span class="nav-num">14</span>Go-Live Checklist</a>
-    <a href="#support"><span class="nav-num">15</span>Support &amp; Contact</a>
+    <a href="#oauth"><span class="nav-num">13</span>OAuth SSO Embed</a>
+    <a href="#shadow-user"><span class="nav-num">14</span>Shadow User Model</a>
+    <a href="#embed"><span class="nav-num">15</span>Embedding</a>
+  </div>
+  <div class="nav-sec">
+    <div class="nav-title">Go Live</div>
+    <a href="#testing"><span class="nav-num">16</span>Testing &amp; Sandbox</a>
+    <a href="#checklist"><span class="nav-num">17</span>Go-Live Checklist</a>
+    <a href="#support"><span class="nav-num">18</span>Support &amp; Contact</a>
   </div>
 </nav>
 
@@ -524,8 +530,104 @@ app.post(<span class="cs">'/alphamarket/webhook'</span>, (req, res) => {
 <h3>Idempotency</h3>
 <p>Use <code>recommendationId</code> + event type as a deduplication key. AlphaMarket may retry a delivery, so your handler should be safe to call multiple times for the same event. The <code>recommendationId</code> is unique and auto-incrementing.</p>
 
-<!-- ═══ 13. Testing ═══ -->
-<h2 id="testing" class="sa">13. Testing &amp; Sandbox</h2>
+<!-- ═══ 13. OAuth SSO ═══ -->
+<h2 id="oauth" class="sa">13. OAuth SSO Embed (Partner Platforms)</h2>
+<p>In addition to webhook push, AlphaMarket supports <strong>OAuth SSO embedding</strong> — allowing partner platforms (e.g., NOREN, broker trading apps) to load AlphaMarket inside their app. Users authenticate via the partner platform and access AlphaMarket without a separate login.</p>
+
+<h3>How It Works</h3>
+<div class="flow">
+  <div class="flow-box">User in Partner App</div><span class="flow-arrow">&rarr;</span>
+  <div class="flow-box">Clicks "AlphaMarket"</div><span class="flow-arrow">&rarr;</span>
+  <div class="flow-box">Partner calls our API</div><span class="flow-arrow">&rarr;</span>
+  <div class="flow-box">We return session token</div><span class="flow-arrow">&rarr;</span>
+  <div class="flow-box">Product loads in iFrame</div>
+</div>
+
+<h3>Session Endpoint</h3>
+<pre><code><span class="ck">POST</span> https://alphamarket.co.in/api/oauth/noren/session
+
+{
+  <span class="ck">"partner_key"</span>: <span class="cs">"noren_live_xxxxxxxxxxxx"</span>,
+  <span class="ck">"hashed_key"</span>:  <span class="cs">"a1b2c3d4e5f6..."</span>,        <span class="cc">// opaque user ID, no PII</span>
+  <span class="ck">"broker_id"</span>:   <span class="cs">"broker_shoonya"</span>,
+  <span class="ck">"product"</span>:     <span class="cs">"alphamarket"</span>,
+  <span class="ck">"timestamp"</span>:   <span class="cs">"2026-05-23T10:30:00.000Z"</span>,
+  <span class="ck">"signature"</span>:   <span class="cs">"hmac_sha256_hex_digest"</span>
+}</code></pre>
+
+<h3>Response</h3>
+<pre><code>{
+  <span class="ck">"status"</span>: <span class="cs">"success"</span>,
+  <span class="ck">"session_token"</span>: <span class="cs">"nst_xxxxxxxxxxxxxxxxxxxx"</span>,
+  <span class="ck">"embed_url"</span>: <span class="cs">"https://alphamarket.co.in/embed?token=nst_xxx"</span>,
+  <span class="ck">"expires_in"</span>: <span class="cn">86400</span>
+}</code></pre>
+
+<div class="tw"><table>
+  <thead><tr><th>Field</th><th>Type</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>partner_key</code></td><td>string</td><td>Partner API key issued during onboarding</td></tr>
+    <tr><td><code>hashed_key</code></td><td>string</td><td>Opaque user identifier — unique per user per broker. No PII shared.</td></tr>
+    <tr><td><code>broker_id</code></td><td>string</td><td>Identifies which broker the user belongs to</td></tr>
+    <tr><td><code>product</code></td><td>string</td><td><code>alphamarket</code>, <code>alphalab</code>, or <code>alphalens</code></td></tr>
+    <tr><td><code>signature</code></td><td>string</td><td>HMAC-SHA256 of raw JSON body, signed with shared secret</td></tr>
+  </tbody>
+</table></div>
+
+<div class="callout callout-blue"><strong>No PII Required:</strong> The <code>hashed_key</code> is an opaque identifier. AlphaMarket does not receive or store the user's name, email, phone, or any personal data.</div>
+
+<!-- ═══ 14. Shadow User ═══ -->
+<h2 id="shadow-user" class="sa">14. Shadow User Model</h2>
+<p>For OAuth SSO users, AlphaMarket creates a <strong>shadow user</strong> for each unique <code>hashed_key + broker_id</code> combination. Shadow users can subscribe to strategies, maintain watchlists, and have preferences — all tied to the hashed key.</p>
+
+<div class="tw"><table>
+  <thead><tr><th>Stored</th><th>NOT Stored</th></tr></thead>
+  <tbody>
+    <tr><td>hashed_key, broker_id, partner name, created_at, last_seen, subscriptions, preferences</td><td>Name, email, phone, PAN, or any PII</td></tr>
+  </tbody>
+</table></div>
+
+<h3>Subscriptions</h3>
+<p><strong>Model A — User pays via AlphaMarket:</strong> User clicks "Subscribe" inside the embed &rarr; payment flow (Cashfree/Razorpay) opens within the iFrame/WebView.</p>
+<p><strong>Model B — Partner handles billing:</strong> Partner calls our grant-access API to activate strategies for the shadow user.</p>
+<pre><code><span class="ck">POST</span> https://alphamarket.co.in/api/oauth/noren/grant-access
+
+{
+  <span class="ck">"partner_key"</span>: <span class="cs">"noren_live_xxxx"</span>,
+  <span class="ck">"hashed_key"</span>:  <span class="cs">"a1b2c3..."</span>,
+  <span class="ck">"broker_id"</span>:   <span class="cs">"broker_shoonya"</span>,
+  <span class="ck">"strategy_ids"</span>: [<span class="cs">"equity-short-term"</span>, <span class="cs">"nifty-options"</span>],
+  <span class="ck">"valid_until"</span>: <span class="cs">"2026-06-23T00:00:00.000Z"</span>,
+  <span class="ck">"signature"</span>:   <span class="cs">"hmac..."</span>
+}</code></pre>
+
+<!-- ═══ 15. Embedding ═══ -->
+<h2 id="embed" class="sa">15. Embedding</h2>
+
+<h3>Web (iFrame)</h3>
+<pre><code>&lt;iframe src="https://alphamarket.co.in/embed?token=nst_xxxx"
+  width="100%" height="100%" frameborder="0"
+  allow="payment" style="border: none;"&gt;
+&lt;/iframe&gt;</code></pre>
+<p>AlphaMarket serves a version <strong>without its top navigation</strong> when loaded via <code>/embed?token=...</code>. The partner's navigation stays visible.</p>
+
+<h3>Mobile (WebView)</h3>
+<p>Same URL loaded in Android WebView or iOS WKWebView.</p>
+
+<h3>All Three Products</h3>
+<div class="tw"><table>
+  <thead><tr><th>Product</th><th>Embed URL</th></tr></thead>
+  <tbody>
+    <tr><td>AlphaMarket</td><td><code>https://alphamarket.co.in/embed?token=nst_xxxx</code></td></tr>
+    <tr><td>AlphaLens</td><td><code>https://stocks.alphamarket.co.in/embed?token=nst_xxxx</code></td></tr>
+    <tr><td>AlphaLab</td><td><code>https://testalpha.in/embed?token=nst_xxxx</code></td></tr>
+  </tbody>
+</table></div>
+
+<div class="callout callout-amber"><strong>Cross-Product SSO:</strong> A single <code>partner_key</code> works across all three products. The <code>product</code> field in the session request determines which embed URL is returned.</div>
+
+<!-- ═══ 16. Testing ═══ -->
+<h2 id="testing" class="sa">16. Testing &amp; Sandbox</h2>
 
 <h3>UAT Environment</h3>
 <p>AlphaMarket maintains a UAT environment at <code>uat.alphamarket.co.in</code>. During onboarding, your UAT webhook URL is configured separately from production. Test recommendations are pushed from real advisor test accounts.</p>
@@ -570,7 +672,7 @@ app.post(<span class="cs">'/alphamarket/webhook'</span>, (req, res) => {
   }'</span></code></pre>
 
 <!-- ═══ 14. Checklist ═══ -->
-<h2 id="checklist" class="sa">14. Go-Live Checklist</h2>
+<h2 id="checklist" class="sa">17. Go-Live Checklist</h2>
 <p>Before going live, ensure your integration meets all requirements:</p>
 
 <ul class="checklist">
@@ -591,7 +693,7 @@ app.post(<span class="cs">'/alphamarket/webhook'</span>, (req, res) => {
 </ul>
 
 <!-- ═══ 15. Support ═══ -->
-<h2 id="support" class="sa">15. Support &amp; Contact</h2>
+<h2 id="support" class="sa">18. Support &amp; Contact</h2>
 
 <div class="callout callout-green">
   <strong>📧 Integration Support</strong><br>
