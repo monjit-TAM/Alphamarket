@@ -259,6 +259,7 @@ export function buildCallEventData(call: any, strategy?: any, advisor?: any) {
     exitDate: c.exitDate ?? c.exit_date,
     rationale: c.rationale,
     duration: c.duration,
+    durationUnit: c.durationUnit,
     theme: c.theme,
     gainOrLossPercentage: c.gainPercent ?? c.gain_percent,
     trailingStopLoss: (c.trailing_sl_enabled ?? c.trailingSlEnabled)

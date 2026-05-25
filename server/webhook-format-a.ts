@@ -345,7 +345,7 @@ export async function buildFormatAPayload(
   // Add duration field for Dreamstreet only (integer, number of days)
   if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && payload?.data) {
     payload.data.duration = n.duration || null;
-    payload.data.durationUnit = "days";
+    payload.data.durationUnit = (n.durationUnit || "days").toLowerCase();
   }
 
   return payload;
