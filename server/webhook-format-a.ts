@@ -327,6 +327,7 @@ function normalize(data: Record<string, any>): any {
 export async function buildFormatAPayload(
   event: string,
   data: Record<string, any>,
+  brokerName?: string,
 ): Promise<any> {
   const strategyId = data.strategyId || data.strategy_id;
   if (!strategyId) throw new Error("strategyId missing in event data");
@@ -337,10 +338,17 @@ export async function buildFormatAPayload(
   const isFno = data.type === "FnO" || data.segment === "Option" || data.segment === "Future" || data.segment === "Commodity";
   const n = normalize(data);
 
-  if (isFno) {
-    return buildFno(event, n, loaded.strategy, loaded.advisor);
+  const payload = isFno
+    ? await buildFno(event, n, loaded.strategy, loaded.advisor)
+    : await buildEquity(event, n, loaded.strategy, loaded.advisor);
+
+  // Add duration field for Dreamstreet only (integer, number of days)
+  if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && payload?.data) {
+    payload.data.duration = n.duration || null;
+    payload.data.durationUnit = "days";
   }
-  return buildEquity(event, n, loaded.strategy, loaded.advisor);
+
+  return payload;
 }
 
 export function inferSegment(event: string, data: Record<string, any>): string | null {

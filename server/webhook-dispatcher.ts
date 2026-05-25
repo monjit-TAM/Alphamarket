@@ -93,7 +93,7 @@ export async function fireWebhookEvent(
       try {
         if (payloadVersion === 'v1_thealphamarket') {
           // Format A — matches thealphamarket.com webhook shape exactly
-          payloadBody = await buildFormatAPayload(event, { ...data, advisorId });
+          payloadBody = await buildFormatAPayload(event, { ...data, advisorId }, target.broker_name);
         } else {
           // Default v1_flat — current simple shape
           payloadBody = {
