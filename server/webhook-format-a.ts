@@ -42,7 +42,10 @@ function deriveTheme(strategy: any): string[] {
   if (Array.isArray(t) && t.length > 0) return t;
   const type = strategy?.type;
   if (type === "Equity") return ["Equity"];
-  if (type === "Future" || type === "Option" || type === "FnO") return ["F&O"];
+  if (type === "Option") return ["Equity", "F&O"];
+  if (type === "Future" || type === "FnO") return ["F&O"];
+  if (type === "Commodity" || type === "CommodityFuture") return ["Commodity"];
+  if (type === "Basket") return ["Equity", "F&O"];
   return ["Equity"];
 }
 
@@ -79,7 +82,7 @@ function mapExitType(eventType: string, internalStatus: string): string | null {
 
 // ─── Equity Builder ─────────────────────────────────────────────
 
-async function buildEquity(event: string, c: any, strategy: any, advisor: any): Promise<any> {
+async function buildEquity(event: string, c: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "CALL_CLOSED" || event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || c.status === "Closed";
   const recId = await nextRecId();
   const legId = String(Number(recId) + 1);
@@ -139,7 +142,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
   data.strategyName = strategy.name;
   data.strategyDescription = strategy.description || null;
   data.benchmark = strategy.benchmark || "Nifty 50";
-  data.strategyType = "Equity";
+  data.strategyType = upstoxStrategyType || "Equity";
   data.advisorName = advisor?.company_name || advisor?.username;
   data.profilePic = advisor?.logo_url ? "https://alphamarket.co.in" + advisor.logo_url : null;
   data.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : null;
@@ -170,7 +173,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any): 
 
 // ─── FnO Builder ────────────────────────────────────────────────
 
-async function buildFno(event: string, p: any, strategy: any, advisor: any): Promise<any> {
+async function buildFno(event: string, p: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || p.status === "Closed";
   const recId = await nextRecId();
   const legId = String(Number(recId) + 1);
@@ -210,8 +213,10 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any): Pro
     status: isClosed ? "CLOSED" : "PUBLISHED",
   };
 
-  let rootType = "Option";
-  if (optionType === "Future") rootType = "Future";
+  let rootType = upstoxStrategyType || "Option";
+  if (!upstoxStrategyType) {
+    if (optionType === "Future") rootType = "Future";
+  }
 
   const data: any = {};
   data.strategyId = strategy.slug || strategy.id;
