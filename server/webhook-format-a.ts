@@ -340,12 +340,29 @@ export async function buildFormatAPayload(
   const loaded = await loadStrategyAndAdvisor(strategyId);
   if (!loaded) throw new Error(`Strategy ${strategyId} not found`);
 
-  const isFno = data.type === "FnO" || data.segment === "Option" || data.segment === "Future" || data.segment === "Commodity";
+  // Detect FnO/Commodity using multiple signals — handles data where segment is wrong
+  const stratType = loaded.strategy.type;
+  const seg = data.segment;
+  const hasStrike = !!(data.strikePrice || data.strike_price);
+  const hasCallPut = !!(data.callPut || data.call_put);
+
+  const isFnoByStrategy = stratType === "Option" || stratType === "Future" || stratType === "Commodity" || stratType === "CommodityFuture" || stratType === "Basket";
+  const isFnoBySegment = seg === "Option" || seg === "Future" || seg === "Commodity";
+  const isFnoByData = data.type === "FnO" || (hasStrike && hasCallPut);
+  const isFno = isFnoByStrategy || isFnoBySegment || isFnoByData;
+
+  // Determine correct strategyType for Upstox
+  let upstoxStrategyType = "Equity";
+  if (stratType === "Option" || (hasStrike && hasCallPut)) upstoxStrategyType = "Option";
+  else if (stratType === "Future") upstoxStrategyType = "Future";
+  else if (stratType === "CommodityFuture" || stratType === "Commodity") upstoxStrategyType = "CommodityFuture";
+  else if (stratType === "Basket") upstoxStrategyType = isFnoByData ? "Option" : "Equity";
+
   const n = normalize(data);
 
   const payload = isFno
-    ? await buildFno(event, n, loaded.strategy, loaded.advisor)
-    : await buildEquity(event, n, loaded.strategy, loaded.advisor);
+    ? await buildFno(event, n, loaded.strategy, loaded.advisor, upstoxStrategyType)
+    : await buildEquity(event, n, loaded.strategy, loaded.advisor, upstoxStrategyType);
 
   // Add duration field for Dreamstreet only (integer, number of days)
   if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && payload?.data) {
