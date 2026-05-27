@@ -62,9 +62,14 @@ async function nextRecId(): Promise<string> {
   }
 }
 
-async function lookupInstrument(symbol: string): Promise<{companyName: string, token: string}> {
+async function lookupInstrument(symbol: string, preferExchange?: string): Promise<{companyName: string, token: string}> {
   try {
-    const r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
+    let r;
+    if (preferExchange === "MCX") {
+      r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'MCX' THEN 0 WHEN exchange = 'NSE' THEN 1 ELSE 2 END LIMIT 1`);
+    } else {
+      r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
+    }
     const row = (r.rows[0] as any);
     return { companyName: row?.company_name || symbol, token: row?.instrument_token || "" };
   } catch { return { companyName: symbol, token: "" }; }
@@ -186,7 +191,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
   if (cp.startsWith("P") || cp === "PE") { series = "PE"; }
   if (p.segment === "Future") { series = "XX"; optionType = "Future"; }
 
-  const inst = await lookupInstrument(p.symbol || "");
+  const inst = await lookupInstrument(p.symbol || "", isCommodity ? "MCX" : undefined);
   const isCommodity = strategy.type === "Commodity" || strategy.type === "CommodityFuture" || p.segment === "Commodity";
   const fnoLeg: any = {
     exchange: isCommodity ? "MCX" : "NSE",
