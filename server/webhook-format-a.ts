@@ -186,12 +186,14 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
   if (cp.startsWith("P") || cp === "PE") { series = "PE"; }
   if (p.segment === "Future") { series = "XX"; optionType = "Future"; }
 
+  const inst = await lookupInstrument(p.symbol || "");
+  const isCommodity = strategy.type === "Commodity" || strategy.type === "CommodityFuture" || p.segment === "Commodity";
   const fnoLeg: any = {
-    exchange: "NSE",
+    exchange: isCommodity ? "MCX" : "NSE",
     legId: legId,
-    exchangeToken: null,
+    exchangeToken: inst.token || null,
     symbol: p.symbol,
-    name: p.symbol,
+    name: inst.companyName || p.symbol,
     series: series,
     isStoppLossAbsolute: { code: "Y", name: "Yes" },
     expiryDate: epochMs(p.expiry),
