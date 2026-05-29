@@ -78,6 +78,31 @@ async function lookupInstrument(symbol: string, preferExchange?: string): Promis
   } catch { return { companyName: symbol, token: "" }; }
 }
 
+async function lookupFnoInstrument(symbol: string, strike: number, series: string, expiry: any, exchange?: string): Promise<string> {
+  try {
+    const exch = exchange || "NSE";
+    const instType = series; // CE, PE, or FUT
+    // Try exact match on instrument_master: name + strike + instrument_type + nearest expiry
+    const r = await db.execute(sql`
+      SELECT exchange_token, instrument_token, tradingsymbol, expiry
+      FROM instrument_master
+      WHERE name = ${symbol}
+        AND strike = ${strike}
+        AND instrument_type = ${instType}
+        AND expiry >= CURRENT_DATE
+      ORDER BY expiry ASC
+      LIMIT 1
+    `);
+    const row = (r.rows[0] as any);
+    if (row?.exchange_token) return String(row.exchange_token);
+    if (row?.instrument_token) return String(row.instrument_token);
+    return "";
+  } catch (err: any) {
+    console.error("[Format A] lookupFnoInstrument error:", err.message);
+    return "";
+  }
+}
+
 function mapExitType(eventType: string, internalStatus: string): string | null {
   switch (eventType) {
     case "TARGET_ACHIEVED": return "TargetAchieved";
@@ -204,10 +229,15 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
 
   const isCommodity = strategy.type === "Commodity" || strategy.type === "CommodityFuture" || p.segment === "Commodity";
   const inst = await lookupInstrument(p.symbol || "", isCommodity ? "MCX" : undefined);
+  // Lookup per-contract token from instrument_master (strike + expiry + CE/PE/FUT)
+  const fnoSeries = optionType === "Future" ? "FUT" : series;
+  const fnoToken = await lookupFnoInstrument(p.symbol || "", strike, fnoSeries, p.expiry, isCommodity ? "MCX" : "NSE");
+  const isSell = action === "SELL";
+  const entryPrice = toNum(p.entry_price) ?? 0;
   const fnoLeg: any = {
     exchange: isCommodity ? "MCX" : "NSE",
     legId: legId,
-    exchangeToken: inst.token || null,
+    exchangeToken: fnoToken || inst.token || null,
     symbol: p.symbol,
     name: inst.companyName || p.symbol,
     series: series,
@@ -217,13 +247,13 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     strike: strike,
     profitLossPercent: isClosed ? toNum(p.gain_percent) : null,
     optionType: optionType,
-    buyDate: epochMs(p.created_at),
-    buyPrice: toNum(p.entry_price) ?? 0,
+    buyDate: isSell ? null : epochMs(p.created_at),
+    buyPrice: isSell ? null : entryPrice,
     buyPriceRangeEnd: null,
     buyPriceRangeStart: null,
     callType: action,
-    sellPrice: isClosed ? toNum(p.exit_price) : null,
-    sellDate: isClosed ? epochMs(p.exit_date) : null,
+    sellPrice: isSell ? entryPrice : (isClosed ? toNum(p.exit_price) : null),
+    sellDate: isSell ? epochMs(p.created_at) : (isClosed ? epochMs(p.exit_date) : null),
     targetPriceRange: toNum(p.target),
     profitGoal: null,
     stopLoss: toNum(p.stop_loss),
