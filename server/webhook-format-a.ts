@@ -49,6 +49,9 @@ function deriveTheme(strategy: any): string[] {
   return ["Equity"];
 }
 
+// Cache: leg_group_id → shared recommendationId for multi-leg positions
+const multiLegRecIdCache: Record<string, string> = {};
+
 async function nextRecId(): Promise<string> {
   try {
     const r = await db.execute(sql`SELECT nextval('recommendation_id_seq')::text as v`);
@@ -180,8 +183,16 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
 
 async function buildFno(event: string, p: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || p.status === "Closed";
-  const recId = await nextRecId();
-  const legId = String(Number(recId) + 1);
+  // For multi-leg: all legs in same group share one recommendationId, different legIds
+  const groupId = p.leg_group_id;
+  let recId: string;
+  if (groupId && multiLegRecIdCache[groupId]) {
+    recId = multiLegRecIdCache[groupId];
+  } else {
+    recId = await nextRecId();
+    if (groupId) multiLegRecIdCache[groupId] = recId;
+  }
+  const legId = String(await nextRecId());
   const action = String(p.buy_sell || "BUY").toUpperCase();
   const strike = toNum(p.strike_price) ?? 0;
 
