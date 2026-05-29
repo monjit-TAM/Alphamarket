@@ -42,10 +42,10 @@ function deriveTheme(strategy: any): string[] {
   if (Array.isArray(t) && t.length > 0) return t;
   const type = strategy?.type;
   if (type === "Equity") return ["Equity"];
-  if (type === "Option") return ["Equity", "F&O"];
+  if (type === "Option") return ["F&O"];
   if (type === "Future" || type === "FnO") return ["F&O"];
   if (type === "Commodity" || type === "CommodityFuture") return ["Commodity"];
-  if (type === "Basket") return ["Equity", "F&O"];
+  if (type === "Basket") return ["F&O"];
   return ["Equity"];
 }
 
