@@ -693,6 +693,7 @@ def format_signal(sig):
     # ── Top-level fields for frontend compatibility ──
     t = sig.get("total", {})
     sig["capital"] = t.get("capital_required", 0)
+    sig["capital_required"] = t.get("capital_required", 0)
     sig["max_profit"] = t.get("max_profit", 0)
     sig["max_loss"] = t.get("max_loss", 0)
     sig["rr_ratio"] = round(abs(t.get("max_profit", 0)) / abs(t.get("max_loss", 1)), 1) if t.get("max_loss") else 0
