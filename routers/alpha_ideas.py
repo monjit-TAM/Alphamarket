@@ -26,6 +26,8 @@ async def _enrich_live_prices(ideas):
             except: pass
     for idea in ideas:
         sym = idea["symbol"]
+        if sym in live:
+            idea["current_price"] = live[sym]
         if sym in live and idea.get("entry", 0) > 0:
             old_price = idea["entry"]
             new_price = live[sym]
