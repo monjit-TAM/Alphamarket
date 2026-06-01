@@ -339,6 +339,21 @@ async def get_performance():
             bs["win_rate"] = bs["wins"] / bs["total"] * 100 if bs["total"] else 0
             bs["avg_pnl"] = sum(bs["pnls"]) / len(bs["pnls"]) if bs["pnls"] else 0
             del bs["pnls"]; del bs["wins"]
+        # Enrich open trades with live prices
+        import httpx
+        open_trades = [t for t in trades if t["status"] == "OPEN"]
+        if open_trades:
+            async with httpx.AsyncClient(timeout=8) as client:
+                for t in open_trades:
+                    try:
+                        r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{t['symbol']}")
+                        if r.status_code == 200:
+                            d = r.json()
+                            if d.get("price") and d["price"] > 0:
+                                t["current_price"] = round(float(d["price"]), 2)
+                                if t.get("entry_price") and t["entry_price"] > 0:
+                                    t["pnl_pct"] = round((t["current_price"] - t["entry_price"]) / t["entry_price"] * 100, 2)
+                    except: pass
         for t in trades:
             for k in ["created_at", "closed_at"]:
                 if t.get(k): t[k] = t[k].isoformat()
