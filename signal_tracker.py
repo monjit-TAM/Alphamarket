@@ -9,6 +9,25 @@ import pytz
 logger = logging.getLogger("signal_tracker")
 IST = pytz.timezone("Asia/Kolkata")
 
+def _parse_expiry(expiry_str):
+    """Parse expiry date from various formats."""
+    if not expiry_str:
+        return datetime.now(IST).date() + timedelta(days=7)
+    # Try ISO format (YYYY-MM-DD)
+    try: return date.fromisoformat(expiry_str)
+    except: pass
+    # Try DD-MM-YYYY
+    try:
+        from datetime import datetime as _dt
+        return _dt.strptime(expiry_str, "%d-%m-%Y").date()
+    except: pass
+    # Try DD-MMM-YYYY (e.g. 02-Jun-2026)
+    try:
+        from datetime import datetime as _dt
+        return _dt.strptime(expiry_str, "%d-%b-%Y").date()
+    except: pass
+    return datetime.now(IST).date() + timedelta(days=7)
+
 async def save_signal(pool, signal: dict):
     """Persist a new signal to PostgreSQL."""
     alpha = signal.get("alpha_data", {})
@@ -53,7 +72,7 @@ async def save_signal(pool, signal: dict):
             alpha.get("smart_money", 0),
             signal.get("regime_key", ""),
             signal.get("vix", 0),
-            date.fromisoformat(signal["expiry"]) if signal.get("expiry") else datetime.now(IST).date() + timedelta(days=7),
+            _parse_expiry(signal.get("expiry")),
             signal.get("conviction", 0),
             signal.get("risk_level", ""),
         )
