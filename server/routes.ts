@@ -1611,10 +1611,22 @@ export async function registerRoutes(
           notifyStrategySubscribers(req.params.id, strategy.name, "new_position", subPayload);
           const wlPayload = buildNewPositionWatchlistNotification(p, strategy.name);
           notifyWatchlistUsers(req.params.id, strategy.name, "new_position_masked", wlPayload);
-          fireWebhookEvent("POSITION_CREATED", buildPositionEventData(p, strategy), strategy.advisorId)
-            .catch((err: any) => console.error("[routes multi-leg] fireWebhookEvent failed:", err));
         }
       }
+
+      // Fire ONE combined webhook for all legs (not per-leg)
+      if (isPublished && created.length > 0) {
+        const allLegsData = created.map(p => buildPositionEventData(p, strategy));
+        const combinedData = {
+          ...allLegsData[0],
+          multiLeg: true,
+          legGroupId,
+          allLegs: allLegsData,
+        };
+        fireWebhookEvent("POSITION_CREATED", combinedData, strategy.advisorId)
+          .catch((err: any) => console.error("[routes multi-leg] fireWebhookEvent failed:", err));
+      }
+
       console.log(`[MultiLeg] Created ${created.length} legs with group ${legGroupId}`);
       res.json({ legGroupId, legs: created });
     } catch (err: any) {

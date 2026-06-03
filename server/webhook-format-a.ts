@@ -412,6 +412,92 @@ export async function buildFormatAPayload(
     ? await buildFno(event, n, loaded.strategy, loaded.advisor, upstoxStrategyType)
     : await buildEquity(event, n, loaded.strategy, loaded.advisor, upstoxStrategyType);
 
+  // Handle multi-leg: build all legs into one fnoCall array
+  if (data.multiLeg && data.allLegs && Array.isArray(data.allLegs)) {
+    const legs: any[] = [];
+    const recId = await nextRecId();
+    if (data.legGroupId) multiLegRecIdCache[data.legGroupId] = recId;
+
+    for (const legData of data.allLegs) {
+      const ln = normalize(legData);
+      const legId = String(await nextRecId());
+      const action = String(ln.buy_sell || "BUY").toUpperCase();
+      const strike = toNum(ln.strike_price) ?? 0;
+      const cp = ln.call_put ? String(ln.call_put).toUpperCase() : "";
+      let series = "CE";
+      let optionType = "Option";
+      if (cp.startsWith("P") || cp === "PE") { series = "PE"; }
+      if (ln.segment === "Future") { series = "XX"; optionType = "Future"; }
+      const isCommodityLeg = loaded.strategy.type === "Commodity" || loaded.strategy.type === "CommodityFuture" || ln.segment === "Commodity";
+      const instLeg = await lookupInstrument(ln.symbol || "", isCommodityLeg ? "MCX" : undefined);
+      const fnoSeriesLeg = optionType === "Future" ? "FUT" : series;
+      const fnoTokenLeg = await lookupFnoInstrument(ln.symbol || "", strike, fnoSeriesLeg, ln.expiry, isCommodityLeg ? "MCX" : "NSE");
+      const entryPrice = toNum(ln.entry_price) ?? 0;
+
+      legs.push({
+        exchange: isCommodityLeg ? "MCX" : "NSE",
+        legId,
+        exchangeToken: fnoTokenLeg || instLeg.token || null,
+        symbol: ln.symbol,
+        name: instLeg.companyName || ln.symbol,
+        series,
+        isStoppLossAbsolute: { code: "Y", name: "Yes" },
+        expiryDate: epochMs(ln.expiry),
+        lotSize: toNum(ln.lots) || 1,
+        strike,
+        profitLossPercent: null,
+        optionType,
+        buyDate: epochMs(ln.created_at),
+        buyPrice: entryPrice,
+        buyPriceRangeEnd: null,
+        buyPriceRangeStart: null,
+        callType: action,
+        sellPrice: null,
+        sellDate: null,
+        targetPriceRange: toNum(ln.target),
+        profitGoal: null,
+        stopLoss: toNum(ln.stop_loss),
+        exitType: null,
+        status: "PUBLISHED",
+      });
+    }
+
+    // Build envelope once with all legs
+    const advisor = loaded.advisor;
+    const mlData: any = {};
+    mlData.strategyId = loaded.strategy.slug || loaded.strategy.id;
+    mlData.recommendationId = recId;
+    mlData.rational = n.rationale || null;
+    mlData.creationDate = epochMs(n.created_at);
+    mlData.theme = deriveTheme(loaded.strategy);
+    mlData.managementStyle = toArr(loaded.strategy.management_style) || ["Active"];
+    mlData.volatility = toArr(loaded.strategy.volatility);
+    mlData.marketCap = null;
+    mlData.horizon = toArr(loaded.strategy.horizon);
+    mlData.keySector = toArr(loaded.strategy.key_sectors);
+    mlData.strategyName = loaded.strategy.name;
+    mlData.strategyDescription = loaded.strategy.description || null;
+    mlData.benchmark = loaded.strategy.benchmark || "Nifty 50";
+    mlData.strategyType = upstoxStrategyType || "Option";
+    mlData.advisorName = advisor?.company_name || advisor?.username;
+    mlData.profilePic = advisor?.logo_url ? "https://alphamarket.co.in" + advisor.logo_url : null;
+    mlData.certificateURl = advisor?.sebi_cert_url ? (advisor.sebi_cert_url.startsWith("http") ? advisor.sebi_cert_url : "https://alphamarket.co.in" + advisor.sebi_cert_url) : null;
+    mlData.advisorSebiRegistrationNo = advisor?.sebi_reg_number || null;
+    mlData.equityCall = null;
+    mlData.fnoCall = legs;
+    mlData.thematicCollection = toArr(loaded.strategy.key_sectors);
+
+    const mlPayload: any = { status: "success", statusCode: 200, message: { key: "GET", message: "Get Successfully" }, data: mlData };
+
+    // Add duration for Dreamstreet
+    if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && mlPayload.data) {
+      mlPayload.data.duration = n.duration || null;
+      mlPayload.data.durationUnit = (n.durationUnit || "days").toLowerCase();
+    }
+
+    return mlPayload;
+  }
+
   // Add duration field for Dreamstreet only (integer, number of days)
   if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && payload?.data) {
     payload.data.duration = n.duration || null;
