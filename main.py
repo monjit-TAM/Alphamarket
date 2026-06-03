@@ -122,6 +122,19 @@ async def ds_fundamentals(symbol: str) -> dict:
                         "low_52w": _f("low_52w"),
                         "source": "alpha_fundamentals"
                     }
+                    # Fallback: fetch dividend_yield from Yahoo if AF has None
+                    if not mapped.get("dividend_yield"):
+                        try:
+                            yr = await c.get(f"{DATA_SERVICE_URL}/data/equity/fundamentals/{symbol}", timeout=5)
+                            if yr.status_code == 200:
+                                yd = yr.json()
+                                dy = yd.get("dividend_yield") or yd.get("dividendYield") or yd.get("trailingAnnualDividendYield")
+                                if dy and float(dy) > 0:
+                                    dv = float(dy)
+                                    if dv > 1: dv = dv / 100  # Normalize if > 1 (Yahoo returns as pct sometimes)
+                                    mapped["dividend_yield"] = round(dv, 4)
+                        except: pass
+                    return mapped
     except Exception as e:
         logger.warning(f"Alpha Fundamentals fallback for {symbol}: {e}")
     # 2. Fallback to Data Service (Yahoo Finance)
