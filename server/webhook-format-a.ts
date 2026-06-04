@@ -372,6 +372,8 @@ function normalize(data: Record<string, any>): any {
     lots: data.lots,
     target: data.target ?? data.target_price ?? data.targetPrice,
     leg_group_id: data.leg_group_id ?? data.legGroupId,
+    duration: data.duration,
+    durationUnit: data.durationUnit ?? data.duration_unit,
   };
 }
 
