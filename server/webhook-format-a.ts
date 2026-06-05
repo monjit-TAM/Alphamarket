@@ -65,17 +65,17 @@ async function nextRecId(): Promise<string> {
   }
 }
 
-async function lookupInstrument(symbol: string, preferExchange?: string): Promise<{companyName: string, token: string}> {
+async function lookupInstrument(symbol: string, preferExchange?: string): Promise<{companyName: string, token: string, exchange: string}> {
   try {
     let r;
     if (preferExchange === "MCX") {
-      r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'MCX' THEN 0 WHEN exchange = 'NSE' THEN 1 ELSE 2 END LIMIT 1`);
+      r = await db.execute(sql`SELECT company_name, instrument_token, exchange FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'MCX' THEN 0 WHEN exchange = 'NSE' THEN 1 ELSE 2 END LIMIT 1`);
     } else {
-      r = await db.execute(sql`SELECT company_name, instrument_token FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
+      r = await db.execute(sql`SELECT company_name, instrument_token, exchange FROM nse_instruments WHERE symbol = ${symbol} ORDER BY CASE WHEN exchange = 'NSE' THEN 0 ELSE 1 END LIMIT 1`);
     }
     const row = (r.rows[0] as any);
-    return { companyName: row?.company_name || symbol, token: row?.instrument_token || "" };
-  } catch { return { companyName: symbol, token: "" }; }
+    return { companyName: row?.company_name || symbol, token: row?.instrument_token || "", exchange: row?.exchange || preferExchange || "NSE" };
+  } catch { return { companyName: symbol, token: "", exchange: preferExchange || "NSE" }; }
 }
 
 async function lookupFnoInstrument(symbol: string, strike: number, series: string, expiry: any, exchange?: string): Promise<string> {
@@ -127,7 +127,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
 
   // equityCall object
   const equityCall: any = {
-    exchange: "NSE",
+    exchange: inst.exchange || "NSE",
     legId: legId,
     exchangeToken: inst.token || null,
     symbol: c.stock_name,
