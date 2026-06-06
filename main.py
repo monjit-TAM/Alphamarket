@@ -166,6 +166,7 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
 
 from routers.arbitrage import router as arbitrage_router
 from routers.alpha_options import router as alpha_options_router
+from routers.algo_strategies import router as algo_strategies_router
 from routers.trading_tools import router as trading_router
 from routers.alphabot import router as alphabot_router
 from routers.upstox import router as upstox_router
@@ -246,6 +247,7 @@ app.openapi = custom_openapi
 
 app.include_router(arbitrage_router)
 app.include_router(alpha_options_router)
+app.include_router(algo_strategies_router)
 app.include_router(trading_router)
 app.include_router(alphabot_router)
 app.include_router(upstox_router)
