@@ -192,7 +192,7 @@ def _fetch_live_chain(symbol):
     """Fetch live options chain from Groww via internal API. Returns {spot, expiry, calls:{strike:ltp}, puts:{strike:ltp}}."""
     try:
         import urllib.request, json as _json
-        url = f"http://127.0.0.1:8000/api/options-chain/{symbol}"
+        url = f"http://127.0.0.1:8001/api/nfo/option-chain/{symbol}"
         req = urllib.request.Request(url, headers={"Authorization":"Bearer internal"})
         resp = urllib.request.urlopen(req, timeout=8).read().decode()
         data = _json.loads(resp)
