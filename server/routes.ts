@@ -6000,7 +6000,7 @@ export async function registerRoutes(
           }));
           const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-API-Key": INTERNAL_API_KEY },
+            headers: { "Content-Type": "application/json", "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
             body: JSON.stringify({ holdings: stockPayload }),
           });
           if (stockRes.ok) {
@@ -6507,7 +6507,7 @@ export async function registerRoutes(
         }));
         try {
           const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
-            method: "POST", headers: { "Content-Type": "application/json", "X-API-Key": INTERNAL_API_KEY },
+            method: "POST", headers: { "Content-Type": "application/json", "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
             body: JSON.stringify({ holdings: stockPayload }),
           });
           if (stockRes.ok) {
