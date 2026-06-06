@@ -283,6 +283,48 @@ async def startup():
 
 
 
+
+@app.get("/api/shared/kite-quotes", include_in_schema=False)
+async def shared_kite_quotes(request: Request, symbols: str = ""):
+    """Internal endpoint: Data Service calls this for Kite live quotes."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    if not symbols:
+        return {"quotes": {}, "source": "kite", "error": "No symbols"}
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    if not _is_kite_connected():
+        return {"quotes": {}, "source": "kite", "connected": False}
+    sym_list = [f"NSE:{s}" for s in symbols.split(",") if s.strip()]
+    try:
+        data = await _fetch_kite_quotes(sym_list)
+        quotes = {}
+        for key, val in data.items():
+            sym = key.replace("NSE:", "")
+            quotes[sym] = {"price": val.get("last_price", 0), "source": "kite"}
+        return {"quotes": quotes, "source": "kite", "connected": True, "count": len(quotes)}
+    except Exception as e:
+        return {"quotes": {}, "source": "kite", "error": str(e)}
+
+@app.get("/api/shared/kite-ltp/{symbol}", include_in_schema=False)
+async def shared_kite_ltp(request: Request, symbol: str):
+    """Internal: single stock LTP from Kite."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    if not _is_kite_connected():
+        return {"price": 0, "source": "kite", "connected": False}
+    try:
+        data = await _fetch_kite_quotes([f"NSE:{symbol.upper()}"])
+        key = f"NSE:{symbol.upper()}"
+        if data and key in data:
+            return {"symbol": symbol.upper(), "price": data[key].get("last_price", 0), "source": "kite"}
+        return {"symbol": symbol.upper(), "price": 0, "source": "kite", "error": "not found"}
+    except Exception as e:
+        return {"symbol": symbol.upper(), "price": 0, "source": "kite", "error": str(e)}
+
+
 @app.get("/api/health", tags=["System"])
 async def health_check():
     """System health status — check data sources, services, cache"""
