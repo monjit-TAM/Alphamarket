@@ -130,47 +130,31 @@ class GrowwService:
 
     # ── Live Market Data ──────────────────────────────────────────────────
     async def get_ltp(self, symbols: List[str], exchange: str = "NSE") -> Dict[str, float]:
-        """Get Last Traded Price for multiple symbols"""
-        # Check Redis cache first (prices cached for 5 seconds)
+        """Get Last Traded Price — via Data Service (Kite PRIMARY → Groww → Yahoo)"""
+        import httpx
         result = {}
-        uncached = []
-
-        for symbol in symbols:
-            cached = await redis_client.get_cached_price(symbol)
-            if cached:
-                result[symbol] = cached
-            else:
-                uncached.append(symbol)
-
-        if uncached and self.groww:
-            try:
-                # Batch LTP fetch from Groww (max 500 per call per rate limits)
-                for i in range(0, len(uncached), 500):
-                    batch = uncached[i:i+500]
-                    ltp_data = self.groww.get_ltp(
-                        trading_symbols=batch,
-                        exchange=exchange,
-                        segment="CASH",
-                    )
-                    if ltp_data:
-                        for item in ltp_data:
-                            sym = item.get("trading_symbol")
-                            price_info = {
-                                "ltp":        item.get("ltp", 0),
-                                "open":       item.get("open", 0),
-                                "high":       item.get("high", 0),
-                                "low":        item.get("low", 0),
-                                "close":      item.get("close", 0),
-                                "volume":     item.get("volume", 0),
-                                "change":     item.get("change", 0),
-                                "change_pct": item.get("change_percent", 0),
-                                "timestamp":  datetime.utcnow().isoformat(),
+        # Route through Data Service which uses Kite as primary
+        async with httpx.AsyncClient(timeout=10) as client:
+            for symbol in symbols:
+                try:
+                    r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{symbol}")
+                    if r.status_code == 200:
+                        d = r.json()
+                        if d.get("price") and d["price"] > 0:
+                            result[symbol] = {
+                                "ltp": d["price"],
+                                "open": d.get("open", 0),
+                                "high": d.get("high", 0),
+                                "low": d.get("low", 0),
+                                "close": d.get("close", 0),
+                                "volume": d.get("volume", 0),
+                                "change": d.get("change", 0),
+                                "change_pct": d.get("change_pct", 0),
+                                "timestamp": datetime.utcnow().isoformat(),
+                                "source": d.get("source", "unknown"),
                             }
-                            result[sym] = price_info
-                            await redis_client.cache_price(sym, price_info)
-            except Exception as e:
-                logger.error(f"get_ltp failed: {e}")
-
+                except Exception as e:
+                    logger.warning(f"get_ltp failed for {symbol}: {e}")
         return result
 
     async def get_quote(self, symbol: str, exchange: str = "NSE") -> Optional[dict]:
@@ -212,35 +196,36 @@ class GrowwService:
         if not to_date:
             to_date = datetime.utcnow()
 
-        if not self.groww:
-            return self._generate_simulated_ohlcv(symbol, from_date, to_date, interval)
-
+        # Route through Data Service (uses Kite/Yahoo for OHLCV)
         try:
-            data = self.groww.get_historical_data(
-                trading_symbol=symbol,
-                exchange=exchange,
-                segment="CASH",
-                resolution=interval,
-                from_date=int(from_date.timestamp()),
-                to_date=int(to_date.timestamp()),
-            )
-
-            if not data or not data.get("candles"):
-                return self._generate_simulated_ohlcv(symbol, from_date, to_date, interval)
-
-            candles = data["candles"]
-            df = pd.DataFrame(candles, columns=["timestamp", "open", "high", "low", "close", "volume"])
-            df["date"] = pd.to_datetime(df["timestamp"], unit="s")
-            df = df.sort_values("date").reset_index(drop=True)
-
-            # Cache daily data for 1 hour, intraday for 60 seconds
-            ttl = 3600 if interval == "1d" else 60
-            await redis_client.set(cache_key, df.to_dict("records"), ttl=ttl)
-            return df
-
+            import httpx
+            period = "5y" if (to_date - from_date).days > 365 else "1y"
+            async with httpx.AsyncClient(timeout=30) as client:
+                r = await client.get(f"http://127.0.0.1:5004/data/equity/ohlcv/{symbol}?period={period}&interval={interval}")
+                if r.status_code == 200:
+                    data = r.json()
+                    rows = data.get("data", data) if isinstance(data, dict) else data
+                    if rows and len(rows) > 0:
+                        df = pd.DataFrame(rows)
+                        if "date" not in df.columns:
+                            for col in ["Date", "datetime", "timestamp"]:
+                                if col in df.columns:
+                                    df["date"] = pd.to_datetime(df[col])
+                                    break
+                        else:
+                            df["date"] = pd.to_datetime(df["date"])
+                        for col in ["open", "high", "low", "close", "volume"]:
+                            if col in df.columns:
+                                df[col] = pd.to_numeric(df[col], errors="coerce")
+                        df = df.sort_values("date").reset_index(drop=True)
+                        ttl = 3600 if interval == "1d" else 60
+                        await redis_client.set(cache_key, df.to_dict("records"), ttl=ttl)
+                        logger.info(f"Historical data for {symbol}: {len(df)} rows via Data Service")
+                        return df
         except Exception as e:
-            logger.error(f"get_historical_data failed for {symbol}: {e}")
-            return self._generate_simulated_ohlcv(symbol, from_date, to_date, interval)
+            logger.warning(f"Data Service historical failed for {symbol}: {e}")
+
+        return self._generate_simulated_ohlcv(symbol, from_date, to_date, interval)
 
     # ── WebSocket Price Feed ──────────────────────────────────────────────
     async def start_price_feed(self, manager):
