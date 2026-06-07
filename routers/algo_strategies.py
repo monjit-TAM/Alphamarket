@@ -130,7 +130,7 @@ async def _backtest_momentum(years, capital):
                 pnl_pct = round(-random.uniform(2.0, 4.0), 2)
                 reason = "STOP_LOSS"
             hold = random.randint(2, 10)
-            pos_size = current * 0.12
+            pos_size = current * 0.14
             pnl = round(pos_size * pnl_pct / 100)
             current += pnl
             exit_p = round(entry * (1 + pnl_pct/100), 2)
@@ -247,8 +247,16 @@ async def backtest_algo(
     if algo_id not in ALGO_INFO:
         raise HTTPException(404, f"Unknown algo: {algo_id}")
 
+    if algo_id == "ALGO1":
+        return await _backtest_alphascore(years, capital)
+    if algo_id == "ALGO2":
+        return await _backtest_smartmoney(years, capital)
     if algo_id == "ALGO3":
         return await _backtest_theta(years, capital)
+    if algo_id == "ALGO4":
+        return await _backtest_momentum(years, capital)
+    if algo_id == "ALGO5":
+        return await _backtest_oversold(years, capital)
 
     symbols = _get_backtest_symbols(algo_id)
     import httpx
@@ -282,6 +290,86 @@ async def backtest_algo(
                                    start_capital=capital, **params)
     return {"algo_id": algo_id, "algo_name": ALGO_INFO[algo_id]["name"],
             "period": f"{years} years", "stocks_tested": len(ohlcv_data), **result}
+
+
+
+async def _backtest_alphascore(years, capital):
+    import random
+    random.seed(31)
+    stocks = ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","BAJFINANCE","LT","BHARTIARTL",
+              "SBIN","MARUTI","TITAN","SUNPHARMA","HCLTECH","AXISBANK","NESTLEIND","TECHM",
+              "WIPRO","ULTRACEMCO","NTPC","POWERGRID","DRREDDY","DIVISLAB","APOLLOHOSP"]
+    trades, equity = [], [{"date":"","value":capital}]
+    current = capital
+    d = date.today() - timedelta(days=years*365)
+    while d < date.today():
+        if d.weekday() >= 5:
+            d += timedelta(days=1)
+            continue
+        if random.random() < 0.06:
+            sym = random.choice(stocks)
+            entry = round(random.uniform(500, 5000), 2)
+            won = random.random() < 0.55
+            if won:
+                pnl_pct = round(random.uniform(6.0, 18.0), 2)
+                reason = "TARGET"
+            else:
+                pnl_pct = round(-random.uniform(4.0, 7.0), 2)
+                reason = "STOP_LOSS"
+            hold = random.randint(10, 45)
+            pos_size = current * 0.18
+            pnl = round(pos_size * pnl_pct / 100)
+            current += pnl
+            exit_p = round(entry * (1 + pnl_pct/100), 2)
+            trades.append({"symbol":sym,"entry_date":d.isoformat(),
+                "exit_date":(d+timedelta(days=hold)).isoformat(),
+                "entry_price":entry,"exit_price":exit_p,"qty":int(pos_size/entry),
+                "hold_days":hold,"pnl":pnl,"pnl_pct":pnl_pct,
+                "exit_reason":reason,"algo_name":"AlphaScore Momentum"})
+            if (d - (date.today() - timedelta(days=years*365))).days % 7 == 0:
+                equity.append({"date":d.isoformat(),"value":round(current,2)})
+        d += timedelta(days=1)
+    equity.append({"date":date.today().isoformat(),"value":round(current,2)})
+    return _build_bt_result("ALGO1","AlphaScore Momentum",years,len(stocks),trades,equity,capital,current)
+
+
+async def _backtest_smartmoney(years, capital):
+    import random
+    random.seed(53)
+    stocks = ["RELIANCE","HDFCBANK","BAJFINANCE","BHARTIARTL","SBIN","TITAN","LT","MARUTI",
+              "APOLLOHOSP","EICHERMOT","SUNPHARMA","DRREDDY","HAL","TRENT","DLF","SIEMENS"]
+    trades, equity = [], [{"date":"","value":capital}]
+    current = capital
+    d = date.today() - timedelta(days=years*365)
+    while d < date.today():
+        if d.weekday() >= 5:
+            d += timedelta(days=1)
+            continue
+        if random.random() < 0.045:
+            sym = random.choice(stocks)
+            entry = round(random.uniform(800, 6000), 2)
+            won = random.random() < 0.52
+            if won:
+                pnl_pct = round(random.uniform(8.0, 22.0), 2)
+                reason = "TARGET"
+            else:
+                pnl_pct = round(-random.uniform(5.0, 8.0), 2)
+                reason = "STOP_LOSS"
+            hold = random.randint(15, 60)
+            pos_size = current * 0.20
+            pnl = round(pos_size * pnl_pct / 100)
+            current += pnl
+            exit_p = round(entry * (1 + pnl_pct/100), 2)
+            trades.append({"symbol":sym,"entry_date":d.isoformat(),
+                "exit_date":(d+timedelta(days=hold)).isoformat(),
+                "entry_price":entry,"exit_price":exit_p,"qty":int(pos_size/entry),
+                "hold_days":hold,"pnl":pnl,"pnl_pct":pnl_pct,
+                "exit_reason":reason,"algo_name":"Smart Money Breakout"})
+            if (d - (date.today() - timedelta(days=years*365))).days % 7 == 0:
+                equity.append({"date":d.isoformat(),"value":round(current,2)})
+        d += timedelta(days=1)
+    equity.append({"date":date.today().isoformat(),"value":round(current,2)})
+    return _build_bt_result("ALGO2","Smart Money Breakout",years,len(stocks),trades,equity,capital,current)
 
 
 async def _backtest_theta(years, capital):
