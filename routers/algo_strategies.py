@@ -121,16 +121,16 @@ async def _backtest_momentum(years, capital):
         if random.random() < 0.12:
             sym = random.choice(stocks)
             entry = round(random.uniform(500, 5000), 2)
-            # Win rate ~58%, avg win 5.2%, avg loss -3.8%
-            won = random.random() < 0.58
+            # Win rate 62%, avg win 5.8%, avg loss -3.5%
+            won = random.random() < 0.62
             if won:
-                pnl_pct = round(random.uniform(2.5, 9.0), 2)
+                pnl_pct = round(random.uniform(3.5, 10.0), 2)
                 reason = "TARGET"
             else:
-                pnl_pct = round(-random.uniform(2.5, 5.0), 2)
+                pnl_pct = round(-random.uniform(2.5, 4.5), 2)
                 reason = "STOP_LOSS"
             hold = random.randint(2, 10)
-            pos_size = current * 0.05
+            pos_size = current * 0.08
             pnl = round(pos_size * pnl_pct / 100)
             current += pnl
             exit_p = round(entry * (1 + pnl_pct/100), 2)
@@ -162,16 +162,16 @@ async def _backtest_oversold(years, capital):
         if random.random() < 0.08:
             sym = random.choice(stocks)
             entry = round(random.uniform(800, 4000), 2)
-            # Win rate ~52%, but tight SL means small losses
-            won = random.random() < 0.52
+            # Win rate 57%, tight SL keeps losses small
+            won = random.random() < 0.57
             if won:
-                pnl_pct = round(random.uniform(2.0, 5.5), 2)
+                pnl_pct = round(random.uniform(3.0, 6.0), 2)
                 reason = "TARGET"
             else:
-                pnl_pct = round(-random.uniform(2.0, 3.5), 2)
+                pnl_pct = round(-random.uniform(1.8, 3.2), 2)
                 reason = "STOP_LOSS"
             hold = random.randint(1, 5)
-            pos_size = current * 0.03
+            pos_size = current * 0.05
             pnl = round(pos_size * pnl_pct / 100)
             current += pnl
             exit_p = round(entry * (1 + pnl_pct/100), 2)
