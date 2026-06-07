@@ -297,9 +297,9 @@ def scan_momentum_surge(universe: List[dict], max_open: int = 3,
 
         # ── Entry conditions ──
         near_52h = s.get("pct_from_52h", -99) > -10  # Within 10% of 52W high
-        vol_surge = s.get("vol_ratio", 0) >= 1.5
+        vol_surge = s.get("vol_ratio", 0) >= 1.2
         rsi = s.get("rsi", 50)
-        rsi_ok = 55 <= rsi <= 78
+        rsi_ok = 50 <= rsi <= 80
         minervini = s.get("minervini_score", 0) >= 5
         macd_bull = s.get("macd_hist", 0) > 0
         above_st = s.get("above_supertrend", False)
@@ -363,7 +363,7 @@ def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
         sharp_drop = s.get("change_pct", 0) < -2 or s.get("wk_change", 0) < -5
         above_200 = s.get("above_200dma", False)  # Long-term trend intact
         fund_score = s.get("fundamental_score", 0)
-        quality = fund_score > 0.5 or s.get("roe", 0) > 10
+        quality = fund_score > 0.3 or s.get("roe", 0) > 8
         de_ok = s.get("debt_equity", 99) < 1.0
         cap = s.get("cap_segment", "")
         large_mid = cap in ("large", "mid")

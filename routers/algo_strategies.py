@@ -188,8 +188,10 @@ async def _backtest_theta(years, capital):
             current += pnl
             trades.append({"symbol": sym, "entry_date": d.isoformat(),
                            "exit_date": (d + timedelta(days=random.randint(1, 4))).isoformat(),
-                           "strategy": "Iron Condor", "pnl": pnl,
-                           "pnl_pct": round(pnl / (capital * 0.1) * 100, 2),
+                           "strategy": "Iron Condor",
+                           "entry_price": round(prem, 2), "exit_price": round(prem + pnl, 2),
+                           "qty": 1, "hold_days": random.randint(1, 4),
+                           "pnl": pnl, "pnl_pct": round(pnl / (capital * 0.1) * 100, 2),
                            "exit_reason": "TARGET" if won else "STOP_LOSS",
                            "vix": round(vix, 1), "algo_name": "Theta Decay Machine"})
             if (d - (date.today() - timedelta(days=years * 365))).days % 5 == 0:
