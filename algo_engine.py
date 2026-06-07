@@ -102,13 +102,13 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
 
         # Previous score check (was below 70, now above)
         prev = (prev_scores or {}).get(sym, 0)
-        score_crossed = alpha_score >= 60 and prev < 60
+        score_crossed = alpha_score >= 55 and prev < 55
 
-        if not score_crossed and alpha_score < 60:
+        if not score_crossed and alpha_score < 55:
             continue
 
         # Momentum confirmation
-        rsi_rising = 55 <= rsi <= 80
+        rsi_rising = 50 <= rsi <= 85
         trend_up = above_50 and above_200
         rs_positive = rs_1m > 0
 
@@ -173,14 +173,14 @@ def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
         prev_sm = (prev_smart or {}).get(sym, 0)
 
         # ── Entry conditions ──
-        sm_rising = smart_money >= 55 and prev_sm < 55
+        sm_rising = smart_money >= 50 and prev_sm < 50
         sustained_vol = vol_ratio > 1.3
         near_high = s.get("pct_from_52h", -99) > -15  # Within 15% of 52W high
         above_200 = s.get("above_200dma", False)
         mcap = s.get("market_cap", 0)
         big_enough = mcap > 5000 if mcap < 100000 else True  # > 5000 Cr
 
-        if (sm_rising or smart_money >= 60) and sustained_vol and near_high and above_200 and big_enough:
+        if (sm_rising or smart_money >= 55) and sustained_vol and near_high and above_200 and big_enough:
             sl = round(price * 0.92, 2)  # 8% SL
             tgt = round(price * 1.15, 2)  # 15% target
 
@@ -463,7 +463,7 @@ def backtest_equity_algo(algo_fn, ohlcv_data: Dict[str, list], universe_snapshot
                 exit_price = dp["close"]
                 exit_reason = "TIME_STOP"
             # Trailing stop (once +50% of target move, trail SL to entry)
-            elif dp["high"] >= pos["entry_price"] * (1 + tgt_pct / 300):
+            elif dp["high"] >= pos["entry_price"] * (1 + tgt_pct / 500):
                 pos["stop_loss"] = max(pos["stop_loss"], pos["entry_price"])  # Move SL to breakeven
 
             if exit_price > 0:
@@ -567,7 +567,7 @@ def backtest_equity_algo(algo_fn, ohlcv_data: Dict[str, list], universe_snapshot
             for sig in new_signals:
                 if len(open_pos) >= max_open:
                     break
-                pos_size = capital * 0.15  # 15% per position
+                pos_size = capital * 0.35  # 35% per position
                 qty = int(pos_size / sig.entry_price) if sig.entry_price > 0 else 0
                 if qty <= 0:
                     continue

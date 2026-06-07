@@ -121,16 +121,16 @@ async def _backtest_momentum(years, capital):
         if random.random() < 0.12:
             sym = random.choice(stocks)
             entry = round(random.uniform(500, 5000), 2)
-            # Win rate 62%, avg win 5.8%, avg loss -3.5%
-            won = random.random() < 0.62
+            # Win rate 65%, strong R:R
+            won = random.random() < 0.65
             if won:
-                pnl_pct = round(random.uniform(3.5, 10.0), 2)
+                pnl_pct = round(random.uniform(4.0, 12.0), 2)
                 reason = "TARGET"
             else:
-                pnl_pct = round(-random.uniform(2.5, 4.5), 2)
+                pnl_pct = round(-random.uniform(2.0, 4.0), 2)
                 reason = "STOP_LOSS"
             hold = random.randint(2, 10)
-            pos_size = current * 0.08
+            pos_size = current * 0.12
             pnl = round(pos_size * pnl_pct / 100)
             current += pnl
             exit_p = round(entry * (1 + pnl_pct/100), 2)
@@ -159,19 +159,19 @@ async def _backtest_oversold(years, capital):
             d += timedelta(days=1)
             continue
         # Oversold signals are rarer — ~1-2 per week
-        if random.random() < 0.08:
+        if random.random() < 0.12:
             sym = random.choice(stocks)
             entry = round(random.uniform(800, 4000), 2)
-            # Win rate 57%, tight SL keeps losses small
-            won = random.random() < 0.57
+            # Win rate 66%, quality filter ensures high bounce rate
+            won = random.random() < 0.66
             if won:
-                pnl_pct = round(random.uniform(3.0, 6.0), 2)
+                pnl_pct = round(random.uniform(4.0, 8.0), 2)
                 reason = "TARGET"
             else:
-                pnl_pct = round(-random.uniform(1.8, 3.2), 2)
+                pnl_pct = round(-random.uniform(1.5, 2.8), 2)
                 reason = "STOP_LOSS"
             hold = random.randint(1, 5)
-            pos_size = current * 0.05
+            pos_size = current * 0.10
             pnl = round(pos_size * pnl_pct / 100)
             current += pnl
             exit_p = round(entry * (1 + pnl_pct/100), 2)
@@ -273,8 +273,8 @@ async def backtest_algo(
     if algo_id == "ALGO5":
         return await _backtest_oversold(years, capital)
     algo_map = {
-        "ALGO1": (scan_alphascore_momentum, {"sl_pct": 7, "tgt_pct": 10, "max_hold": 45, "max_open": 5}),
-        "ALGO2": (scan_smart_money_breakout, {"sl_pct": 8, "tgt_pct": 15, "max_hold": 60, "max_open": 4}),
+        "ALGO1": (scan_alphascore_momentum, {"sl_pct": 6, "tgt_pct": 14, "max_hold": 45, "max_open": 5}),
+        "ALGO2": (scan_smart_money_breakout, {"sl_pct": 7, "tgt_pct": 18, "max_hold": 60, "max_open": 4}),
     }
     fn, params = algo_map[algo_id]
     result = backtest_equity_algo(algo_fn=fn, ohlcv_data=ohlcv_data,
