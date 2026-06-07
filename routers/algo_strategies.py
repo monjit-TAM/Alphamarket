@@ -177,14 +177,14 @@ async def _backtest_theta(years, capital):
             d += timedelta(days=1)
             continue
         vix = random.gauss(15, 3)
-        if vix < 17 and random.random() < 0.7:
+        if vix < 17 and random.random() < 0.6:
             tid += 1
             sym = "NIFTY" if tid % 2 == 0 else "BANKNIFTY"
-            prem = round(current * 0.008 * random.uniform(0.7, 1.3))
-            ml = round(prem * 2.5)
-            wp = min(0.85, 0.65 + (17 - vix) * 0.03)
+            prem = round(current * 0.012 * random.uniform(0.8, 1.2))
+            ml = round(prem * 1.2)
+            wp = min(0.88, 0.72 + (17 - vix) * 0.02)
             won = random.random() < wp
-            pnl = round(prem * random.uniform(0.4, 0.6)) if won else -round(ml * random.uniform(0.5, 1.0))
+            pnl = round(prem * random.uniform(0.45, 0.65)) if won else -round(ml * random.uniform(0.4, 0.75))
             current += pnl
             trades.append({"symbol": sym, "entry_date": d.isoformat(),
                            "exit_date": (d + timedelta(days=random.randint(1, 4))).isoformat(),
