@@ -220,6 +220,112 @@ def _build_bt_result(algo_id, name, years, stock_count, trades, equity, capital,
         },
     }
 
+
+
+# ═══════════════════════════════════════════════════════════════
+# POSITION & SIGNAL ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/positions/open", summary="Get all open algo positions")
+async def get_positions():
+    from algo_scheduler import get_open_positions
+    positions = await get_open_positions()
+    for p in positions:
+        for k,v in p.items():
+            if isinstance(v, __import__("decimal").Decimal): p[k] = float(v)
+            if isinstance(v, __import__("datetime").datetime): p[k] = v.isoformat()
+    return {"positions": positions, "count": len(positions)}
+
+
+@router.get("/positions/{algo_id}", summary="Get open positions for specific algo")
+async def get_positions_by_algo(algo_id: str):
+    from algo_scheduler import get_open_positions
+    positions = await get_open_positions(algo_id.upper())
+    for p in positions:
+        for k,v in p.items():
+            if isinstance(v, __import__("decimal").Decimal): p[k] = float(v)
+            if isinstance(v, __import__("datetime").datetime): p[k] = v.isoformat()
+    return {"algo_id": algo_id.upper(), "positions": positions, "count": len(positions)}
+
+
+@router.get("/signals/history", summary="Signal history with filters")
+async def signal_history(
+    algo_id: str = Query(None),
+    status: str = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+):
+    import asyncpg
+    conn = await asyncpg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db")
+    try:
+        q = "SELECT * FROM algo_signals WHERE 1=1"
+        params = []
+        i = 1
+        if algo_id:
+            q += f" AND algo_id=${i}"; params.append(algo_id.upper()); i += 1
+        if status:
+            q += f" AND status=${i}"; params.append(status.upper()); i += 1
+        q += f" ORDER BY created_at DESC LIMIT ${i}"; params.append(limit)
+        rows = await conn.fetch(q, *params)
+        signals = []
+        for r in rows:
+            d = dict(r)
+            for k,v in d.items():
+                if isinstance(v, __import__("decimal").Decimal): d[k] = float(v)
+                if isinstance(v, __import__("datetime").datetime): d[k] = v.isoformat()
+            signals.append(d)
+        return {"signals": signals, "count": len(signals)}
+    finally:
+        await conn.close()
+
+
+@router.get("/signals/performance", summary="Algo performance summary")
+async def signal_performance():
+    import asyncpg
+    conn = await asyncpg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db")
+    try:
+        rows = await conn.fetch("""
+            SELECT algo_id, algo_name,
+                COUNT(*) as total,
+                COUNT(*) FILTER (WHERE status='OPEN') as open_count,
+                COUNT(*) FILTER (WHERE status='CLOSED') as closed_count,
+                COUNT(*) FILTER (WHERE status='CLOSED' AND pnl_pct > 0) as winners,
+                COUNT(*) FILTER (WHERE status='CLOSED' AND pnl_pct <= 0) as losers,
+                ROUND(AVG(pnl_pct) FILTER (WHERE status='CLOSED'), 2) as avg_pnl,
+                ROUND(AVG(pnl_pct) FILTER (WHERE status='CLOSED' AND pnl_pct > 0), 2) as avg_win,
+                ROUND(AVG(pnl_pct) FILTER (WHERE status='CLOSED' AND pnl_pct <= 0), 2) as avg_loss,
+                ROUND(SUM(pnl) FILTER (WHERE status='CLOSED'), 2) as total_pnl
+            FROM algo_signals
+            GROUP BY algo_id, algo_name
+            ORDER BY algo_id
+        """)
+        perf = []
+        for r in rows:
+            d = dict(r)
+            for k,v in d.items():
+                if isinstance(v, __import__("decimal").Decimal): d[k] = float(v)
+            total_closed = d.get("closed_count", 0)
+            d["win_rate"] = round(d.get("winners",0) / total_closed * 100, 1) if total_closed > 0 else 0
+            perf.append(d)
+        return {"performance": perf}
+    finally:
+        await conn.close()
+
+
+@router.post("/scheduler/run-cycle", summary="Manually trigger one scanner cycle")
+async def run_cycle():
+    from algo_scheduler import run_scanner_cycle, is_market_hours
+    last_scan = {}
+    result = await run_scanner_cycle(last_scan)
+    return result
+
+
+@router.post("/monitor/check-exits", summary="Check all open positions for exit conditions")
+async def check_exits():
+    from algo_scheduler import monitor_exits
+    result = await monitor_exits()
+    return result
+
+
 def _get_backtest_symbols(algo_id):
     n50 = ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","BHARTIARTL","SBIN",
            "BAJFINANCE","ITC","KOTAKBANK","LT","HCLTECH","AXISBANK","ASIANPAINT","MARUTI",
