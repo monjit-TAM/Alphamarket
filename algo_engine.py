@@ -102,9 +102,9 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
 
         # Previous score check (was below 70, now above)
         prev = (prev_scores or {}).get(sym, 0)
-        score_crossed = alpha_score >= 70 and prev < 70
+        score_crossed = alpha_score >= 60 and prev < 60
 
-        if not score_crossed and alpha_score < 70:
+        if not score_crossed and alpha_score < 60:
             continue
 
         # Momentum confirmation
@@ -173,14 +173,14 @@ def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
         prev_sm = (prev_smart or {}).get(sym, 0)
 
         # ── Entry conditions ──
-        sm_rising = smart_money >= 65 and prev_sm < 65
+        sm_rising = smart_money >= 55 and prev_sm < 55
         sustained_vol = vol_ratio > 1.3
         near_high = s.get("pct_from_52h", -99) > -15  # Within 15% of 52W high
         above_200 = s.get("above_200dma", False)
         mcap = s.get("market_cap", 0)
         big_enough = mcap > 5000 if mcap < 100000 else True  # > 5000 Cr
 
-        if (sm_rising or smart_money >= 70) and sustained_vol and near_high and above_200 and big_enough:
+        if (sm_rising or smart_money >= 60) and sustained_vol and near_high and above_200 and big_enough:
             sl = round(price * 0.92, 2)  # 8% SL
             tgt = round(price * 1.15, 2)  # 15% target
 
@@ -296,18 +296,18 @@ def scan_momentum_surge(universe: List[dict], max_open: int = 3,
             continue
 
         # ── Entry conditions ──
-        near_52h = s.get("pct_from_52h", -99) > -5  # Within 5% of 52W high
+        near_52h = s.get("pct_from_52h", -99) > -10  # Within 10% of 52W high
         vol_surge = s.get("vol_ratio", 0) >= 1.5
         rsi = s.get("rsi", 50)
         rsi_ok = 55 <= rsi <= 78
-        minervini = s.get("minervini_score", 0) >= 6
+        minervini = s.get("minervini_score", 0) >= 5
         macd_bull = s.get("macd_hist", 0) > 0
         above_st = s.get("above_supertrend", False)
         above_50 = s.get("above_50dma", False)
         mcap = s.get("market_cap", 0)
         liquid = mcap > 10000 if mcap < 100000 else True
 
-        if near_52h and vol_surge and rsi_ok and minervini and macd_bull and above_st and above_50 and liquid:
+        if near_52h and vol_surge and rsi_ok and minervini and macd_bull and above_50 and liquid:
             sl = round(price * 0.96, 2)  # 4% SL
             tgt1 = round(price * 1.05, 2)  # 5% T1
             tgt2 = round(price * 1.10, 2)  # 10% T2
@@ -359,8 +359,8 @@ def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
 
         # ── Entry conditions ──
         rsi = s.get("rsi", 50)
-        oversold = rsi < 28
-        sharp_drop = s.get("change_pct", 0) < -3 or s.get("wk_change", 0) < -8
+        oversold = rsi < 32
+        sharp_drop = s.get("change_pct", 0) < -2 or s.get("wk_change", 0) < -5
         above_200 = s.get("above_200dma", False)  # Long-term trend intact
         fund_score = s.get("fundamental_score", 0)
         quality = fund_score > 0.5 or s.get("roe", 0) > 10
@@ -463,7 +463,7 @@ def backtest_equity_algo(algo_fn, ohlcv_data: Dict[str, list], universe_snapshot
                 exit_price = dp["close"]
                 exit_reason = "TIME_STOP"
             # Trailing stop (once +50% of target move, trail SL to entry)
-            elif dp["high"] >= pos["entry_price"] * (1 + tgt_pct / 200):
+            elif dp["high"] >= pos["entry_price"] * (1 + tgt_pct / 300):
                 pos["stop_loss"] = max(pos["stop_loss"], pos["entry_price"])  # Move SL to breakeven
 
             if exit_price > 0:
