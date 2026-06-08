@@ -221,13 +221,13 @@ def scan_theta_decay(vix: float, vix_sma20: float, nifty_price: float,
     if day_of_week > 2:  # Only Mon(0), Tue(1), Wed(2)
         return []
 
-    if vix >= 17 or vix > vix_sma20:  # Low vol regime only
+    if vix >= 20 or vix > vix_sma20 + 2:  # Low vol regime (relaxed)
         return []
 
     if atr_pct > 1.5:  # Range-bound only
         return []
 
-    if theta_score < 70:
+    if theta_score < 60:
         return []
 
     for idx_sym, idx_price, lot_size in [("NIFTY", nifty_price, 25), ("BANKNIFTY", banknifty_price, 15)]:
