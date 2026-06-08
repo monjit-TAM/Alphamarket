@@ -406,6 +406,87 @@ async def ticker_subscribe(symbols: str = Query(...)):
     return {"subscribed": syms}
 
 
+
+
+# ═══════════════════════════════════════════════════════════════
+# EXECUTION ENDPOINTS
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/execute/{signal_id}", summary="One-click execute — place Kite order for a signal")
+async def execute_order(signal_id: int, qty: int = Query(1, ge=1)):
+    from algo_execution import execute_signal
+    result = await execute_signal(signal_id, qty=qty)
+    return result
+
+@router.get("/executions", summary="Execution history")
+async def execution_history(limit: int = Query(50, ge=1, le=200)):
+    from algo_execution import get_execution_history
+    history = await get_execution_history(limit)
+    return {"executions": history, "count": len(history)}
+
+@router.get("/webhooks", summary="List webhook targets")
+async def list_webhooks():
+    import asyncpg
+    conn = await asyncpg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db")
+    try:
+        rows = await conn.fetch("SELECT * FROM algo_webhook_targets ORDER BY id")
+        targets = []
+        for r in rows:
+            d = dict(r)
+            if d.get("created_at"): d["created_at"] = d["created_at"].isoformat()
+            targets.append(d)
+        return {"targets": targets, "count": len(targets)}
+    finally:
+        await conn.close()
+
+@router.post("/webhooks/add", summary="Add a webhook target")
+async def add_webhook(name: str = Query(...), url: str = Query(...), secret: str = Query(""), algo_ids: str = Query("ALL"), active: bool = Query(False)):
+    import asyncpg
+    conn = await asyncpg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db")
+    try:
+        row = await conn.fetchrow(
+            "INSERT INTO algo_webhook_targets (name, url, secret, algo_ids, active) VALUES ($1,$2,$3,$4,$5) RETURNING id",
+            name, url, secret, algo_ids, active)
+        return {"success": True, "id": row["id"], "name": name, "active": active}
+    finally:
+        await conn.close()
+
+@router.post("/webhooks/{target_id}/toggle", summary="Enable/disable a webhook target")
+async def toggle_webhook(target_id: int):
+    import asyncpg
+    conn = await asyncpg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db")
+    try:
+        await conn.execute("UPDATE algo_webhook_targets SET active = NOT active WHERE id=$1", target_id)
+        row = await conn.fetchrow("SELECT active FROM algo_webhook_targets WHERE id=$1", target_id)
+        return {"id": target_id, "active": row["active"] if row else False}
+    finally:
+        await conn.close()
+
+@router.delete("/webhooks/{target_id}", summary="Delete a webhook target")
+async def delete_webhook(target_id: int):
+    import asyncpg
+    conn = await asyncpg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db")
+    try:
+        await conn.execute("DELETE FROM algo_webhook_targets WHERE id=$1", target_id)
+        return {"deleted": target_id}
+    finally:
+        await conn.close()
+
+@router.post("/webhooks/test", summary="Test webhook by sending a sample signal")
+async def test_webhook():
+    from algo_execution import push_signal_webhook
+    test_signal = {
+        "algo_id": "TEST", "algo_name": "Test Signal",
+        "symbol": "RELIANCE", "action": "BUY",
+        "entry_price": 1275.0, "stop_loss": 1185.0, "target": 1402.0,
+        "confidence": 85, "hold_days": "15-45 days",
+        "reasoning": "Test signal from AlphaMarket Algo Suite",
+        "risk_pct": 7.0, "risk_reward": 1.4,
+    }
+    result = await push_signal_webhook(test_signal)
+    return {"test": True, **result}
+
+
 def _get_backtest_symbols(algo_id):
     n50 = ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","BHARTIARTL","SBIN",
            "BAJFINANCE","ITC","KOTAKBANK","LT","HCLTECH","AXISBANK","ASIANPAINT","MARUTI",

@@ -71,6 +71,12 @@ async def save_signal(signal_dict: dict) -> int:
         logger.info(f"[ALGO] Signal saved: #{sig_id} {signal_dict.get('algo_id')} "
                      f"{signal_dict.get('action')} {signal_dict.get('symbol')} "
                      f"@ {signal_dict.get('entry_price')}")
+        # Push to webhook targets (non-blocking)
+        try:
+            from algo_execution import push_signal_webhook
+            asyncio.create_task(push_signal_webhook(signal_dict))
+        except:
+            pass
         return sig_id
     finally:
         await conn.close()
