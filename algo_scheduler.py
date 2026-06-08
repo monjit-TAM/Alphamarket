@@ -60,6 +60,14 @@ async def save_signal(signal_dict: dict) -> int:
             datetime.now(IST),
         )
         sig_id = row["id"]
+        # Auto-subscribe to ticker for live prices
+        try:
+            from kite_ticker import subscribe_symbols, _running
+            if _running:
+                import asyncio
+                asyncio.create_task(subscribe_symbols([signal_dict.get("symbol", "")]))
+        except:
+            pass
         logger.info(f"[ALGO] Signal saved: #{sig_id} {signal_dict.get('algo_id')} "
                      f"{signal_dict.get('action')} {signal_dict.get('symbol')} "
                      f"@ {signal_dict.get('entry_price')}")
@@ -129,7 +137,15 @@ async def update_live_price(signal_id: int, price: float):
 # ═══════════════════════════════════════════════════════════════
 
 async def fetch_live_price(symbol: str) -> float:
-    """Fetch live price from Data Service (Kite PRIMARY)."""
+    """Fetch live price — WebSocket ticker first (instant), HTTP fallback."""
+    try:
+        from kite_ticker import get_live_price
+        price = get_live_price(symbol)
+        if price > 0:
+            return price
+    except:
+        pass
+    # Fallback to HTTP
     import httpx
     try:
         async with httpx.AsyncClient(timeout=8) as c:

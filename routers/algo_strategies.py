@@ -10,12 +10,23 @@ IST = pytz.timezone("Asia/Kolkata")
 router = APIRouter(prefix="/api/algos", tags=["Algo Strategies"])
 @router.on_event("startup")
 async def start_monitor():
-    from algo_scheduler import start_fast_monitor
+    from algo_scheduler import start_fast_monitor, is_market_hours
+    import logging
+    log = logging.getLogger("algo_strategies")
     try:
         start_fast_monitor()
+        log.info("[ALGO] Fast exit monitor started")
     except Exception as e:
-        import logging
-        logging.getLogger("algo_strategies").error(f"Failed to start fast monitor: {e}")
+        log.error(f"Failed to start fast monitor: {e}")
+    # Start WebSocket ticker for real-time prices
+    if is_market_hours():
+        try:
+            from kite_ticker import start_ticker
+            import asyncio
+            asyncio.create_task(start_ticker())
+            log.info("[ALGO] Kite WebSocket ticker starting...")
+        except Exception as e:
+            log.error(f"Ticker start failed: {e}")
 
 
 
@@ -363,6 +374,36 @@ async def live_signals():
         }
         result.append(d)
     return {"positions": result, "count": len(result), "market_open": __import__("algo_scheduler").is_market_hours()}
+
+
+
+
+@router.post("/ticker/start", summary="Start Kite WebSocket ticker")
+async def start_ws_ticker():
+    from kite_ticker import start_ticker, get_all_live_prices, _running, _subscribed_tokens
+    if _running:
+        return {"status": "already_running", "symbols": len(_subscribed_tokens), "prices": len(get_all_live_prices())}
+    await start_ticker()
+    return {"status": "starting", "symbols": len(_subscribed_tokens)}
+
+@router.get("/ticker/status", summary="WebSocket ticker status")
+async def ticker_status():
+    from kite_ticker import get_all_live_prices, _running, _subscribed_tokens, _instrument_map
+    prices = get_all_live_prices()
+    return {
+        "running": _running,
+        "instruments_loaded": len(_instrument_map),
+        "subscribed": len(_subscribed_tokens),
+        "live_prices": len(prices),
+        "prices": {sym: p["price"] for sym, p in prices.items()},
+    }
+
+@router.post("/ticker/subscribe", summary="Subscribe symbols to ticker")
+async def ticker_subscribe(symbols: str = Query(...)):
+    from kite_ticker import subscribe_symbols
+    syms = [s.strip().upper() for s in symbols.split(",")]
+    await subscribe_symbols(syms)
+    return {"subscribed": syms}
 
 
 def _get_backtest_symbols(algo_id):
