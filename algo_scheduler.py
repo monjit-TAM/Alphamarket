@@ -190,8 +190,8 @@ async def monitor_exits():
 
         # Calculate hold days
         now = datetime.now()
-        if opened.tzinfo is None:
-            opened = IST.localize(opened)
+        if opened.tzinfo is not None:
+            opened = opened.replace(tzinfo=None)
         hold_days = (now - opened).days
 
         exit_price = 0
