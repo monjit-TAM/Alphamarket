@@ -57,7 +57,7 @@ async def save_signal(signal_dict: dict) -> int:
                                      "confidence","risk_pct","reward_pct","risk_reward",
                                      "hold_days","reasoning")}),
             "OPEN",
-            datetime.now(IST),
+            datetime.now(),
         )
         sig_id = row["id"]
         # Auto-subscribe to ticker for live prices
@@ -112,7 +112,7 @@ async def close_position(signal_id: int, exit_price: float, exit_reason: str):
             Decimal(str(round(exit_price, 2))), exit_reason,
             Decimal(str(round(pnl, 2))), Decimal(str(round(pnl_pct, 2))),
             Decimal(str(round(exit_price, 2))),
-            datetime.now(IST), datetime.now(IST), signal_id)
+            datetime.now(), datetime.now(), signal_id)
 
         logger.info(f"[ALGO] Position closed: #{signal_id} {row['symbol']} "
                      f"@ {exit_price} ({exit_reason}) P&L: {pnl_pct:.1f}%")
@@ -127,7 +127,7 @@ async def update_live_price(signal_id: int, price: float):
     try:
         await conn.execute(
             "UPDATE algo_signals SET current_price=$1, updated_at=$2 WHERE id=$3",
-            Decimal(str(round(price, 2))), datetime.now(IST), signal_id)
+            Decimal(str(round(price, 2))), datetime.now(), signal_id)
     finally:
         await conn.close()
 
@@ -189,7 +189,7 @@ async def monitor_exits():
         await update_live_price(pos["id"], price)
 
         # Calculate hold days
-        now = datetime.now(IST)
+        now = datetime.now()
         if opened.tzinfo is None:
             opened = IST.localize(opened)
         hold_days = (now - opened).days
@@ -251,7 +251,7 @@ def _get_max_hold(algo_id: str) -> int:
 
 def is_market_hours() -> bool:
     """Check if current time is within market hours (IST)."""
-    now = datetime.now(IST)
+    now = datetime.now()
     if now.weekday() >= 5:  # Saturday/Sunday
         return False
     return MARKET_OPEN <= now.time() <= MARKET_CLOSE
@@ -259,7 +259,7 @@ def is_market_hours() -> bool:
 
 def should_scan(algo_id: str, last_scan: dict) -> bool:
     """Check if an algo should run based on its frequency."""
-    now = datetime.now(IST)
+    now = datetime.now()
     last = last_scan.get(algo_id)
 
     if algo_id == "ALGO1":
@@ -337,7 +337,7 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
                         bnf = br.json().get("price", 53000) if br.status_code == 200 else 53000
                 except:
                     vix, nifty, bnf = 16, 23000, 53000
-                dow = datetime.now(IST).weekday()
+                dow = datetime.now().weekday()
                 signals = scan_theta_decay(vix=vix, vix_sma20=17, nifty_price=nifty,
                                             banknifty_price=bnf, atr_pct=1.2,
                                             theta_score=80, day_of_week=dow,
@@ -353,7 +353,7 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
                 await save_signal(sig_dict)
                 total_signals += 1
 
-            last_scan[algo_id] = datetime.now(IST)
+            last_scan[algo_id] = datetime.now()
             results[algo_id] = {"scanned": True, "signals": len(signals)}
 
         except Exception as e:
@@ -364,7 +364,7 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
     exit_result = await monitor_exits()
 
     return {
-        "cycle_time": datetime.now(IST).isoformat(),
+        "cycle_time": datetime.now().isoformat(),
         "market": "open",
         "scanners": results,
         "new_signals": total_signals,
@@ -422,9 +422,9 @@ async def fast_exit_monitor():
                 await update_live_price(pos["id"], price)
                 
                 # Calculate hold days
-                now = datetime.now(IST)
-                if opened.tzinfo is None:
-                    opened = IST.localize(opened)
+                now = datetime.now()
+                if opened.tzinfo is not None:
+                    opened = opened.replace(tzinfo=None)
                 hold_days = (now - opened).days
                 
                 exit_price = 0
