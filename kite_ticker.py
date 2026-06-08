@@ -1,15 +1,14 @@
 """
-Kite WebSocket Ticker — Real-time price feed for algo positions.
-Tick-by-tick prices via WebSocket. Exit monitor reads from memory dict.
+Kite WebSocket Ticker — Real-time tick-by-tick prices for algo positions.
 """
 import json, logging, threading, time
 from datetime import datetime
 from typing import Dict, Set
 
 logger = logging.getLogger("kite_ticker")
+logging.basicConfig(level=logging.INFO)
 
 KITE_API_KEY = "wmwpq34kw5th0y2l"
-DB_URL = "postgresql://dyor_user:DyorSecure2026Mar@localhost/dyor_db"
 
 _live_prices: Dict[str, dict] = {}
 _instrument_map: Dict[str, int] = {}
@@ -17,8 +16,6 @@ _reverse_map: Dict[int, str] = {}
 _subscribed_tokens: Set[int] = set()
 _pending_subscribe: list = []
 _ws_ref = [None]
-_ticker = None
-_ticker_thread = None
 _running = False
 
 
@@ -43,52 +40,60 @@ def _get_access_token_sync() -> str:
     return ""
 
 
-async def load_instruments():
+def _load_instruments_sync():
     global _instrument_map, _reverse_map
-    import httpx
+    import urllib.request
     token = _get_access_token_sync()
     if not token:
-        logger.error("[TICKER] No Kite access token")
+        print("[TICKER] No access token for instruments")
         return
+    req = urllib.request.Request(
+        "https://api.kite.trade/instruments/NSE",
+        headers={"Authorization": f"token {KITE_API_KEY}:{token}"}
+    )
     try:
-        async with httpx.AsyncClient(timeout=30) as c:
-            r = await c.get("https://api.kite.trade/instruments/NSE",
-                           headers={"Authorization": f"token {KITE_API_KEY}:{token}"})
-            if r.status_code == 200:
-                lines = r.text.strip().split("\n")
-                headers = lines[0].split(",")
-                token_idx = headers.index("instrument_token")
-                sym_idx = headers.index("tradingsymbol")
-                _instrument_map.clear()
-                _reverse_map.clear()
-                for line in lines[1:]:
-                    parts = line.split(",")
-                    if len(parts) > max(token_idx, sym_idx):
-                        sym = parts[sym_idx]
-                        tok = int(parts[token_idx])
-                        _instrument_map[sym] = tok
-                        _reverse_map[tok] = sym
-                logger.info(f"[TICKER] Loaded {len(_instrument_map)} NSE instruments")
-            else:
-                logger.error(f"[TICKER] Instrument fetch failed: {r.status_code}")
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            text = resp.read().decode()
+        lines = text.strip().split("\n")
+        headers = lines[0].split(",")
+        token_idx = headers.index("instrument_token")
+        sym_idx = headers.index("tradingsymbol")
+        _instrument_map.clear()
+        _reverse_map.clear()
+        for line in lines[1:]:
+            parts = line.split(",")
+            if len(parts) > max(token_idx, sym_idx):
+                sym = parts[sym_idx]
+                tok = int(parts[token_idx])
+                _instrument_map[sym] = tok
+                _reverse_map[tok] = sym
+        print(f"[TICKER] Loaded {len(_instrument_map)} instruments")
     except Exception as e:
-        logger.error(f"[TICKER] Instrument load error: {e}")
+        print(f"[TICKER] Instrument load error: {e}")
 
 
-def _run_ticker_thread():
-    global _ticker, _running, _ws_ref
+def _run_ticker():
+    global _running, _ws_ref
     from kiteconnect import KiteTicker
 
-    access_token = _get_access_token_sync()
-    if not access_token:
-        logger.error("[TICKER] No access token")
+    print("[TICKER] Loading instruments...")
+    _load_instruments_sync()
+    if not _instrument_map:
+        print("[TICKER] No instruments — aborting")
         return
 
-    _ticker = KiteTicker(KITE_API_KEY, access_token)
+    token = _get_access_token_sync()
+    if not token:
+        print("[TICKER] No access token — aborting")
+        return
+
+    kws = KiteTicker(KITE_API_KEY, token)
 
     def on_connect(ws, response):
         _ws_ref[0] = ws
-        logger.info("[TICKER] WebSocket connected")
+        _running_set = True
+        print(f"[TICKER] WebSocket CONNECTED")
+        # Subscribe any pre-queued + pending tokens
         all_tokens = list(_subscribed_tokens) + list(_pending_subscribe)
         _pending_subscribe.clear()
         if all_tokens:
@@ -96,12 +101,12 @@ def _run_ticker_thread():
             ws.subscribe(unique)
             ws.set_mode(ws.MODE_LTP, unique)
             _subscribed_tokens.update(unique)
-            logger.info(f"[TICKER] Subscribed to {len(unique)} tokens")
+            print(f"[TICKER] Subscribed {len(unique)} tokens")
 
     def on_ticks(ws, ticks):
         for tick in ticks:
-            token = tick.get("instrument_token")
-            sym = _reverse_map.get(token)
+            tok = tick.get("instrument_token")
+            sym = _reverse_map.get(tok)
             if sym:
                 _live_prices[sym] = {
                     "price": tick.get("last_price", 0),
@@ -110,90 +115,62 @@ def _run_ticker_thread():
 
     def on_close(ws, code, reason):
         global _running
-        logger.warning(f"[TICKER] Closed: {code} {reason}")
+        print(f"[TICKER] WebSocket closed: {code} {reason}")
         _running = False
 
     def on_error(ws, code, reason):
-        logger.error(f"[TICKER] Error: {code} {reason}")
+        print(f"[TICKER] WebSocket error: {code} {reason}")
 
-    _ticker.on_connect = on_connect
-    _ticker.on_ticks = on_ticks
-    _ticker.on_close = on_close
-    _ticker.on_error = on_error
+    kws.on_connect = on_connect
+    kws.on_ticks = on_ticks
+    kws.on_close = on_close
+    kws.on_error = on_error
 
     _running = True
-    logger.info("[TICKER] Starting WebSocket...")
-    try:
-        _ticker.connect(threaded=True)
-        while _running:
-            time.sleep(2)
-            if _pending_subscribe and _ws_ref[0]:
-                try:
-                    tokens = list(set(_pending_subscribe))
-                    _pending_subscribe.clear()
-                    _ws_ref[0].subscribe(tokens)
-                    _ws_ref[0].set_mode(_ws_ref[0].MODE_LTP, tokens)
-                    _subscribed_tokens.update(tokens)
-                    logger.info(f"[TICKER] Late-subscribed {len(tokens)} tokens")
-                except Exception as e:
-                    logger.error(f"[TICKER] Late subscribe error: {e}")
-    except Exception as e:
-        logger.error(f"[TICKER] Connection error: {e}")
-        _running = False
+    print("[TICKER] Connecting WebSocket...")
+    kws.connect(threaded=True)
+
+    # Keep alive + process pending subscriptions
+    while _running:
+        time.sleep(2)
+        if _pending_subscribe and _ws_ref[0]:
+            try:
+                tokens = list(set(_pending_subscribe))
+                _pending_subscribe.clear()
+                _ws_ref[0].subscribe(tokens)
+                _ws_ref[0].set_mode(_ws_ref[0].MODE_LTP, tokens)
+                _subscribed_tokens.update(tokens)
+                print(f"[TICKER] Late-subscribed {len(tokens)} tokens")
+            except Exception as e:
+                print(f"[TICKER] Subscribe error: {e}")
 
 
-async def subscribe_symbols(symbols: list):
+def queue_subscribe(symbols: list):
+    """Queue symbols for subscription (thread-safe)."""
     global _pending_subscribe
-    tokens = []
     for sym in symbols:
         t = _instrument_map.get(sym)
         if t:
-            tokens.append(t)
+            _pending_subscribe.append(t)
             _subscribed_tokens.add(t)
-    if tokens:
-        _pending_subscribe.extend(tokens)
-        logger.info(f"[TICKER] Queued {len(tokens)} symbols: {symbols}")
+    if symbols:
+        print(f"[TICKER] Queued {len(symbols)}: {symbols[:5]}")
 
 
-async def unsubscribe_symbols(symbols: list):
-    tokens = []
-    for sym in symbols:
-        t = _instrument_map.get(sym)
-        if t:
-            tokens.append(t)
-            _subscribed_tokens.discard(t)
-    if tokens and _ws_ref[0]:
-        try:
-            _ws_ref[0].unsubscribe(tokens)
-        except:
-            pass
+# Async wrappers for FastAPI
+async def subscribe_symbols(symbols: list):
+    queue_subscribe(symbols)
 
+async def load_instruments():
+    _load_instruments_sync()
 
 async def start_ticker():
-    global _ticker_thread, _running
+    global _running
     if _running:
-        logger.info("[TICKER] Already running")
         return
-    await load_instruments()
-    if not _instrument_map:
-        logger.error("[TICKER] No instruments — not starting")
-        return
-
-    # Pre-subscribe open positions
-    try:
-        from algo_scheduler import get_open_positions
-        positions = await get_open_positions()
-        for p in positions:
-            t = _instrument_map.get(p["symbol"])
-            if t:
-                _subscribed_tokens.add(t)
-    except:
-        pass
-
-    logger.info(f"[TICKER] Launching thread with {len(_subscribed_tokens)} pre-subscribed")
-    _ticker_thread = threading.Thread(target=_run_ticker_thread, daemon=True)
-    _ticker_thread.start()
-
+    t = threading.Thread(target=_run_ticker, daemon=True)
+    t.start()
+    print("[TICKER] Thread launched")
 
 async def stop_ticker():
     global _running
@@ -203,4 +180,3 @@ async def stop_ticker():
             _ws_ref[0].close()
         except:
             pass
-    logger.info("[TICKER] Stopped")
