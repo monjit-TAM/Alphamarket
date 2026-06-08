@@ -69,8 +69,8 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
                               prev_scores: dict = None, max_open: int = 5,
                               open_positions: list = None) -> List[AlgoSignal]:
     """
-    Fires when AlphaScore crosses above 70 with momentum confirmation.
-    Scanner: Daily 10:00 AM
+    AlphaScore Momentum — fires when composite score crosses threshold with momentum.
+    Uses ONLY available sb_universe fields.
     """
     signals = []
     open_syms = {p["symbol"] for p in (open_positions or [])}
@@ -84,75 +84,67 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
         if price < 50:
             continue
 
-        # ── Entry conditions ──
         rsi = s.get("rsi", 50)
         above_50 = s.get("above_50dma", False)
         above_200 = s.get("above_200dma", False)
         rs_1m = s.get("rs_1m", 0)
-        roe = s.get("roe", 0)
-        de = s.get("debt_equity", 99)
-        alpha_rating = s.get("alpha_rating", 0)
-        fund_score = s.get("fundamental_score", 0)
-        mom_score = s.get("momentum_score", 0)
-        trend_score = s.get("trend_score", 0)
+        rs_3m = s.get("rs_3m", 0)
+        vol_ratio = s.get("vol_ratio", 0)
+        minervini = s.get("minervini_score", 0)
+        pct_52h = s.get("pct_from_52h", -99)
+        macd = s.get("macd_hist", 0)
+        cap = s.get("cap_segment", "")
 
-        # Compute AlphaScore from AVAILABLE fields
-        rsi_score = min(1, max(0, (rsi - 30) / 40))  # 0-1 based on RSI
-        trend_val = 1.0 if (above_50 and above_200) else (0.6 if above_50 else 0.2)
-        rs_val = min(1, max(0, rs_1m / 10)) if rs_1m > 0 else 0
-        vol_val = min(1, s.get("vol_ratio", 0) / 2)
-        minv = min(1, s.get("minervini_score", 0) / 8)
-        near_high = min(1, max(0, (100 + s.get("pct_from_52h", -50)) / 100))
-        alpha_score = (rsi_score * 20 + trend_val * 25 + rs_val * 20 + vol_val * 15 + minv * 10 + near_high * 10)
+        # AlphaScore from available fields (0-100)
+        rsi_sc = min(1, max(0, (rsi - 30) / 40)) * 20
+        trend_sc = (1.0 if (above_50 and above_200) else (0.5 if above_50 else 0)) * 25
+        rs_sc = min(1, max(0, rs_1m / 10)) * 20 if rs_1m > 0 else 0
+        vol_sc = min(1, vol_ratio / 2) * 15
+        min_sc = (minervini / 8) * 10
+        high_sc = min(1, max(0, (100 + pct_52h) / 100)) * 10
+        alpha_score = rsi_sc + trend_sc + rs_sc + vol_sc + min_sc + high_sc
 
         if alpha_score < 55:
             continue
 
-        # Momentum confirmation
-        rsi_rising = 50 <= rsi <= 85
-        trend_up = above_50 and above_200
-        rs_positive = rs_1m > 0
+        # Entry conditions — all must be true
+        if not (50 <= rsi <= 85): continue
+        if not (above_50 and above_200): continue
+        if not (rs_1m > 0): continue
+        if not (cap in ("large", "mid", "small")): continue
+        if not (macd > 0): continue
 
-        # Quality filter (use cap_segment since ROE/DE not available)
-        cap = s.get("cap_segment", "")
-        quality = cap in ("large", "mid", "small")
+        sl = round(price * 0.93, 2)
+        tgt = round(price * 1.10, 2)
+        tgt2 = round(price * 1.18, 2)
 
-        if rsi_rising and trend_up and rs_positive and quality:
-            sl = round(price * 0.93, 2)  # 7% SL
-            tgt = round(price * 1.10, 2)  # 10% target
-            tgt2 = round(price * 1.18, 2)  # 18% stretch
+        reasons = []
+        reasons.append(f"AlphaScore {alpha_score:.0f}/100")
+        reasons.append(f"RSI {rsi:.0f}")
+        reasons.append(f"Above 50 & 200 DMA")
+        reasons.append(f"RS vs NIFTY: +{rs_1m:.1f}%")
+        reasons.append(f"Minervini {minervini}/8")
+        reasons.append(f"Volume {vol_ratio:.1f}x")
 
-            reasons = []
-            reasons.append(f"AlphaScore {alpha_score:.0f}/100 (crossed above 70)")
-            reasons.append(f"RSI {rsi:.0f} rising")
-            reasons.append(f"Above 50 & 200 DMA")
-            reasons.append(f"RS vs NIFTY: +{rs_1m:.1f}%")
-            reasons.append(f"ROE {roe:.1f}%, D/E {de:.1f}")
+        signals.append(AlgoSignal(
+            algo_id="ALGO1", algo_name="AlphaScore Momentum",
+            symbol=sym, action="BUY", entry_price=price,
+            stop_loss=sl, target=tgt, target2=tgt2,
+            hold_days="15-45 days", segment="equity",
+            confidence=min(95, int(alpha_score)),
+            reasoning=" | ".join(reasons),
+            alpha_score=alpha_score, rsi=rsi,
+        ))
 
-            signals.append(AlgoSignal(
-                algo_id="ALGO1", algo_name="AlphaScore Momentum",
-                symbol=sym, action="BUY", entry_price=price,
-                stop_loss=sl, target=tgt, target2=tgt2,
-                hold_days="15-45 days", segment="equity",
-                confidence=min(95, int(alpha_score)),
-                reasoning=" | ".join(reasons),
-                alpha_score=alpha_score, rsi=rsi, roe=roe,
-            ))
-
-    # Sort by alpha_score descending, return top signals
     signals.sort(key=lambda x: x.extra.get("alpha_score", 0), reverse=True)
     return signals[:max_open - len(open_syms)]
 
 
-# ═══════════════════════════════════════════════════════════════
-# STRATEGY 2: Smart Money Breakout (Investor)
-# ═══════════════════════════════════════════════════════════════
-
 def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
                                max_open: int = 4, open_positions: list = None) -> List[AlgoSignal]:
     """
-    Detects institutional accumulation + price breakout convergence.
-    Scanner: Daily 10:30 AM + 2:30 PM
+    Smart Money Breakout — detects volume accumulation + breakout.
+    Uses ONLY available sb_universe fields.
     """
     signals = []
     open_syms = {p["symbol"] for p in (open_positions or [])}
@@ -166,48 +158,54 @@ def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
         if price < 50:
             continue
 
-        # Compute smart money proxy from accumulation + volume
-        acc_score = s.get("accumulation_score", 0) * 100
         vol_ratio = s.get("vol_ratio", 1)
-        momentum = s.get("momentum_score", 0) * 100
-
-        smart_money = acc_score * 0.5 + min(vol_ratio * 20, 30) + momentum * 0.2
-        prev_sm = (prev_smart or {}).get(sym, 0)
-
-        # ── Entry conditions ──
-        sm_rising = smart_money >= 50 and prev_sm < 50
-        sustained_vol = vol_ratio > 1.3
-        near_high = s.get("pct_from_52h", -99) > -15  # Within 15% of 52W high
+        rs_1m = s.get("rs_1m", 0)
+        rs_3m = s.get("rs_3m", 0)
+        minervini = s.get("minervini_score", 0)
+        pct_52h = s.get("pct_from_52h", -99)
         above_200 = s.get("above_200dma", False)
+        above_50 = s.get("above_50dma", False)
+        rsi = s.get("rsi", 50)
         cap = s.get("cap_segment", "")
-        big_enough = cap in ("large", "mid")  # > 5000 Cr
 
-        if (sm_rising or smart_money >= 55) and sustained_vol and near_high and above_200 and big_enough:
-            sl = round(price * 0.92, 2)  # 8% SL
-            tgt = round(price * 1.15, 2)  # 15% target
+        # Smart Money Score from available fields (0-100)
+        smart_money = (min(vol_ratio * 25, 35) +
+                       min(max(rs_1m, 0) * 3, 25) +
+                       min(max(rs_3m, 0) * 1.5, 15) +
+                       minervini * 3)
 
-            reasons = []
-            reasons.append(f"Smart Money {smart_money:.0f}/100 (accumulation detected)")
-            reasons.append(f"Volume {vol_ratio:.1f}x average (sustained buying)")
-            reasons.append(f"{abs(s.get('pct_from_52h', 0)):.0f}% from 52W high")
-            if above_200: reasons.append("Above 200 DMA")
+        if smart_money < 45:
+            continue
 
-            signals.append(AlgoSignal(
-                algo_id="ALGO2", algo_name="Smart Money Breakout",
-                symbol=sym, action="BUY", entry_price=price,
-                stop_loss=sl, target=tgt, hold_days="20-60 days",
-                segment="equity", confidence=min(90, int(smart_money)),
-                reasoning=" | ".join(reasons),
-                smart_money=smart_money, vol_ratio=vol_ratio,
-            ))
+        # Entry conditions
+        if not (vol_ratio > 1.3): continue
+        if not (pct_52h > -15): continue
+        if not above_200: continue
+        if not (cap in ("large", "mid")): continue
+        if not (rsi > 45): continue
+
+        sl = round(price * 0.92, 2)
+        tgt = round(price * 1.15, 2)
+
+        reasons = []
+        reasons.append(f"Smart Money {smart_money:.0f}/100")
+        reasons.append(f"Volume {vol_ratio:.1f}x average")
+        reasons.append(f"{abs(pct_52h):.0f}% from 52W high")
+        reasons.append(f"RS 1M: +{rs_1m:.1f}%")
+        if above_200: reasons.append("Above 200 DMA")
+
+        signals.append(AlgoSignal(
+            algo_id="ALGO2", algo_name="Smart Money Breakout",
+            symbol=sym, action="BUY", entry_price=price,
+            stop_loss=sl, target=tgt, hold_days="20-60 days",
+            segment="equity", confidence=min(90, int(smart_money)),
+            reasoning=" | ".join(reasons),
+            smart_money=smart_money, vol_ratio=vol_ratio,
+        ))
 
     signals.sort(key=lambda x: x.extra.get("smart_money", 0), reverse=True)
     return signals[:max_open - len(open_syms)]
 
-
-# ═══════════════════════════════════════════════════════════════
-# STRATEGY 3: Theta Decay Machine (Trader - Options)
-# ═══════════════════════════════════════════════════════════════
 
 def scan_theta_decay(vix: float, vix_sma20: float, nifty_price: float,
                      banknifty_price: float, atr_pct: float,
@@ -344,8 +342,8 @@ def scan_momentum_surge(universe: List[dict], max_open: int = 3,
 def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
                             open_positions: list = None) -> List[AlgoSignal]:
     """
-    Catches quality stocks at extreme oversold levels for quick bounce.
-    Scanner: Every 15 min during market hours
+    Oversold Snapback — catches quality stocks at extreme lows.
+    Uses ONLY available sb_universe fields.
     """
     signals = []
     open_syms = {p["symbol"] for p in (open_positions or [])}
@@ -359,37 +357,40 @@ def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
         if price < 50:
             continue
 
-        # ── Entry conditions ──
         rsi = s.get("rsi", 50)
-        oversold = rsi < 32
-        sharp_drop = s.get("change_pct", 0) < -2 or s.get("wk_change", 0) < -5
-        above_200 = s.get("above_200dma", False)  # Long-term trend intact
+        change_pct = s.get("change_pct", 0)
+        wk_change = s.get("wk_change", 0)
+        above_200 = s.get("above_200dma", False)
+        rs_3m = s.get("rs_3m", 0)
         cap = s.get("cap_segment", "small")
-        large_mid = cap in ("large", "mid", "small")
-        # Quality: use trend + RS as proxy (no fundamental data available)
-        quality = s.get("rs_3m", 0) > -10  # Not in long-term decline
 
-        if oversold and sharp_drop and above_200 and quality and large_mid:
-            sl = round(price * 0.97, 2)  # 3% SL (tight)
-            tgt = round(price * 1.05, 2)  # 5% target
+        # Entry conditions
+        oversold = rsi < 32
+        sharp_drop = change_pct < -2 or wk_change < -5
+        trend_intact = above_200
+        not_broken = rs_3m > -20  # Not in complete freefall
+        good_cap = cap in ("large", "mid", "small")
+
+        if oversold and sharp_drop and trend_intact and not_broken and good_cap:
+            sl = round(price * 0.97, 2)
+            tgt = round(price * 1.05, 2)
 
             reasons = []
             reasons.append(f"RSI {rsi:.0f} (extreme oversold)")
-            reasons.append(f"Dropped {abs(s.get('change_pct', 0)):.1f}% today")
-            if s.get("wk_change"): reasons.append(f"Week: {s.get('wk_change', 0):.1f}%")
-            reasons.append(f"Still above 200 DMA (trend intact)")
-            reasons.append(f"D/E {s.get('debt_equity', 0):.1f} (low risk)")
+            if change_pct < -2: reasons.append(f"Down {abs(change_pct):.1f}% today")
+            if wk_change < -5: reasons.append(f"Week: {wk_change:.1f}%")
+            reasons.append("Above 200 DMA (trend intact)")
+            reasons.append(f"Cap: {cap}")
 
             signals.append(AlgoSignal(
                 algo_id="ALGO5", algo_name="Oversold Snapback",
                 symbol=sym, action="BUY", entry_price=price,
                 stop_loss=sl, target=tgt, hold_days="1-5 days",
-                segment="equity", confidence=min(80, 100 - int(rsi) + int(fund_score * 30)),
+                segment="equity", confidence=min(80, 100 - int(rsi)),
                 reasoning=" | ".join(reasons),
-                rsi=rsi, drop_pct=s.get("change_pct", 0),
+                rsi=rsi, drop_pct=change_pct,
             ))
 
-    # Sort by most oversold (lowest RSI) first
     signals.sort(key=lambda x: x.extra.get("rsi", 50))
     return signals[:max_open - len(open_syms)]
 
