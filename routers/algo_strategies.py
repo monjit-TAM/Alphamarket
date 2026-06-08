@@ -8,6 +8,16 @@ import json, logging, redis, pytz
 logger = logging.getLogger("algo_strategies")
 IST = pytz.timezone("Asia/Kolkata")
 router = APIRouter(prefix="/api/algos", tags=["Algo Strategies"])
+@router.on_event("startup")
+async def start_monitor():
+    from algo_scheduler import start_fast_monitor
+    try:
+        start_fast_monitor()
+    except Exception as e:
+        import logging
+        logging.getLogger("algo_strategies").error(f"Failed to start fast monitor: {e}")
+
+
 
 
 @router.get("/list", summary="List all available algos")
@@ -324,6 +334,35 @@ async def check_exits():
     from algo_scheduler import monitor_exits
     result = await monitor_exits()
     return result
+
+
+
+@router.get("/signals/live", summary="Live signals with current prices")
+async def live_signals():
+    """Returns all open positions with live prices — poll every 10s from frontend."""
+    from algo_scheduler import get_open_positions, fetch_live_price
+    positions = await get_open_positions()
+    result = []
+    for p in positions:
+        price = await fetch_live_price(p["symbol"])
+        entry = float(p["entry_price"])
+        pnl_pct = round(((price / entry) - 1) * 100, 2) if entry > 0 and price > 0 else 0
+        d = {
+            "id": p["id"], "algo_id": p["algo_id"], "algo_name": p["algo_name"],
+            "symbol": p["symbol"], "action": p["action"],
+            "entry_price": float(p["entry_price"]),
+            "stop_loss": float(p["stop_loss"]),
+            "target": float(p["target"]),
+            "live_price": price,
+            "pnl_pct": pnl_pct,
+            "confidence": p.get("confidence", 0),
+            "hold_days": p.get("hold_days", ""),
+            "reasoning": p.get("reasoning", ""),
+            "status": p["status"],
+            "opened_at": p["opened_at"].isoformat() if p.get("opened_at") else "",
+        }
+        result.append(d)
+    return {"positions": result, "count": len(result), "market_open": __import__("algo_scheduler").is_market_hours()}
 
 
 def _get_backtest_symbols(algo_id):

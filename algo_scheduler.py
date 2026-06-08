@@ -260,15 +260,15 @@ def should_scan(algo_id: str, last_scan: dict) -> bool:
         # Every 30 min, Mon-Wed only
         if now.weekday() > 2:
             return False
-        if not last or (now - last).total_seconds() >= 1800:
-            return True
-    elif algo_id == "ALGO4":
-        # Every 5 min
         if not last or (now - last).total_seconds() >= 300:
             return True
+    elif algo_id == "ALGO4":
+        # Every 1 min (trader algo)
+        if not last or (now - last).total_seconds() >= 60:
+            return True
     elif algo_id == "ALGO5":
-        # Every 15 min
-        if not last or (now - last).total_seconds() >= 900:
+        # Every 2 min (trader algo)
+        if not last or (now - last).total_seconds() >= 120:
             return True
     return False
 
@@ -354,6 +354,110 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
         "new_signals": total_signals,
         "exits": exit_result,
     }
+
+
+
+
+# ═══════════════════════════════════════════════════════════════
+# FAST EXIT MONITOR — runs every 10 seconds for open positions
+# ═══════════════════════════════════════════════════════════════
+
+_fast_monitor_running = False
+
+async def fast_exit_monitor():
+    """Background task: checks exits every 10s for traders, 15s for investors."""
+    global _fast_monitor_running
+    if _fast_monitor_running:
+        return
+    _fast_monitor_running = True
+    logger.info("[FAST MONITOR] Started — 10s trader / 15s investor cycle")
+    
+    cycle = 0
+    while True:
+        try:
+            if not is_market_hours():
+                await asyncio.sleep(30)
+                continue
+            
+            cycle += 1
+            positions = await get_open_positions()
+            
+            if not positions:
+                await asyncio.sleep(10)
+                continue
+            
+            for pos in positions:
+                algo_id = pos["algo_id"]
+                # Investor algos: check every 3rd cycle (~15s)
+                if algo_id in ("ALGO1", "ALGO2") and cycle % 3 != 0:
+                    continue
+                
+                symbol = pos["symbol"]
+                entry = float(pos["entry_price"])
+                sl = float(pos["stop_loss"])
+                tgt = float(pos["target"])
+                opened = pos.get("opened_at") or pos["created_at"]
+                
+                price = await fetch_live_price(symbol)
+                if price <= 0:
+                    continue
+                
+                # Update live price
+                await update_live_price(pos["id"], price)
+                
+                # Calculate hold days
+                now = datetime.now(IST)
+                if opened.tzinfo is None:
+                    opened = IST.localize(opened)
+                hold_days = (now - opened).days
+                
+                exit_price = 0
+                exit_reason = ""
+                
+                # Stop Loss
+                if sl > 0 and price <= sl:
+                    exit_price = price
+                    exit_reason = "STOP_LOSS"
+                # Target
+                elif tgt > 0 and price >= tgt:
+                    exit_price = price
+                    exit_reason = "TARGET"
+                # Time Stop
+                else:
+                    max_hold = _get_max_hold(algo_id)
+                    if hold_days >= max_hold:
+                        exit_price = price
+                        exit_reason = "TIME_STOP"
+                
+                # Trailing Stop
+                if exit_price == 0 and entry > 0:
+                    pnl_pct = ((price / entry) - 1) * 100
+                    if algo_id in ("ALGO1", "ALGO2") and pnl_pct >= 8:
+                        if price <= price * 0.94:
+                            exit_price = price
+                            exit_reason = "TRAILING_STOP"
+                    elif algo_id == "ALGO4" and pnl_pct >= 4:
+                        if price <= entry:
+                            exit_price = price
+                            exit_reason = "BREAKEVEN_STOP"
+                
+                if exit_price > 0:
+                    await close_position(pos["id"], exit_price, exit_reason)
+                    logger.info(f"[FAST EXIT] {symbol} closed @ {exit_price} ({exit_reason})")
+            
+            await asyncio.sleep(5)  # 5 second base cycle
+            
+        except Exception as e:
+            logger.error(f"[FAST MONITOR] Error: {e}")
+            await asyncio.sleep(10)
+
+
+def start_fast_monitor():
+    """Start the fast monitor as a background task."""
+    global _fast_monitor_running
+    if not _fast_monitor_running:
+        asyncio.create_task(fast_exit_monitor())
+        logger.info("[FAST MONITOR] Background task created")
 
 
 async def scheduler_loop():
