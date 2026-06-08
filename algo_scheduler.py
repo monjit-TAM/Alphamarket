@@ -251,7 +251,7 @@ def _get_max_hold(algo_id: str) -> int:
 
 def is_market_hours() -> bool:
     """Check if current time is within market hours (IST)."""
-    now = datetime.now()
+    now = datetime.now(IST)
     if now.weekday() >= 5:  # Saturday/Sunday
         return False
     return MARKET_OPEN <= now.time() <= MARKET_CLOSE
@@ -259,7 +259,7 @@ def is_market_hours() -> bool:
 
 def should_scan(algo_id: str, last_scan: dict) -> bool:
     """Check if an algo should run based on its frequency."""
-    now = datetime.now()
+    now = datetime.now(IST)
     last = last_scan.get(algo_id)
 
     if algo_id == "ALGO1":
@@ -353,7 +353,7 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
                 await save_signal(sig_dict)
                 total_signals += 1
 
-            last_scan[algo_id] = datetime.now()
+            last_scan[algo_id] = datetime.now(IST)
             results[algo_id] = {"scanned": True, "signals": len(signals)}
 
         except Exception as e:
