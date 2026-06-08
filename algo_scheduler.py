@@ -326,7 +326,7 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
                 import httpx
                 try:
                     async with httpx.AsyncClient(timeout=5) as c:
-                        vr = await c.get("http://127.0.0.1:5004/data/equity/quote/INDIA VIX",
+                        vr = await c.get("http://127.0.0.1:5004/data/equity/quote/INDIAVIX",
                                          headers={"X-API-Key": "alpha_data_internal_2026"})
                         vix = vr.json().get("price", 16) if vr.status_code == 200 else 16
                         nr = await c.get("http://127.0.0.1:5004/data/equity/quote/NIFTY 50",
