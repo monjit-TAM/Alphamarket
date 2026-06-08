@@ -177,8 +177,8 @@ def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
         sustained_vol = vol_ratio > 1.3
         near_high = s.get("pct_from_52h", -99) > -15  # Within 15% of 52W high
         above_200 = s.get("above_200dma", False)
-        mcap = s.get("market_cap", 0)
-        big_enough = mcap > 5000 if mcap < 100000 else True  # > 5000 Cr
+        cap = s.get("cap_segment", "")
+        big_enough = cap in ("large", "mid")  # > 5000 Cr
 
         if (sm_rising or smart_money >= 55) and sustained_vol and near_high and above_200 and big_enough:
             sl = round(price * 0.92, 2)  # 8% SL
@@ -304,8 +304,8 @@ def scan_momentum_surge(universe: List[dict], max_open: int = 3,
         macd_bull = s.get("macd_hist", 0) > 0
         above_st = s.get("above_supertrend", False)
         above_50 = s.get("above_50dma", False)
-        mcap = s.get("market_cap", 0)
-        liquid = mcap > 10000 if mcap < 100000 else True
+        cap = s.get("cap_segment", "")
+        liquid = cap in ("large", "mid", "small")
 
         if near_52h and vol_surge and rsi_ok and minervini and macd_bull and above_50 and liquid:
             sl = round(price * 0.96, 2)  # 4% SL
@@ -365,8 +365,8 @@ def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
         fund_score = s.get("fundamental_score", 0)
         quality = fund_score > 0.3 or s.get("roe", 0) > 8
         de_ok = s.get("debt_equity", 99) < 1.0
-        cap = s.get("cap_segment", "")
-        large_mid = cap in ("large", "mid")
+        cap = s.get("cap_segment", "small")
+        large_mid = cap in ("large", "mid", "small")
 
         if oversold and sharp_drop and above_200 and quality and de_ok and large_mid:
             sl = round(price * 0.97, 2)  # 3% SL (tight)
