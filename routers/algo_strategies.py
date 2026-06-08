@@ -85,16 +85,16 @@ async def scan_algo(algo_id: str):
         try:
             import httpx
             async with httpx.AsyncClient(timeout=5) as c:
-                vr = await c.get("http://127.0.0.1:5004/data/equity/quote/INDIA VIX")
+                vr = await c.get("http://127.0.0.1:5004/data/equity/quote/INDIAVIX")
                 vix = vr.json().get("price", 16) if vr.status_code == 200 else 16
-                nr = await c.get("http://127.0.0.1:5004/data/equity/quote/NIFTY 50")
+                nr = await c.get("http://127.0.0.1:5004/data/equity/quote/%5ENSEI")
                 nifty = nr.json().get("price", 23000) if nr.status_code == 200 else 23000
-                br = await c.get("http://127.0.0.1:5004/data/equity/quote/NIFTY BANK")
+                br = await c.get("http://127.0.0.1:5004/data/equity/quote/%5ENSEBANK")
                 bnf = br.json().get("price", 53000) if br.status_code == 200 else 53000
         except:
             vix, nifty, bnf = 16, 23000, 53000
         dow = datetime.now(IST).weekday()
-        signals = scan_theta_decay(vix=vix, vix_sma20=17, nifty_price=nifty,
+        signals = scan_theta_decay(vix=vix, vix_sma20=vix+1, nifty_price=nifty,
                                     banknifty_price=bnf, atr_pct=1.2,
                                     theta_score=80, day_of_week=dow)
     elif algo_id == "ALGO4":
