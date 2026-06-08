@@ -96,15 +96,16 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
         mom_score = s.get("momentum_score", 0)
         trend_score = s.get("trend_score", 0)
 
-        # Compute proxy AlphaScore from available dimensions
-        alpha_score = (fund_score * 25 + mom_score * 25 + trend_score * 20 +
-                       s.get("accumulation_score", 0) * 15 + s.get("sentiment_score", 0) * 15)
+        # Compute AlphaScore from AVAILABLE fields
+        rsi_score = min(1, max(0, (rsi - 30) / 40))  # 0-1 based on RSI
+        trend_val = 1.0 if (above_50 and above_200) else (0.6 if above_50 else 0.2)
+        rs_val = min(1, max(0, rs_1m / 10)) if rs_1m > 0 else 0
+        vol_val = min(1, s.get("vol_ratio", 0) / 2)
+        minv = min(1, s.get("minervini_score", 0) / 8)
+        near_high = min(1, max(0, (100 + s.get("pct_from_52h", -50)) / 100))
+        alpha_score = (rsi_score * 20 + trend_val * 25 + rs_val * 20 + vol_val * 15 + minv * 10 + near_high * 10)
 
-        # Previous score check (was below 70, now above)
-        prev = (prev_scores or {}).get(sym, 0)
-        score_crossed = alpha_score >= 55 and prev < 55
-
-        if not score_crossed and alpha_score < 55:
+        if alpha_score < 55:
             continue
 
         # Momentum confirmation
@@ -112,8 +113,9 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
         trend_up = above_50 and above_200
         rs_positive = rs_1m > 0
 
-        # Quality filter
-        quality = roe > 10 and de < 1.5
+        # Quality filter (use cap_segment since ROE/DE not available)
+        cap = s.get("cap_segment", "")
+        quality = cap in ("large", "mid", "small")
 
         if rsi_rising and trend_up and rs_positive and quality:
             sl = round(price * 0.93, 2)  # 7% SL
@@ -362,13 +364,12 @@ def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
         oversold = rsi < 32
         sharp_drop = s.get("change_pct", 0) < -2 or s.get("wk_change", 0) < -5
         above_200 = s.get("above_200dma", False)  # Long-term trend intact
-        fund_score = s.get("fundamental_score", 0)
-        quality = fund_score > 0.3 or s.get("roe", 0) > 8
-        de_ok = s.get("debt_equity", 99) < 1.0
         cap = s.get("cap_segment", "small")
         large_mid = cap in ("large", "mid", "small")
+        # Quality: use trend + RS as proxy (no fundamental data available)
+        quality = s.get("rs_3m", 0) > -10  # Not in long-term decline
 
-        if oversold and sharp_drop and above_200 and quality and de_ok and large_mid:
+        if oversold and sharp_drop and above_200 and quality and large_mid:
             sl = round(price * 0.97, 2)  # 3% SL (tight)
             tgt = round(price * 1.05, 2)  # 5% target
 
