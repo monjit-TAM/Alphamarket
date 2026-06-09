@@ -9,7 +9,9 @@ const GROWW_API_BASE = "https://api.groww.in/v1";
 const DATA_SERVICE_URL = "http://127.0.0.1:5004";
 async function dataServiceQuote(symbol: string): Promise<any | null> {
   try {
-    const res = await fetch(`${DATA_SERVICE_URL}/data/equity/quote/${encodeURIComponent(symbol)}`);
+    const res = await fetch(`${DATA_SERVICE_URL}/data/equity/quote/${encodeURIComponent(symbol)}`, {
+      headers: { "X-API-Key": "alpha_data_internal_2026" }
+    });
     if (res.ok) return await res.json();
   } catch { /* data service unavailable, fall through to Groww */ }
   return null;
@@ -18,7 +20,7 @@ async function dataServiceBulkQuotes(symbols: string[]): Promise<Record<string, 
   try {
     const res = await fetch(`${DATA_SERVICE_URL}/data/equity/quotes`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-API-Key": "alpha_data_internal_2026" },
       body: JSON.stringify({ symbols }),
     });
     if (res.ok) {
@@ -467,6 +469,26 @@ export async function getLiveQuote(
     }
   }
 
+  // Try Kite for F&O quotes (faster, no rate limits)
+  try {
+    const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbol)}`, { 
+      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      signal: AbortSignal.timeout(5000) 
+    });
+    if (kiteRes.ok) {
+      const kd = await kiteRes.json();
+      const q = kd.quotes?.[symbol];
+      if (q && q.price > 0) {
+        const lp: LivePrice = {
+          symbol, exchange: "NSE", ltp: q.price, change: 0,
+          changePercent: 0, high: 0, low: 0, open: 0, close: 0, timestamp: Date.now(),
+        };
+        priceCache.set(cacheKey, { data: lp, expiry: Date.now() + CACHE_TTL });
+        return lp;
+      }
+    }
+  } catch { /* Kite unavailable, try Groww */ }
+
   try {
     const accessToken = await getAccessToken();
     const { exchange, segment, tradingSymbol } = resolveExchangeAndSegment(symbol, strategyType);
@@ -767,6 +789,19 @@ export async function getOptionChain(
   underlying: string,
   expiryDate: string
 ): Promise<OptionChainStrike[]> {
+  // Try Kite option chain first (faster, no rate limits)
+  try {
+    const kiteUrl = `http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(typeof arguments[0] === 'string' ? arguments[0] : symbol)}`;
+    const kiteRes = await fetch(kiteUrl, { 
+      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      signal: AbortSignal.timeout(8000) 
+    });
+    if (kiteRes.ok) {
+      const kd = await kiteRes.json();
+      if (kd.chain && kd.chain.length > 0) return kd;
+      if (kd.data && kd.data.length > 0) return kd;
+    }
+  } catch { /* Kite unavailable, fall through to Groww */ }
   // ── Try DYOR/Kite first (Groww option-chain API broken since ~May 2026) ──
   try {
     const kiteRes = await fetch(`http://127.0.0.1:8001/api/nfo/option-chain/${encodeURIComponent(underlying)}?expiry=${encodeURIComponent(expiryDate)}`, { signal: AbortSignal.timeout(15000) });
