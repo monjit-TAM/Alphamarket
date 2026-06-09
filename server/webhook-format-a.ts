@@ -117,8 +117,48 @@ function mapExitType(eventType: string, internalStatus: string): string | null {
 
 async function buildEquity(event: string, c: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "CALL_CLOSED" || event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || c.status === "Closed";
-  const recId = await nextRecId();
-  const legId = String(Number(recId) + 1);
+  
+  // For CLOSE events: reuse the original legId/recommendationId from the CALL_CREATED webhook
+  let recId: string;
+  let legId: string;
+  if (isClosed) {
+    const sym = c.stock_name || c.symbol || "";
+    const stratId = strategy?.slug || strategy?.id || "";
+    try {
+      const origRow = await db.execute(sql`
+        SELECT payload FROM broker_webhook_logs 
+        WHERE event IN ('CALL_CREATED','POSITION_CREATED')
+        AND payload::text LIKE ${"%" + sym + "%"}
+        AND payload::text LIKE ${"%" + stratId + "%"}
+        ORDER BY created_at DESC LIMIT 1
+      `);
+      const origRows = origRow?.rows || origRow || [];
+      if (origRows.length > 0) {
+        const origPayload = JSON.parse(String((origRows[0] as any).payload));
+        const origEq = origPayload?.data?.equityCall;
+        if (origEq?.legId && origPayload?.data?.recommendationId) {
+          legId = origEq.legId;
+          recId = origPayload.data.recommendationId;
+          console.log("[Format A] Reusing original IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
+        } else {
+          recId = await nextRecId();
+          legId = String(Number(recId) + 1);
+          console.warn("[Format A] Original payload missing IDs, generating new for:", sym);
+        }
+      } else {
+        recId = await nextRecId();
+        legId = String(Number(recId) + 1);
+        console.warn("[Format A] No original CALL_CREATED found for:", sym, stratId);
+      }
+    } catch (err: any) {
+      console.error("[Format A] ID lookup error:", err.message);
+      recId = await nextRecId();
+      legId = String(Number(recId) + 1);
+    }
+  } else {
+    recId = await nextRecId();
+    legId = String(Number(recId) + 1);
+  }
   const inst = await lookupInstrument(c.stock_name || c.symbol || "");
   const action = String(c.action || "BUY").toUpperCase();
   const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0;
