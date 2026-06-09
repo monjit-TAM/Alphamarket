@@ -789,30 +789,21 @@ export async function getOptionChain(
   underlying: string,
   expiryDate: string
 ): Promise<OptionChainStrike[]> {
-  // Try Kite option chain first (faster, no rate limits)
-  try {
-    const kiteUrl = `http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(typeof arguments[0] === 'string' ? arguments[0] : symbol)}`;
-    const kiteRes = await fetch(kiteUrl, { 
-      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
-      signal: AbortSignal.timeout(8000) 
-    });
-    if (kiteRes.ok) {
-      const kd = await kiteRes.json();
-      if (kd.chain && kd.chain.length > 0) return kd;
-      if (kd.data && kd.data.length > 0) return kd;
-    }
-  } catch { /* Kite unavailable, fall through to Groww */ }
+  // Kite option chain (primary)
   // ── Try DYOR/Kite first (Groww option-chain API broken since ~May 2026) ──
   try {
-    const kiteRes = await fetch(`http://127.0.0.1:8001/api/nfo/option-chain/${encodeURIComponent(underlying)}?expiry=${encodeURIComponent(expiryDate)}`, { signal: AbortSignal.timeout(15000) });
+    const kiteRes = await fetch(`http://127.0.0.1:8001/api/nfo/option-chain/${encodeURIComponent(underlying)}?expiry=${encodeURIComponent(expiryDate)}`, { 
+      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      signal: AbortSignal.timeout(15000) 
+    });
     if (kiteRes.ok) {
       const kiteData = await kiteRes.json();
       if (kiteData.chain && kiteData.chain.length > 0) {
         console.log(`[Kite] Option chain OK: ${underlying} ${expiryDate} — ${kiteData.chain.length} strikes`);
         return kiteData.chain.map((s: any) => ({
-          strikePrice: s.strikePrice,
-          ce: s.ce ? { ltp: s.ce.ltp || 0, change: 0, oi: 0, volume: 0, tradingSymbol: s.ce.tradingSymbol } : undefined,
-          pe: s.pe ? { ltp: s.pe.ltp || 0, change: 0, oi: 0, volume: 0, tradingSymbol: s.pe.tradingSymbol } : undefined,
+          strikePrice: s.strike || s.strikePrice,
+          ce: (s.ce || s.ce_symbol) ? { ltp: s.ce_ltp || s.ce?.ltp || 0, change: 0, oi: s.ce_oi || 0, volume: s.ce_volume || 0, tradingSymbol: s.ce_symbol || s.ce?.tradingSymbol || "" } : undefined,
+          pe: (s.pe || s.pe_symbol) ? { ltp: s.pe_ltp || s.pe?.ltp || 0, change: 0, oi: s.pe_oi || 0, volume: s.pe_volume || 0, tradingSymbol: s.pe_symbol || s.pe?.tradingSymbol || "" } : undefined,
         }));
       }
     }
