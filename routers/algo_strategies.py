@@ -487,6 +487,20 @@ async def test_webhook():
     return {"test": True, **result}
 
 
+
+
+@router.get("/sb-universe-export", summary="Export sb_universe for cross-server sync", include_in_schema=False)
+async def sb_universe_export():
+    import redis as _redis, json as _json
+    r = _redis.Redis(db=1)
+    data = r.get("sb_universe")
+    r.close()
+    if data:
+        from starlette.responses import Response
+        return Response(content=data, media_type="application/json")
+    return {"error": "empty"}
+
+
 def _get_backtest_symbols(algo_id):
     n50 = ["RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","BHARTIARTL","SBIN",
            "BAJFINANCE","ITC","KOTAKBANK","LT","HCLTECH","AXISBANK","ASIANPAINT","MARUTI",
