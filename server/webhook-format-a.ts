@@ -118,7 +118,7 @@ function mapExitType(eventType: string, internalStatus: string): string | null {
 async function buildEquity(event: string, c: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "CALL_CLOSED" || event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || c.status === "Closed";
   
-  // For CLOSE events: reuse the original legId/recommendationId from the CALL_CREATED webhook
+  // For CLOSE events: reuse original legId/recommendationId so broker can match
   let recId: string;
   let legId: string;
   if (isClosed) {
@@ -132,28 +132,19 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
         AND payload::text LIKE ${"%" + stratId + "%"}
         ORDER BY created_at DESC LIMIT 1
       `);
-      const origRows = origRow?.rows || origRow || [];
+      const origRows: any[] = (origRow as any)?.rows || origRow || [];
       if (origRows.length > 0) {
-        const origPayload = JSON.parse(String((origRows[0] as any).payload));
+        const origPayload = JSON.parse(String(origRows[0].payload));
         const origEq = origPayload?.data?.equityCall;
         if (origEq?.legId && origPayload?.data?.recommendationId) {
           legId = origEq.legId;
           recId = origPayload.data.recommendationId;
-          console.log("[Format A] Reusing original IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
-        } else {
-          recId = await nextRecId();
-          legId = String(Number(recId) + 1);
-          console.warn("[Format A] Original payload missing IDs, generating new for:", sym);
-        }
-      } else {
-        recId = await nextRecId();
-        legId = String(Number(recId) + 1);
-        console.warn("[Format A] No original CALL_CREATED found for:", sym, stratId);
-      }
+          console.log("[Format A] Reusing IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
+        } else { recId = await nextRecId(); legId = String(Number(recId) + 1); }
+      } else { recId = await nextRecId(); legId = String(Number(recId) + 1); }
     } catch (err: any) {
       console.error("[Format A] ID lookup error:", err.message);
-      recId = await nextRecId();
-      legId = String(Number(recId) + 1);
+      recId = await nextRecId(); legId = String(Number(recId) + 1);
     }
   } else {
     recId = await nextRecId();
@@ -257,35 +248,29 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     recId = await nextRecId();
     if (groupId) multiLegRecIdCache[groupId] = recId;
   }
-  // For CLOSE events: reuse original legId/recommendationId from POSITION_CREATED
+  // For CLOSE events: reuse original legId/recommendationId
   let legId: string;
   if (isClosed) {
     const sym = p.symbol || p.stock_name || "";
     const stratId = strategy?.slug || strategy?.id || "";
     try {
-      const origRow = await db.execute(sql\`
+      const origRow = await db.execute(sql`
         SELECT payload FROM broker_webhook_logs 
         WHERE event IN ('POSITION_CREATED','CALL_CREATED')
-        AND payload::text LIKE \${"%" + sym + "%"}
-        AND payload::text LIKE \${"%" + stratId + "%"}
+        AND payload::text LIKE ${"%" + sym + "%"}
+        AND payload::text LIKE ${"%" + stratId + "%"}
         ORDER BY created_at DESC LIMIT 1
-      \`);
-      const origRows = origRow?.rows || origRow || [];
+      `);
+      const origRows: any[] = (origRow as any)?.rows || origRow || [];
       if (origRows.length > 0) {
-        const origPayload = JSON.parse(String((origRows[0] as any).payload));
+        const origPayload = JSON.parse(String(origRows[0].payload));
         const origFno = origPayload?.data?.fnoCall?.[0];
         if (origFno?.legId && origPayload?.data?.recommendationId) {
           legId = origFno.legId;
           recId = origPayload.data.recommendationId;
           console.log("[Format A] Reusing FnO IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
-        } else {
-          legId = String(await nextRecId());
-          console.warn("[Format A] FnO original missing IDs, new for:", sym);
-        }
-      } else {
-        legId = String(await nextRecId());
-        console.warn("[Format A] No FnO POSITION_CREATED found for:", sym, stratId);
-      }
+        } else { legId = String(await nextRecId()); }
+      } else { legId = String(await nextRecId()); }
     } catch (err: any) {
       console.error("[Format A] FnO ID lookup error:", err.message);
       legId = String(await nextRecId());
