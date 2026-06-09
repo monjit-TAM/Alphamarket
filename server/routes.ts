@@ -741,20 +741,26 @@ export async function registerRoutes(
     try {
       const symbol = (req.query.symbol as string) || "NIFTY";
       const exchange = (req.query.exchange as string) || "NSE";
+      // Route ALL expiries through DYOR Kite API (primary, reliable)
+      const isMCX = exchange === "MCX";
+      const kiteUrl = isMCX
+        ? `http://localhost:8001/api/commodity/options/${encodeURIComponent(symbol.toUpperCase())}`
+        : `http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(symbol)}`;
+      try {
+        const kiteRes = await fetch(kiteUrl, {
+          headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+          signal: AbortSignal.timeout(10000)
+        });
+        if (kiteRes.ok) {
+          const kd = await kiteRes.json();
+          const expiries = kd.expiries || [];
+          if (expiries.length > 0) return res.json(expiries);
+        }
+      } catch (e) { console.error("[Kite expiries]", e); }
+      // Fallback to Groww only if Kite fails
       const now = new Date();
       const year = parseInt(req.query.year as string) || now.getFullYear();
       const month = parseInt(req.query.month as string) || (now.getMonth() + 1);
-      // MCX commodities: use DYOR Kite API
-      if (exchange === "MCX") {
-        try {
-          const dRes = await fetch("http://localhost:8001/api/commodity/options/" + encodeURIComponent(symbol.toUpperCase()), { signal: AbortSignal.timeout(10000) });
-          if (dRes.ok) {
-            const d = await dRes.json();
-            return res.json(d.expiries || []);
-          }
-        } catch(e) { console.error("[MCX expiries]", e); }
-        return res.json([]);
-      }
       const expiries = await getOptionChainExpiries(exchange, symbol, year, month);
       res.json(expiries);
     } catch (err: any) {
