@@ -257,7 +257,42 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     recId = await nextRecId();
     if (groupId) multiLegRecIdCache[groupId] = recId;
   }
-  const legId = String(await nextRecId());
+  // For CLOSE events: reuse original legId/recommendationId from POSITION_CREATED
+  let legId: string;
+  if (isClosed) {
+    const sym = p.symbol || p.stock_name || "";
+    const stratId = strategy?.slug || strategy?.id || "";
+    try {
+      const origRow = await db.execute(sql\`
+        SELECT payload FROM broker_webhook_logs 
+        WHERE event IN ('POSITION_CREATED','CALL_CREATED')
+        AND payload::text LIKE \${"%" + sym + "%"}
+        AND payload::text LIKE \${"%" + stratId + "%"}
+        ORDER BY created_at DESC LIMIT 1
+      \`);
+      const origRows = origRow?.rows || origRow || [];
+      if (origRows.length > 0) {
+        const origPayload = JSON.parse(String((origRows[0] as any).payload));
+        const origFno = origPayload?.data?.fnoCall?.[0];
+        if (origFno?.legId && origPayload?.data?.recommendationId) {
+          legId = origFno.legId;
+          recId = origPayload.data.recommendationId;
+          console.log("[Format A] Reusing FnO IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
+        } else {
+          legId = String(await nextRecId());
+          console.warn("[Format A] FnO original missing IDs, new for:", sym);
+        }
+      } else {
+        legId = String(await nextRecId());
+        console.warn("[Format A] No FnO POSITION_CREATED found for:", sym, stratId);
+      }
+    } catch (err: any) {
+      console.error("[Format A] FnO ID lookup error:", err.message);
+      legId = String(await nextRecId());
+    }
+  } else {
+    legId = String(await nextRecId());
+  }
   const action = String(p.buy_sell || "BUY").toUpperCase();
   const strike = toNum(p.strike_price) ?? 0;
 
