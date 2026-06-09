@@ -118,37 +118,35 @@ function mapExitType(eventType: string, internalStatus: string): string | null {
 async function buildEquity(event: string, c: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "CALL_CLOSED" || event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || c.status === "Closed";
   
-  // For CLOSE events: reuse original legId/recommendationId so broker can match
+  // For CLOSE/MODIFY events: reuse original recommendationId so broker can match
   let recId: string;
   let legId: string;
-  if (isClosed) {
-    const sym = c.stock_name || c.symbol || "";
-    const stratId = strategy?.slug || strategy?.id || "";
+  const callId = c.id || c.uid;
+  if (isClosed && callId) {
     try {
-      const origRow = await db.execute(sql`
-        SELECT payload FROM broker_webhook_logs 
-        WHERE event IN ('CALL_CREATED','POSITION_CREATED')
-        AND payload::text LIKE ${"%" + sym + "%"}
-        AND payload::text LIKE ${"%" + stratId + "%"}
-        ORDER BY created_at DESC LIMIT 1
-      `);
-      const origRows: any[] = (origRow as any)?.rows || origRow || [];
-      if (origRows.length > 0) {
-        const origPayload = JSON.parse(String(origRows[0].payload));
-        const origEq = origPayload?.data?.equityCall;
-        if (origEq?.legId && origPayload?.data?.recommendationId) {
-          legId = origEq.legId;
-          recId = origPayload.data.recommendationId;
-          console.log("[Format A] Reusing IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
-        } else { recId = await nextRecId(); legId = String(Number(recId) + 1); }
-      } else { recId = await nextRecId(); legId = String(Number(recId) + 1); }
+      const existing = await db.execute(sql\`SELECT webhook_rec_id FROM calls WHERE id = \${callId}\`);
+      const storedRecId = (existing.rows[0] as any)?.webhook_rec_id;
+      if (storedRecId) {
+        recId = storedRecId;
+        legId = String(Number(recId) + 1);
+        console.log("[Format A] Reusing recId for CLOSE:", c.stock_name, "recId:", recId);
+      } else {
+        recId = await nextRecId();
+        legId = String(Number(recId) + 1);
+        console.log("[Format A] No stored recId for:", c.stock_name, callId);
+      }
     } catch (err: any) {
-      console.error("[Format A] ID lookup error:", err.message);
-      recId = await nextRecId(); legId = String(Number(recId) + 1);
+      console.error("[Format A] recId lookup error:", err.message);
+      recId = await nextRecId();
+      legId = String(Number(recId) + 1);
     }
   } else {
     recId = await nextRecId();
     legId = String(Number(recId) + 1);
+    // Store rec_id on CREATE for future CLOSE events
+    if (callId && !isClosed) {
+      try { await db.execute(sql\`UPDATE calls SET webhook_rec_id = \${recId} WHERE id = \${callId} AND webhook_rec_id IS NULL\`); } catch {}
+    }
   }
   const inst = await lookupInstrument(c.stock_name || c.symbol || "");
   const action = String(c.action || "BUY").toUpperCase();
@@ -248,35 +246,31 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     recId = await nextRecId();
     if (groupId) multiLegRecIdCache[groupId] = recId;
   }
-  // For CLOSE events: reuse original legId/recommendationId
+  // For CLOSE/MODIFY events: reuse original recommendationId
+  const posId = p.id || p.uid;
   let legId: string;
-  if (isClosed) {
-    const sym = p.symbol || p.stock_name || "";
-    const stratId = strategy?.slug || strategy?.id || "";
+  if (isClosed && posId) {
     try {
-      const origRow = await db.execute(sql`
-        SELECT payload FROM broker_webhook_logs 
-        WHERE event IN ('POSITION_CREATED','CALL_CREATED')
-        AND payload::text LIKE ${"%" + sym + "%"}
-        AND payload::text LIKE ${"%" + stratId + "%"}
-        ORDER BY created_at DESC LIMIT 1
-      `);
-      const origRows: any[] = (origRow as any)?.rows || origRow || [];
-      if (origRows.length > 0) {
-        const origPayload = JSON.parse(String(origRows[0].payload));
-        const origFno = origPayload?.data?.fnoCall?.[0];
-        if (origFno?.legId && origPayload?.data?.recommendationId) {
-          legId = origFno.legId;
-          recId = origPayload.data.recommendationId;
-          console.log("[Format A] Reusing FnO IDs for CLOSE:", sym, "legId:", legId, "recId:", recId);
-        } else { legId = String(await nextRecId()); }
-      } else { legId = String(await nextRecId()); }
+      const existing = await db.execute(sql\`SELECT webhook_rec_id FROM positions WHERE id = \${posId}\`);
+      const storedRecId = (existing.rows[0] as any)?.webhook_rec_id;
+      if (storedRecId) {
+        recId = storedRecId;
+        legId = String(Number(recId) + 1);
+        console.log("[Format A] Reusing FnO recId for CLOSE:", p.symbol, "recId:", recId);
+      } else {
+        legId = String(await nextRecId());
+        console.log("[Format A] No stored FnO recId for:", p.symbol, posId);
+      }
     } catch (err: any) {
-      console.error("[Format A] FnO ID lookup error:", err.message);
+      console.error("[Format A] FnO recId lookup error:", err.message);
       legId = String(await nextRecId());
     }
   } else {
     legId = String(await nextRecId());
+    // Store rec_id on CREATE for future CLOSE events
+    if (posId && !isClosed) {
+      try { await db.execute(sql\`UPDATE positions SET webhook_rec_id = \${recId} WHERE id = \${posId} AND webhook_rec_id IS NULL\`); } catch {}
+    }
   }
   const action = String(p.buy_sell || "BUY").toUpperCase();
   const strike = toNum(p.strike_price) ?? 0;
