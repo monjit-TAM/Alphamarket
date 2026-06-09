@@ -790,6 +790,25 @@ export async function registerRoutes(
         } catch(e) { console.error("[MCX chain]", e); }
         return res.json([]);
       }
+      // Kite primary for all option chains (NSE/NFO)
+      try {
+        const kiteChainRes = await fetch(`http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(symbol)}?expiry=${encodeURIComponent(expiry)}`, {
+          headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+          signal: AbortSignal.timeout(10000)
+        });
+        if (kiteChainRes.ok) {
+          const kcd = await kiteChainRes.json();
+          if (kcd.chain && kcd.chain.length > 0) {
+            const mapped = kcd.chain.map((s: any) => ({
+              strikePrice: s.strike || s.strikePrice,
+              ce: (s.ce_symbol || s.ce) ? { ltp: s.ce_ltp || s.ce?.ltp || 0, change: 0, oi: s.ce_oi || 0, volume: s.ce_volume || 0, tradingSymbol: s.ce_symbol || s.ce?.tradingSymbol || "" } : undefined,
+              pe: (s.pe_symbol || s.pe) ? { ltp: s.pe_ltp || s.pe?.ltp || 0, change: 0, oi: s.pe_oi || 0, volume: s.pe_volume || 0, tradingSymbol: s.pe_symbol || s.pe?.tradingSymbol || "" } : undefined,
+            }));
+            return res.json(mapped);
+          }
+        }
+      } catch (kErr: any) { console.error("[Kite chain direct]", kErr.message); }
+      // Fallback to Groww
       const chain = await getOptionChain(exchange, symbol, expiry);
       res.json(chain);
     } catch (err: any) {
