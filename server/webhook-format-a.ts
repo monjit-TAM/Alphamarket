@@ -124,7 +124,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
   const callId = c.id || c.uid;
   if (isClosed && callId) {
     try {
-      const existing = await db.execute(sql\`SELECT webhook_rec_id FROM calls WHERE id = \${callId}\`);
+      const existing = await db.execute(sql`SELECT webhook_rec_id FROM calls WHERE id = \${callId}\`);
       const storedRecId = (existing.rows[0] as any)?.webhook_rec_id;
       if (storedRecId) {
         recId = storedRecId;
@@ -145,7 +145,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
     legId = String(Number(recId) + 1);
     // Store rec_id on CREATE for future CLOSE events
     if (callId && !isClosed) {
-      try { await db.execute(sql\`UPDATE calls SET webhook_rec_id = \${recId} WHERE id = \${callId} AND webhook_rec_id IS NULL\`); } catch {}
+      try { await db.execute(sql`UPDATE calls SET webhook_rec_id = \${recId} WHERE id = \${callId} AND webhook_rec_id IS NULL\`); } catch {}
     }
   }
   const inst = await lookupInstrument(c.stock_name || c.symbol || "");
@@ -251,7 +251,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
   let legId: string;
   if (isClosed && posId) {
     try {
-      const existing = await db.execute(sql\`SELECT webhook_rec_id FROM positions WHERE id = \${posId}\`);
+      const existing = await db.execute(sql`SELECT webhook_rec_id FROM positions WHERE id = \${posId}\`);
       const storedRecId = (existing.rows[0] as any)?.webhook_rec_id;
       if (storedRecId) {
         recId = storedRecId;
@@ -269,7 +269,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     legId = String(await nextRecId());
     // Store rec_id on CREATE for future CLOSE events
     if (posId && !isClosed) {
-      try { await db.execute(sql\`UPDATE positions SET webhook_rec_id = \${recId} WHERE id = \${posId} AND webhook_rec_id IS NULL\`); } catch {}
+      try { await db.execute(sql`UPDATE positions SET webhook_rec_id = \${recId} WHERE id = \${posId} AND webhook_rec_id IS NULL\`); } catch {}
     }
   }
   const action = String(p.buy_sell || "BUY").toUpperCase();
