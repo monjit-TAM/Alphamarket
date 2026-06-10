@@ -490,6 +490,12 @@ export async function buildFormatAPayload(
       const fnoTokenLeg = await lookupFnoInstrument(ln.symbol || "", strike, fnoSeriesLeg, ln.expiry, isCommodityLeg ? "MCX" : "NSE");
       const entryPrice = toNum(ln.entry_price) ?? 0;
 
+      // Store recId on each individual position for future CLOSE matching
+      const posLegId = ln.id || ln.uid;
+      if (posLegId) {
+        try { await db.execute(sql`UPDATE positions SET webhook_rec_id = ${recId} WHERE id = ${posLegId} AND webhook_rec_id IS NULL`); } catch {}
+      }
+
       legs.push({
         exchange: isCommodityLeg ? "MCX" : "NSE",
         legId,
