@@ -152,7 +152,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
   const action = String(c.action || "BUY").toUpperCase();
   const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0;
   const tp = toNum(c.target_price);
-  const profitGoal = toStr(c.profit_goal) || ((bp > 0 && tp) ? String(Math.round(((tp - bp) / bp) * 100)) : null);
+  const profitGoal = toStr(c.profit_goal) || ((bp > 0 && tp) ? String(Math.round(Math.abs((tp - bp) / bp) * 100)) : null);
 
   // equityCall object
   const equityCall: any = {
