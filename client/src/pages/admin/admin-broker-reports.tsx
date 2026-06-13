@@ -18,19 +18,24 @@ function Stat({ label, value, color }: { label: string; value: string | number; 
 }
 
 export default function AdminBrokerReports() {
-  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0]; });
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); return d.toISOString().split("T")[0]; });
   const [to, setTo] = useState(() => new Date().toISOString().split("T")[0]);
   const [broker, setBroker] = useState("");
-  const [period, setPeriod] = useState("daily");
+  const [period, setPeriod] = useState("weekly");
   const [data, setData] = useState<any>(null);
+  const [perfData, setPerfData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
 
   const loadReport = async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams({ from, to, broker, period });
-      const d = await api(`/api/admin/broker-reports?${params}`);
+      const [d, p] = await Promise.all([
+        api(`/api/admin/broker-reports?${params}`),
+        api(`/api/admin/broker-reports/advisor-performance?from=${from}&to=${to}`)
+      ]);
       setData(d);
+      setPerfData(p);
     } catch (e) { console.error(e); }
     setLoading(false);
   };
@@ -50,6 +55,8 @@ export default function AdminBrokerReports() {
   };
 
   const s = data?.summary || {};
+  const advisors = perfData?.advisors || [];
+  const ytd = perfData?.ytd || {};
 
   return (
     <div style={{ maxWidth: 1200 }}>
@@ -59,9 +66,10 @@ export default function AdminBrokerReports() {
           <button onClick={() => setPreset(0, "daily")} style={{ padding: "5px 10px", border: `1px solid ${period === "daily" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "daily" ? "#EBF8FF" : "#fff", color: period === "daily" ? C.blue : C.text, cursor: "pointer" }}>Today</button>
           <button onClick={() => setPreset(6, "weekly")} style={{ padding: "5px 10px", border: `1px solid ${period === "weekly" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "weekly" ? "#EBF8FF" : "#fff", color: period === "weekly" ? C.blue : C.text, cursor: "pointer" }}>7 Days</button>
           <button onClick={() => setPreset(29, "monthly")} style={{ padding: "5px 10px", border: `1px solid ${period === "monthly" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "monthly" ? "#EBF8FF" : "#fff", color: period === "monthly" ? C.blue : C.text, cursor: "pointer" }}>30 Days</button>
-          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }} />
+          <button onClick={() => { const d = new Date(); setFrom(d.getFullYear() + "-01-01"); setTo(d.toISOString().split("T")[0]); setPeriod("ytd"); }} style={{ padding: "5px 10px", border: `1px solid ${period === "ytd" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "ytd" ? "#EBF8FF" : "#fff", color: period === "ytd" ? C.blue : C.text, cursor: "pointer" }}>YTD</button>
+          <input type="date" value={from} onChange={e => { setFrom(e.target.value); setPeriod("custom"); }} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }} />
           <span style={{ fontSize: 12, color: C.muted }}>to</span>
-          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }} />
+          <input type="date" value={to} onChange={e => { setTo(e.target.value); setPeriod("custom"); }} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }} />
           <select value={broker} onChange={e => setBroker(e.target.value)} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }}>
             <option value="">All Brokers</option>
             <option value="Upstox">Upstox</option>
@@ -73,19 +81,20 @@ export default function AdminBrokerReports() {
 
       {/* Download buttons */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button onClick={() => download("xlsx")} style={{ padding: "6px 14px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Download Excel</button>
-        <button onClick={() => download("csv")} style={{ padding: "6px 14px", background: C.amber, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Download CSV</button>
+        <button onClick={() => download("xlsx")} style={{ padding: "6px 14px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>⬇ Download Excel</button>
+        <button onClick={() => download("csv")} style={{ padding: "6px 14px", background: C.amber, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>⬇ Download CSV</button>
       </div>
 
       {loading ? <div style={{ textAlign: "center", padding: 40, color: C.muted }}>Loading report...</div> : data ? (
         <>
           {/* Summary Stats */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 24 }}>
             <Stat label="Published" value={s.total_published || 0} color={C.blue} />
+            <Stat label="Open" value={advisors.reduce((a: number, v: any) => a + (v.total_open || 0), 0)} color={C.amber} />
             <Stat label="Closed" value={s.total_closed || 0} color={C.muted} />
-            <Stat label="Target Achieved" value={s.total_targets || 0} color={C.green} />
+            <Stat label="Target Hit" value={s.total_targets || 0} color={C.green} />
             <Stat label="SL Triggered" value={s.total_stoploss || 0} color={C.red} />
-            <Stat label="Errors" value={s.total_errors || 0} color={s.total_errors > 0 ? C.red : C.muted} />
+            <Stat label="Active Advisors" value={s.active_advisors || 0} color={C.blue} />
           </div>
 
           {/* Broker Breakdown */}
@@ -94,7 +103,7 @@ export default function AdminBrokerReports() {
               <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Broker Breakdown</h2>
               <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}` }}>
                 <thead><tr style={{ background: C.bg }}>
-                  {["Broker", "Published", "Closed", "Target Hit", "SL Hit", "Success", "Errors"].map(h => (
+                  {["Broker", "Published", "Closed", "Target Hit", "SL Hit", "Webhook OK", "Errors"].map(h => (
                     <th key={h} style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
                   ))}
                 </tr></thead>
@@ -107,7 +116,7 @@ export default function AdminBrokerReports() {
                       <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{b.targets}</td>
                       <td style={{ padding: "8px 12px", fontSize: 13, color: C.red }}>{b.stoploss}</td>
                       <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{b.success}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, color: b.errors > 0 ? C.red : C.muted }}>{b.errors}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: parseInt(b.errors) > 0 ? C.red : C.muted }}>{b.errors}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -115,35 +124,49 @@ export default function AdminBrokerReports() {
             </div>
           )}
 
-          {/* Advisor Performance */}
+          {/* Advisor Performance — Enhanced */}
           <div style={{ marginBottom: 24 }}>
             <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Advisor Performance</h2>
-            <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}` }}>
+            <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}`, minWidth: 900 }}>
               <thead><tr style={{ background: C.bg }}>
-                {["Advisor", "Published", "Closed", "Target Hit", "SL Hit", "Modified", "Win Rate", "Success", "Failed"].map(h => (
-                  <th key={h} style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                {["Advisor", "Open", "Closed", "Profitable", "Loss", "Win Rate", "Avg Return %", "Abs Return ₹", "YTD Return ₹", "Status"].map(h => (
+                  <th key={h} style={{ padding: "10px 8px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
-                {(data.advisors || []).map((a: any, i: number) => {
-                  const total = (parseInt(a.targets_achieved) || 0) + (parseInt(a.stoploss_triggered) || 0);
-                  const winRate = total > 0 ? Math.round((parseInt(a.targets_achieved) || 0) / total * 100) : 0;
+                {advisors.map((a: any, i: number) => {
+                  const ytdData = ytd[a.advisor] || {};
                   return (
-                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
-                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>{a.advisor_name}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.blue }}>{a.calls_published}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13 }}>{a.calls_closed}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{a.targets_achieved}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.red }}>{a.stoploss_triggered}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13 }}>{a.calls_modified}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, color: winRate >= 50 ? C.green : winRate > 0 ? C.amber : C.muted }}>{winRate}%</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{a.successful}</td>
-                      <td style={{ padding: "8px 12px", fontSize: 13, color: parseInt(a.failed) > 0 ? C.red : C.muted }}>{a.failed}</td>
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}`, background: a.is_weak ? "#FFF5F5" : "transparent" }}>
+                      <td style={{ padding: "8px", fontSize: 13, fontWeight: 600, maxWidth: 160 }}>
+                        {a.advisor}
+                        {a.is_weak && <span style={{ display: "block", fontSize: 9, color: C.red, marginTop: 2 }}>⚠ Weak</span>}
+                      </td>
+                      <td style={{ padding: "8px", fontSize: 13, color: C.amber, fontWeight: 600 }}>{a.total_open}</td>
+                      <td style={{ padding: "8px", fontSize: 13 }}>{a.total_closed}</td>
+                      <td style={{ padding: "8px", fontSize: 13, color: C.green, fontWeight: 600 }}>{a.total_profitable}</td>
+                      <td style={{ padding: "8px", fontSize: 13, color: C.red }}>{a.total_loss}</td>
+                      <td style={{ padding: "8px", fontSize: 13, fontWeight: 700, color: a.win_rate >= 50 ? C.green : a.win_rate > 0 ? C.amber : C.muted }}>{a.win_rate}%</td>
+                      <td style={{ padding: "8px", fontSize: 13, fontWeight: 600, color: a.equity_avg_return >= 0 ? C.green : C.red }}>{a.equity_avg_return || 0}%</td>
+                      <td style={{ padding: "8px", fontSize: 13, fontWeight: 600, color: a.equity_total_return >= 0 ? C.green : C.red }}>₹{a.equity_total_return || 0}</td>
+                      <td style={{ padding: "8px", fontSize: 13, fontWeight: 600, color: (ytdData.ytd_total_return || 0) >= 0 ? C.green : C.red }}>₹{ytdData.ytd_total_return || 0}</td>
+                      <td style={{ padding: "8px", fontSize: 11 }}>
+                        {a.is_weak ? (
+                          <div style={{ background: "#FFF5F5", border: `1px solid ${C.red}`, borderRadius: 4, padding: "4px 6px" }}>
+                            {a.weaknesses.map((w: string, j: number) => <div key={j} style={{ color: C.red, fontSize: 10 }}>• {w}</div>)}
+                          </div>
+                        ) : (
+                          <span style={{ color: C.green, fontSize: 11, fontWeight: 600 }}>✓ Good</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
+                {advisors.length === 0 && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: C.muted }}>No data for this period</td></tr>}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Daily Breakdown */}

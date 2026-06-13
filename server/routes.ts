@@ -7969,6 +7969,159 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
+  // ── Enhanced Advisor Performance Report ──
+  app.get("/api/admin/broker-reports/advisor-performance", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+
+      // Get advisor-wise call performance from calls table
+      const equityPerf = await db.execute(sql.raw(`
+        SELECT 
+          u.company_name as advisor_name,
+          u.username,
+          COUNT(*) FILTER (WHERE c.status = 'Active') as open_calls,
+          COUNT(*) FILTER (WHERE c.status = 'Closed') as closed_calls,
+          COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') as profitable_buy,
+          COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Buy') as loss_buy,
+          COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Sell') as profitable_sell,
+          COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Sell') as loss_sell,
+          ROUND(AVG(CASE 
+            WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Buy' 
+            THEN ((c.sell_price - c.buy_range_start) / c.buy_range_start) * 100 
+            WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Sell' 
+            THEN ((c.buy_range_start - c.sell_price) / c.buy_range_start) * 100 
+          END)::numeric, 2) as avg_return_pct,
+          ROUND(SUM(CASE 
+            WHEN c.status = 'Closed' AND c.action = 'Buy' THEN c.sell_price - c.buy_range_start 
+            WHEN c.status = 'Closed' AND c.action = 'Sell' THEN c.buy_range_start - c.sell_price 
+            ELSE 0 END)::numeric, 2) as total_absolute_return,
+          COUNT(*) as total_calls
+        FROM calls c
+        JOIN strategies s ON s.id = c.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        WHERE c.webhook_rec_id IS NOT NULL
+          AND c.created_at >= '${from}T00:00:00Z'
+          AND c.created_at <= '${to}T23:59:59Z'
+        GROUP BY u.company_name, u.username
+      `));
+
+      // Get advisor-wise position performance
+      const fnoPerf = await db.execute(sql.raw(`
+        SELECT 
+          u.company_name as advisor_name,
+          u.username,
+          COUNT(*) FILTER (WHERE p.status = 'Active') as open_positions,
+          COUNT(*) FILTER (WHERE p.status = 'Closed') as closed_positions,
+          COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price > p.entry_price AND COALESCE(p.buy_sell, 'Buy') = 'Buy') as profitable_buy,
+          COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price < p.entry_price AND COALESCE(p.buy_sell, 'Buy') = 'Buy') as loss_buy,
+          COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price < p.entry_price AND COALESCE(p.buy_sell, 'Buy') = 'Sell') as profitable_sell,
+          COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price > p.entry_price AND COALESCE(p.buy_sell, 'Buy') = 'Sell') as loss_sell,
+          ROUND(AVG(CASE 
+            WHEN p.status = 'Closed' AND p.entry_price > 0 AND COALESCE(p.buy_sell, 'Buy') = 'Buy'
+            THEN ((p.exit_price - p.entry_price) / p.entry_price) * 100
+            WHEN p.status = 'Closed' AND p.entry_price > 0 AND COALESCE(p.buy_sell, 'Buy') = 'Sell'
+            THEN ((p.entry_price - p.exit_price) / p.entry_price) * 100
+          END)::numeric, 2) as avg_return_pct,
+          COUNT(*) as total_positions
+        FROM positions p
+        JOIN strategies s ON s.id = p.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        WHERE p.webhook_rec_id IS NOT NULL
+          AND p.created_at >= '${from}T00:00:00Z'
+          AND p.created_at <= '${to}T23:59:59Z'
+        GROUP BY u.company_name, u.username
+      `));
+
+      // YTD performance
+      const ytdStart = new Date().getFullYear() + '-01-01';
+      const ytdPerf = await db.execute(sql.raw(`
+        SELECT 
+          u.company_name as advisor_name,
+          ROUND(AVG(CASE 
+            WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Buy' 
+            THEN ((c.sell_price - c.buy_range_start) / c.buy_range_start) * 100 
+            WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Sell' 
+            THEN ((c.buy_range_start - c.sell_price) / c.buy_range_start) * 100 
+          END)::numeric, 2) as ytd_avg_return,
+          ROUND(SUM(CASE 
+            WHEN c.status = 'Closed' AND c.action = 'Buy' THEN c.sell_price - c.buy_range_start 
+            WHEN c.status = 'Closed' AND c.action = 'Sell' THEN c.buy_range_start - c.sell_price 
+            ELSE 0 END)::numeric, 2) as ytd_total_return,
+          COUNT(*) FILTER (WHERE c.status = 'Closed') as ytd_closed,
+          COUNT(*) FILTER (WHERE c.status = 'Active') as ytd_open
+        FROM calls c
+        JOIN strategies s ON s.id = c.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        WHERE c.webhook_rec_id IS NOT NULL AND c.created_at >= '${ytdStart}T00:00:00Z'
+        GROUP BY u.company_name
+      `));
+
+      // Merge equity + F&O per advisor
+      const advisorMap: Record<string, any> = {};
+      (equityPerf.rows as any[]).forEach((r: any) => {
+        const name = r.advisor_name || r.username;
+        advisorMap[name] = {
+          advisor: name,
+          equity_open: parseInt(r.open_calls) || 0,
+          equity_closed: parseInt(r.closed_calls) || 0,
+          equity_profitable: (parseInt(r.profitable_buy) || 0) + (parseInt(r.profitable_sell) || 0),
+          equity_loss: (parseInt(r.loss_buy) || 0) + (parseInt(r.loss_sell) || 0),
+          equity_avg_return: parseFloat(r.avg_return_pct) || 0,
+          equity_total_return: parseFloat(r.total_absolute_return) || 0,
+          fno_open: 0, fno_closed: 0, fno_profitable: 0, fno_loss: 0, fno_avg_return: 0,
+        };
+      });
+      (fnoPerf.rows as any[]).forEach((r: any) => {
+        const name = r.advisor_name || r.username;
+        if (!advisorMap[name]) advisorMap[name] = { advisor: name, equity_open: 0, equity_closed: 0, equity_profitable: 0, equity_loss: 0, equity_avg_return: 0, equity_total_return: 0 };
+        advisorMap[name].fno_open = parseInt(r.open_positions) || 0;
+        advisorMap[name].fno_closed = parseInt(r.closed_positions) || 0;
+        advisorMap[name].fno_profitable = (parseInt(r.profitable_buy) || 0) + (parseInt(r.profitable_sell) || 0);
+        advisorMap[name].fno_loss = (parseInt(r.loss_buy) || 0) + (parseInt(r.loss_sell) || 0);
+        advisorMap[name].fno_avg_return = parseFloat(r.avg_return_pct) || 0;
+      });
+
+      // Calculate combined metrics
+      const advisors = Object.values(advisorMap).map((a: any) => {
+        const totalOpen = a.equity_open + a.fno_open;
+        const totalClosed = a.equity_closed + a.fno_closed;
+        const totalProfitable = a.equity_profitable + a.fno_profitable;
+        const totalLoss = a.equity_loss + a.fno_loss;
+        const winRate = (totalProfitable + totalLoss) > 0 ? Math.round((totalProfitable / (totalProfitable + totalLoss)) * 100) : 0;
+        const totalCalls = totalOpen + totalClosed;
+        
+        // Weakness analysis
+        const weaknesses: string[] = [];
+        if (totalCalls < 3) weaknesses.push("Low activity — fewer than 3 calls");
+        if (winRate < 30 && totalClosed >= 2) weaknesses.push("Low win rate — below 30%");
+        if (a.equity_avg_return < -2) weaknesses.push("Negative avg equity return");
+        if (totalOpen > 0 && totalClosed === 0) weaknesses.push("No closed calls — all still open");
+        if (totalLoss > totalProfitable && totalClosed >= 3) weaknesses.push("More losses than wins");
+
+        return {
+          ...a,
+          total_open: totalOpen,
+          total_closed: totalClosed,
+          total_profitable: totalProfitable,
+          total_loss: totalLoss,
+          win_rate: winRate,
+          total_calls: totalCalls,
+          is_weak: weaknesses.length > 0,
+          weaknesses,
+        };
+      }).sort((a: any, b: any) => b.total_calls - a.total_calls);
+
+      // YTD map
+      const ytdMap: Record<string, any> = {};
+      (ytdPerf.rows as any[]).forEach((r: any) => {
+        ytdMap[r.advisor_name] = { ytd_avg_return: parseFloat(r.ytd_avg_return) || 0, ytd_total_return: parseFloat(r.ytd_total_return) || 0, ytd_closed: parseInt(r.ytd_closed) || 0, ytd_open: parseInt(r.ytd_open) || 0 };
+      });
+
+      res.json({ period: { from, to }, advisors, ytd: ytdMap });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
   // ── Download Broker Report (XLSX / PDF) ──
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
     try {
