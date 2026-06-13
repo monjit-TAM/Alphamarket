@@ -12,7 +12,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Users, BarChart3, LayoutDashboard, LogOut, Settings, IndianRupee, PieChart, Link2 } from "lucide-react";
+import { Users, BarChart3, LayoutDashboard, LogOut, Settings, IndianRupee, PieChart, Link2, TrendingUp } from "lucide-react";
 
 import AdminAdvisors from "./admin-advisors";
 import AdminStrategies from "./admin-strategies";
@@ -22,6 +22,8 @@ import AdminMonetization from "./admin-monetization";
 import AdminAdvisorBreakup from "./admin-advisor-breakup";
 import BrokerAdmin from "./BrokerAdmin";
 import AdminCalls from "./admin-calls";
+import AdminBrokerCalls from "./admin-broker-calls";
+import AdminBrokerReports from "./admin-broker-reports";
 
 const sidebarItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/admin" },

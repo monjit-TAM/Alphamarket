@@ -1,0 +1,176 @@
+import { useState, useEffect } from "react";
+
+const C = { brand: "#CC2936", dark: "#1A1A2E", bg: "#F8F9FA", panel: "#FFFFFF", border: "#E2E8F0", text: "#1A202C", muted: "#718096", green: "#38A169", red: "#E53E3E", amber: "#D97706", blue: "#3182CE" };
+
+async function api(path: string) {
+  const res = await fetch(path, { credentials: "include" });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+function Stat({ label, value, color }: { label: string; value: string | number; color?: string }) {
+  return (
+    <div style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 8, padding: 16, textAlign: "center" }}>
+      <div style={{ fontSize: 24, fontWeight: 700, color: color || C.text }}>{value}</div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>{label}</div>
+    </div>
+  );
+}
+
+export default function AdminBrokerReports() {
+  const [from, setFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 1); return d.toISOString().split("T")[0]; });
+  const [to, setTo] = useState(() => new Date().toISOString().split("T")[0]);
+  const [broker, setBroker] = useState("");
+  const [period, setPeriod] = useState("daily");
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const loadReport = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ from, to, broker, period });
+      const d = await api(`/api/admin/broker-reports?${params}`);
+      setData(d);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  };
+
+  useEffect(() => { loadReport(); }, []);
+
+  const setPreset = (days: number, label: string) => {
+    const end = new Date();
+    const start = new Date(); start.setDate(start.getDate() - days);
+    setFrom(start.toISOString().split("T")[0]);
+    setTo(end.toISOString().split("T")[0]);
+    setPeriod(label);
+  };
+
+  const download = (format: string) => {
+    window.location.href = `/api/admin/broker-reports/download?from=${from}&to=${to}&broker=${broker}&format=${format}`;
+  };
+
+  const s = data?.summary || {};
+
+  return (
+    <div style={{ maxWidth: 1200 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 8 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 700 }}>Broker Performance Report</h1>
+        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={() => setPreset(0, "daily")} style={{ padding: "5px 10px", border: `1px solid ${period === "daily" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "daily" ? "#EBF8FF" : "#fff", color: period === "daily" ? C.blue : C.text, cursor: "pointer" }}>Today</button>
+          <button onClick={() => setPreset(6, "weekly")} style={{ padding: "5px 10px", border: `1px solid ${period === "weekly" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "weekly" ? "#EBF8FF" : "#fff", color: period === "weekly" ? C.blue : C.text, cursor: "pointer" }}>7 Days</button>
+          <button onClick={() => setPreset(29, "monthly")} style={{ padding: "5px 10px", border: `1px solid ${period === "monthly" ? C.blue : C.border}`, borderRadius: 6, fontSize: 12, background: period === "monthly" ? "#EBF8FF" : "#fff", color: period === "monthly" ? C.blue : C.text, cursor: "pointer" }}>30 Days</button>
+          <input type="date" value={from} onChange={e => setFrom(e.target.value)} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }} />
+          <span style={{ fontSize: 12, color: C.muted }}>to</span>
+          <input type="date" value={to} onChange={e => setTo(e.target.value)} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }} />
+          <select value={broker} onChange={e => setBroker(e.target.value)} style={{ padding: "5px 8px", border: `1px solid ${C.border}`, borderRadius: 6, fontSize: 12 }}>
+            <option value="">All Brokers</option>
+            <option value="Upstox">Upstox</option>
+            <option value="Dreamstreet">Dreamstreet</option>
+          </select>
+          <button onClick={loadReport} style={{ padding: "5px 14px", background: C.blue, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Load</button>
+        </div>
+      </div>
+
+      {/* Download buttons */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button onClick={() => download("xlsx")} style={{ padding: "6px 14px", background: C.green, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Download Excel</button>
+        <button onClick={() => download("csv")} style={{ padding: "6px 14px", background: C.amber, color: "#fff", border: "none", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Download CSV</button>
+      </div>
+
+      {loading ? <div style={{ textAlign: "center", padding: 40, color: C.muted }}>Loading report...</div> : data ? (
+        <>
+          {/* Summary Stats */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 24 }}>
+            <Stat label="Published" value={s.total_published || 0} color={C.blue} />
+            <Stat label="Closed" value={s.total_closed || 0} color={C.muted} />
+            <Stat label="Target Achieved" value={s.total_targets || 0} color={C.green} />
+            <Stat label="SL Triggered" value={s.total_stoploss || 0} color={C.red} />
+            <Stat label="Errors" value={s.total_errors || 0} color={s.total_errors > 0 ? C.red : C.muted} />
+          </div>
+
+          {/* Broker Breakdown */}
+          {data.brokers?.length > 0 && (
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Broker Breakdown</h2>
+              <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}` }}>
+                <thead><tr style={{ background: C.bg }}>
+                  {["Broker", "Published", "Closed", "Target Hit", "SL Hit", "Success", "Errors"].map(h => (
+                    <th key={h} style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {data.brokers.map((b: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600 }}>{b.broker_name}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.blue }}>{b.published}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13 }}>{b.closed}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{b.targets}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.red }}>{b.stoploss}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{b.success}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: b.errors > 0 ? C.red : C.muted }}>{b.errors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Advisor Performance */}
+          <div style={{ marginBottom: 24 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Advisor Performance</h2>
+            <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}` }}>
+              <thead><tr style={{ background: C.bg }}>
+                {["Advisor", "Published", "Closed", "Target Hit", "SL Hit", "Modified", "Win Rate", "Success", "Failed"].map(h => (
+                  <th key={h} style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {(data.advisors || []).map((a: any, i: number) => {
+                  const total = (parseInt(a.targets_achieved) || 0) + (parseInt(a.stoploss_triggered) || 0);
+                  const winRate = total > 0 ? Math.round((parseInt(a.targets_achieved) || 0) / total * 100) : 0;
+                  return (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis" }}>{a.advisor_name}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.blue }}>{a.calls_published}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13 }}>{a.calls_closed}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{a.targets_achieved}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.red }}>{a.stoploss_triggered}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13 }}>{a.calls_modified}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 600, color: winRate >= 50 ? C.green : winRate > 0 ? C.amber : C.muted }}>{winRate}%</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{a.successful}</td>
+                      <td style={{ padding: "8px 12px", fontSize: 13, color: parseInt(a.failed) > 0 ? C.red : C.muted }}>{a.failed}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Daily Breakdown */}
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Daily Breakdown</h2>
+            <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}` }}>
+              <thead><tr style={{ background: C.bg }}>
+                {["Date", "Published", "Closed", "Target Hit", "SL Hit", "Errors"].map(h => (
+                  <th key={h} style={{ padding: "10px 12px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {(data.daily || []).map((d: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 500 }}>{new Date(d.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, color: C.blue }}>{d.published}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13 }}>{d.closed}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, color: C.green }}>{d.targets}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, color: C.red }}>{d.stoploss}</td>
+                    <td style={{ padding: "8px 12px", fontSize: 13, color: parseInt(d.errors) > 0 ? C.red : C.muted }}>{d.errors}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}

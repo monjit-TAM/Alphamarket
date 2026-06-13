@@ -7762,3 +7762,316 @@ export async function registerRoutes(
 
   return httpServer;
 }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BROKER CALL MANAGEMENT & PERFORMANCE REPORTS
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // ── Active Broker Calls (calls + positions with webhook_rec_id) ──
+  app.get("/api/admin/broker-calls/active", requireAdmin, async (req, res) => {
+    try {
+      const broker = req.query.broker as string || "";
+      const type = req.query.type as string || "";  // equity, fno, commodity
+      const advisor = req.query.advisor as string || "";
+
+      const conn = await db.execute(sql`
+        SELECT c.id, c.stock_name as symbol, c.action, c.buy_range_start as entry_price,
+               c.target_price, c.stop_loss, c.sell_price, c.status, c.webhook_rec_id,
+               c.created_at, c.strategy_id, 'equity' as call_type,
+               s.name as strategy_name, s.type as strategy_type,
+               u.username as advisor_name, u.company_name as advisor_company
+        FROM calls c
+        JOIN strategies s ON s.id = c.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        WHERE c.status = 'Active' AND c.webhook_rec_id IS NOT NULL
+        ORDER BY c.created_at DESC
+      `);
+
+      const posConn = await db.execute(sql`
+        SELECT p.id, p.symbol, COALESCE(p.buy_sell, 'Buy') as action, p.entry_price,
+               p.target, p.stop_loss, p.exit_price as sell_price, p.status, p.webhook_rec_id,
+               p.created_at, p.strategy_id, 'fno' as call_type,
+               p.segment, p.strike_price, p.call_put, p.expiry, p.leg_group_id,
+               s.name as strategy_name, s.type as strategy_type,
+               u.username as advisor_name, u.company_name as advisor_company
+        FROM positions p
+        JOIN strategies s ON s.id = p.strategy_id
+        JOIN users u ON u.id = s.advisor_id
+        WHERE p.status = 'Active' AND p.webhook_rec_id IS NOT NULL
+        ORDER BY p.created_at DESC
+      `);
+
+      let calls = (conn.rows as any[]).map(r => ({ ...r, source: 'calls' }));
+      let positions = (posConn.rows as any[]).map(r => ({ ...r, source: 'positions' }));
+      let all = [...calls, ...positions].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      if (type === 'equity') all = all.filter((c: any) => c.call_type === 'equity');
+      if (type === 'fno') all = all.filter((c: any) => c.call_type === 'fno');
+      if (advisor) all = all.filter((c: any) => (c.advisor_company || c.advisor_name || '').toLowerCase().includes(advisor.toLowerCase()));
+
+      res.json({ total: all.length, calls: all });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Close a broker call from admin ──
+  app.post("/api/admin/broker-calls/:id/close", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { source, exitPrice } = req.body; // source: 'calls' or 'positions'
+
+      if (source === 'positions') {
+        const pos = await db.execute(sql`SELECT * FROM positions WHERE id = ${id}`);
+        const p = (pos.rows[0] as any);
+        if (!p) return res.status(404).send("Position not found");
+        await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${exitPrice || p.entry_price}, exit_date = NOW() WHERE id = ${id}`);
+        // Fire webhook
+        const strategy = await storage.getStrategy(p.strategy_id);
+        if (strategy && p.webhook_rec_id) {
+          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData({ ...p, status: 'Closed', exitPrice: exitPrice || p.entry_price, exit_date: new Date() }, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[admin broker-calls close position]", err));
+        }
+        return res.json({ success: true, type: 'position', symbol: p.symbol });
+      } else {
+        const call = await db.execute(sql`SELECT * FROM calls WHERE id = ${id}`);
+        const c = (call.rows[0] as any);
+        if (!c) return res.status(404).send("Call not found");
+        await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${exitPrice || c.buy_range_start}, exit_date = NOW() WHERE id = ${id}`);
+        // Fire webhook
+        const strategy = await storage.getStrategy(c.strategy_id);
+        if (strategy && c.webhook_rec_id) {
+          fireWebhookEvent("CALL_CLOSED", buildCallEventData({ ...c, status: 'Closed', sellPrice: exitPrice || c.buy_range_start, exit_date: new Date() }, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[admin broker-calls close call]", err));
+        }
+        return res.json({ success: true, type: 'call', symbol: c.stock_name });
+      }
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Modify a broker call (target/SL) from admin ──
+  app.patch("/api/admin/broker-calls/:id/modify", requireAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { source, targetPrice, stopLoss } = req.body;
+
+      if (source === 'positions') {
+        await db.execute(sql`UPDATE positions SET target = ${targetPrice}, stop_loss = ${stopLoss} WHERE id = ${id}`);
+        const pos = await db.execute(sql`SELECT * FROM positions WHERE id = ${id}`);
+        const p = (pos.rows[0] as any);
+        const strategy = await storage.getStrategy(p.strategy_id);
+        if (strategy && p.webhook_rec_id) {
+          fireWebhookEvent("POSITION_MODIFIED", buildPositionEventData(p, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[admin broker-calls modify position]", err));
+        }
+        return res.json({ success: true, type: 'position', symbol: p.symbol });
+      } else {
+        await db.execute(sql`UPDATE calls SET target_price = ${targetPrice}, stop_loss = ${stopLoss} WHERE id = ${id}`);
+        const call = await db.execute(sql`SELECT * FROM calls WHERE id = ${id}`);
+        const c = (call.rows[0] as any);
+        const strategy = await storage.getStrategy(c.strategy_id);
+        if (strategy && c.webhook_rec_id) {
+          fireWebhookEvent("CALL_MODIFIED", buildCallEventData(c, strategy), strategy.advisorId)
+            .catch((err: any) => console.error("[admin broker-calls modify call]", err));
+        }
+        return res.json({ success: true, type: 'call', symbol: c.stock_name });
+      }
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Broker Performance Report ──
+  app.get("/api/admin/broker-reports", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+      const broker = req.query.broker as string || '';
+      const period = req.query.period as string || 'daily'; // daily, weekly, monthly
+
+      let brokerFilter = '';
+      if (broker) {
+        brokerFilter = `AND bwl.api_key_id = (SELECT id FROM broker_api_keys WHERE broker_name ILIKE '%${broker}%' LIMIT 1)`;
+      }
+
+      // Per-advisor breakdown
+      const advisorStats = await db.execute(sql.raw(`
+        SELECT 
+          COALESCE(payload->'data'->>'advisorName', 'Unknown') as advisor_name,
+          COUNT(*) FILTER (WHERE event = 'CALL_CREATED' OR event = 'POSITION_CREATED') as calls_published,
+          COUNT(*) FILTER (WHERE event = 'CALL_CLOSED' OR event = 'POSITION_CLOSED') as calls_closed,
+          COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as targets_achieved,
+          COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as stoploss_triggered,
+          COUNT(*) FILTER (WHERE event = 'CALL_MODIFIED' OR event = 'POSITION_MODIFIED') as calls_modified,
+          COUNT(*) FILTER (WHERE event = 'TRAILING_SL_TRIGGERED') as trailing_sl,
+          COUNT(*) FILTER (WHERE status_code >= 200 AND status_code < 300) as successful,
+          COUNT(*) FILTER (WHERE status_code >= 400) as failed,
+          COUNT(DISTINCT CASE WHEN event IN ('CALL_CREATED','POSITION_CREATED') THEN payload->'data'->>'recommendationId' END) as unique_calls
+        FROM broker_webhook_logs bwl
+        WHERE bwl.created_at >= '${from}T00:00:00Z' 
+          AND bwl.created_at <= '${to}T23:59:59Z'
+          ${brokerFilter}
+        GROUP BY advisor_name
+        ORDER BY calls_published DESC
+      `));
+
+      // Summary totals
+      const summary = await db.execute(sql.raw(`
+        SELECT 
+          COUNT(*) as total_events,
+          COUNT(*) FILTER (WHERE event = 'CALL_CREATED' OR event = 'POSITION_CREATED') as total_published,
+          COUNT(*) FILTER (WHERE event = 'CALL_CLOSED' OR event = 'POSITION_CLOSED') as total_closed,
+          COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as total_targets,
+          COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as total_stoploss,
+          COUNT(*) FILTER (WHERE event = 'CALL_MODIFIED' OR event = 'POSITION_MODIFIED') as total_modified,
+          COUNT(*) FILTER (WHERE status_code >= 200 AND status_code < 300) as total_success,
+          COUNT(*) FILTER (WHERE status_code >= 400) as total_errors,
+          COUNT(DISTINCT payload->'data'->>'advisorName') as active_advisors
+        FROM broker_webhook_logs bwl
+        WHERE bwl.created_at >= '${from}T00:00:00Z' 
+          AND bwl.created_at <= '${to}T23:59:59Z'
+          ${brokerFilter}
+      `));
+
+      // Daily breakdown
+      const dailyBreakdown = await db.execute(sql.raw(`
+        SELECT 
+          DATE(created_at) as date,
+          COUNT(*) FILTER (WHERE event = 'CALL_CREATED' OR event = 'POSITION_CREATED') as published,
+          COUNT(*) FILTER (WHERE event = 'CALL_CLOSED' OR event = 'POSITION_CLOSED') as closed,
+          COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as targets,
+          COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as stoploss,
+          COUNT(*) FILTER (WHERE status_code >= 400) as errors
+        FROM broker_webhook_logs bwl
+        WHERE bwl.created_at >= '${from}T00:00:00Z' 
+          AND bwl.created_at <= '${to}T23:59:59Z'
+          ${brokerFilter}
+        GROUP BY DATE(created_at)
+        ORDER BY date DESC
+      `));
+
+      // Broker-wise breakdown
+      const brokerBreakdown = await db.execute(sql.raw(`
+        SELECT 
+          bak.broker_name,
+          COUNT(*) FILTER (WHERE bwl.event = 'CALL_CREATED' OR bwl.event = 'POSITION_CREATED') as published,
+          COUNT(*) FILTER (WHERE bwl.event = 'CALL_CLOSED' OR bwl.event = 'POSITION_CLOSED') as closed,
+          COUNT(*) FILTER (WHERE bwl.event = 'TARGET_ACHIEVED') as targets,
+          COUNT(*) FILTER (WHERE bwl.event = 'STOPLOSS_TRIGGERED') as stoploss,
+          COUNT(*) FILTER (WHERE bwl.status_code >= 200 AND bwl.status_code < 300) as success,
+          COUNT(*) FILTER (WHERE bwl.status_code >= 400) as errors
+        FROM broker_webhook_logs bwl
+        JOIN broker_api_keys bak ON bak.id = bwl.api_key_id
+        WHERE bwl.created_at >= '${from}T00:00:00Z' 
+          AND bwl.created_at <= '${to}T23:59:59Z'
+        GROUP BY bak.broker_name
+        ORDER BY published DESC
+      `));
+
+      res.json({
+        period: { from, to },
+        summary: summary.rows[0] || {},
+        advisors: advisorStats.rows,
+        daily: dailyBreakdown.rows,
+        brokers: brokerBreakdown.rows,
+      });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Download Broker Report (XLSX / PDF) ──
+  app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+      const format = req.query.format as string || 'xlsx';
+      const broker = req.query.broker as string || '';
+
+      let brokerFilter = '';
+      if (broker) {
+        brokerFilter = `AND bwl.api_key_id = (SELECT id FROM broker_api_keys WHERE broker_name ILIKE '%${broker}%' LIMIT 1)`;
+      }
+
+      const data = await db.execute(sql.raw(`
+        SELECT 
+          DATE(bwl.created_at) as date,
+          bwl.event,
+          COALESCE(payload->'data'->'equityCall'->>'symbol', payload->'data'->'fnoCall'->0->>'symbol') as symbol,
+          COALESCE(payload->'data'->'equityCall'->>'callType', payload->'data'->'fnoCall'->0->>'callType') as call_type,
+          payload->'data'->>'advisorName' as advisor,
+          payload->'data'->>'strategyName' as strategy,
+          payload->'data'->>'recommendationId' as rec_id,
+          COALESCE(payload->'data'->'equityCall'->>'buyPrice', payload->'data'->'fnoCall'->0->>'buyPrice') as entry_price,
+          COALESCE(payload->'data'->'equityCall'->>'targetPriceRange', payload->'data'->'fnoCall'->0->>'targetPriceRange') as target,
+          COALESCE(payload->'data'->'equityCall'->>'stopLoss', payload->'data'->'fnoCall'->0->>'stopLoss') as stoploss,
+          bwl.status_code,
+          bak.broker_name,
+          bwl.created_at
+        FROM broker_webhook_logs bwl
+        JOIN broker_api_keys bak ON bak.id = bwl.api_key_id
+        WHERE bwl.created_at >= '${from}T00:00:00Z' 
+          AND bwl.created_at <= '${to}T23:59:59Z'
+          ${brokerFilter}
+        ORDER BY bwl.created_at DESC
+      `));
+
+      if (format === 'xlsx') {
+        const ExcelJS = require('exceljs');
+        const workbook = new ExcelJS.Workbook();
+        workbook.creator = 'AlphaMarket';
+
+        // Sheet 1: Detailed Logs
+        const ws = workbook.addWorksheet('Webhook Logs');
+        ws.columns = [
+          { header: 'Date', key: 'date', width: 12 },
+          { header: 'Event', key: 'event', width: 20 },
+          { header: 'Symbol', key: 'symbol', width: 15 },
+          { header: 'Action', key: 'call_type', width: 8 },
+          { header: 'Advisor', key: 'advisor', width: 25 },
+          { header: 'Strategy', key: 'strategy', width: 25 },
+          { header: 'Rec ID', key: 'rec_id', width: 10 },
+          { header: 'Entry', key: 'entry_price', width: 10 },
+          { header: 'Target', key: 'target', width: 10 },
+          { header: 'Stop Loss', key: 'stoploss', width: 10 },
+          { header: 'Broker', key: 'broker_name', width: 15 },
+          { header: 'HTTP Status', key: 'status_code', width: 10 },
+        ];
+        ws.getRow(1).font = { bold: true };
+        (data.rows as any[]).forEach(r => ws.addRow(r));
+
+        // Sheet 2: Advisor Summary
+        const ws2 = workbook.addWorksheet('Advisor Summary');
+        ws2.columns = [
+          { header: 'Advisor', key: 'advisor', width: 25 },
+          { header: 'Published', key: 'published', width: 12 },
+          { header: 'Closed', key: 'closed', width: 12 },
+          { header: 'Target Hit', key: 'targets', width: 12 },
+          { header: 'SL Hit', key: 'stoploss', width: 12 },
+          { header: 'Modified', key: 'modified', width: 12 },
+        ];
+        ws2.getRow(1).font = { bold: true };
+
+        const advisorMap: Record<string, any> = {};
+        (data.rows as any[]).forEach((r: any) => {
+          const adv = r.advisor || 'Unknown';
+          if (!advisorMap[adv]) advisorMap[adv] = { advisor: adv, published: 0, closed: 0, targets: 0, stoploss: 0, modified: 0 };
+          if (r.event === 'CALL_CREATED' || r.event === 'POSITION_CREATED') advisorMap[adv].published++;
+          if (r.event === 'CALL_CLOSED' || r.event === 'POSITION_CLOSED') advisorMap[adv].closed++;
+          if (r.event === 'TARGET_ACHIEVED') advisorMap[adv].targets++;
+          if (r.event === 'STOPLOSS_TRIGGERED') advisorMap[adv].stoploss++;
+          if (r.event === 'CALL_MODIFIED' || r.event === 'POSITION_MODIFIED') advisorMap[adv].modified++;
+        });
+        Object.values(advisorMap).forEach((a: any) => ws2.addRow(a));
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename=AlphaMarket_Broker_Report_${from}_to_${to}.xlsx`);
+        return res.send(Buffer.from(buffer));
+      }
+
+      // CSV fallback
+      const headers = ['Date','Event','Symbol','Action','Advisor','Strategy','RecID','Entry','Target','StopLoss','Broker','Status'];
+      const csv = [headers.join(','), ...(data.rows as any[]).map((r: any) =>
+        [r.date, r.event, r.symbol, r.call_type, `"${r.advisor || ''}"`, `"${r.strategy || ''}"`, r.rec_id, r.entry_price, r.target, r.stoploss, r.broker_name, r.status_code].join(',')
+      )].join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=AlphaMarket_Broker_Report_${from}_to_${to}.csv`);
+      return res.send(csv);
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
