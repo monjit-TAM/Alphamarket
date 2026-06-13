@@ -69,6 +69,8 @@ export default function AdminDashboard() {
     if (location === "/admin/advisor-breakup") return <AdminAdvisorBreakup />;
     if (location === "/admin/calls") return <AdminCalls />;
     if (location === "/admin/brokers") return <BrokerAdmin />;
+    if (location === "/admin/broker-calls") return <AdminBrokerCalls />;
+    if (location === "/admin/broker-reports") return <AdminBrokerReports />;
     return <AdminHome />;
   };
 
