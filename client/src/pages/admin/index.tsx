@@ -34,6 +34,8 @@ const sidebarItems = [
   { title: "Settings", icon: Settings, path: "/admin/settings" },
   { title: "Broker Integrations", icon: Link2, path: "/admin/brokers" },
   { title: "Closed Calls", icon: BarChart3, path: "/admin/calls" },
+  { title: "Broker Calls", icon: Link2, path: "/admin/broker-calls" },
+  { title: "Broker Reports", icon: BarChart3, path: "/admin/broker-reports" },
 ];
 
 export default function AdminDashboard() {
