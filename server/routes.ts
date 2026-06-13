@@ -7757,11 +7757,6 @@ export async function registerRoutes(
 
 
   // Initialize XTS Bridge
-  initXTSBridge();
-  initBrokerAdapters();
-
-  return httpServer;
-}
 
   // ═══════════════════════════════════════════════════════════════════════════
   // BROKER CALL MANAGEMENT & PERFORMANCE REPORTS
@@ -8075,3 +8070,10 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
+
+
+  initXTSBridge();
+  initBrokerAdapters();
+
+  return httpServer;
+}
