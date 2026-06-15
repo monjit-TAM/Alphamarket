@@ -549,12 +549,54 @@ export async function getBulkLTP(
 
   if (uncached.length === 0) return results;
 
+  // ── Try Kite first (no rate limits, faster) ──
+  const stillUncached: Array<{ symbol: string; strategyType?: string }> = [];
+  try {
+    const symbolList = uncached.map(i => i.symbol).join(",");
+    const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbolList)}`, {
+      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      signal: AbortSignal.timeout(8000)
+    });
+    if (kiteRes.ok) {
+      const kd = await kiteRes.json();
+      const quotes = kd.quotes || kd;
+      for (const item of uncached) {
+        const q = quotes[item.symbol] || quotes[item.symbol.toUpperCase()];
+        if (q && (q.price > 0 || q.ltp > 0)) {
+          const lp: LivePrice = {
+            symbol: item.symbol, exchange: "NSE", ltp: q.price || q.ltp, change: q.change || 0,
+            changePercent: q.change_percent || 0, high: q.high || 0, low: q.low || 0,
+            open: q.open || 0, close: q.close || 0, timestamp: Date.now(),
+          };
+          const cacheKey = `${item.symbol}_${item.strategyType || ""}`;
+          priceCache.set(cacheKey, { data: lp, expiry: Date.now() + CACHE_TTL });
+          results[item.symbol] = lp;
+        } else {
+          stillUncached.push(item);
+        }
+      }
+      if (stillUncached.length === 0) {
+        console.log(`[Kite] Bulk LTP OK: ${uncached.length} symbols from Kite`);
+        return results;
+      }
+      console.log(`[Kite] Bulk LTP partial: ${uncached.length - stillUncached.length} from Kite, ${stillUncached.length} remaining for Groww`);
+    } else {
+      stillUncached.push(...uncached);
+    }
+  } catch (kiteErr) {
+    console.warn("[Kite] Bulk LTP unavailable, falling back to Groww:", (kiteErr as any)?.message);
+    stillUncached.push(...uncached);
+  }
+
+  // ── Fallback to Groww for any symbols Kite couldn't resolve ──
+  if (stillUncached.length === 0) return results;
+
   try {
     const accessToken = await getAccessToken();
 
     const grouped: Record<string, Array<{ symbol: string; exchange: string; segment: string; tradingSymbol: string; strategyType?: string }>> = {};
 
-    for (const item of uncached) {
+    for (const item of stillUncached) {
       const resolved = resolveExchangeAndSegment(item.symbol, item.strategyType);
       const key = resolved.segment;
       if (!grouped[key]) grouped[key] = [];
