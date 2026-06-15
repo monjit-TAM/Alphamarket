@@ -81,6 +81,28 @@ export interface LivePrice {
 const priceCache: Map<string, { data: LivePrice; expiry: number }> = new Map();
 const CACHE_TTL = 5000;
 
+// Permanent price store — never expires, always has the last known good price
+const lastKnownPrices: Map<string, { ltp: number; timestamp: number; source: string }> = new Map();
+
+export function getLastKnownPrice(symbol: string): { ltp: number; timestamp: number; source: string } | null {
+  return lastKnownPrices.get(symbol.toUpperCase()) || null;
+}
+
+function recordLastKnownPrice(symbol: string, ltp: number, source: string) {
+  if (ltp > 0) {
+    lastKnownPrices.set(symbol.toUpperCase(), { ltp, timestamp: Date.now(), source });
+  }
+}
+
+// Wrap priceCache.set to also record in permanent store
+const originalSet = priceCache.set.bind(priceCache);
+priceCache.set = function(key: string, value: { data: LivePrice; expiry: number }) {
+  if (value.data && value.data.ltp > 0) {
+    recordLastKnownPrice(value.data.symbol || key.split("_")[0], value.data.ltp, "cache");
+  }
+  return originalSet(key, value);
+};
+
 let cachedAccessToken: string | null = null;
 let tokenExpiry: number = 0;
 let tokenSetAt: number = 0;

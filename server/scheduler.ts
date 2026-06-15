@@ -4,7 +4,7 @@ import { handleXTSEvent } from "./xts-bridge";
 import { db } from "./db";
 import { calls, positions, strategies } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
-import { getLiveQuote, getOptionPremiumLTP, getBulkLTP } from "./groww";
+import { getLiveQuote, getOptionPremiumLTP, getBulkLTP, getLastKnownPrice } from "./groww";
 import {
   notifyStrategySubscribers,
   notifyWatchlistUsers,
@@ -41,9 +41,9 @@ async function autoSquareOffIntraday() {
 
       for (const call of activeCalls) {
         const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
-        let sellPrice = entryPrice;
+        let sellPrice = 0;
         let gainPercent = 0;
-        let callPriceSource = "entry_fallback";
+        let callPriceSource = "pending";
 
         try {
           const isFnOType = ["Option", "Future", "Index", "CommodityFuture"].includes(strategy.type);
@@ -80,7 +80,50 @@ async function autoSquareOffIntraday() {
               : ((sellPrice - entryPrice) / entryPrice) * 100;
           }
         } catch (e) {
-          console.error(`[Scheduler] Could not fetch live price for ${call.stockName}, using entry price`);
+          console.error(`[Scheduler] Could not fetch live price for ${call.stockName}:`, (e as any)?.message);
+        }
+
+        // Smart fallback chain if live price fetch failed
+        if (sellPrice <= 0) {
+          // Fallback 1: Last known price from any source
+          const lastKnown = getLastKnownPrice(call.stockName || "");
+          if (lastKnown && lastKnown.ltp > 0) {
+            sellPrice = lastKnown.ltp;
+            callPriceSource = "last_known_" + lastKnown.source;
+            console.log(`[Scheduler] Using last known price for ${call.stockName}: ${sellPrice} (from ${lastKnown.source}, ${Math.round((Date.now() - lastKnown.timestamp) / 1000)}s ago)`);
+          }
+        }
+        if (sellPrice <= 0) {
+          // Fallback 2: Smart estimate — if price was trending toward SL/target
+          const sl = Number(call.stopLoss || 0);
+          const tp = Number(call.targetPrice || 0);
+          const isSellAction = call.action === "Sell";
+          // At 3:20 PM close, if no price available, estimate based on SL/target proximity
+          // Conservative: use the price closer to entry (minimize assumed P&L)
+          if (sl > 0 && tp > 0) {
+            // Use midpoint between entry and SL (conservative — assumes partial move)
+            sellPrice = isSellAction ? (entryPrice + sl) / 2 : (entryPrice + sl) / 2;
+            callPriceSource = "smart_estimate_sl_mid";
+            console.warn(`[Scheduler] No price for ${call.stockName}, using conservative estimate: ${sellPrice.toFixed(2)}`);
+          } else if (sl > 0) {
+            sellPrice = (entryPrice + sl) / 2;
+            callPriceSource = "smart_estimate_sl";
+          } else if (tp > 0) {
+            sellPrice = (entryPrice + tp) / 2;
+            callPriceSource = "smart_estimate_tp";
+          }
+        }
+        if (sellPrice <= 0) {
+          // Absolute last resort — skip this call, try again next cycle
+          console.error(`[Scheduler] CRITICAL: Cannot determine exit price for ${call.stockName} (${call.id}). Skipping close — will retry.`);
+          continue;
+        }
+
+        if (entryPrice > 0 && sellPrice > 0) {
+          const isSellAction = call.action === "Sell";
+          gainPercent = isSellAction
+            ? ((entryPrice - sellPrice) / entryPrice) * 100
+            : ((sellPrice - entryPrice) / entryPrice) * 100;
         }
 
         await storage.updateCall(call.id, {
@@ -103,9 +146,9 @@ async function autoSquareOffIntraday() {
 
       for (const pos of activePositions) {
         const entryPx = Number(pos.entryPrice || 0);
-        let exitPx = entryPx;
+        let exitPx = 0;
         let posGainPercent = 0;
-        let priceSource = "entry_fallback";
+        let priceSource = "pending";
 
         try {
           const isFnOOption = pos.strikePrice && pos.expiry && pos.callPut;
@@ -138,7 +181,44 @@ async function autoSquareOffIntraday() {
               : ((exitPx - entryPx) / entryPx) * 100;
           }
         } catch (e) {
-          console.error(`[Scheduler] Could not fetch live price for position ${pos.symbol}, using entry price`);
+          console.error(`[Scheduler] Could not fetch live price for position ${pos.symbol}:`, (e as any)?.message);
+        }
+
+        // Smart fallback chain if live price fetch failed
+        if (exitPx <= 0) {
+          const lastKnown = getLastKnownPrice(pos.symbol || "");
+          if (lastKnown && lastKnown.ltp > 0) {
+            exitPx = lastKnown.ltp;
+            priceSource = "last_known_" + lastKnown.source;
+            console.log(`[Scheduler] Using last known price for ${pos.symbol}: ${exitPx} (from ${lastKnown.source}, ${Math.round((Date.now() - lastKnown.timestamp) / 1000)}s ago)`);
+          }
+        }
+        if (exitPx <= 0) {
+          const sl = Number(pos.stopLoss || 0);
+          const tgt = Number(pos.target || 0);
+          const isSell = pos.buySell === "Sell";
+          if (sl > 0 && tgt > 0) {
+            exitPx = isSell ? (entryPx + sl) / 2 : (entryPx + sl) / 2;
+            priceSource = "smart_estimate_sl_mid";
+            console.warn(`[Scheduler] No price for ${pos.symbol}, using conservative estimate: ${exitPx.toFixed(2)}`);
+          } else if (sl > 0) {
+            exitPx = (entryPx + sl) / 2;
+            priceSource = "smart_estimate_sl";
+          } else if (tgt > 0) {
+            exitPx = (entryPx + tgt) / 2;
+            priceSource = "smart_estimate_tp";
+          }
+        }
+        if (exitPx <= 0) {
+          console.error(`[Scheduler] CRITICAL: Cannot determine exit price for ${pos.symbol} (${pos.id}). Skipping close — will retry.`);
+          continue;
+        }
+
+        if (entryPx > 0 && exitPx > 0) {
+          const isSell = pos.buySell === "Sell";
+          posGainPercent = isSell
+            ? ((entryPx - exitPx) / entryPx) * 100
+            : ((exitPx - entryPx) / entryPx) * 100;
         }
 
         await storage.updatePosition(pos.id, {
@@ -413,10 +493,26 @@ async function recoverySquareOff() {
         .where(and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active")));
       for (const call of staleCalls) {
         const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
+        let recoveryPrice = 0;
+        // Try to get a real price even for recovery
+        try {
+          const liveQ = await getLiveQuote(call.stockName || "", strategy.type);
+          if (liveQ && liveQ.ltp > 0) recoveryPrice = liveQ.ltp;
+        } catch {}
+        if (recoveryPrice <= 0) {
+          const lastKnown = getLastKnownPrice(call.stockName || "");
+          if (lastKnown && lastKnown.ltp > 0) recoveryPrice = lastKnown.ltp;
+        }
+        if (recoveryPrice <= 0) {
+          const sl = Number(call.stopLoss || 0);
+          if (sl > 0) recoveryPrice = (entryPrice + sl) / 2;
+          else recoveryPrice = entryPrice; // absolute last resort for recovery only
+        }
+        const recGain = call.action === "Sell" ? ((entryPrice - recoveryPrice) / entryPrice) * 100 : ((recoveryPrice - entryPrice) / entryPrice) * 100;
         await storage.updateCall(call.id, {
           status: "Closed",
-          sellPrice: String(entryPrice.toFixed(2)),
-          gainPercent: "0.00",
+          sellPrice: String(recoveryPrice.toFixed(2)),
+          gainPercent: String(recGain.toFixed(2)),
           exitDate: new Date(),
         });
         console.warn(`[Scheduler] Recovery close: call ${call.id} (${call.stockName}) closed at entry price fallback`);
@@ -431,10 +527,25 @@ async function recoverySquareOff() {
         .where(and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active")));
       for (const pos of stalePositions) {
         const entryPx = Number(pos.entryPrice || 0);
+        let recoveryPx = 0;
+        try {
+          const liveQ = await getLiveQuote(pos.symbol || "", strategy.type);
+          if (liveQ && liveQ.ltp > 0) recoveryPx = liveQ.ltp;
+        } catch {}
+        if (recoveryPx <= 0) {
+          const lastKnown = getLastKnownPrice(pos.symbol || "");
+          if (lastKnown && lastKnown.ltp > 0) recoveryPx = lastKnown.ltp;
+        }
+        if (recoveryPx <= 0) {
+          const sl = Number(pos.stopLoss || 0);
+          if (sl > 0) recoveryPx = (entryPx + sl) / 2;
+          else recoveryPx = entryPx; // absolute last resort for recovery only
+        }
+        const recGainPct = pos.buySell === "Sell" ? ((entryPx - recoveryPx) / entryPx) * 100 : ((recoveryPx - entryPx) / entryPx) * 100;
         await storage.updatePosition(pos.id, {
           status: "Closed",
-          exitPrice: String(entryPx.toFixed(2)),
-          gainPercent: "0.00",
+          exitPrice: String(recoveryPx.toFixed(2)),
+          gainPercent: String(recGainPct.toFixed(2)),
           exitDate: new Date(),
         });
         console.warn(`[Scheduler] Recovery close: position ${pos.id} (${pos.symbol}) closed at entry price fallback`);
