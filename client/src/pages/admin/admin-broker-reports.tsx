@@ -130,7 +130,7 @@ export default function AdminBrokerReports() {
             <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", background: C.panel, borderRadius: 8, border: `1px solid ${C.border}`, minWidth: 900 }}>
               <thead><tr style={{ background: C.bg }}>
-                {["Advisor", "Open", "Closed", "Profitable", "Loss", "Win Rate", "Avg Return %", "Abs Return ₹", "YTD Return ₹", "Status"].map(h => (
+                {["Advisor", "Published", "Open", "Closed", "Profitable", "Loss", "Win Rate", "Avg Return %", "Abs Return ₹", "YTD Return ₹", "Status"].map(h => (
                   <th key={h} style={{ padding: "10px 8px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
                 ))}
               </tr></thead>
@@ -143,6 +143,7 @@ export default function AdminBrokerReports() {
                         {a.advisor}
                         {a.is_weak && <span style={{ display: "block", fontSize: 9, color: C.red, marginTop: 2 }}>⚠ Weak</span>}
                       </td>
+                      <td style={{ padding: "8px", fontSize: 13, color: C.blue, fontWeight: 600 }}>{(a.equity_open + a.equity_closed + a.fno_open + a.fno_closed) || 0}</td>
                       <td style={{ padding: "8px", fontSize: 13, color: C.amber, fontWeight: 600 }}>{a.total_open}</td>
                       <td style={{ padding: "8px", fontSize: 13 }}>{a.total_closed}</td>
                       <td style={{ padding: "8px", fontSize: 13, color: C.green, fontWeight: 600 }}>{a.total_profitable}</td>
@@ -163,7 +164,7 @@ export default function AdminBrokerReports() {
                     </tr>
                   );
                 })}
-                {advisors.length === 0 && <tr><td colSpan={10} style={{ padding: 30, textAlign: "center", color: C.muted }}>No data for this period</td></tr>}
+                {advisors.length === 0 && <tr><td colSpan={11} style={{ padding: 30, textAlign: "center", color: C.muted }}>No data for this period</td></tr>}
               </tbody>
             </table>
             </div>
