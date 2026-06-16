@@ -197,7 +197,13 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
   }
 
   if (isClosed) {
-    equityCall.profitLossPercent = toNum(c.gain_percent);
+    let pnlPct = toNum(c.gain_percent);
+    if ((pnlPct === null || pnlPct === 0) && bp > 0 && toNum(c.sell_price) && toNum(c.sell_price) !== bp) {
+      const sp = toNum(c.sell_price)!;
+      const act = String(c.action || "BUY").toUpperCase();
+      pnlPct = act === "SELL" ? Number(((bp - sp) / bp * 100).toFixed(2)) : Number(((sp - bp) / bp * 100).toFixed(2));
+    }
+    equityCall.profitLossPercent = pnlPct;
   }
 
   // data object — field order matches Upstox accepted payload
@@ -310,7 +316,15 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     expiryDate: epochMs(p.expiry),
     lotSize: toNum(p.lots) || 1,
     strike: strike,
-    profitLossPercent: isClosed ? toNum(p.gain_percent) : null,
+    profitLossPercent: isClosed ? (toNum(p.gain_percent) || (() => {
+      const ep = toNum(p.entry_price) ?? 0;
+      const xp = toNum(p.exit_price) ?? 0;
+      if (ep > 0 && xp > 0 && ep !== xp) {
+        const act = String(p.buy_sell || "Buy");
+        return act === "Sell" ? Number(((ep - xp) / ep * 100).toFixed(2)) : Number(((xp - ep) / ep * 100).toFixed(2));
+      }
+      return null;
+    })()) : null,
     optionType: optionType,
     buyDate: (action === "SELL" && !isClosed) ? null : (action === "SELL" && isClosed) ? epochMs(p.exit_date) : epochMs(p.created_at),
     buyPrice: (action === "SELL" && !isClosed) ? null : (action === "SELL" && isClosed) ? toNum(p.exit_price) : entryPrice,
@@ -424,7 +438,7 @@ function normalize(data: Record<string, any>): any {
     entry_price: data.entry_price ?? data.entryPrice,
     sell_price: data.sell_price ?? data.sellPrice,
     exit_price: data.exit_price ?? data.exitPrice,
-    gain_percent: data.gain_percent ?? data.gainPercent,
+    gain_percent: data.gain_percent ?? data.gainPercent ?? data.gainOrLossPercentage,
     call_date: data.call_date ?? data.callDate ?? data.creationDate,
     exit_date: data.exit_date ?? data.exitDate,
     created_at: data.created_at ?? data.createdAt ?? data.call_date ?? data.callDate,
