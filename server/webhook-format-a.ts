@@ -52,6 +52,10 @@ function deriveTheme(strategy: any): string[] {
 // Cache: leg_group_id → shared recommendationId for multi-leg positions
 const multiLegRecIdCache: Record<string, string> = {};
 
+// Ensures same recId across all brokers for one event (dispatcher calls buildFormatA per broker)
+const eventRecIdCache: Map<string, string> = new Map();
+setInterval(() => { if (eventRecIdCache.size > 50) eventRecIdCache.clear(); }, 30000);
+
 async function nextRecId(): Promise<string> {
   try {
     const r = await db.execute(sql`SELECT nextval('recommendation_id_seq')::text as v`);
@@ -141,7 +145,14 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
       legId = String(Number(recId) + 1);
     }
   } else {
-    recId = await nextRecId();
+    // Cache ensures same recId for all brokers in one event cycle
+    const eqKey = "eq_" + (callId || "") + "_" + event;
+    if (callId && eventRecIdCache.has(eqKey)) {
+      recId = eventRecIdCache.get(eqKey)!;
+    } else {
+      recId = await nextRecId();
+      if (callId) eventRecIdCache.set(eqKey, recId);
+    }
     legId = String(Number(recId) + 1);
     // Store rec_id on CREATE for future CLOSE events
     if (callId && !isClosed) {
