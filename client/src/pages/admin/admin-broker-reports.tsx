@@ -89,7 +89,7 @@ export default function AdminBrokerReports() {
         <>
           {/* Summary Stats */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10, marginBottom: 24 }}>
-            <Stat label="Published" value={s.total_published || 0} color={C.blue} />
+            <Stat label="New Calls" value={s.total_published || 0} color={C.blue} />
             <Stat label="Open" value={advisors.reduce((a: number, v: any) => a + (v.total_open || 0), 0)} color={C.amber} />
             <Stat label="Closed" value={s.total_closed || 0} color={C.muted} />
             <Stat label="Target Hit" value={s.total_targets || 0} color={C.green} />
