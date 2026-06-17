@@ -121,12 +121,13 @@ function mapExitType(eventType: string, internalStatus: string): string | null {
 
 async function buildEquity(event: string, c: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "CALL_CLOSED" || event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || c.status === "Closed";
+  const isModified = event === "CALL_MODIFIED" || event === "POSITION_MODIFIED";
   
   // For CLOSE/MODIFY events: reuse original recommendationId so broker can match
   let recId: string;
   let legId: string;
   const callId = c.id || c.uid;
-  if (isClosed && callId) {
+  if ((isClosed || isModified) && callId) {
     try {
       const existing = await db.execute(sql`SELECT webhook_rec_id FROM calls WHERE id = ${callId}`);
       const storedRecId = (existing.rows[0] as any)?.webhook_rec_id;
@@ -254,6 +255,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
 
 async function buildFno(event: string, p: any, strategy: any, advisor: any, upstoxStrategyType?: string): Promise<any> {
   const isClosed = event === "POSITION_CLOSED" || event === "TARGET_ACHIEVED" || event === "STOPLOSS_TRIGGERED" || event === "TRAILING_SL_TRIGGERED" || p.status === "Closed";
+  const isModified = event === "POSITION_MODIFIED";
   // For multi-leg: all legs in same group share one recommendationId, different legIds
   const groupId = p.leg_group_id;
   let recId: string;
@@ -266,7 +268,7 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
   // For CLOSE/MODIFY events: reuse original recommendationId
   const posId = p.id || p.uid;
   let legId: string;
-  if (isClosed && posId) {
+  if ((isClosed || isModified) && posId) {
     try {
       const existing = await db.execute(sql`SELECT webhook_rec_id FROM positions WHERE id = ${posId}`);
       const storedRecId = (existing.rows[0] as any)?.webhook_rec_id;
