@@ -578,7 +578,12 @@ export async function buildFormatAPayload(
 
     // Add duration for Dreamstreet
     if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && mlPayload.data) {
-      mlPayload.data.duration = n.duration || null;
+      let mlDur = n.duration;
+      if (!mlDur || mlDur === 0) {
+        const hz2 = String(n.horizon || mlPayload.data.horizon || "").toLowerCase();
+        if (hz2.includes("intraday")) mlDur = 1;
+      }
+      mlPayload.data.duration = mlDur || null;
       mlPayload.data.durationUnit = (n.durationUnit || "days").toLowerCase();
     }
 
@@ -587,7 +592,12 @@ export async function buildFormatAPayload(
 
   // Add duration field for Dreamstreet only (integer, number of days)
   if (brokerName && brokerName.toLowerCase().includes("dreamstreet") && payload?.data) {
-    payload.data.duration = n.duration || null;
+    let dur = n.duration;
+    if (!dur || dur === 0) {
+      const hz = String(n.horizon || payload.data.horizon || "").toLowerCase();
+      if (hz.includes("intraday")) dur = 1;
+    }
+    payload.data.duration = dur || null;
     payload.data.durationUnit = (n.durationUnit || "days").toLowerCase();
   }
 
