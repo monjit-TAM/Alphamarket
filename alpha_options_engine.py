@@ -194,7 +194,7 @@ def _fetch_live_chain(symbol):
         import urllib.request, json as _json
         url = f"http://127.0.0.1:8001/api/nfo/option-chain/{symbol}"
         req = urllib.request.Request(url, headers={"X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"})
-        resp = urllib.request.urlopen(req, timeout=10).read().decode()
+        resp = urllib.request.urlopen(req, timeout=3).read().decode()
         data = _json.loads(resp)
         chain = data.get("chain", [])
         if not chain:
@@ -204,7 +204,7 @@ def _fetch_live_chain(symbol):
         try:
             spot_sym = "%5ENSEI" if symbol == "NIFTY" else "%5ENSEBANK" if symbol == "BANKNIFTY" else symbol
             spot_req = urllib.request.Request(f"http://127.0.0.1:5004/data/equity/quote/{spot_sym}")
-            spot_resp = urllib.request.urlopen(spot_req, timeout=5).read().decode()
+            spot_resp = urllib.request.urlopen(spot_req, timeout=3).read().decode()
             spot = _json.loads(spot_resp).get("price", 0)
         except:
             pass
