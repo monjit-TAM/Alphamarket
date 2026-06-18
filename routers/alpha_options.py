@@ -194,6 +194,19 @@ async def get_signals(
     
     # Format each signal for trader
     formatted = [format_signal(s) for s in signals]
+    # Add buy zone to each signal
+    for sig in formatted:
+        for leg in sig.get("legs", []):
+            prem = leg.get("premium", 0)
+            if prem and prem > 0:
+                leg["buy_zone_low"] = round(prem * 0.9, 2)
+                leg["buy_zone_high"] = round(prem * 1.1, 2)
+                leg["buy_zone"] = f"Rs.{leg['buy_zone_low']} - Rs.{leg['buy_zone_high']}"
+        # Overall signal buy zone
+        if sig.get("legs"):
+            sig["buy_zone"] = " | ".join([f"{l.get('action','')} {l.get('strike','')} {l.get('type','')}: {l.get('buy_zone','')}" for l in sig["legs"] if l.get("buy_zone")])
+            sig["status"] = "ACTIVE"
+            sig["signal_time"] = sig.get("generated_at", "")
     
     return {
         "date": datetime.now(_IST).date().isoformat(),

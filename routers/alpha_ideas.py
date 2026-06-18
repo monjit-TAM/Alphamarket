@@ -38,6 +38,12 @@ async def _enrich_live_prices(ideas):
             idea["stop"] = round(idea["stop"] * ratio, 2)
             idea["risk_pct"] = round((idea["entry"] - idea["stop"]) / idea["entry"] * 100, 1) if idea["entry"] > idea["stop"] else idea.get("risk_pct", 5)
             idea["reward_pct"] = round((idea["target"] - idea["entry"]) / idea["entry"] * 100, 1)
+            # Buy zone: -3% to +2% of entry
+            idea["buy_zone_low"] = round(idea["entry"] * 0.97, 2)
+            idea["buy_zone_high"] = round(idea["entry"] * 1.02, 2)
+            idea["buy_zone_msg"] = f"Buy zone: Rs.{idea['buy_zone_low']} - Rs.{idea['buy_zone_high']}"
+            idea["in_buy_zone"] = idea["buy_zone_low"] <= idea["entry"] <= idea["buy_zone_high"]
+            idea["status"] = "IN_BUY_ZONE" if idea["in_buy_zone"] else ("ABOVE_ZONE" if idea["entry"] > idea["buy_zone_high"] else "BELOW_ZONE")
             idea["rr_ratio"] = round(idea["reward_pct"] / idea["risk_pct"], 1) if idea["risk_pct"] > 0 else 0
     return ideas
 

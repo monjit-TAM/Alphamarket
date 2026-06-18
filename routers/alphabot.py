@@ -810,7 +810,21 @@ async def get_active_signals():
             LEFT JOIN bot_strategies st ON s.strategy_id=st.id 
             WHERE s.status='ACTIVE' ORDER BY s.created_at DESC
         """)
-    return [dict(r) for r in rows]
+    signals = []
+    for r in rows:
+        s = dict(r)
+        entry = float(s.get("entry_price", 0))
+        sl = float(s.get("stop_loss", 0)) if s.get("stop_loss") else 0
+        tgt = float(s.get("target", 0)) if s.get("target") else 0
+        s["buy_zone_low"] = round(entry * 0.97, 2)
+        s["buy_zone_high"] = round(entry * 1.02, 2)
+        s["buy_zone_msg"] = f"Entry zone: Rs.{s['buy_zone_low']} - Rs.{s['buy_zone_high']}"
+        if tgt > 0 and entry > 0:
+            s["target_pct"] = round(((tgt - entry) / entry) * 100, 2)
+        if sl > 0 and entry > 0:
+            s["sl_pct"] = round(((entry - sl) / entry) * 100, 2)
+        signals.append(s)
+    return signals
 
 @router.get("/trades", summary="Get trade log")
 async def get_trades(days: int = 7, strategy_id: int = None):
