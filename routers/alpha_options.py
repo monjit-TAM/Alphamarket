@@ -165,7 +165,50 @@ async def get_signals(
     max_positions: int = Query(5, description="Max simultaneous positions (1-10)", ge=1, le=10),
     risk_level: str = Query("MEDIUM", description="Risk appetite: LOW, MEDIUM, HIGH"),
 ):
-    """Generate actionable F&O trade ideas."""
+    """Get F&O signals — reads from DB first, generates only if empty."""
+    # Try DB first (fast path)
+    try:
+        pool = await _get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT * FROM alpha_options_signals WHERE status='OPEN' ORDER BY signal_date DESC LIMIT $1",
+                max_positions * 3
+            )
+        if rows:
+            from alpha_options_engine import classify_regime
+            signals = []
+            for r in rows:
+                s = dict(r)
+                if isinstance(s.get("legs"), str):
+                    import json as _j
+                    try: s["legs"] = _j.loads(s["legs"])
+                    except: s["legs"] = []
+                # Add buy zone per leg
+                for leg in s.get("legs", []):
+                    prem = leg.get("premium", 0)
+                    if prem and prem > 0:
+                        leg["buy_zone_low"] = round(prem * 0.9, 2)
+                        leg["buy_zone_high"] = round(prem * 1.1, 2)
+                        leg["buy_zone"] = f"Rs.{leg['buy_zone_low']} - Rs.{leg['buy_zone_high']}"
+                if s.get("legs"):
+                    s["buy_zone"] = " | ".join([f"{l.get('action','')} {l.get('strike','')} {l.get('type','')}: {l.get('buy_zone','')}" for l in s["legs"] if l.get("buy_zone")])
+                signals.append(s)
+            # Get regime
+            vix_data = _get_vix_data()
+            nifty = _get_nifty_technicals()
+            regime = classify_regime(
+                vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
+                bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
+                trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+            )
+            return {"date": str(datetime.now(_IST).date()), "regime": regime,
+                    "capital": capital, "risk_level": risk_level,
+                    "max_positions": max_positions, "signal_count": len(signals),
+                    "signals": signals, "disclaimer": "Not investment advice."}
+    except Exception as e:
+        import logging
+        logging.getLogger("alpha_options").warning(f"DB read failed: {e}")
+
     if not _is_market_open():
         return {"date": str(datetime.now(_IST).date()), "market_closed": True,
                 "message": _MARKET_CLOSED_MSG, "signal_count": 0, "signals": []}
