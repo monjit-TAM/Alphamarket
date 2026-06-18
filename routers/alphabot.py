@@ -78,18 +78,40 @@ async def get_pool():
 # HELPER: FETCH LIVE DATA (reuse existing Kite/Groww infrastructure)
 # ═══════════════════════════════════════════════════════════════════════════════
 async def fetch_index_data(symbol: str) -> dict:
-    """Fetch live index + futures data from Kite/Groww via existing infrastructure"""
+    """Fetch live index + futures data from Kite + Data Service"""
     import urllib.request, urllib.parse
+    
+    # Map index symbols to correct Data Service format
+    ds_map = {"NIFTY": "%5ENSEI", "BANKNIFTY": "%5ENSEBANK", "FINNIFTY": "%5ENSEBANK"}
+    kite_map = {"NIFTY": "NSE:NIFTY 50", "BANKNIFTY": "NSE:NIFTY BANK", "FINNIFTY": "NSE:NIFTY FIN SERVICE"}
+    
+    # Try Kite first (most accurate for live)
     try:
-        # Use data service for spot price
-        url = f"http://127.0.0.1:5004/data/equity/quote/{symbol}"
+        from routers.arbitrage import _fetch_kite_quotes, _kite_store
+        if _kite_store.get("access_token") and symbol in kite_map:
+            data = await _fetch_kite_quotes([kite_map[symbol]])
+            for k, v in data.items():
+                price = v.get("last_price", 0)
+                prev = v.get("ohlc", {}).get("close", 0) or price
+                change = v.get("net_change", 0)
+                change_pct = round((change / prev) * 100, 2) if prev else 0
+                if price > 0:
+                    return {"symbol": symbol, "price": price, "change": change, "change_pct": change_pct, "source": "kite"}
+    except Exception as e:
+        logger.warning(f"Kite fetch failed for {symbol}: {e}")
+    
+    # Fallback to Data Service with correct symbol
+    try:
+        ds_sym = ds_map.get(symbol, symbol)
+        url = f"http://127.0.0.1:5004/data/equity/quote/{ds_sym}"
         req = urllib.request.Request(url, headers={"X-API-Key": "alpha_data_internal_2026"})
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
-        return data
+        if data.get("price", 0) > 0:
+            return {"symbol": symbol, "price": data["price"], "change_pct": data.get("change_pct", 0), "source": "data_service"}
     except Exception as e:
-        logger.error(f"Failed to fetch index data for {symbol}: {e}")
-        return {}
+        logger.error(f"Data Service fetch failed for {symbol}: {e}")
+    return {}
 
 async def fetch_kite_ltp(instruments: list) -> dict:
     """Fetch LTP from Kite for multiple instruments"""
