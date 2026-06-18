@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "AlphaMarket Broker Integration API",
-    "version": "2.1.0",
-    "description": "AlphaMarket v2 Broker Integration API. Universal spec for all onboarded brokers.\n\n**Your broker account is scoped by AlphaMarket admins.** Calls, strategies, and webhook events you receive are filtered by:\n- `allowed_advisors` \u2014 which advisors' content you can see\n- `allowed_strategies` \u2014 optional fine-grained per-strategy opt-in\n- `allowed_segments` \u2014 equity vs F&O scoping\n\nIf you expect to see a strategy/advisor that isn't appearing in your responses, contact AlphaMarket's integration team \u2014 it's a scope configuration, not a bug.\n\n**Webhook brokers** can receive one of two payload formats:\n- `v1_flat` (default) \u2014 simple `{event, timestamp, data}` shape\n- `v1_thealphamarket` \u2014 byte-exact match to legacy thealphamarket.com spec\n\nPayload version is configured per-broker on our side. To switch, contact admin.\n\n**Contact:**\n- Email (primary): hello@alphamarket.co.in\n- Email (escalation): amit@thealphamarket.com\n- Phone: +91 90291 29102",
+    "version": "2.2.0",
+    "description": "AlphaMarket v2 Broker Integration API. Universal spec for all onboarded brokers.\n\n**Your broker account is scoped by AlphaMarket admins.** Calls, strategies, and webhook events you receive are filtered by:\n- `allowed_advisors` \u2014 which advisors' content you can see\n- `allowed_strategies` \u2014 optional fine-grained per-strategy opt-in\n- `allowed_segments` \u2014 equity vs F&O scoping\n\nIf you expect to see a strategy/advisor that isn't appearing in your responses, contact AlphaMarket's integration team \u2014 it's a scope configuration, not a bug.\n\n**Webhook brokers** can receive one of two payload formats:\n- `v1_flat` (default) \u2014 simple `{event, timestamp, data}` shape\n- `v1_thealphamarket` \u2014 byte-exact match to legacy thealphamarket.com spec\n\nPayload version is configured per-broker on our side. To switch, contact admin.\n\n**Contact:**\n- Email (primary): hello@alphamarket.co.in\n- Email (escalation): amit@thealphamarket.com\n- Phone: +91 90291 29102\n\n**v2.2.0 Changes (June 2026):**\n- **Duplicate call prevention:** Same symbol (equity) or symbol+strike (F&O) will not be sent twice to the same broker while active.\n- **MODIFY events:** Always carry the original `recommendationId` \u2014 no new IDs generated for modifications.\n- **profitLossPercent:** Always populated on close events, calculated from entry/exit prices if not provided by advisor.\n- **Duplicate SL/Target prevention:** Scheduler re-checks status before firing close events to prevent duplicate triggers.\n- **Duration field:** Intraday calls default to `duration: 1` for brokers requiring this field.\n",
     "contact": {
       "name": "AlphaMarket Integration Support",
       "email": "hello@alphamarket.co.in",
@@ -1498,7 +1498,7 @@
           "profitLossPercent": {
             "type": "number",
             "nullable": true,
-            "description": "Populated when closed",
+            "description": "Realised P&L percentage. Always populated on close events. Calculated from entry/exit prices if not provided by advisor. BUY: ((sellPrice - buyPrice) / buyPrice) * 100. SELL: ((buyPrice - sellPrice) / buyPrice) * 100.",
             "example": 2.26
           },
           "sellPrice": {
@@ -1679,7 +1679,8 @@
           },
           "profitLossPercent": {
             "type": "number",
-            "nullable": true
+            "nullable": true,
+            "description": "Realised P&L percentage. Always populated on close events. Calculated from entry/exit prices if not provided by advisor. BUY: ((sellPrice - buyPrice) / buyPrice) * 100. SELL: ((buyPrice - sellPrice) / buyPrice) * 100."
           },
           "sellPrice": {
             "type": "number",
@@ -2210,7 +2211,8 @@
                         "type": "string"
                       },
                       "profitLossPercent": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "Realised P&L percentage. Always populated on close events. Calculated from entry/exit prices if not provided by advisor. BUY: ((sellPrice - buyPrice) / buyPrice) * 100. SELL: ((buyPrice - sellPrice) / buyPrice) * 100."
                       },
                       "callId": {
                         "type": "string"
@@ -2224,7 +2226,8 @@
                         "type": "string"
                       },
                       "profitLossPercent": {
-                        "type": "number"
+                        "type": "number",
+                        "description": "Realised P&L percentage. Always populated on close events. Calculated from entry/exit prices if not provided by advisor. BUY: ((sellPrice - buyPrice) / buyPrice) * 100. SELL: ((buyPrice - sellPrice) / buyPrice) * 100."
                       },
                       "callId": {
                         "type": "string"

@@ -878,5 +878,28 @@ Net Premium: ₹100 (debit spread)
 </pre>
 </div>
 
+
+<section style="background:#f8fafc;border-top:3px solid #e74c3c;padding:32px;margin-top:48px;border-radius:8px;">
+<h2 style="color:#e74c3c;margin-top:0;">Changelog — v2.2.0 (June 2026)</h2>
+
+<h3>Duplicate Call Prevention</h3>
+<p>AlphaMarket now prevents duplicate active calls from being sent to the same broker. For <strong>equity</strong>, if the same symbol already has an active call on your broker, subsequent calls for the same symbol are blocked until the first is closed. For <strong>F&amp;O</strong>, the check is on symbol + strike combination. This is per-broker — the same symbol can exist on different brokers simultaneously.</p>
+
+<h3>MODIFY Event — Same recommendationId</h3>
+<p><code>CALL_MODIFIED</code> and <code>POSITION_MODIFIED</code> events now always carry the <strong>same <code>recommendationId</code></strong> as the original CREATE event. Previously, modifications could generate a new ID, causing duplicate entries on broker platforms. This has been fixed.</p>
+
+<h3>profitLossPercent — Always Populated</h3>
+<p>Close events (<code>CALL_CLOSED</code>, <code>POSITION_CLOSED</code>, <code>TARGET_ACHIEVED</code>, <code>STOPLOSS_TRIGGERED</code>) now always include a calculated <code>profitLossPercent</code> field. If the advisor system doesn't provide it, it is automatically calculated from entry and exit prices.</p>
+
+<h3>Duplicate SL/Target Prevention</h3>
+<p>The scheduler now re-checks position status before firing close events. This prevents the same stop-loss or target from triggering twice in consecutive scheduler cycles (previously seen as duplicate events ~15 seconds apart).</p>
+
+<h3>Duration Field Defaults</h3>
+<p>For brokers requiring a <code>duration</code> field: intraday strategies now default to <code>duration: 1</code> (one day). Non-intraday strategies require the advisor to set the duration explicitly. The <code>durationUnit</code> is always <code>"days"</code>.</p>
+
+<h3>Event Consistency Across Brokers</h3>
+<p>All brokers now receive the same <code>recommendationId</code> for a given call event. Previously, each broker could receive a different ID. The system caches the ID per event cycle to ensure consistency.</p>
+</section>
+
 </body>
 </html>

@@ -440,7 +440,53 @@ td code{font-size:12px}
 <div class="callout callout-blue"><strong>Note:</strong> Unlike equityCall, the <code>targetPriceRange</code> and <code>stopLoss</code> in fnoCall are <strong>numbers</strong>, not strings.</div>
 
 <!-- ═══ 10. Security ═══ -->
-<h2 id="security" class="sa">10. Security &amp; Signature Verification</h2>
+
+<h2 id="dedup" class="sa">10. Duplicate Prevention</h2>
+
+<h3>Per-Broker Duplicate Call Blocking</h3>
+<p>AlphaMarket prevents duplicate active calls from being sent to the same broker. When a new <code>CALL_CREATED</code> or <code>POSITION_CREATED</code> event is about to be dispatched:</p>
+<ul>
+  <li><strong>Equity:</strong> If the same <strong>symbol</strong> already has an active (unclosed) call on that broker, the new call is blocked.</li>
+  <li><strong>F&amp;O:</strong> If the same <strong>symbol + strike</strong> combination already has an active position on that broker, the new position is blocked.</li>
+</ul>
+<p>This is <strong>per-broker</strong> — the same symbol can exist on different brokers simultaneously. Different advisors recommending the same stock will result in only the first call being sent; subsequent ones are held until the first is closed.</p>
+<p><strong>Fail-open:</strong> If the duplicate check encounters an error, the call is sent anyway to avoid blocking legitimate recommendations.</p>
+
+<h3>Duplicate SL/Target Prevention</h3>
+<p>The scheduler re-checks the call/position status from the database before firing a close event. If a previous scheduler cycle already closed the position, the duplicate event is suppressed. This prevents the same SL or target from triggering twice.</p>
+
+<h2 id="modify-recid" class="sa">11. MODIFY Event Handling</h2>
+
+<p><code>CALL_MODIFIED</code> and <code>POSITION_MODIFIED</code> events always carry the <strong>same <code>recommendationId</code></strong> as the original <code>CALL_CREATED</code> / <code>POSITION_CREATED</code> event. This allows brokers to match modifications to the original call without creating duplicate entries.</p>
+
+<p>Modified fields typically include:</p>
+<ul>
+  <li><code>targetPriceRange</code> / <code>target</code> — updated target price</li>
+  <li><code>stopLoss</code> — updated stop-loss</li>
+  <li><code>duration</code> — updated duration (if applicable)</li>
+</ul>
+<p>All other fields remain identical to the original CREATE payload.</p>
+
+<h2 id="pnl" class="sa">12. Profit &amp; Loss Calculation</h2>
+
+<p>The <code>profitLossPercent</code> field is <strong>always populated</strong> on close events (<code>CALL_CLOSED</code>, <code>POSITION_CLOSED</code>, <code>TARGET_ACHIEVED</code>, <code>STOPLOSS_TRIGGERED</code>).</p>
+
+<p>Calculation:</p>
+<ul>
+  <li><strong>BUY calls:</strong> <code>((sellPrice - buyPrice) / buyPrice) &times; 100</code></li>
+  <li><strong>SELL calls:</strong> <code>((buyPrice - sellPrice) / buyPrice) &times; 100</code></li>
+</ul>
+<p>If the source system does not provide a percentage, it is calculated automatically from entry and exit prices.</p>
+
+<h3>Duration Field (Dreamstreet)</h3>
+<p>For brokers that require a <code>duration</code> field:</p>
+<ul>
+  <li><strong>Intraday</strong> strategies: <code>duration</code> defaults to <strong>1</strong> day (factually correct by definition).</li>
+  <li><strong>Non-intraday</strong> strategies: <code>duration</code> is set by the advisor. If not set, it will be <code>null</code>.</li>
+</ul>
+<p>The <code>durationUnit</code> is always <code>"days"</code>.</p>
+
+<h2 id="security" class="sa">13. Security &amp; Signature Verification</h2>
 
 <h3>Signature Construction</h3>
 <pre><code><span class="lang">PSEUDO</span><span class="cc">// The signature is computed over the raw JSON body</span>
