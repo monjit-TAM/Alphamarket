@@ -348,6 +348,12 @@ async function checkStopLossAndTargets() {
       }
 
       if (triggered) {
+        // Re-check status to prevent duplicate close from overlapping scheduler cycles
+        const freshCall = await storage.getCall(call.id);
+        if (!freshCall || freshCall.status !== "Active") {
+          console.log("[Scheduler] Skipping already-closed call:", call.stockName, call.id);
+          continue;
+        }
         const gainPercent = isSellAction
           ? (((entryPrice - ltp) / entryPrice) * 100).toFixed(2)
           : (((ltp - entryPrice) / entryPrice) * 100).toFixed(2);
@@ -426,6 +432,12 @@ async function checkStopLossAndTargets() {
       }
       if (triggered) {
         const gp = isSell ? (((entryPx - ltp) / entryPx) * 100).toFixed(2) : (((ltp - entryPx) / entryPx) * 100).toFixed(2);
+        // Re-check status to prevent duplicate close from overlapping scheduler cycles
+        const freshPos = await storage.getPosition(pos.id);
+        if (!freshPos || freshPos.status !== "Active") {
+          console.log("[Scheduler] Skipping already-closed position:", pos.symbol, pos.id);
+          continue;
+        }
         await storage.updatePosition(pos.id, {
           status: "Closed", exitPrice: String(ltp.toFixed(2)), gainPercent: gp, exitDate: new Date(),
         });
@@ -458,6 +470,12 @@ async function checkStopLossAndTargets() {
         else if (tgt > 0 && ltp >= tgt) triggered = "TARGET";
       }
       if (triggered) {
+        // Re-check status to prevent duplicate close from overlapping scheduler cycles
+        const freshOptPos = await storage.getPosition(pos.id);
+        if (!freshOptPos || freshOptPos.status !== "Active") {
+          console.log("[Scheduler] Skipping already-closed option position:", pos.symbol, pos.id);
+          continue;
+        }
         const gp = isSell ? (((entryPx - ltp) / entryPx) * 100).toFixed(2) : (((ltp - entryPx) / entryPx) * 100).toFixed(2);
         await storage.updatePosition(pos.id, {
           status: "Closed", exitPrice: String(ltp.toFixed(2)), gainPercent: gp, exitDate: new Date(),
