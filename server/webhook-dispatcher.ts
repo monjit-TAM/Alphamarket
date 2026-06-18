@@ -86,6 +86,68 @@ export async function fireWebhookEvent(
         }
       }
 
+      // ── Duplicate check: prevent same symbol (equity) or symbol+strike (F&O) going to same broker twice ──
+      if (event === "CALL_CREATED" || event === "POSITION_CREATED") {
+        try {
+          const sym = (data as any).symbol || (data as any).stock_name || (data as any).stockName || "";
+          const strike = (data as any).strike_price || (data as any).strikePrice || "";
+          const segment = (data as any).segment || (data as any).type || "";
+          const isFnO = segment === "Option" || segment === "Future" || segment === "Index" || segment === "Commodity" || segment === "CommodityFuture";
+
+          if (sym) {
+            // Check if this symbol (+strike for F&O) already has an active CREATE without a CLOSE on this broker
+            let dupQuery;
+            if (isFnO && strike) {
+              dupQuery = await db.execute(sql.raw(
+                `SELECT bwl.payload->'data'->>'recommendationId' as rec_id
+                 FROM broker_webhook_logs bwl
+                 WHERE bwl.api_key_id = '${target.api_key_id}'
+                   AND bwl.event IN ('CALL_CREATED', 'POSITION_CREATED')
+                   AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
+                        OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
+                   AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${String(strike).replace(/'/g, "''")}'
+                   AND bwl.status_code BETWEEN 200 AND 299
+                   AND NOT EXISTS (
+                     SELECT 1 FROM broker_webhook_logs cl
+                     WHERE cl.api_key_id = bwl.api_key_id
+                       AND cl.payload->'data'->>'recommendationId' = bwl.payload->'data'->>'recommendationId'
+                       AND cl.event IN ('CALL_CLOSED', 'POSITION_CLOSED', 'TARGET_ACHIEVED', 'STOPLOSS_TRIGGERED', 'TRAILING_SL_TRIGGERED')
+                       AND cl.status_code BETWEEN 200 AND 299
+                   )
+                 LIMIT 1`
+              ));
+            } else {
+              dupQuery = await db.execute(sql.raw(
+                `SELECT bwl.payload->'data'->>'recommendationId' as rec_id
+                 FROM broker_webhook_logs bwl
+                 WHERE bwl.api_key_id = '${target.api_key_id}'
+                   AND bwl.event IN ('CALL_CREATED', 'POSITION_CREATED')
+                   AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
+                        OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
+                   AND bwl.status_code BETWEEN 200 AND 299
+                   AND NOT EXISTS (
+                     SELECT 1 FROM broker_webhook_logs cl
+                     WHERE cl.api_key_id = bwl.api_key_id
+                       AND cl.payload->'data'->>'recommendationId' = bwl.payload->'data'->>'recommendationId'
+                       AND cl.event IN ('CALL_CLOSED', 'POSITION_CLOSED', 'TARGET_ACHIEVED', 'STOPLOSS_TRIGGERED', 'TRAILING_SL_TRIGGERED')
+                       AND cl.status_code BETWEEN 200 AND 299
+                   )
+                 LIMIT 1`
+              ));
+            }
+
+            if (dupQuery.rows.length > 0) {
+              const existingRecId = (dupQuery.rows[0] as any).rec_id;
+              console.log(`[Webhook] DUPLICATE BLOCKED: ${sym}${strike ? ' ' + strike : ''} already active on ${target.broker_name} (existing rec_id: ${existingRecId}). Skipping.`);
+              continue;
+            }
+          }
+        } catch (dedupErr: any) {
+          // Fail-open: if dedup check fails, send anyway — never block legitimate calls
+          console.warn("[Webhook] Dedup check failed (sending anyway):", dedupErr?.message);
+        }
+      }
+
       // Build payload — version-aware
       const payloadVersion = target.webhook_payload_version || 'v1_flat';
       let payloadBody: any;
