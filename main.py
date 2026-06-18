@@ -178,12 +178,73 @@ from confluence_engine import compute_confluence
 from flow_signals import compute_smart_money_score
 
 app = FastAPI(
-    root_path="/dyor",
     title="AlphaLab DYOR API",
-    description="""
-## AlphaLab — Quantitative Research & Advisory Platform for Indian Markets
+    description="""**AlphaLab DYOR** — Do Your Own Research platform by AlphaMarket (Edhaz Markets Pvt Ltd).
 
-AlphaLab provides institutional-grade quantitative tools for SEBI-registered Research Analysts (RA) and Investment Advisors (RIA) operating in Indian equity markets.
+## Modules
+
+### Signal Generation
+- **Options Alpha Engine** — AI-driven F&O signals with defined risk (Iron Condors, Bear Put Spreads, Theta Scalps). Each signal includes entry/exit zones, buy zones, leg-level premium ranges, and auto-expiry.
+- **AlphaBot** — Automated Index F&O signal engine for NIFTY/BANKNIFTY. Strategies: Momentum Futures, Options Directional, Strangle Writing, Index Arbitrage. Live premiums from Kite, real-time monitoring.
+- **Alpha Ideas** — AI stock ideas across 8 screener strategies with buy zones, R:R ratios, and confidence scores. Horizons: Swing, Short, Medium, Long term.
+- **Conviction Picks** — Multi-dimensional scoring (Trend, Momentum, Quality, Value, Volume) with 3+ dimension agreement filter.
+- **Intraday Levels** — Pivot points, CPR analysis, expected ranges, buy/sell zones for NIFTY 50 stocks.
+- **Algo Trading** — 5 algorithmic strategies (Momentum, Mean Reversion, Breakout, Pairs, Iron Condor) with live signals.
+
+### Research Tools
+- **Stock Screener** — 34+ quantitative strategies across 843 NSE stocks including momentum, breakout, fundamental, and hybrid models.
+- **Backtesting** — 40+ strategies with trade-by-trade results, equity curves, CAGR, Sharpe, max drawdown.
+- **Forward Testing** — Paper-trade strategies across multiple stocks simultaneously with live P&L tracking.
+- **Options Lab** — Chain data, multi-leg payoff analysis, Greeks calculator.
+- **Model Portfolios** — 23 pre-built templates with rebalancing.
+
+### Trade Execution
+- **Trade Scanners** — Jobbing (spread trading), Scalping (VWAP momentum), Arbitrage (spot-futures basis).
+- **Paper Trading** — Manual positions with SL/target tracking.
+- **Basket Orders** — Multi-leg F&O baskets with broker webhook integration.
+
+### Data & Analysis
+- **Sector Analysis** — Rotation analysis, RRG, 49 sectors.
+- **Technical Charts** — OHLCV with 15+ indicators.
+- **Morning Brief** — Pre-market global cues, sentiment score.
+
+---
+**Live Data**: Kite (Zerodha), Data Service, Alpha Fundamentals
+**Company**: Edhaz Markets Private Limited (Brand: AlphaMarket)
+""",
+    version="3.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+    openapi_tags=[
+        {"name": "Health & Status", "description": "System health, Redis, Kite connectivity checks"},
+        {"name": "Authentication", "description": "User registration, login, session management"},
+        {"name": "Stock Screener", "description": "Screen 843 NSE stocks across 34+ strategies: momentum, breakout, mean reversion, fundamental, hybrid. Includes buy zones and signal status."},
+        {"name": "Alpha Ideas", "description": "AI-generated trade ideas across Swing/Short/Medium/Long horizons. Each idea includes entry, target, stop, buy zone, R:R ratio, and confidence score."},
+        {"name": "Alpha Conviction", "description": "Multi-dimensional conviction scoring — Trend, Momentum, Quality, Value, Volume. Shows stocks where 3+ dimensions agree."},
+        {"name": "Intraday Levels", "description": "Pivot points, CPR analysis, support/resistance, expected ranges, and buy/sell zones for top NIFTY 50 stocks."},
+        {"name": "Options Alpha", "description": "AI F&O signal engine — generates Iron Condors, Bear Put Spreads, Theta Scalps with leg-level buy zones, entry/exit guidance, and auto-expiry. Uses live option chain premiums."},
+        {"name": "AlphaBot", "description": "Automated Index F&O signals for NIFTY/BANKNIFTY. 7 strategies: Momentum Futures, Options Directional, Strangle Writing, Index Arbitrage. Live premiums, buy zones, signal validity."},
+        {"name": "Algo Trading", "description": "5 algorithmic strategies with live signals: Momentum, Mean Reversion, Breakout, Pairs Trading, Iron Condor. Each signal includes entry check guidance."},
+        {"name": "Trade Scanners", "description": "F&O trading scanners — Jobbing (spread), Scalping (VWAP momentum), Arbitrage (spot-futures basis). Live Kite data for 120+ F&O stocks + indices."},
+        {"name": "Backtesting", "description": "Run historical backtests with 40+ strategies. Trade-by-trade results, equity curves, CAGR, Sharpe ratio, max drawdown."},
+        {"name": "Forward Testing", "description": "Paper-trade strategies across multiple stocks in real-time. Track live P&L, positions, signal generation."},
+        {"name": "Paper Trading", "description": "Manual paper trading — open/close positions with stop-loss and target tracking."},
+        {"name": "Model Portfolios", "description": "Create and manage model portfolios. 23 pre-built templates with rebalancing signals."},
+        {"name": "Options Lab", "description": "Options chain, multi-leg strategy payoff, Greeks calculator for NSE stocks and indices."},
+        {"name": "Advisory & Reports", "description": "SEBI-compliant advisory reports, PDF recommendations for RA/RIA advisors."},
+        {"name": "Technical Charts", "description": "OHLCV chart data with 15+ technical indicators and backtest trade markers."},
+        {"name": "Sector Analysis", "description": "Sector rotation, RRG, sector/industry classification for 843 stocks across 49 sectors."},
+        {"name": "Watchlist", "description": "User watchlists with real-time price tracking."},
+        {"name": "Stock Data", "description": "Fundamental data, symbol search, price lookup for NSE stocks."},
+        {"name": "Alerts & Notifications", "description": "Price alerts, strategy signal alerts, notification management."},
+        {"name": "Dashboard", "description": "Aggregated strategy performance across screener, backtest, forward test engines."},
+        {"name": "Morning Brief", "description": "Pre-market brief with global cues, sector pulse, screener picks, sentiment score."},
+        {"name": "MTF Combiner", "description": "Multi-timeframe screener — runs 8 strategies across 3 timeframes, finds convergence for high-conviction picks."},
+        {"name": "Screen Builder", "description": "Custom scanner with 40+ parameters across stocks, futures, and options."},
+        {"name": "Basket Orders", "description": "Multi-leg F&O basket orders with broker webhook integration and API key management."},
+    ]
+) and Investment Advisors (RIA) operating in Indian equity markets.
 
 ### Coverage
 - **923 NSE-listed stocks** across **49 sectors**
