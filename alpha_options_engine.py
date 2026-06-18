@@ -189,24 +189,38 @@ def pe_buy(symbol, spot, capital, iv=20, expiry=""):
     }
 
 def _fetch_live_chain(symbol):
-    """Fetch live options chain from Groww via internal API. Returns {spot, expiry, calls:{strike:ltp}, puts:{strike:ltp}}."""
+    """Fetch live options chain from Kite via internal API. Returns {spot, expiry, calls:{strike:ltp}, puts:{strike:ltp}}."""
     try:
         import urllib.request, json as _json
         url = f"http://127.0.0.1:8001/api/nfo/option-chain/{symbol}"
-        req = urllib.request.Request(url, headers={"Authorization":"Bearer internal"})
-        resp = urllib.request.urlopen(req, timeout=8).read().decode()
+        req = urllib.request.Request(url, headers={"X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"})
+        resp = urllib.request.urlopen(req, timeout=10).read().decode()
         data = _json.loads(resp)
-        if not data.get("chains"): return None
-        spot = data.get("spot_price", 0)
-        ch = data["chains"][0]  # nearest expiry
-        exp = ch.get("expiry","")
-        calls = {int(c["strike"]):c["ltp"] for c in ch.get("calls",[]) if c.get("ltp",0)>0}
-        puts = {int(p["strike"]):p["ltp"] for p in ch.get("puts",[]) if p.get("ltp",0)>0}
-        ivs = {}
-        for c in ch.get("calls",[]): ivs[int(c["strike"])] = c.get("iv",0)
-        for p in ch.get("puts",[]): ivs[int(p["strike"])] = max(ivs.get(int(p["strike"]),0), p.get("iv",0))
+        chain = data.get("chain", [])
+        if not chain:
+            return None
+        # Get spot from Data Service
+        spot = 0
+        try:
+            spot_sym = "%5ENSEI" if symbol == "NIFTY" else "%5ENSEBANK" if symbol == "BANKNIFTY" else symbol
+            spot_req = urllib.request.Request(f"http://127.0.0.1:5004/data/equity/quote/{spot_sym}")
+            spot_resp = urllib.request.urlopen(spot_req, timeout=5).read().decode()
+            spot = _json.loads(spot_resp).get("price", 0)
+        except:
+            pass
+        exp = data.get("expiry", data.get("expiries", [""])[0] if data.get("expiries") else "")
+        calls = {}
+        puts = {}
+        for s in chain:
+            strike = int(s.get("strike", 0))
+            ce_ltp = s.get("ce_ltp", 0)
+            pe_ltp = s.get("pe_ltp", 0)
+            if ce_ltp and ce_ltp > 0:
+                calls[strike] = ce_ltp
+            if pe_ltp and pe_ltp > 0:
+                puts[strike] = pe_ltp
         if spot and (calls or puts):
-            return {"spot":spot,"expiry":exp,"calls":calls,"puts":puts,"ivs":ivs}
+            return {"spot": spot, "expiry": exp, "calls": calls, "puts": puts, "ivs": {}}
     except Exception as e:
         logger.warning(f"Live chain failed for {symbol}: {e}")
     return None
