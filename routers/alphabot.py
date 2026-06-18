@@ -129,8 +129,20 @@ def get_ist_today():
     return datetime.now(IST).date()
 
 def get_current_weekly_expiry():
-    """Get current week's Thursday expiry (IST date)"""
+    """Get nearest NIFTY expiry from instrument_master."""
     today = get_ist_today()
+    try:
+        import psycopg2
+        conn = psycopg2.connect("dbname=alphamarket_db user=alphamarket_user password=AlphaMkt2026 host=localhost")
+        cr = conn.cursor()
+        cutoff = today if datetime.now(IST).time() <= dtime(15, 30) else today + timedelta(days=1)
+        cr.execute("SELECT DISTINCT expiry FROM instrument_master WHERE exchange='NFO' AND name='NIFTY' AND instrument_type IN ('CE','PE') AND expiry >= %s ORDER BY expiry LIMIT 1", (cutoff,))
+        row = cr.fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception as e:
+        logger.warning(f"Expiry lookup failed: {e}")
     days_to_thursday = (3 - today.weekday()) % 7
     if days_to_thursday == 0 and datetime.now(IST).time() > dtime(15, 30):
         days_to_thursday = 7
@@ -355,9 +367,25 @@ async def strategy_options_writing(index: str, config: dict) -> list:
     ce_strike = atm_strike + (otm_offset_strikes * gap)
     pe_strike = atm_strike - (otm_offset_strikes * gap)
 
-    # Estimate OTM premium (~0.3-0.5% of spot for 2 strikes OTM weekly)
-    ce_premium = round(spot * 0.004, 1)
-    pe_premium = round(spot * 0.004, 1)
+    # Fetch actual premiums from option chain
+    ce_premium = 0
+    pe_premium = 0
+    try:
+        import urllib.request as _ur
+        chain_url = f"http://127.0.0.1:8001/api/nfo/option-chain/{index}?expiry={expiry.strftime('%Y-%m-%d')}"
+        _cr = _ur.urlopen(_ur.Request(chain_url, headers={"X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"}), timeout=3)
+        _cd = json.loads(_cr.read().decode())
+        for s in _cd.get("chain", []):
+            if s.get("strike") == ce_strike and s.get("ce_ltp"):
+                ce_premium = round(float(s["ce_ltp"]), 2)
+            if s.get("strike") == pe_strike and s.get("pe_ltp"):
+                pe_premium = round(float(s["pe_ltp"]), 2)
+    except:
+        pass
+    if ce_premium <= 0:
+        ce_premium = round(spot * 0.004, 1)
+    if pe_premium <= 0:
+        pe_premium = round(spot * 0.004, 1)
     total_premium = ce_premium + pe_premium
 
     # SELL CE leg
@@ -369,7 +397,7 @@ async def strategy_options_writing(index: str, config: dict) -> list:
         "strike": ce_strike,
         "entry_price": ce_premium,
         "stop_loss": round(ce_premium * sl_multiplier, 2),
-        "target": round(ce_premium * 0.1, 2),  # let it expire near zero
+        "target": round(max(ce_premium * 0.05, 0.5), 2),  # near zero at expiry
         "quantity": lots * idx["lot_size"],
         "lots": lots,
         "potential_pct": round((ce_premium / (spot * 0.15)) * 100, 2),  # return on margin
@@ -390,7 +418,7 @@ async def strategy_options_writing(index: str, config: dict) -> list:
         "strike": pe_strike,
         "entry_price": pe_premium,
         "stop_loss": round(pe_premium * sl_multiplier, 2),
-        "target": round(pe_premium * 0.1, 2),
+        "target": round(max(pe_premium * 0.05, 0.5), 2),
         "quantity": lots * idx["lot_size"],
         "lots": lots,
         "potential_pct": round((pe_premium / (spot * 0.15)) * 100, 2),
