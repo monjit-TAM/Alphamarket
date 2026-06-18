@@ -34,7 +34,7 @@ API_TAGS = [
     {"name": "Stock Screener", "description": "Screen 843 NSE stocks across 34+ quantitative strategies including momentum, mean reversion, breakout, fundamental filters, and multi-factor models"},
     {"name": "Backtesting", "description": "Run historical backtests on individual stocks with 40+ strategies. Get trade-by-trade results, equity curves, and performance metrics (CAGR, Sharpe, max drawdown)"},
     {"name": "Forward Testing", "description": "Paper-trade strategies in real-time across multiple stocks simultaneously. Track live P&L, positions, and signal generation"},
-    {"name": "Paper Trading", "description": "Manual paper trading - open and close individual positions with stop-loss and target tracking"},
+    {"name": "Paper Trading", "description": "Manual paper trading — open and close individual positions with stop-loss and target tracking"},
     {"name": "Model Portfolios", "description": "Create, manage, and rebalance model portfolios using screener or backtest strategies. 23 pre-built templates available"},
     {"name": "Options Lab", "description": "Options chain data, multi-leg strategy payoff analysis, and Greeks calculator for NSE stocks and indices (NIFTY, BANKNIFTY)"},
     {"name": "Advisory & Reports", "description": "Generate SEBI-compliant advisory reports and PDF recommendations for RA/RIA advisors. Track recommendation history with audit trail"},
@@ -44,21 +44,21 @@ API_TAGS = [
     {"name": "Stock Data", "description": "Fundamental data, symbol search, and price lookup for NSE-listed stocks"},
     {"name": "Alerts & Notifications", "description": "Price alerts, strategy signal alerts, and in-app notification management"},
     {"name": "Dashboard", "description": "Aggregated strategy performance dashboard across screener, backtest, and forward test engines"},
-    {"name": "Admin", "description": "Admin-only endpoints - user management, invite codes, platform statistics, SEBI advisor verification"},
+    {"name": "Admin", "description": "Admin-only endpoints — user management, invite codes, platform statistics, SEBI advisor verification"},
     {"name": "AlphaView", "description": "Comprehensive single-page stock analysis combining technicals, fundamentals, ratings, patterns, relative strength vs NIFTY, and assessment scores (Value/Growth/Quality)"},
     {"name": "Market Intelligence", "description": "Pre-market briefs, sector heatmaps, DCF valuation, dividend tracking, and technical pattern detection"},
     {"name": "Screen Builder", "description": "Custom stock/futures/options scanner for DYOR. Filter 923 NSE stocks by 50+ technical & fundamental parameters. AND/OR logic, save/load screens, CSV export. Includes universe warm-up, F&O pipeline, and saved screens."},
     {"name": "Alpha Signal", "description": "Automated Index F&O signal engine (AlphaBot). Strategies: Momentum Futures (VWAP + price action), Options Directional (ATM CE/PE), Options Writing (OTM Straddle/Strangle), Index Arbitrage (basis capture). Signals pushed to Upstox/XTS for auto-execution. Basket publishing for brokers."},
     {"name": "F&O Trading", "description": "Cash-futures arbitrage scanner, jobbing (bid-ask spread) candidates, and scalping (VWAP + momentum) signals. Covers 31 F&O stocks + NIFTY/BANKNIFTY/FINNIFTY indices. Live prices via Groww API + Kite Connect."},
     {"name": "Bridge (AlphaMarket)", "description": "Publish stock calls, F&O positions, and baskets from DYOR to AlphaMarket advisor profiles. Requires approved publish permission."},
-    {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner - all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
-    {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints - no authentication required."},
-    {"name": "Basket Publisher", "description": "Advisor basket strategies - publish F&O/Equity intraday baskets, per-advisor API keys for broker polling, webhook registration, auto-squareoff at 3:20PM IST"},
+    {"name": "Trading Tools", "description": "Arbitrage scanner, Jobbing candidates, Scalping momentum scanner — all with index F&O support (NIFTY, BANKNIFTY, FINNIFTY, MIDCPNIFTY). Requires Kite broker connection."},
+    {"name": "System", "description": "Health checks, system status, data source monitoring. Public endpoints — no authentication required."},
+    {"name": "Basket Publisher", "description": "Advisor basket strategies — publish F&O/Equity intraday baskets, per-advisor API keys for broker polling, webhook registration, auto-squareoff at 3:20PM IST"},
     {"name": "Upstox", "description": "Upstox OAuth integration, basket pre-fill from AlphaBot signals and Nifty50 movers, basket order placement"},
     {"name": "AlphaBot", "description": "Algorithmic signal generator for Index F&O. Automated strategies for NIFTY/BANKNIFTY futures, options directional, options writing (straddle/strangle), and index arbitrage. Signals pushed to Upstox/XTS for auto-execution."},
-    {"name": "Alpha Fundamentals", "description": "Fundamental data from TrueData XBRL - 696+ companies, 40+ ratios including ROE, ROCE, PE, PB, D/E, EBITDA margin, revenue growth, PAT growth. Quarterly history, raw financials, bulk lookup, screening, sector aggregates."},
+    {"name": "Alpha Fundamentals", "description": "Fundamental data from TrueData XBRL — 696+ companies, 40+ ratios including ROE, ROCE, PE, PB, D/E, EBITDA margin, revenue growth, PAT growth. Quarterly history, raw financials, bulk lookup, screening, sector aggregates."},
     {"name": "Alpha Ideas", "description": "Daily actionable trade and investment ideas across 4 horizons: SWING (1-5d), SHORT (1-4w), MEDIUM (1-3m), LONG (6m+). 6 strategies: Breakout, Mean Reversion, Momentum, Volatility Squeeze, Quality+Momentum, Deep Value, GARP. Live price enrichment, performance tracking."},
-    {"name": "Alpha Conviction", "description": "Multi-dimensional conviction scoring - 5 independent dimensions (Trend 25%, Momentum 25%, Quality 20%, Value 15%, Volume 15%) scored 0-100. Stocks where 4+ dimensions agree are high-conviction picks. Live price adjusted entry/target/stop."},
+    {"name": "Alpha Conviction", "description": "Multi-dimensional conviction scoring — 5 independent dimensions (Trend 25%, Momentum 25%, Quality 20%, Value 15%, Volume 15%) scored 0-100. Stocks where 4+ dimensions agree are high-conviction picks. Live price adjusted entry/target/stop."},
     {"name": "Intraday Levels", "description": "Daily pivot levels (Standard/Fibonacci/Camarilla), Central Pivot Range (CPR) with narrow detection, ATR-based expected range, and actionable setups (Breakout Long/Short, Mean Reversion, Range Trade, Bullish/Bearish Setup). Dynamic stock selection from top-volume diverse sectors."},
     {"name": "Alpha Intelligence", "description": "AlphaScore™ (0-100 composite rating), Confluence Engine™ (cross-signal conviction probability), Smart Money Flow™ (institutional accumulation tracker). Patent pending."},
 ]
@@ -156,7 +156,7 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
             if r.status_code == 200:
                 data = r.json().get("data", [])
                 if len(data) < 5:
-                    logger.warning(f"ds_ohlcv: {symbol} returned only {len(data)} rows - possible data issue")
+                    logger.warning(f"ds_ohlcv: {symbol} returned only {len(data)} rows — possible data issue")
                 return data
             else:
                 logger.error(f"ds_ohlcv: {symbol} returned HTTP {r.status_code}: {r.text[:200]}")
@@ -178,121 +178,41 @@ from confluence_engine import compute_confluence
 from flow_signals import compute_smart_money_score
 
 app = FastAPI(
+    root_path="/dyor",
     title="AlphaLab DYOR API",
-    description="""**AlphaLab DYOR** - Do Your Own Research platform by AlphaMarket (Edhaz Markets Pvt Ltd).
-
-## Modules
-
-### Signal Generation
-- **Options Alpha Engine** - AI-driven F&O signals with defined risk (Iron Condors, Bear Put Spreads, Theta Scalps). Each signal includes entry/exit zones, buy zones, leg-level premium ranges, and auto-expiry.
-- **AlphaBot** - Automated Index F&O signal engine for NIFTY/BANKNIFTY. Strategies: Momentum Futures, Options Directional, Strangle Writing, Index Arbitrage. Live premiums from Kite, real-time monitoring.
-- **Alpha Ideas** - AI stock ideas across 8 screener strategies with buy zones, R:R ratios, and confidence scores. Horizons: Swing, Short, Medium, Long term.
-- **Conviction Picks** - Multi-dimensional scoring (Trend, Momentum, Quality, Value, Volume) with 3+ dimension agreement filter.
-- **Intraday Levels** - Pivot points, CPR analysis, expected ranges, buy/sell zones for NIFTY 50 stocks.
-- **Algo Trading** - 5 algorithmic strategies (Momentum, Mean Reversion, Breakout, Pairs, Iron Condor) with live signals.
-
-### Research Tools
-- **Stock Screener** - 34+ quantitative strategies across 843 NSE stocks including momentum, breakout, fundamental, and hybrid models.
-- **Backtesting** - 40+ strategies with trade-by-trade results, equity curves, CAGR, Sharpe, max drawdown.
-- **Forward Testing** - Paper-trade strategies across multiple stocks simultaneously with live P&L tracking.
-- **Options Lab** - Chain data, multi-leg payoff analysis, Greeks calculator.
-- **Model Portfolios** - 23 pre-built templates with rebalancing.
-
-### Trade Execution
-- **Trade Scanners** - Jobbing (spread trading), Scalping (VWAP momentum), Arbitrage (spot-futures basis).
-- **Paper Trading** - Manual positions with SL/target tracking.
-- **Basket Orders** - Multi-leg F&O baskets with broker webhook integration.
-
-### Data & Analysis
-- **Sector Analysis** - Rotation analysis, RRG, 49 sectors.
-- **Technical Charts** - OHLCV with 15+ indicators.
-- **Morning Brief** - Pre-market global cues, sentiment score.
-
----
-**Live Data**: Kite (Zerodha), Data Service, Alpha Fundamentals
-**Company**: Edhaz Markets Private Limited (Brand: AlphaMarket)
-""",
-    version="3.0.0",
+    description="AlphaLab DYOR - Do Your Own Research platform by AlphaMarket. 923 NSE stocks, 34+ screener strategies, Options Alpha Engine, AlphaBot F&O signals, Algo Trading, Trade Scanners, Backtesting, Model Portfolios, Sector Analysis, and Advisory Reports.",
+    version="3.5.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     openapi_tags=[
-        {"name": "Health & Status", "description": "System health, Redis, Kite connectivity checks"},
-        {"name": "Authentication", "description": "User registration, login, session management"},
-        {"name": "Stock Screener", "description": "Screen 843 NSE stocks across 34+ strategies: momentum, breakout, mean reversion, fundamental, hybrid. Includes buy zones and signal status."},
-        {"name": "Alpha Ideas", "description": "AI-generated trade ideas across Swing/Short/Medium/Long horizons. Each idea includes entry, target, stop, buy zone, R:R ratio, and confidence score."},
-        {"name": "Alpha Conviction", "description": "Multi-dimensional conviction scoring - Trend, Momentum, Quality, Value, Volume. Shows stocks where 3+ dimensions agree."},
-        {"name": "Intraday Levels", "description": "Pivot points, CPR analysis, support/resistance, expected ranges, and buy/sell zones for top NIFTY 50 stocks."},
-        {"name": "Options Alpha", "description": "AI F&O signal engine - generates Iron Condors, Bear Put Spreads, Theta Scalps with leg-level buy zones, entry/exit guidance, and auto-expiry. Uses live option chain premiums."},
-        {"name": "AlphaBot", "description": "Automated Index F&O signals for NIFTY/BANKNIFTY. 7 strategies: Momentum Futures, Options Directional, Strangle Writing, Index Arbitrage. Live premiums, buy zones, signal validity."},
-        {"name": "Algo Trading", "description": "5 algorithmic strategies with live signals: Momentum, Mean Reversion, Breakout, Pairs Trading, Iron Condor. Each signal includes entry check guidance."},
-        {"name": "Trade Scanners", "description": "F&O trading scanners - Jobbing (spread), Scalping (VWAP momentum), Arbitrage (spot-futures basis). Live Kite data for 120+ F&O stocks + indices."},
-        {"name": "Backtesting", "description": "Run historical backtests with 40+ strategies. Trade-by-trade results, equity curves, CAGR, Sharpe ratio, max drawdown."},
-        {"name": "Forward Testing", "description": "Paper-trade strategies across multiple stocks in real-time. Track live P&L, positions, signal generation."},
-        {"name": "Paper Trading", "description": "Manual paper trading - open/close positions with stop-loss and target tracking."},
-        {"name": "Model Portfolios", "description": "Create and manage model portfolios. 23 pre-built templates with rebalancing signals."},
-        {"name": "Options Lab", "description": "Options chain, multi-leg strategy payoff, Greeks calculator for NSE stocks and indices."},
-        {"name": "Advisory & Reports", "description": "SEBI-compliant advisory reports, PDF recommendations for RA/RIA advisors."},
-        {"name": "Technical Charts", "description": "OHLCV chart data with 15+ technical indicators and backtest trade markers."},
-        {"name": "Sector Analysis", "description": "Sector rotation, RRG, sector/industry classification for 843 stocks across 49 sectors."},
-        {"name": "Watchlist", "description": "User watchlists with real-time price tracking."},
-        {"name": "Stock Data", "description": "Fundamental data, symbol search, price lookup for NSE stocks."},
-        {"name": "Alerts & Notifications", "description": "Price alerts, strategy signal alerts, notification management."},
-        {"name": "Dashboard", "description": "Aggregated strategy performance across screener, backtest, forward test engines."},
-        {"name": "Morning Brief", "description": "Pre-market brief with global cues, sector pulse, screener picks, sentiment score."},
-        {"name": "MTF Combiner", "description": "Multi-timeframe screener - runs 8 strategies across 3 timeframes, finds convergence for high-conviction picks."},
-        {"name": "Screen Builder", "description": "Custom scanner with 40+ parameters across stocks, futures, and options."},
-        {"name": "Basket Orders", "description": "Multi-leg F&O basket orders with broker webhook integration and API key management."},
+        {"name": "Health & Status", "description": "System health checks and API status"},
+        {"name": "Authentication", "description": "User registration, login, and session management"},
+        {"name": "Stock Screener", "description": "Screen 843 NSE stocks across 34+ strategies with buy zones and signal status"},
+        {"name": "Alpha Ideas", "description": "AI trade ideas with buy zones, R:R ratios, confidence scores across 4 horizons"},
+        {"name": "Alpha Conviction", "description": "Multi-dimensional scoring: Trend, Momentum, Quality, Value, Volume with buy zones"},
+        {"name": "Intraday Levels", "description": "Pivot points, CPR, support/resistance, buy/sell zones for NIFTY 50 stocks"},
+        {"name": "Options Alpha", "description": "AI F&O signals with leg-level buy zones, entry/exit guidance, auto-expiry"},
+        {"name": "AlphaBot", "description": "Automated NIFTY/BANKNIFTY F&O signals with live premiums and buy zones"},
+        {"name": "Algo Trading", "description": "5 algorithmic strategies with live signals and entry check guidance"},
+        {"name": "Trade Scanners", "description": "Jobbing, Scalping, Arbitrage scanners with live Kite data"},
+        {"name": "Backtesting", "description": "40+ strategies with trade-by-trade results and equity curves"},
+        {"name": "Forward Testing", "description": "Paper-trade strategies across multiple stocks with live P&L"},
+        {"name": "Paper Trading", "description": "Manual paper trading with stop-loss and target tracking"},
+        {"name": "Model Portfolios", "description": "23 pre-built portfolio templates with rebalancing"},
+        {"name": "Options Lab", "description": "Options chain, multi-leg payoff analysis, Greeks calculator"},
+        {"name": "Advisory & Reports", "description": "SEBI-compliant advisory reports and PDF recommendations"},
+        {"name": "Technical Charts", "description": "OHLCV chart data with 15+ technical indicators"},
+        {"name": "Sector Analysis", "description": "Sector rotation, RRG, 49 sectors classification"},
+        {"name": "Watchlist", "description": "User watchlists with real-time price tracking"},
+        {"name": "Stock Data", "description": "Fundamental data, symbol search, price lookup"},
+        {"name": "Alerts & Notifications", "description": "Price alerts and strategy signal alerts"},
+        {"name": "Dashboard", "description": "Aggregated strategy performance dashboard"},
+        {"name": "Morning Brief", "description": "Pre-market brief with global cues and sentiment score"},
+        {"name": "MTF Combiner", "description": "Multi-timeframe screener for high-conviction picks"},
+        {"name": "Screen Builder", "description": "Custom scanner with 40+ parameters"},
+        {"name": "Basket Orders", "description": "Multi-leg F&O basket orders with broker webhook integration"},
     ]
-) and Investment Advisors (RIA) operating in Indian equity markets.
-
-### Coverage
-- **923 NSE-listed stocks** across **49 sectors**
-- **34+ screener strategies** (momentum, mean reversion, breakout, fundamental, multi-factor)
-- **40+ backtest strategies** with full trade-by-trade analysis
-- **Real-time forward testing** with live signal generation
-- **23 pre-built model portfolio templates** with type-aware scoring engine
-- **Options Alpha Engine** - volatility regime detection, F&O signal generation, spread strategies, auto-close
-- **Options chain & payoff analysis** for stocks and indices
-- **Sector Relative Rotation Graphs (RRG)** with JdK RS-Ratio methodology
-- **SEBI-compliant advisory report generation** with PDF export
-- **Advisor onboarding walkthrough** - 9-step contextual tour guiding new advisors through profile, bank details, plans, strategies, content, reports and microsite
-
-### Authentication
-All endpoints (except `/api/health`) require a Bearer token. Obtain one via `/api/auth/login`.
-
-```
-Authorization: Bearer <your_jwt_token>
-```
-
-### Rate Limits
-- Screener: 10 requests/minute (heavy computation)
-- Backtest: 5 requests/minute (long-running)
-- Options chain: 20 requests/minute
-- Other endpoints: 60 requests/minute
-
-### Data Sources
-Market data sourced from Yahoo Finance with PostgreSQL caching.
-
-### v3.3.0 (May 18, 2026)
-- Alpha Fundamentals API (696+ companies, 40+ ratios from TrueData XBRL)
-- Alpha Ideas Engine (6 strategies, 4 horizons, live price enrichment)
-- Alpha Conviction Engine (5-dimension independent scoring)
-- Intraday Levels Engine (pivots, CPR, ATR, dynamic stock selection)
-- Performance tracking for all ideas
-- Push-to-Paper-Trade + Push-to-AlphaMarket integration Options data via NSE + Black-Scholes synthetic pricing.
-
-### Contact
-- **Email**: hello@thealphamarket.com
-- **Website**: https://alphamarket.co.in
-""",
-    version="3.3.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
-    openapi_tags=API_TAGS,
-    contact={"name": "AlphaLab DYOR by AlphaMarket", "email": "hello@alphamarket.co.in", "url": "https://alphamarket.co.in"},
-    license_info={"name": "Proprietary", "url": "https://alphamarket.co.in/terms"},
 )
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
@@ -322,7 +242,7 @@ app.include_router(alpha_ideas_router)
 from routers.alpha_conviction import router as alpha_conviction_router
 app.include_router(alpha_conviction_router)
 
-# DYOR Auth Bridge - validate AlphaMarket session cookies
+# DYOR Auth Bridge — validate AlphaMarket session cookies
 from middleware.alphamarket_auth import AlphaMarketAuthMiddleware
 app.add_middleware(AlphaMarketAuthMiddleware, dyor_db_url=DATABASE_URL)
 security = HTTPBearer(auto_error=False)
@@ -390,7 +310,7 @@ async def shared_kite_ltp(request: Request, symbol: str):
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
-    """System health status - check data sources, services, cache"""
+    """System health status — check data sources, services, cache"""
     import subprocess
     results = {}
     # Redis
@@ -443,7 +363,7 @@ async def health_check():
 
 async def _run_screener_internal(strategy: str, min_price: float = 50, max_price: float = 10000,
                                   sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = ""):
-    """Internal screener runner - bypasses auth, used by precompute loop and warm endpoint."""
+    """Internal screener runner — bypasses auth, used by precompute loop and warm endpoint."""
     from datetime import date, timedelta
     # Normalize strategy aliases (frontend uses different names than internal)
     STRATEGY_ALIASES = {
@@ -481,7 +401,7 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
             result["count"] = len(stocks)
             return result
         else:
-            # Cache miss - return empty instead of blocking for 2+ min Yahoo download
+            # Cache miss — return empty instead of blocking for 2+ min Yahoo download
             # Background cron (warm_cache_direct.py) will fill cache every 2 hours
             return {"stocks": [], "count": 0, "strategy": strategy, "cached": False,
                     "message": "Data is being refreshed. Please try again in a few minutes or click Live Scan for fresh data."}
@@ -706,7 +626,7 @@ async def _precompute_loop():
             should_warm = (8 <= h < 16) or (h == 8 and m >= 15)
             if False:  # Disabled - external cron warm_cache_direct.py handles warming
                 print(f"[PRECOMPUTE] Starting full cache warm at {now_ist.strftime('%H:%M IST')}...")
-                # Step 1: Warm Screen Builder universe (most expensive - do once)
+                # Step 1: Warm Screen Builder universe (most expensive — do once)
                 sb_cached = await redis_client.get("sb_universe") if redis_client else None
                 if not sb_cached:
                     print("[PRECOMPUTE] Warming sb_universe...")
@@ -1296,7 +1216,7 @@ def compute_indicators(df: pd.DataFrame, requested: List[str] = None) -> pd.Data
     df["death_cross"] = ((df["sma_50"] < df["sma_200"]) & (df["sma_50"].shift(1) >= df["sma_200"].shift(1))).astype(int)
     df["vol_spike"] = (v > v.rolling(20).mean() * 1.5).astype(int)
 
-    # NR7 - Narrowest range in 7 days
+    # NR7 — Narrowest range in 7 days
     df["range"] = h - l
     df["nr7"] = (df["range"] == df["range"].rolling(7).min()).astype(int)
 
@@ -1569,7 +1489,7 @@ def strategy_golden_cross(df, params):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def strategy_vwap_reversion(df, params):
-    """Buy below VWAP, sell above - mean reversion intraday strategy"""
+    """Buy below VWAP, sell above — mean reversion intraday strategy"""
     signals = pd.Series(0, index=df.index)
     if "vwap" in df.columns:
         deviation = float(params.get("vwap_deviation_pct", 1.5)) / 100
@@ -1596,7 +1516,7 @@ def strategy_keltner_breakout(df, params):
     return signals
 
 def strategy_nr7_expansion(df, params):
-    """NR7 (Narrowest Range 7 days) - buy on expansion from compression"""
+    """NR7 (Narrowest Range 7 days) — buy on expansion from compression"""
     signals = pd.Series(0, index=df.index)
     if "nr7" in df.columns and "atr" in df.columns:
         for i in range(2, len(df)):
@@ -1608,7 +1528,7 @@ def strategy_nr7_expansion(df, params):
     return signals
 
 def strategy_obv_divergence(df, params):
-    """On Balance Volume trend - buy when OBV rising, sell when falling"""
+    """On Balance Volume trend — buy when OBV rising, sell when falling"""
     signals = pd.Series(0, index=df.index)
     if "obv" in df.columns:
         obv_ma = df["obv"].rolling(20).mean()
@@ -1617,7 +1537,7 @@ def strategy_obv_divergence(df, params):
     return signals
 
 def strategy_triple_ema(df, params):
-    """Triple EMA (TEMA) - 9/21/55 alignment"""
+    """Triple EMA (TEMA) — 9/21/55 alignment"""
     ema_fast = int(params.get("tema_fast", 9))
     ema_mid = int(params.get("tema_mid", 21))
     ema_slow = int(params.get("tema_slow", 55))
@@ -1630,7 +1550,7 @@ def strategy_triple_ema(df, params):
     return signals
 
 def strategy_atr_channel(df, params):
-    """ATR Channel - buy at lower channel, sell at upper"""
+    """ATR Channel — buy at lower channel, sell at upper"""
     multiplier = float(params.get("atr_multiplier", 2.0))
     period = int(params.get("atr_period", 14))
     signals = pd.Series(0, index=df.index)
@@ -1643,7 +1563,7 @@ def strategy_atr_channel(df, params):
     return signals
 
 def strategy_mean_reversion(df, params):
-    """Z-Score mean reversion - buy when z < -2, sell when z > 2"""
+    """Z-Score mean reversion — buy when z < -2, sell when z > 2"""
     lookback = int(params.get("mean_rev_lookback", 20))
     z_buy = float(params.get("z_score_buy", -2.0))
     z_sell = float(params.get("z_score_sell", 2.0))
@@ -1816,7 +1736,7 @@ def strategy_growth_margin_expansion(df, params):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def strategy_hybrid_roe_trend(df, params):
-    """High ROE + Price above 200 DMA - quality + trend confirmation"""
+    """High ROE + Price above 200 DMA — quality + trend confirmation"""
     min_roe = float(params.get("min_roe", 15)) / 100
     fund = params.get("_fundamentals", {})
     signals = pd.Series(0, index=df.index)
@@ -1829,7 +1749,7 @@ def strategy_hybrid_roe_trend(df, params):
     return signals
 
 def strategy_hybrid_growth_breakout(df, params):
-    """Earnings Growth + Price Breakout - growth stocks breaking out"""
+    """Earnings Growth + Price Breakout — growth stocks breaking out"""
     min_growth = float(params.get("min_earnings_growth", 10)) / 100
     window = int(params.get("breakout_window", 20))
     fund = params.get("_fundamentals", {})
@@ -1844,7 +1764,7 @@ def strategy_hybrid_growth_breakout(df, params):
     return signals
 
 def strategy_hybrid_low_debt_momentum(df, params):
-    """Low Debt + Momentum Rank - quality balance sheet with price momentum"""
+    """Low Debt + Momentum Rank — quality balance sheet with price momentum"""
     max_de = float(params.get("max_debt_equity", 50))
     momentum_period = int(params.get("momentum_period", 20))
     fund = params.get("_fundamentals", {})
@@ -1858,7 +1778,7 @@ def strategy_hybrid_low_debt_momentum(df, params):
     return signals
 
 def strategy_hybrid_value_reversal(df, params):
-    """Low P/E + RSI Oversold - value stock at technical oversold"""
+    """Low P/E + RSI Oversold — value stock at technical oversold"""
     max_pe = float(params.get("pe_max", 15))
     rsi_threshold = float(params.get("oversold", 35))
     fund = params.get("_fundamentals", {})
@@ -2424,7 +2344,7 @@ async def get_indicators(req: StrategyParams, user=Depends(get_current_user)):
 
 # ── Backtest Routes ───────────────────────────────────────────────────────────
 @app.post("/api/backtest/run", tags=["Backtesting"], summary="Run a backtest",
-    description="Execute a historical backtest on a single stock. Supports 40+ strategies (SMA_CROSSOVER, EMA_CROSSOVER, RSI, MACD, BOLLINGER, SUPERTREND, BREAKOUT, MOMENTUM, ADX_TREND, GOLDEN_CROSS, etc.). Returns trade-by-trade results, equity curve, CAGR, Sharpe ratio, max drawdown, and win rate. Runs asynchronously - poll the backtest ID for results.")
+    description="Execute a historical backtest on a single stock. Supports 40+ strategies (SMA_CROSSOVER, EMA_CROSSOVER, RSI, MACD, BOLLINGER, SUPERTREND, BREAKOUT, MOMENTUM, ADX_TREND, GOLDEN_CROSS, etc.). Returns trade-by-trade results, equity curve, CAGR, Sharpe ratio, max drawdown, and win rate. Runs asynchronously — poll the backtest ID for results.")
 async def run_backtest(req: BacktestRequest, user=Depends(get_current_user)):
     async with db_pool.acquire() as conn:
         bt_id = await conn.fetchval(
@@ -2438,7 +2358,7 @@ async def execute_backtest(bt_id: int, req: BacktestRequest):
     try:
         df = await fetch_groww_candles(req.symbol, req.from_date, req.to_date)
         if len(df) < 30:
-            raise Exception("Insufficient data - try a longer date range")
+            raise Exception("Insufficient data — try a longer date range")
         df = compute_indicators(df)
         p = req.params or {}
         p["_symbol"] = req.symbol
@@ -2486,7 +2406,7 @@ async def close_paper_trade(trade_id: int, exit_price: float, user=Depends(get_c
         return {"trade_id": trade_id, "pnl": round(pnl,2), "status": "closed"}
 
 @app.get("/api/paper-trades", tags=["Paper Trading"], summary="List paper trades",
-    description="List all paper trades for the authenticated user - both open and closed positions with P&L calculations.")
+    description="List all paper trades for the authenticated user — both open and closed positions with P&L calculations.")
 async def list_paper_trades(user=Depends(get_current_user)):
     async with db_pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM paper_trades WHERE user_id=$1 ORDER BY created_at DESC LIMIT 100", user["id"])
@@ -2526,7 +2446,7 @@ STRATEGY_MAP = {
 
 
 async def generate_forward_signals(fwd_test: dict) -> list:
-    """Run strategy on current data for all symbols - generate BUY/SELL/HOLD signals."""
+    """Run strategy on current data for all symbols — generate BUY/SELL/HOLD signals."""
     from datetime import date, timedelta
 
     strategy = fwd_test["strategy"]
@@ -4284,7 +4204,7 @@ BASIC_INDUSTRY_MAP = {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# DYNAMIC UNIVERSE LOADER - Override from stock_universe.json if available
+# DYNAMIC UNIVERSE LOADER — Override from stock_universe.json if available
 # ══════════════════════════════════════════════════════════════════════════════
 _UNIVERSE_JSON = "/opt/alphaforge/stock_universe.json"
 _UNIVERSE_LOADED = False
@@ -4443,7 +4363,7 @@ async def _screener_legacy_unused(strategy: str = "momentum", min_price: float =
     
     yf_symbols = [f"{s}.NS" for s in symbols_to_scan]
 
-    # Batch download - use larger batches for efficiency
+    # Batch download — use larger batches for efficiency
     _batch_sz = 40 if len(yf_symbols) > 500 else 50
     all_data = await batch_download_yf(yf_symbols, start, end, batch_size=_batch_sz)
 
@@ -4823,7 +4743,7 @@ async def watchlist_prices(user=Depends(get_current_user)):
 
 # ── Fundamentals ─────────────────────────────────────────────────────────────
 @app.get("/api/stock/fundamentals/{symbol}", tags=["Stock Data"], summary="Get stock fundamentals",
-    description="Get fundamental data for a stock - market cap, P/E, P/B, ROE, ROCE, debt-to-equity, dividend yield, revenue, profit margins, promoter holding, 52-week high/low, and more.")
+    description="Get fundamental data for a stock — market cap, P/E, P/B, ROE, ROCE, debt-to-equity, dividend yield, revenue, profit margins, promoter holding, 52-week high/low, and more.")
 async def stock_fundamentals(symbol: str, user=Depends(get_current_user)):
     """Fetch fundamental data for a stock via data service"""
 
@@ -4879,8 +4799,8 @@ async def stock_fundamentals(symbol: str, user=Depends(get_current_user)):
         data = {
             "symbol": symbol.upper(),
             "name": safe("longName", symbol.upper()),
-            "sector": safe("sector", SECTOR_MAP.get(symbol.upper(), "-")),
-            "industry": safe("industry", "-"),
+            "sector": safe("sector", SECTOR_MAP.get(symbol.upper(), "—")),
+            "industry": safe("industry", "—"),
             "market_cap": safe("marketCap"),
             "pe_ratio": round(safe("trailingPE", 0), 2) if safe("trailingPE") else None,
             "forward_pe": round(safe("forwardPE", 0), 2) if safe("forwardPE") else None,
@@ -4910,10 +4830,10 @@ async def stock_fundamentals(symbol: str, user=Depends(get_current_user)):
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SYMBOL SEARCH - ANY NSE / BSE STOCK
+# SYMBOL SEARCH — ANY NSE / BSE STOCK
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Extended universe - top BSE stocks not already in NIFTY_UNIVERSE
+# Extended universe — top BSE stocks not already in NIFTY_UNIVERSE
 BSE_EXTRA = [
     "ADANIPOWER","SUZLON","IREDA","JIOPEP","ZOMATO","IDEA","YESBANK","TATAMTRDVR",
     "RPOWER","TRIDENT","NHPC","IRFC","RVNL","HUDCO","PFC","RECLTD","SJVN",
@@ -5050,79 +4970,79 @@ OPTIONS_STRATEGIES = {
     "long_call": {
         "name": "Long Call", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}],
-        "description": "Bullish - buy a call option. Unlimited profit, limited loss to premium paid.",
+        "description": "Bullish — buy a call option. Unlimited profit, limited loss to premium paid.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "hedged", "greeks": "delta+,gamma+,vega+,theta-", "vol_view": "expansion", "complexity": "low", "expiry": "any"}
     },
     "long_itm_call": {
         "name": "Long ITM Call", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": -2}],
-        "description": "Deep bullish - buy an ITM call for high delta exposure with less time decay risk.",
+        "description": "Deep bullish — buy an ITM call for high delta exposure with less time decay risk.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "hedged", "greeks": "delta+,gamma+,theta-", "vol_view": "neutral", "complexity": "low", "expiry": "any"}
     },
     "long_otm_call": {
         "name": "Long OTM Call", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 3}],
-        "description": "Aggressive bullish - cheap OTM call with high leverage but low probability.",
+        "description": "Aggressive bullish — cheap OTM call with high leverage but low probability.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "hedged", "greeks": "delta+,vega+,theta-", "vol_view": "expansion", "complexity": "low", "expiry": "weekly"}
     },
     "bull_call_spread": {
         "name": "Bull Call Spread", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 2}],
-        "description": "Moderately bullish - buy lower strike call, sell higher. Limited risk and reward.",
+        "description": "Moderately bullish — buy lower strike call, sell higher. Limited risk and reward.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,theta~,vega~", "vol_view": "neutral", "complexity": "low", "expiry": "any"}
     },
     "bull_put_spread": {
         "name": "Bull Put Spread", "category": "bullish",
         "legs": [{"type": "put", "side": "sell", "strike_offset": 0}, {"type": "put", "side": "buy", "strike_offset": -2}],
-        "description": "Moderately bullish credit spread - collect premium, profit if price stays above short put.",
+        "description": "Moderately bullish credit spread — collect premium, profit if price stays above short put.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,theta+,vega-", "vol_view": "contraction", "complexity": "low", "expiry": "any"}
     },
     "itm_call_spread": {
         "name": "ITM Call Spread", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": -2}, {"type": "call", "side": "sell", "strike_offset": 0}],
-        "description": "Conservative bullish - higher cost but higher probability of profit.",
+        "description": "Conservative bullish — higher cost but higher probability of profit.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,theta~", "vol_view": "neutral", "complexity": "low", "expiry": "monthly"}
     },
     "covered_call": {
         "name": "Covered Call", "category": "bullish",
         "legs": [{"type": "stock", "side": "buy"}, {"type": "call", "side": "sell", "strike_offset": 1}],
-        "description": "Mild bullish - hold stock + sell OTM call for income. Caps upside.",
+        "description": "Mild bullish — hold stock + sell OTM call for income. Caps upside.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "hedged", "greeks": "delta+,theta+", "vol_view": "contraction", "complexity": "low", "expiry": "monthly"}
     },
     "cash_secured_put": {
         "name": "Cash Secured Put", "category": "bullish",
         "legs": [{"type": "put", "side": "sell", "strike_offset": -1}],
-        "description": "Bullish income - sell OTM put with cash reserve. Profit from premium if stock stays above strike.",
+        "description": "Bullish income — sell OTM put with cash reserve. Profit from premium if stock stays above strike.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "naked", "greeks": "delta+,theta+,vega-", "vol_view": "contraction", "complexity": "low", "expiry": "monthly"}
     },
     "synthetic_long": {
         "name": "Synthetic Long", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": 0}],
-        "description": "Synthetic stock position - same P&L as owning stock but with less capital.",
+        "description": "Synthetic stock position — same P&L as owning stock but with less capital.",
         "tags": {"bias": "bullish", "risk": "unlimited", "margin": "naked", "greeks": "delta+,gamma+", "vol_view": "neutral", "complexity": "medium", "expiry": "monthly"}
     },
     "risk_reversal_bullish": {
         "name": "Risk Reversal (Bullish)", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 2}, {"type": "put", "side": "sell", "strike_offset": -2}],
-        "description": "Bullish risk reversal - buy OTM call funded by selling OTM put. Near zero-cost bullish bet.",
+        "description": "Bullish risk reversal — buy OTM call funded by selling OTM put. Near zero-cost bullish bet.",
         "tags": {"bias": "bullish", "risk": "unlimited", "margin": "naked", "greeks": "delta+,vega+", "vol_view": "expansion", "complexity": "medium", "expiry": "monthly"}
     },
     "call_ratio_spread": {
         "name": "Call Ratio Spread (1x2)", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 2, "qty_mult": 2}],
-        "description": "Bullish with cap - buy 1 ATM call, sell 2 OTM calls. Profits in moderate rise, risk if sharp rally.",
+        "description": "Bullish with cap — buy 1 ATM call, sell 2 OTM calls. Profits in moderate rise, risk if sharp rally.",
         "tags": {"bias": "bullish", "risk": "unlimited", "margin": "naked", "greeks": "delta+,theta+,vega-", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
     "call_backspread": {
         "name": "Call Backspread", "category": "bullish",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 0}, {"type": "call", "side": "buy", "strike_offset": 2, "qty_mult": 2}],
-        "description": "Volatile bullish - sell 1 ATM call, buy 2 OTM calls. Big profit on sharp rally.",
+        "description": "Volatile bullish — sell 1 ATM call, buy 2 OTM calls. Big profit on sharp rally.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,gamma+,vega+", "vol_view": "expansion", "complexity": "high", "expiry": "event"}
     },
     "bull_call_ladder": {
         "name": "Bull Call Ladder", "category": "bullish",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 2}, {"type": "call", "side": "sell", "strike_offset": 4}],
-        "description": "Moderate bullish - buy 1 call, sell 2 higher calls at different strikes. Risk above top strike.",
+        "description": "Moderate bullish — buy 1 call, sell 2 higher calls at different strikes. Risk above top strike.",
         "tags": {"bias": "bullish", "risk": "unlimited", "margin": "naked", "greeks": "delta+,theta+", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
 
@@ -5132,61 +5052,61 @@ OPTIONS_STRATEGIES = {
     "long_put": {
         "name": "Long Put", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 0}],
-        "description": "Bearish - buy a put option. Profit from price decline, loss limited to premium.",
+        "description": "Bearish — buy a put option. Profit from price decline, loss limited to premium.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "hedged", "greeks": "delta-,gamma+,vega+,theta-", "vol_view": "expansion", "complexity": "low", "expiry": "any"}
     },
     "long_itm_put": {
         "name": "Long ITM Put", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 2}],
-        "description": "Deep bearish - buy ITM put for high delta, acts almost like short stock.",
+        "description": "Deep bearish — buy ITM put for high delta, acts almost like short stock.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "hedged", "greeks": "delta-,gamma+", "vol_view": "neutral", "complexity": "low", "expiry": "any"}
     },
     "bear_put_spread": {
         "name": "Bear Put Spread", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": -2}],
-        "description": "Moderately bearish - buy higher put, sell lower. Limited risk/reward.",
+        "description": "Moderately bearish — buy higher put, sell lower. Limited risk/reward.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "spread", "greeks": "delta-,theta~,vega~", "vol_view": "neutral", "complexity": "low", "expiry": "any"}
     },
     "bear_call_spread": {
         "name": "Bear Call Spread", "category": "bearish",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 0}, {"type": "call", "side": "buy", "strike_offset": 2}],
-        "description": "Moderately bearish credit spread - collect premium, profit if price stays below short call.",
+        "description": "Moderately bearish credit spread — collect premium, profit if price stays below short call.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "spread", "greeks": "delta-,theta+,vega-", "vol_view": "contraction", "complexity": "low", "expiry": "any"}
     },
     "itm_put_spread": {
         "name": "ITM Put Spread", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 2}, {"type": "put", "side": "sell", "strike_offset": 0}],
-        "description": "Conservative bearish - higher cost but higher probability of profit on decline.",
+        "description": "Conservative bearish — higher cost but higher probability of profit on decline.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "spread", "greeks": "delta-,theta~", "vol_view": "neutral", "complexity": "low", "expiry": "monthly"}
     },
     "synthetic_short": {
         "name": "Synthetic Short", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 0}],
-        "description": "Synthetic short stock - same P&L as shorting stock with options.",
+        "description": "Synthetic short stock — same P&L as shorting stock with options.",
         "tags": {"bias": "bearish", "risk": "unlimited", "margin": "naked", "greeks": "delta-,gamma+", "vol_view": "neutral", "complexity": "medium", "expiry": "monthly"}
     },
     "risk_reversal_bearish": {
         "name": "Risk Reversal (Bearish)", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": -2}, {"type": "call", "side": "sell", "strike_offset": 2}],
-        "description": "Bearish risk reversal - buy OTM put funded by selling OTM call.",
+        "description": "Bearish risk reversal — buy OTM put funded by selling OTM call.",
         "tags": {"bias": "bearish", "risk": "unlimited", "margin": "naked", "greeks": "delta-,vega+", "vol_view": "expansion", "complexity": "medium", "expiry": "monthly"}
     },
     "put_ratio_spread": {
         "name": "Put Ratio Spread (1x2)", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": -2, "qty_mult": 2}],
-        "description": "Bearish with cap - buy 1 ATM put, sell 2 OTM puts. Profits on moderate decline.",
+        "description": "Bearish with cap — buy 1 ATM put, sell 2 OTM puts. Profits on moderate decline.",
         "tags": {"bias": "bearish", "risk": "unlimited", "margin": "naked", "greeks": "delta-,theta+", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
     "put_backspread": {
         "name": "Put Backspread", "category": "bearish",
         "legs": [{"type": "put", "side": "sell", "strike_offset": 0}, {"type": "put", "side": "buy", "strike_offset": -2, "qty_mult": 2}],
-        "description": "Volatile bearish - sell 1 ATM put, buy 2 OTM puts. Big profit on crash.",
+        "description": "Volatile bearish — sell 1 ATM put, buy 2 OTM puts. Big profit on crash.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "spread", "greeks": "delta-,gamma+,vega+", "vol_view": "expansion", "complexity": "high", "expiry": "event"}
     },
     "bear_put_ladder": {
         "name": "Bear Put Ladder", "category": "bearish",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": -2}, {"type": "put", "side": "sell", "strike_offset": -4}],
-        "description": "Moderate bearish - buy 1 put, sell 2 lower puts. Risk below lowest strike.",
+        "description": "Moderate bearish — buy 1 put, sell 2 lower puts. Risk below lowest strike.",
         "tags": {"bias": "bearish", "risk": "unlimited", "margin": "naked", "greeks": "delta-,theta+", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
 
@@ -5196,13 +5116,13 @@ OPTIONS_STRATEGIES = {
     "short_straddle": {
         "name": "Short Straddle", "category": "neutral",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": 0}],
-        "description": "Neutral premium selling - sell ATM call + put. Max profit at strike, unlimited risk.",
+        "description": "Neutral premium selling — sell ATM call + put. Max profit at strike, unlimited risk.",
         "tags": {"bias": "neutral", "risk": "unlimited", "margin": "naked", "greeks": "delta~,theta+,vega-,gamma-", "vol_view": "contraction", "complexity": "medium", "expiry": "weekly"}
     },
     "short_strangle": {
         "name": "Short Strangle", "category": "neutral",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 2}, {"type": "put", "side": "sell", "strike_offset": -2}],
-        "description": "Neutral - sell OTM call + put. Wider profit zone than straddle, unlimited risk.",
+        "description": "Neutral — sell OTM call + put. Wider profit zone than straddle, unlimited risk.",
         "tags": {"bias": "neutral", "risk": "unlimited", "margin": "naked", "greeks": "delta~,theta+,vega-,gamma-", "vol_view": "contraction", "complexity": "medium", "expiry": "weekly"}
     },
     "iron_condor": {
@@ -5211,7 +5131,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "buy", "strike_offset": -3}, {"type": "put", "side": "sell", "strike_offset": -1},
             {"type": "call", "side": "sell", "strike_offset": 1}, {"type": "call", "side": "buy", "strike_offset": 3}
         ],
-        "description": "Neutral - profit if price stays in range. Limited risk on both sides.",
+        "description": "Neutral — profit if price stays in range. Limited risk on both sides.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega-,gamma-", "vol_view": "contraction", "complexity": "medium", "expiry": "any"}
     },
     "iron_butterfly": {
@@ -5220,7 +5140,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "buy", "strike_offset": -2}, {"type": "put", "side": "sell", "strike_offset": 0},
             {"type": "call", "side": "sell", "strike_offset": 0}, {"type": "call", "side": "buy", "strike_offset": 2}
         ],
-        "description": "Neutral - tighter range than iron condor. Higher premium collected, ATM short.",
+        "description": "Neutral — tighter range than iron condor. Higher premium collected, ATM short.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega-,gamma-", "vol_view": "contraction", "complexity": "medium", "expiry": "weekly"}
     },
     "butterfly_spread": {
@@ -5229,7 +5149,7 @@ OPTIONS_STRATEGIES = {
             {"type": "call", "side": "buy", "strike_offset": -2}, {"type": "call", "side": "sell", "strike_offset": 0, "qty_mult": 2},
             {"type": "call", "side": "buy", "strike_offset": 2}
         ],
-        "description": "Neutral - max profit if price pins at middle strike at expiry. Very cheap to enter.",
+        "description": "Neutral — max profit if price pins at middle strike at expiry. Very cheap to enter.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,gamma-", "vol_view": "contraction", "complexity": "medium", "expiry": "weekly"}
     },
     "broken_wing_butterfly": {
@@ -5238,7 +5158,7 @@ OPTIONS_STRATEGIES = {
             {"type": "call", "side": "buy", "strike_offset": -1}, {"type": "call", "side": "sell", "strike_offset": 0, "qty_mult": 2},
             {"type": "call", "side": "buy", "strike_offset": 3}
         ],
-        "description": "Neutral with directional skew - asymmetric butterfly with zero risk on one side.",
+        "description": "Neutral with directional skew — asymmetric butterfly with zero risk on one side.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
     "broken_wing_iron_condor": {
@@ -5247,7 +5167,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "buy", "strike_offset": -4}, {"type": "put", "side": "sell", "strike_offset": -1},
             {"type": "call", "side": "sell", "strike_offset": 1}, {"type": "call", "side": "buy", "strike_offset": 2}
         ],
-        "description": "Skewed iron condor - uneven wings to take credit and directional bias.",
+        "description": "Skewed iron condor — uneven wings to take credit and directional bias.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega-", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
     "covered_strangle": {
@@ -5262,7 +5182,7 @@ OPTIONS_STRATEGIES = {
             {"type": "call", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 2},
             {"type": "call", "side": "sell", "strike_offset": 3}
         ],
-        "description": "Neutral-to-bullish - like a ladder, profits in moderate move, risk beyond top strike.",
+        "description": "Neutral-to-bullish — like a ladder, profits in moderate move, risk beyond top strike.",
         "tags": {"bias": "neutral", "risk": "unlimited", "margin": "naked", "greeks": "delta+,theta+", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
 
@@ -5272,31 +5192,31 @@ OPTIONS_STRATEGIES = {
     "long_straddle": {
         "name": "Long Straddle", "category": "volatility",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "buy", "strike_offset": 0}],
-        "description": "Expecting big move in either direction - buy ATM call + put.",
+        "description": "Expecting big move in either direction — buy ATM call + put.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "hedged", "greeks": "delta~,gamma+,vega+,theta-", "vol_view": "expansion", "complexity": "low", "expiry": "event"}
     },
     "long_strangle": {
         "name": "Long Strangle", "category": "volatility",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 2}, {"type": "put", "side": "buy", "strike_offset": -2}],
-        "description": "Expecting big move - buy OTM call + OTM put. Cheaper than straddle, needs bigger move.",
+        "description": "Expecting big move — buy OTM call + OTM put. Cheaper than straddle, needs bigger move.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "hedged", "greeks": "delta~,gamma+,vega+,theta-", "vol_view": "expansion", "complexity": "low", "expiry": "event"}
     },
     "strip": {
         "name": "Strip", "category": "volatility",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "buy", "strike_offset": 0, "qty_mult": 2}],
-        "description": "Bearish volatile - 1 call + 2 puts at same strike. Extra profit on downside.",
+        "description": "Bearish volatile — 1 call + 2 puts at same strike. Extra profit on downside.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "hedged", "greeks": "delta-,gamma+,vega+", "vol_view": "expansion", "complexity": "medium", "expiry": "event"}
     },
     "strap": {
         "name": "Strap", "category": "volatility",
         "legs": [{"type": "call", "side": "buy", "strike_offset": 0, "qty_mult": 2}, {"type": "put", "side": "buy", "strike_offset": 0}],
-        "description": "Bullish volatile - 2 calls + 1 put at same strike. Extra profit on upside.",
+        "description": "Bullish volatile — 2 calls + 1 put at same strike. Extra profit on upside.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "hedged", "greeks": "delta+,gamma+,vega+", "vol_view": "expansion", "complexity": "medium", "expiry": "event"}
     },
     "long_guts": {
         "name": "Long Guts", "category": "volatility",
         "legs": [{"type": "call", "side": "buy", "strike_offset": -1}, {"type": "put", "side": "buy", "strike_offset": 1}],
-        "description": "Volatile - buy ITM call + ITM put. Higher cost but profit zone starts immediately.",
+        "description": "Volatile — buy ITM call + ITM put. Higher cost but profit zone starts immediately.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "hedged", "greeks": "delta~,gamma+,vega+,theta-", "vol_view": "expansion", "complexity": "medium", "expiry": "event"}
     },
     "reverse_iron_condor": {
@@ -5305,7 +5225,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "sell", "strike_offset": -3}, {"type": "put", "side": "buy", "strike_offset": -1},
             {"type": "call", "side": "buy", "strike_offset": 1}, {"type": "call", "side": "sell", "strike_offset": 3}
         ],
-        "description": "Breakout play - debit position that profits from big move in either direction.",
+        "description": "Breakout play — debit position that profits from big move in either direction.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,gamma+,vega+,theta-", "vol_view": "expansion", "complexity": "medium", "expiry": "event"}
     },
     "reverse_iron_butterfly": {
@@ -5314,7 +5234,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "sell", "strike_offset": -2}, {"type": "put", "side": "buy", "strike_offset": 0},
             {"type": "call", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 2}
         ],
-        "description": "Breakout from pin - profits from big move away from ATM, capped by sold wings.",
+        "description": "Breakout from pin — profits from big move away from ATM, capped by sold wings.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,gamma+,vega+", "vol_view": "expansion", "complexity": "medium", "expiry": "event"}
     },
 
@@ -5324,13 +5244,13 @@ OPTIONS_STRATEGIES = {
     "calendar_spread": {
         "name": "Call Calendar Spread", "category": "time_based",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 0, "expiry": "near"}, {"type": "call", "side": "buy", "strike_offset": 0, "expiry": "far"}],
-        "description": "Time decay play - sell near-month call, buy same-strike far-month call.",
+        "description": "Time decay play — sell near-month call, buy same-strike far-month call.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega+", "vol_view": "contraction", "complexity": "medium", "expiry": "monthly"}
     },
     "put_calendar": {
         "name": "Put Calendar Spread", "category": "time_based",
         "legs": [{"type": "put", "side": "sell", "strike_offset": 0, "expiry": "near"}, {"type": "put", "side": "buy", "strike_offset": 0, "expiry": "far"}],
-        "description": "Time decay with bearish lean - sell near put, buy far put at same strike.",
+        "description": "Time decay with bearish lean — sell near put, buy far put at same strike.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega+", "vol_view": "contraction", "complexity": "medium", "expiry": "monthly"}
     },
     "double_calendar": {
@@ -5339,31 +5259,31 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "sell", "strike_offset": -2, "expiry": "near"}, {"type": "put", "side": "buy", "strike_offset": -2, "expiry": "far"},
             {"type": "call", "side": "sell", "strike_offset": 2, "expiry": "near"}, {"type": "call", "side": "buy", "strike_offset": 2, "expiry": "far"}
         ],
-        "description": "Neutral time decay - two calendar spreads at different strikes for wider profit zone.",
+        "description": "Neutral time decay — two calendar spreads at different strikes for wider profit zone.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega+", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
     "diagonal_call_spread": {
         "name": "Diagonal Call Spread", "category": "time_based",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 2, "expiry": "near"}, {"type": "call", "side": "buy", "strike_offset": 0, "expiry": "far"}],
-        "description": "Bullish calendar - sell near OTM call, buy far ATM call. Time + directional play.",
+        "description": "Bullish calendar — sell near OTM call, buy far ATM call. Time + directional play.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,theta+,vega+", "vol_view": "neutral", "complexity": "medium", "expiry": "monthly"}
     },
     "diagonal_put_spread": {
         "name": "Diagonal Put Spread", "category": "time_based",
         "legs": [{"type": "put", "side": "sell", "strike_offset": -2, "expiry": "near"}, {"type": "put", "side": "buy", "strike_offset": 0, "expiry": "far"}],
-        "description": "Bearish calendar - sell near OTM put, buy far ATM put.",
+        "description": "Bearish calendar — sell near OTM put, buy far ATM put.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "spread", "greeks": "delta-,theta+,vega+", "vol_view": "neutral", "complexity": "medium", "expiry": "monthly"}
     },
     "pmcc": {
         "name": "Poor Man's Covered Call", "category": "time_based",
         "legs": [{"type": "call", "side": "buy", "strike_offset": -3, "expiry": "far"}, {"type": "call", "side": "sell", "strike_offset": 1, "expiry": "near"}],
-        "description": "Budget covered call - buy deep ITM LEAP call, sell near OTM call against it.",
+        "description": "Budget covered call — buy deep ITM LEAP call, sell near OTM call against it.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,theta+", "vol_view": "neutral", "complexity": "medium", "expiry": "monthly"}
     },
     "pmcp": {
         "name": "Poor Man's Covered Put", "category": "time_based",
         "legs": [{"type": "put", "side": "buy", "strike_offset": 3, "expiry": "far"}, {"type": "put", "side": "sell", "strike_offset": -1, "expiry": "near"}],
-        "description": "Budget covered put - buy deep ITM LEAP put, sell near OTM put against it.",
+        "description": "Budget covered put — buy deep ITM LEAP put, sell near OTM put against it.",
         "tags": {"bias": "bearish", "risk": "limited", "margin": "spread", "greeks": "delta-,theta+", "vol_view": "neutral", "complexity": "medium", "expiry": "monthly"}
     },
 
@@ -5391,7 +5311,7 @@ OPTIONS_STRATEGIES = {
     "tail_hedge": {
         "name": "Tail Hedge (Far OTM Put)", "category": "hedging",
         "legs": [{"type": "put", "side": "buy", "strike_offset": -5}],
-        "description": "Crash protection - buy far OTM put cheaply for black swan events.",
+        "description": "Crash protection — buy far OTM put cheaply for black swan events.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "hedged", "greeks": "delta~,vega+", "vol_view": "expansion", "complexity": "low", "expiry": "monthly"}
     },
 
@@ -5401,7 +5321,7 @@ OPTIONS_STRATEGIES = {
     "expiry_straddle": {
         "name": "Expiry Day Short Straddle", "category": "expiry",
         "legs": [{"type": "call", "side": "sell", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": 0}],
-        "description": "Sell ATM straddle on expiry day - extreme theta decay, gamma risk. For experienced traders.",
+        "description": "Sell ATM straddle on expiry day — extreme theta decay, gamma risk. For experienced traders.",
         "tags": {"bias": "neutral", "risk": "unlimited", "margin": "naked", "greeks": "delta~,theta++,gamma-", "vol_view": "contraction", "complexity": "high", "expiry": "weekly"}
     },
     "intraday_iron_fly": {
@@ -5410,7 +5330,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "buy", "strike_offset": -1}, {"type": "put", "side": "sell", "strike_offset": 0},
             {"type": "call", "side": "sell", "strike_offset": 0}, {"type": "call", "side": "buy", "strike_offset": 1}
         ],
-        "description": "Same-day iron butterfly - tight strikes for max theta extraction.",
+        "description": "Same-day iron butterfly — tight strikes for max theta extraction.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta++,gamma-", "vol_view": "contraction", "complexity": "high", "expiry": "weekly"}
     },
     "narrow_iron_condor_0dte": {
@@ -5419,7 +5339,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "buy", "strike_offset": -2}, {"type": "put", "side": "sell", "strike_offset": -1},
             {"type": "call", "side": "sell", "strike_offset": 1}, {"type": "call", "side": "buy", "strike_offset": 2}
         ],
-        "description": "Tight iron condor for expiry day - narrow strikes, fast decay.",
+        "description": "Tight iron condor for expiry day — narrow strikes, fast decay.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta++,gamma-", "vol_view": "contraction", "complexity": "high", "expiry": "weekly"}
     },
     "pin_risk_butterfly": {
@@ -5428,7 +5348,7 @@ OPTIONS_STRATEGIES = {
             {"type": "call", "side": "buy", "strike_offset": -1}, {"type": "call", "side": "sell", "strike_offset": 0, "qty_mult": 2},
             {"type": "call", "side": "buy", "strike_offset": 1}
         ],
-        "description": "Expiry pin play - butterfly centered at max pain strike expecting price to pin.",
+        "description": "Expiry pin play — butterfly centered at max pain strike expecting price to pin.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,gamma-", "vol_view": "contraction", "complexity": "high", "expiry": "weekly"}
     },
 
@@ -5441,19 +5361,19 @@ OPTIONS_STRATEGIES = {
             {"type": "call", "side": "buy", "strike_offset": 0}, {"type": "call", "side": "sell", "strike_offset": 2},
             {"type": "put", "side": "buy", "strike_offset": 2}, {"type": "put", "side": "sell", "strike_offset": 0}
         ],
-        "description": "Arbitrage - bull call spread + bear put spread. Riskless profit if mispriced.",
+        "description": "Arbitrage — bull call spread + bear put spread. Riskless profit if mispriced.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~", "vol_view": "neutral", "complexity": "high", "expiry": "monthly"}
     },
     "conversion": {
         "name": "Conversion", "category": "advanced",
         "legs": [{"type": "stock", "side": "buy"}, {"type": "call", "side": "sell", "strike_offset": 0}, {"type": "put", "side": "buy", "strike_offset": 0}],
-        "description": "Arbitrage - long stock + synthetic short. Locks in riskless profit if mispriced.",
+        "description": "Arbitrage — long stock + synthetic short. Locks in riskless profit if mispriced.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "hedged", "greeks": "delta~", "vol_view": "neutral", "complexity": "high", "expiry": "monthly"}
     },
     "reversal": {
         "name": "Reversal", "category": "advanced",
         "legs": [{"type": "stock", "side": "sell"}, {"type": "call", "side": "buy", "strike_offset": 0}, {"type": "put", "side": "sell", "strike_offset": 0}],
-        "description": "Arbitrage - short stock + synthetic long. Opposite of conversion.",
+        "description": "Arbitrage — short stock + synthetic long. Opposite of conversion.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "hedged", "greeks": "delta~", "vol_view": "neutral", "complexity": "high", "expiry": "monthly"}
     },
     "jade_lizard": {
@@ -5462,7 +5382,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "sell", "strike_offset": -2},
             {"type": "call", "side": "sell", "strike_offset": 1}, {"type": "call", "side": "buy", "strike_offset": 3}
         ],
-        "description": "Neutral-bullish - short put + bear call spread. No risk on upside if structured right.",
+        "description": "Neutral-bullish — short put + bear call spread. No risk on upside if structured right.",
         "tags": {"bias": "bullish", "risk": "limited", "margin": "spread", "greeks": "delta+,theta+,vega-", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
     "double_diagonal": {
@@ -5471,7 +5391,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "sell", "strike_offset": -2, "expiry": "near"}, {"type": "put", "side": "buy", "strike_offset": -1, "expiry": "far"},
             {"type": "call", "side": "sell", "strike_offset": 2, "expiry": "near"}, {"type": "call", "side": "buy", "strike_offset": 1, "expiry": "far"}
         ],
-        "description": "Two diagonal spreads - combines time decay + directional play in both directions.",
+        "description": "Two diagonal spreads — combines time decay + directional play in both directions.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega+", "vol_view": "neutral", "complexity": "high", "expiry": "monthly"}
     },
     "broken_wing_iron_fly": {
@@ -5480,7 +5400,7 @@ OPTIONS_STRATEGIES = {
             {"type": "put", "side": "buy", "strike_offset": -3}, {"type": "put", "side": "sell", "strike_offset": 0},
             {"type": "call", "side": "sell", "strike_offset": 0}, {"type": "call", "side": "buy", "strike_offset": 2}
         ],
-        "description": "Skewed iron butterfly - asymmetric wings, zero risk on one side, extra credit.",
+        "description": "Skewed iron butterfly — asymmetric wings, zero risk on one side, extra credit.",
         "tags": {"bias": "neutral", "risk": "limited", "margin": "spread", "greeks": "delta~,theta+,vega-", "vol_view": "contraction", "complexity": "high", "expiry": "monthly"}
     },
 }
@@ -5501,7 +5421,7 @@ STRATEGY_CATEGORIES = {
 @app.get("/api/options/chain/{symbol}", tags=["Options Lab"], summary="Get options chain",
     description="Fetch the options chain for a stock or index. Returns all available strikes with call/put prices, OI, volume, IV, and Greeks (Delta, Gamma, Theta, Vega). Supports NIFTY, BANKNIFTY, FINNIFTY, and all F&O stocks. Falls back to Black-Scholes synthetic pricing when live data is unavailable.")
 async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_user)):
-    """Fetch options chain - tries Groww API first, falls back to Black-Scholes synthetic."""
+    """Fetch options chain — tries Groww API first, falls back to Black-Scholes synthetic."""
     import yfinance as yf  # kept: Black-Scholes fallback needs index hist vol
     from datetime import datetime, timedelta, date
     import random, calendar, urllib.request, urllib.error
@@ -5851,7 +5771,7 @@ async def suggest_strategies(req: dict, user=Depends(get_current_user)):
             score += 5  # Neutral strategies are always somewhat relevant
 
         # ── IV Rank scoring ──
-        if iv_rank > 70:  # High IV - sell premium
+        if iv_rank > 70:  # High IV — sell premium
             if tags.get("vol_view") == "contraction":
                 score += 20
                 reasons.append(f"High IV ({iv_rank}) favors premium selling")
@@ -5859,7 +5779,7 @@ async def suggest_strategies(req: dict, user=Depends(get_current_user)):
                 score += 15
             if tags.get("vol_view") == "expansion":
                 score -= 15
-        elif iv_rank < 30:  # Low IV - buy premium
+        elif iv_rank < 30:  # Low IV — buy premium
             if tags.get("vol_view") == "expansion":
                 score += 20
                 reasons.append(f"Low IV ({iv_rank}) favors buying options")
@@ -5983,9 +5903,9 @@ async def suggest_strategies(req: dict, user=Depends(get_current_user)):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/options/oi-analysis/{symbol}", tags=["Options Lab"], summary="OI Intelligence Analysis",
-    description="Comprehensive Open Interest analysis - PCR, max pain, OI build-up/unwinding detection, support/resistance from OI clusters, and strategy recommendations based on OI data.")
+    description="Comprehensive Open Interest analysis — PCR, max pain, OI build-up/unwinding detection, support/resistance from OI clusters, and strategy recommendations based on OI data.")
 async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_user)):
-    """Full OI intelligence analysis - reuses the existing chain endpoint data (Groww/synthetic)."""
+    """Full OI intelligence analysis — reuses the existing chain endpoint data (Groww/synthetic)."""
     sym_upper = symbol.upper()
     cache_key = f"oi_analysis:{sym_upper}:{expiry}"
     if redis_client:
@@ -6094,13 +6014,13 @@ async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_us
     # ── Market Signal ──
     if pcr_oi > 1.3:
         market_signal = "bullish"
-        signal_desc = f"PCR {pcr_oi} is elevated - heavy put writing indicates bullish sentiment"
+        signal_desc = f"PCR {pcr_oi} is elevated — heavy put writing indicates bullish sentiment"
     elif pcr_oi < 0.7:
         market_signal = "bearish"
-        signal_desc = f"PCR {pcr_oi} is low - heavy call writing indicates bearish sentiment"
+        signal_desc = f"PCR {pcr_oi} is low — heavy call writing indicates bearish sentiment"
     elif 0.9 <= pcr_oi <= 1.1:
         market_signal = "neutral"
-        signal_desc = f"PCR {pcr_oi} is balanced - no strong directional bias from options writers"
+        signal_desc = f"PCR {pcr_oi} is balanced — no strong directional bias from options writers"
     else:
         market_signal = "mildly_bullish" if pcr_oi > 1 else "mildly_bearish"
         signal_desc = f"PCR {pcr_oi} shows slight {'bullish' if pcr_oi > 1 else 'bearish'} lean"
@@ -6113,7 +6033,7 @@ async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_us
         if r1 > s1 and spot_price > s1 and spot_price < r1:
             oi_strategies.append({
                 "strategy": "iron_condor", "name": "Iron Condor",
-                "reason": f"Price between OI support ({s1}) and resistance ({r1}) - range-bound play",
+                "reason": f"Price between OI support ({s1}) and resistance ({r1}) — range-bound play",
                 "confidence": "high" if 0.85 <= pcr_oi <= 1.15 else "medium"
             })
             oi_strategies.append({
@@ -6124,26 +6044,26 @@ async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_us
     if max_pain_strike and abs(spot_price - max_pain_strike) / spot_price < 0.02:
         oi_strategies.append({
             "strategy": "pin_risk_butterfly", "name": "Pin Risk Butterfly",
-            "reason": f"Spot near max pain ({max_pain_strike}) - price likely to pin near expiry",
+            "reason": f"Spot near max pain ({max_pain_strike}) — price likely to pin near expiry",
             "confidence": "high"
         })
         oi_strategies.append({
             "strategy": "short_straddle", "name": "Short Straddle at Max Pain",
-            "reason": f"Max pain {max_pain_strike} close to spot - sell straddle for decay",
+            "reason": f"Max pain {max_pain_strike} close to spot — sell straddle for decay",
             "confidence": "medium"
         })
     if pcr_oi > 1.3:
         oi_strategies.append({"strategy": "bull_put_spread", "name": "Bull Put Spread",
-            "reason": "Heavy put writing (PCR > 1.3) - put sellers providing support", "confidence": "high"})
+            "reason": "Heavy put writing (PCR > 1.3) — put sellers providing support", "confidence": "high"})
         oi_strategies.append({"strategy": "synthetic_long", "name": "Synthetic Long",
-            "reason": "Strong put writing suggests floor - synthetic long for bullish exposure", "confidence": "medium"})
+            "reason": "Strong put writing suggests floor — synthetic long for bullish exposure", "confidence": "medium"})
     elif pcr_oi < 0.7:
         oi_strategies.append({"strategy": "bear_call_spread", "name": "Bear Call Spread",
-            "reason": "Heavy call writing (PCR < 0.7) - call sellers creating ceiling", "confidence": "high"})
+            "reason": "Heavy call writing (PCR < 0.7) — call sellers creating ceiling", "confidence": "high"})
     any_breakout = any(b for b in buildup_signals if b["strength"] > 1.0)
     if any_breakout:
         oi_strategies.append({"strategy": "reverse_iron_condor", "name": "Reverse Iron Condor",
-            "reason": "High volume/OI ratio - potential breakout, buy wings", "confidence": "medium"})
+            "reason": "High volume/OI ratio — potential breakout, buy wings", "confidence": "medium"})
         oi_strategies.append({"strategy": "long_straddle", "name": "Long Straddle",
             "reason": "Active OI buildup signals big directional move incoming", "confidence": "medium"})
 
@@ -6170,7 +6090,7 @@ async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_us
 
 
 @app.post("/api/options/payoff", tags=["Options Lab"], summary="Calculate options strategy payoff",
-    description="Enhanced payoff calculator - returns at-expiry payoff, position Greeks, probability of profit, margin estimate, and time-decay P&L grid for risk heatmap visualization.")
+    description="Enhanced payoff calculator — returns at-expiry payoff, position Greeks, probability of profit, margin estimate, and time-decay P&L grid for risk heatmap visualization.")
 async def calculate_payoff(req: dict, user=Depends(get_current_user)):
     """Calculate payoff diagram with position Greeks, PoP, margin, and time-based P&L."""
     import math
@@ -6584,7 +6504,7 @@ def generate_rationale(symbol: str, call_type: str, tech: dict, fund: dict, rati
 
 def _sanitize_for_pdf(text: str) -> str:
     """Replace Unicode characters that reportlab can't render."""
-    return text.replace("₹", "Rs.").replace("-", "-").replace("–", "-")
+    return text.replace("₹", "Rs.").replace("—", "-").replace("–", "-")
 
 
 def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str, template: str = "professional"):
@@ -7064,7 +6984,7 @@ def generate_single_advisory_pdf(report: dict, rec: dict, output_path: str, temp
             story.append(Paragraph("<b>Conclusion:</b>", styles['RLabel']))
             story.append(Paragraph(_sanitize_for_pdf(conclusion), styles['RBody']))
     else:
-        # Plain rationale - render once, split conclusion
+        # Plain rationale — render once, split conclusion
         rat_text = rationale
         conclusion = ""
         if "CONCLUSION:" in rat_text:
@@ -7327,7 +7247,7 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
 
     tech_data["alpha_metrics"] = alpha_data
 
-    # Generate rationale - include screener strategy context if available
+    # Generate rationale — include screener strategy context if available
     rationale_type = req.get("rationale_type", "quantamental")
     screener_strategy = req.get("screener_strategy", "")
     screener_signals = req.get("signals", {})
@@ -7401,7 +7321,7 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
 
 
 @app.put("/api/advisory/recommend/{rec_id}", tags=["Advisory & Reports"], summary="Update recommendation",
-    description="Update an existing recommendation - modify target, stop-loss, or status (open/achieved/stopped_out/closed).")
+    description="Update an existing recommendation — modify target, stop-loss, or status (open/achieved/stopped_out/closed).")
 async def update_recommendation(rec_id: int, req: dict, user=Depends(get_current_user)):
     """Update rationale or prices for a recommendation."""
     updates = []
@@ -7716,7 +7636,7 @@ async def sector_rotation(user=Depends(get_current_user)):
 @app.get("/api/sector-rrg", tags=["Sector Analysis"], summary="Relative Rotation Graph (RRG)",
     description="Compute RRG data using JdK RS-Ratio and RS-Momentum methodology. Returns trail data for each sector plotted in 4 quadrants: Leading, Weakening, Lagging, Improving. Configurable lookback weeks (8-20). First load takes 30-60 seconds as it computes relative strength across all sectors.")
 async def sector_rrg(weeks: int = 12, user=Depends(get_current_user)):
-    """Relative Rotation Graph - JdK RS-Ratio & RS-Momentum for sector rotation analysis.
+    """Relative Rotation Graph — JdK RS-Ratio & RS-Momentum for sector rotation analysis.
     Returns trail data (last N weeks) for each sector plotted on a 2D plane.
     X-axis: RS-Ratio (relative strength vs Nifty 50, centered at 100)
     Y-axis: RS-Momentum (rate of change of RS-Ratio, centered at 100)
@@ -7986,7 +7906,7 @@ async def commodity_quote(symbol: str):
         return {"symbol": sym, "exchange": "MCX", "ltp": 0, "error": str(e)}
 
 
-# ── BSE Equity Quotes (no auth - internal use by AlphaMarket) ─────────────
+# ── BSE Equity Quotes (no auth — internal use by AlphaMarket) ─────────────
 @app.get("/api/bse/quote/{symbol}", tags=["BSE"], summary="Get BSE equity quote via Groww")
 async def bse_quote(symbol: str):
     """Get BSE equity quote via Kite Connect API."""
@@ -8308,9 +8228,9 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
         df = compute_indicators(df)
     except Exception as _ci_err:
         print(f"compute_indicators error for {symbol}: {_ci_err}")
-        # Continue without indicators - basic OHLCV still works
+        # Continue without indicators — basic OHLCV still works
 
-    # Build response - OHLCV candles
+    # Build response — OHLCV candles
     candles = []
     for dt, row in df.iterrows():
         ts = int(dt.timestamp()) if hasattr(dt, 'timestamp') else int(pd.Timestamp(dt).timestamp())
@@ -8450,7 +8370,7 @@ MODEL_PORTFOLIO_TEMPLATES = {
         "params": {"max_pb": 1.5, "max_ev_ebitda": 8}, "max_holdings": 12, "weighting": "equal"
     },
     "quality_compounders": {
-        "name": "Quality Compounders", "description": "High ROE + Low Debt + Strong margins - buy & hold",
+        "name": "Quality Compounders", "description": "High ROE + Low Debt + Strong margins — buy & hold",
         "screener": "minervini", "backtest": "QUALITY_MOAT", "forward": "QUALITY_MOAT",
         "params": {"min_roe": 18, "min_operating_margin": 15}, "max_holdings": 10, "weighting": "equal"
     },
@@ -8485,7 +8405,7 @@ MODEL_PORTFOLIO_TEMPLATES = {
         "params": {"max_market_cap_cr": 10000}, "max_holdings": 15, "weighting": "equal"
     },
     "turnaround_plays": {
-        "name": "Turnaround Plays", "description": "Oversold quality stocks near support - contrarian entry",
+        "name": "Turnaround Plays", "description": "Oversold quality stocks near support — contrarian entry",
         "screener": "oversold", "backtest": "HYBRID_VALUE_REVERSAL", "forward": "HYBRID_VALUE_REVERSAL",
         "params": {"pe_max": 20, "oversold": 35}, "max_holdings": 10, "weighting": "equal"
     },
@@ -8501,57 +8421,57 @@ MODEL_PORTFOLIO_TEMPLATES = {
     },
     # ── Sector Themed Portfolios ──────────────────────────────────────────
     "banking_sector": {
-        "name": "Banking & Finance", "description": "Top banking stocks - momentum + quality across PSU & private banks",
+        "name": "Banking & Finance", "description": "Top banking stocks — momentum + quality across PSU & private banks",
         "screener": "relative_strength", "backtest": "HYBRID_ROE_TREND", "forward": "HYBRID_ROE_TREND",
         "params": {"sector_filter": "Banking"}, "max_holdings": 10, "weighting": "equal"
     },
     "it_sector": {
-        "name": "IT & Technology", "description": "Best Indian IT companies - growth momentum + quality",
+        "name": "IT & Technology", "description": "Best Indian IT companies — growth momentum + quality",
         "screener": "trend_strong", "backtest": "HYBRID_QUALITY_MOMENTUM", "forward": "HYBRID_QUALITY_MOMENTUM",
         "params": {"sector_filter": "IT"}, "max_holdings": 10, "weighting": "equal"
     },
     "pharma_healthcare": {
-        "name": "Pharma & Healthcare", "description": "Pharma + hospital chains - defensive growth portfolio",
+        "name": "Pharma & Healthcare", "description": "Pharma + hospital chains — defensive growth portfolio",
         "screener": "relative_strength", "backtest": "QUALITY_HIGH_ROE", "forward": "QUALITY_HIGH_ROE",
         "params": {"sector_filter": "Pharma"}, "max_holdings": 10, "weighting": "equal"
     },
     "infra_capex": {
-        "name": "Infra & Capital Goods", "description": "India capex theme - infra, industrial, defence plays",
+        "name": "Infra & Capital Goods", "description": "India capex theme — infra, industrial, defence plays",
         "screener": "breakout", "backtest": "MOMENTUM", "forward": "MOMENTUM",
         "params": {"sector_filter": "Infra"}, "max_holdings": 12, "weighting": "equal"
     },
     "defence_theme": {
-        "name": "Defence & Aerospace", "description": "Make in India defence - HAL, BEL, BDL, shipyards",
+        "name": "Defence & Aerospace", "description": "Make in India defence — HAL, BEL, BDL, shipyards",
         "screener": "relative_strength", "backtest": "MOMENTUM", "forward": "MOMENTUM",
         "params": {"sector_filter": "Defence"}, "max_holdings": 8, "weighting": "equal"
     },
     "consumption_theme": {
-        "name": "India Consumption", "description": "FMCG + consumer + retail - domestic demand play",
+        "name": "India Consumption", "description": "FMCG + consumer + retail — domestic demand play",
         "screener": "trend_strong", "backtest": "QUALITY_MOAT", "forward": "QUALITY_MOAT",
         "params": {"sector_filter": "FMCG"}, "max_holdings": 12, "weighting": "equal"
     },
     "realty_housing": {
-        "name": "Real Estate Boom", "description": "Realty + building materials - housing upcycle beneficiaries",
+        "name": "Real Estate Boom", "description": "Realty + building materials — housing upcycle beneficiaries",
         "screener": "breakout", "backtest": "MOMENTUM", "forward": "MOMENTUM",
         "params": {"sector_filter": "Realty"}, "max_holdings": 8, "weighting": "equal"
     },
     "energy_transition": {
-        "name": "Energy & Power", "description": "Oil & gas, power, renewables - energy security theme",
+        "name": "Energy & Power", "description": "Oil & gas, power, renewables — energy security theme",
         "screener": "relative_strength", "backtest": "HYBRID_ROE_TREND", "forward": "HYBRID_ROE_TREND",
         "params": {"sector_filter": "Energy"}, "max_holdings": 10, "weighting": "equal"
     },
     "metal_commodities": {
-        "name": "Metals & Mining", "description": "Steel, aluminium, copper - commodity upcycle portfolio",
+        "name": "Metals & Mining", "description": "Steel, aluminium, copper — commodity upcycle portfolio",
         "screener": "momentum", "backtest": "MOMENTUM", "forward": "MOMENTUM",
         "params": {"sector_filter": "Metal"}, "max_holdings": 8, "weighting": "equal"
     },
     "auto_ev": {
-        "name": "Auto & EV Play", "description": "OEMs + auto ancillaries - EV & export theme",
+        "name": "Auto & EV Play", "description": "OEMs + auto ancillaries — EV & export theme",
         "screener": "trend_strong", "backtest": "HYBRID_QUALITY_MOMENTUM", "forward": "HYBRID_QUALITY_MOMENTUM",
         "params": {"sector_filter": "Auto"}, "max_holdings": 10, "weighting": "equal"
     },
     "chemical_specialty": {
-        "name": "Chemicals & Specialty", "description": "Specialty chemicals - China+1 beneficiaries",
+        "name": "Chemicals & Specialty", "description": "Specialty chemicals — China+1 beneficiaries",
         "screener": "relative_strength", "backtest": "QUALITY_HIGH_ROE", "forward": "QUALITY_HIGH_ROE",
         "params": {"sector_filter": "Chemical"}, "max_holdings": 10, "weighting": "equal"
     },
@@ -8835,7 +8755,7 @@ async def build_model_portfolio(portfolio_id: int, user_id: int):
 # ── Model Portfolio API Endpoints ────────────────────────────────────────────
 
 @app.get("/api/model-portfolios/templates", tags=["Model Portfolios"], summary="List portfolio templates",
-    description="Get all 23 pre-built model portfolio templates - Momentum, Value, Quality, Dividend, Sector Rotation, etc. Each template includes strategy, weighting method, rebalance frequency, and parameters.")
+    description="Get all 23 pre-built model portfolio templates — Momentum, Value, Quality, Dividend, Sector Rotation, etc. Each template includes strategy, weighting method, rebalance frequency, and parameters.")
 async def get_portfolio_templates(user=Depends(get_current_user)):
     return [{"id": k, **{kk: vv for kk, vv in v.items() if kk != "params"}} for k, v in MODEL_PORTFOLIO_TEMPLATES.items()]
 
@@ -8887,7 +8807,7 @@ async def list_model_portfolios(user=Depends(get_current_user)):
 
 
 @app.get("/api/model-portfolio/{pid}", tags=["Model Portfolios"], summary="Get portfolio details",
-    description="Get full details of a model portfolio - holdings with current prices, weights, P&L, sector allocation, and performance metrics.")
+    description="Get full details of a model portfolio — holdings with current prices, weights, P&L, sector allocation, and performance metrics.")
 async def get_model_portfolio(pid: int, user=Depends(get_current_user)):
     async with db_pool.acquire() as conn:
         mp = await conn.fetchrow("SELECT * FROM model_portfolios WHERE id=$1 AND user_id=$2", pid, user["id"])
@@ -8934,7 +8854,7 @@ async def build_portfolio(pid: int, user=Depends(get_current_user)):
 
 
 @app.post("/api/model-portfolio/{pid}/deploy-paper", tags=["Model Portfolios"], summary="Deploy to paper trading",
-    description="Convert a model portfolio into live paper trades - opens paper positions for all holdings at current market prices.")
+    description="Convert a model portfolio into live paper trades — opens paper positions for all holdings at current market prices.")
 async def deploy_to_paper(pid: int, user=Depends(get_current_user)):
     """Push all portfolio holdings to paper trading."""
     async with db_pool.acquire() as conn:
@@ -8979,7 +8899,7 @@ async def delete_model_portfolio(pid: int, user=Depends(get_current_user)):
 # ── Model Portfolio Editing ─────────────────────────────────────────────────
 
 @app.put("/api/model-portfolio/{pid}/holding/{hid}", tags=["Model Portfolios"], summary="Update holding",
-    description="Update a specific holding in a portfolio - modify weight, quantity, or notes.")
+    description="Update a specific holding in a portfolio — modify weight, quantity, or notes.")
 async def update_holding(pid: int, hid: int, req: Request, user=Depends(get_current_user)):
     """Update a holding's weight or shares."""
     body = await req.json()
@@ -9084,7 +9004,7 @@ async def reweight_portfolio(pid: int, req: Request, user=Depends(get_current_us
 
 
 @app.get("/api/dashboard/strategies", tags=["Dashboard"], summary="Strategy performance dashboard",
-    description="Aggregated performance data across all strategies - screener hit rates, backtest results, forward test P&L, and top performing strategies. Powers the main dashboard view.")
+    description="Aggregated performance data across all strategies — screener hit rates, backtest results, forward test P&L, and top performing strategies. Powers the main dashboard view.")
 async def get_strategy_dashboard(user=Depends(get_current_user)):
     """Get performance summary of all portfolios, backtests, and forward tests."""
     async with db_pool.acquire() as conn:
@@ -9205,7 +9125,7 @@ async def _check_all_alerts():
                             price = float(_aq["price"])
                             if price >= target:
                                 fired = True
-                                msg = f"🔔 {alert['symbol']} crossed above ₹{target:.2f} - now at ₹{price:.2f}"
+                                msg = f"🔔 {alert['symbol']} crossed above ₹{target:.2f} — now at ₹{price:.2f}"
 
                 elif atype == "price_below" and alert["symbol"]:
                     target = float(conditions.get("price", 0))
@@ -9215,7 +9135,7 @@ async def _check_all_alerts():
                             price = float(_aq["price"])
                             if price <= target:
                                 fired = True
-                                msg = f"🔔 {alert['symbol']} dropped below ₹{target:.2f} - now at ₹{price:.2f}"
+                                msg = f"🔔 {alert['symbol']} dropped below ₹{target:.2f} — now at ₹{price:.2f}"
 
                 # ── Portfolio Alerts ──
                 elif atype == "portfolio_return" and alert["entity_id"]:
@@ -9244,7 +9164,7 @@ async def _check_all_alerts():
                         due_days = {"daily": 1, "weekly": 7, "biweekly": 14, "monthly": 30, "quarterly": 90}.get(freq, 30)
                         if days_since >= due_days:
                             fired = True
-                            msg = f"⏰ Portfolio '{mp['name']}' rebalance due - last updated {days_since} days ago ({freq})"
+                            msg = f"⏰ Portfolio '{mp['name']}' rebalance due — last updated {days_since} days ago ({freq})"
 
                 # ── Backtest Strategy Alerts ──
                 elif atype == "strategy_signal" and alert["symbol"]:
@@ -9300,10 +9220,10 @@ async def _check_all_alerts():
                             price = float(_aq["price"])
                             if rec["call_type"] == "BUY" and price >= rec["target_price"]:
                                 fired = True
-                                msg = f"🎯 Advisory: {rec['symbol']} hit target ₹{rec['target_price']:.2f} - now at ₹{price:.2f}"
+                                msg = f"🎯 Advisory: {rec['symbol']} hit target ₹{rec['target_price']:.2f} — now at ₹{price:.2f}"
                             elif rec["call_type"] == "SELL" and price <= rec["target_price"]:
                                 fired = True
-                                msg = f"🎯 Advisory: {rec['symbol']} hit target ₹{rec['target_price']:.2f} - now at ₹{price:.2f}"
+                                msg = f"🎯 Advisory: {rec['symbol']} hit target ₹{rec['target_price']:.2f} — now at ₹{price:.2f}"
 
                 elif atype == "advisory_sl_hit" and alert["entity_id"]:
                     rec = await conn.fetchrow(
@@ -9315,10 +9235,10 @@ async def _check_all_alerts():
                             price = float(_aq["price"])
                             if rec["call_type"] == "BUY" and price <= rec["stop_loss"]:
                                 fired = True
-                                msg = f"⛔ Advisory: {rec['symbol']} hit stop loss ₹{rec['stop_loss']:.2f} - now at ₹{price:.2f}"
+                                msg = f"⛔ Advisory: {rec['symbol']} hit stop loss ₹{rec['stop_loss']:.2f} — now at ₹{price:.2f}"
                             elif rec["call_type"] == "SELL" and price >= rec["stop_loss"]:
                                 fired = True
-                                msg = f"⛔ Advisory: {rec['symbol']} hit stop loss ₹{rec['stop_loss']:.2f} - now at ₹{price:.2f}"
+                                msg = f"⛔ Advisory: {rec['symbol']} hit stop loss ₹{rec['stop_loss']:.2f} — now at ₹{price:.2f}"
 
                 # ── Fire notification ──
                 if fired:
@@ -9393,7 +9313,7 @@ async def toggle_alert(aid: int, user=Depends(get_current_user)):
 
 
 @app.get("/api/notifications", tags=["Alerts & Notifications"], summary="Get notifications",
-    description="Get recent notifications for the authenticated user - triggered alerts, system messages, and activity updates. Ordered by most recent.")
+    description="Get recent notifications for the authenticated user — triggered alerts, system messages, and activity updates. Ordered by most recent.")
 async def get_notifications(user=Depends(get_current_user)):
     async with db_pool.acquire() as conn:
         notifs = await conn.fetch(
@@ -9424,7 +9344,7 @@ async def mark_read(nid: int, user=Depends(get_current_user)):
 
 # ── Admin Routes ──────────────────────────────────────────────────────────────
 @app.get("/api/admin/stats", tags=["Admin"], summary="Platform statistics",
-    description="Admin only. Returns platform-wide stats - total users, active sessions, backtests run, screener usage, storage, and system health.")
+    description="Admin only. Returns platform-wide stats — total users, active sessions, backtests run, screener usage, storage, and system health.")
 async def admin_stats(user=Depends(get_admin_user)):
     async with db_pool.acquire() as conn:
         users = await conn.fetchval("SELECT COUNT(*) FROM users WHERE is_admin=false")
@@ -9597,7 +9517,7 @@ async def morning_brief(user=Depends(get_current_user)):
 
 @app.get("/api/compare")
 async def compare_stocks(symbols: str, user=Depends(get_current_user)):
-    """Multi-stock comparison. Pass comma-separated NSE symbols (e.g., symbols=TCS,INFY,WIPRO). Returns price, P/E, P/B, ROE, market cap, sector, and other fundamentals side-by-side. Frontend panel not yet built - API only."""
+    """Multi-stock comparison. Pass comma-separated NSE symbols (e.g., symbols=TCS,INFY,WIPRO). Returns price, P/E, P/B, ROE, market cap, sector, and other fundamentals side-by-side. Frontend panel not yet built — API only."""
     # yfinance replaced by data service
     from datetime import date as _date
     sym_list = [s.strip().upper() for s in symbols.split(",") if s.strip()][:5]
@@ -10609,10 +10529,10 @@ async def bridge_request_permission(user=Depends(get_current_user)):
 # ALPHAVIEW - Comprehensive Stock Profile
 # ==============================================================================
 
-@app.get("/api/alphaview/{symbol}", tags=["AlphaView"], summary="AlphaView - Complete stock profile",
+@app.get("/api/alphaview/{symbol}", tags=["AlphaView"], summary="AlphaView — Complete stock profile",
     description="Comprehensive single-page stock analysis combining price chart data, technical indicators, fundamental data, pattern detection, ratings, relative strength vs NIFTY, and sector context.")
 async def alphaview(symbol: str, user=Depends(get_current_user)):
-    """AlphaView: Complete stock profile - fundamentals + technicals + ratings + patterns in one view."""
+    """AlphaView: Complete stock profile — fundamentals + technicals + ratings + patterns in one view."""
     from datetime import date, timedelta
     import ta as _ta
     sym = symbol.upper()
@@ -10805,7 +10725,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     # Price position: distance from 200 DMA (20%)
     pct_200dma = round((price / sma200 - 1) * 100, 1) if sma200 > 0 else 0
     pos_component = min(99, max(1, int(50 + pct_200dma * 1.5)))
-    # RSI zone mapping (20%) - 30-70 is healthy, extremes penalized
+    # RSI zone mapping (20%) — 30-70 is healthy, extremes penalized
     if rsi >= 50 and rsi <= 70: rsi_component = int(50 + (rsi - 50) * 2.4)
     elif rsi > 70: rsi_component = int(98 - (rsi - 70) * 1.5)  # overbought drag
     elif rsi >= 30: rsi_component = int(rsi * 1.0 + 20)
@@ -10813,7 +10733,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     rsi_component = min(99, max(1, rsi_component))
     # MACD histogram direction (15%)
     macd_component = min(99, max(1, int(50 + macd_hist * 8)))
-    # EMA cross (15%) - EMA9 vs EMA21
+    # EMA cross (15%) — EMA9 vs EMA21
     ema_spread = round((ema9 / ema21 - 1) * 100, 2) if ema21 > 0 else 0
     ema_component = min(99, max(1, int(50 + ema_spread * 10)))
 
@@ -10837,13 +10757,13 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
         margin_val = margin_val * 100
     de_val = sf(fund.get("debt_equity") or fund.get("debtToEquity"), 0)
 
-    # Earnings growth (25%) - higher is better, cap at 50%
+    # Earnings growth (25%) — higher is better, cap at 50%
     earn_comp = min(99, max(1, int(50 + min(eps_growth_val, 50) * 0.9))) if eps_growth_val else 40
-    # ROE (25%) - above 15% is great
+    # ROE (25%) — above 15% is great
     roe_comp = min(99, max(1, int(roe_val * 3.5))) if roe_val > 0 else 25
-    # Profit margin (20%) - above 15% is strong
+    # Profit margin (20%) — above 15% is strong
     margin_comp = min(99, max(1, int(margin_val * 3.5))) if margin_val > 0 else 25
-    # D/E health (15%) - lower is better, inverted scoring
+    # D/E health (15%) — lower is better, inverted scoring
     if de_val is not None and de_val >= 0:
         de_comp = min(99, max(1, int(99 - min(de_val, 200) * 0.45)))
     else:
@@ -10861,9 +10781,9 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     down_days = 20 - up_days
     # Up-day vs down-day ratio (40%)
     ud_ratio_comp = min(99, max(1, int(up_days / 20 * 99)))
-    # Volume ratio (30%) - current vs average
+    # Volume ratio (30%) — current vs average
     vr_comp = min(99, max(1, int(min(vol_ratio, 3.0) * 33)))
-    # OBV trend (30%) - is OBV rising over 20 days?
+    # OBV trend (30%) — is OBV rising over 20 days?
     try:
         obv = (v * delta.apply(lambda x: 1 if x > 0 else (-1 if x < 0 else 0))).cumsum()
         obv_20ago = float(obv.iloc[-21]) if len(obv) > 20 else float(obv.iloc[0])
@@ -10878,7 +10798,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     )))
 
     # --- 6d. TREND (technical alignment) ---
-    # SMA alignment (30%) - 20>50>200 = perfect bull, reverse = perfect bear
+    # SMA alignment (30%) — 20>50>200 = perfect bull, reverse = perfect bear
     sma_align = 0
     if sma20 > sma50 > sma200: sma_align = 99
     elif sma20 > sma50: sma_align = 75
@@ -10892,7 +10812,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
     st_comp = 80 if supertrend_bullish else 20
     # Stochastic position (15%)
     stoch_comp = min(99, max(1, int(stoch_k)))
-    # BB width - tighter bands = breakout potential (10%)
+    # BB width — tighter bands = breakout potential (10%)
     bb_w = (bb_upper - bb_lower) / price * 100 if price > 0 and bb_upper > 0 else 5
     bb_comp = min(99, max(1, int(99 - min(bb_w, 15) * 5)))  # tighter = higher
 
@@ -11313,7 +11233,7 @@ async def alphaview(symbol: str, user=Depends(get_current_user)):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# SCREEN BUILDER - DYOR (installed 28 March 2026)
+# SCREEN BUILDER — DYOR (installed 28 March 2026)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 SCREENER_PARAMS = {
@@ -11661,7 +11581,7 @@ async def sb_get_full_universe() -> list:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# MTF COMBINER (server-side) - reads sb_universe from Redis, applies multiple
+# MTF COMBINER (server-side) — reads sb_universe from Redis, applies multiple
 # strategy filters in one pass, returns confluence-scored results.
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -11717,7 +11637,7 @@ def _mtf_get_tf(strat: str) -> str:
 
 
 @app.get("/api/mtf-scan", tags=["MTF Combiner"], summary="Multi-timeframe strategy combiner",
-    description="Run multiple strategies in one pass against the cached stock universe. Returns stocks with confluence scoring - how many strategies each stock passes and across how many timeframes. Much faster than calling /api/screener N times.")
+    description="Run multiple strategies in one pass against the cached stock universe. Returns stocks with confluence scoring — how many strategies each stock passes and across how many timeframes. Much faster than calling /api/screener N times.")
 async def mtf_scan(
     strategies: str = "momentum,breakout,golden_cross,relative_strength",
     min_price: float = 0, max_price: float = 999999,
@@ -12351,7 +12271,7 @@ async def delete_saved_screen(screen_id: int, user=Depends(get_current_user)):
     return {"deleted": True, "id": screen_id}
 
 
-# ══ STOCK 360 - Unified Stock Intelligence ═════════════════════════════════
+# ══ STOCK 360 — Unified Stock Intelligence ═════════════════════════════════
 @app.get("/api/stock360/{symbol}", tags=["Stock 360"], summary="Unified stock analysis")
 async def stock360(symbol: str, user=Depends(get_current_user)):
     """Stock 360: AlphaView + Alpha Intel + Patterns in one call."""
