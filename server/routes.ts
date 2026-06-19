@@ -55,6 +55,7 @@ function validateVerifyToken(token: string, orderId: string, userId: string): bo
 import { initXTSBridge } from "./xts-bridge";
 import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 import { registerNextraSSO } from "./nextra-sso";
+import { registerNextraAdmin } from "./nextra-admin";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -85,6 +86,7 @@ export async function registerRoutes(
   // Broker API v1 + Swagger
   registerBrokerApiRoutes(app);
   registerNextraSSO(app);
+  registerNextraAdmin(app);
   registerBrokerApiRoutesV2(app);
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(getSwaggerSpec(), { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "AlphaMarket Broker API" }));
 

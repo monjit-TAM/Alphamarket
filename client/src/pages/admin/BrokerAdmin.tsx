@@ -44,13 +44,19 @@ export default function BrokerAdmin(){
   const [toast,setToast]=useState<{msg:string;ok:boolean}|null>(null);
   const [dashboard,setDashboard]=useState<any>(null);
   const [newB,setNewB]=useState({name:"",brokerType:"XTS",baseUrl:"",vendorCode:"",vendorKey:"",notes:""});
-  const [mode,setMode]=useState<"xts"|"pullapi">("xts");
+  const [mode,setMode]=useState<"xts"|"pullapi"|"partner">("xts");
   const [pullBrokers,setPullBrokers]=useState<any[]>([]);const [pullSelected,setPullSelected]=useState<any>(null);const [pullTab,setPullTab]=useState<"advisors"|"strategies"|"apilog"|"webhooklog"|"settings">("advisors");
+  const [partners,setPartners]=useState<any[]>([]);const [partnerSelected,setPartnerSelected]=useState<any>(null);const [partnerTab,setPartnerTab]=useState<"config"|"users"|"sessions"|"brokers">("config");const [partnerStats,setPartnerStats]=useState<any>(null);const [partnerUsers,setPartnerUsers]=useState<any[]>([]);const [partnerSessions,setPartnerSessions]=useState<any[]>([]);const [partnerBrokers,setPartnerBrokers]=useState<any[]>([]);const [partnerLoading,setPartnerLoading]=useState(false);const [partnerSaving,setPartnerSaving]=useState(false);const [partnerEdit,setPartnerEdit]=useState<any>(null);
   const [pullAdvisors,setPullAdvisors]=useState<any[]>([]);const [pullStrategies,setPullStrategies]=useState<any[]>([]);const [pullApiLogs,setPullApiLogs]=useState<any[]>([]);const [pullWebhookLogs,setPullWebhookLogs]=useState<any[]>([]);const [expandedWH,setExpandedWH]=useState<string|null>(null);const [pullDash,setPullDash]=useState<any>(null);
   const [showAddPull,setShowAddPull]=useState(false);const [newPull,setNewPull]=useState({brokerName:"",contactEmail:"",contactName:"",webhookUrl:"",rateLimit:"100",notes:"",webhookPayloadVersion:"v1_flat",allowedSegments:[] as string[],allowedStrategies:[] as string[],webhookTimeoutMs:"10000"});const [pullLoading,setPullLoading]=useState(false);const [showSecret,setShowSecret]=useState<any>(null);
   const loadPull=async()=>{try{const[b,d]=await Promise.all([api("GET","/api/admin/pull-api/brokers"),api("GET","/api/admin/pull-api/dashboard")]);setPullBrokers(b);setPullDash(d);if(pullSelected){const u=b.find((x:any)=>x.id===pullSelected.id);if(u)setPullSelected(u);}}catch(e:any){showToast(e.message,false);}};
   const loadPullTab=async()=>{if(!pullSelected)return;setPullLoading(true);try{if(pullTab==="advisors")setPullAdvisors(await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/advisors"));else if(pullTab==="strategies")setPullStrategies(await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/strategies"));else if(pullTab==="apilog")setPullApiLogs(await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/logs"));else if(pullTab==="webhooklog"){const r=await api("GET","/api/admin/pull-api/brokers/"+pullSelected.id+"/webhook-logs?limit=5000");setPullWebhookLogs(Array.isArray(r)?r:r.rows||[]);}}catch(e:any){showToast(e.message,false);}setPullLoading(false);};
-  useEffect(()=>{if(mode==="pullapi")loadPull();},[mode]);useEffect(()=>{if(mode==="pullapi"&&pullSelected)loadPullTab();},[pullSelected,pullTab]);
+  const loadPartners=async()=>{try{const r=await api("GET","/api/admin/partners");setPartners(r);}catch(e:any){showToast(e.message,false);}};
+  const loadPartnerTab=async()=>{if(!partnerSelected)return;setPartnerLoading(true);try{if(partnerTab==="config"){setPartnerEdit({...partnerSelected});const s=await api("GET","/api/admin/partners/"+partnerSelected.id+"/stats");setPartnerStats(s);}else if(partnerTab==="users"){const r=await api("GET","/api/admin/partners/"+partnerSelected.id+"/shadow-users");setPartnerUsers(r);}else if(partnerTab==="sessions"){const r=await api("GET","/api/admin/partners/"+partnerSelected.id+"/sessions");setPartnerSessions(r);}else if(partnerTab==="brokers"){const r=await api("GET","/api/admin/partners/"+partnerSelected.id+"/broker-configs");setPartnerBrokers(r);}}catch(e:any){showToast(e.message,false);}setPartnerLoading(false);};
+  const savePartner=async()=>{if(!partnerSelected||!partnerEdit)return;setPartnerSaving(true);try{await api("PUT","/api/admin/partners/"+partnerSelected.id,partnerEdit);showToast("Saved");loadPartners();}catch(e:any){showToast(e.message,false);}setPartnerSaving(false);};
+  useEffect(()=>{if(mode==="partner")loadPartners();},[mode]);
+  useEffect(()=>{if(mode==="partner"&&partnerSelected)loadPartnerTab();},[partnerSelected,partnerTab]);
+    useEffect(()=>{if(mode==="pullapi")loadPull();},[mode]);useEffect(()=>{if(mode==="pullapi"&&pullSelected)loadPullTab();},[pullSelected,pullTab]);
   const addPullBroker=async()=>{setSaving(true);try{const r=await api("POST","/api/admin/pull-api/brokers",{brokerName:newPull.brokerName,contactEmail:newPull.contactEmail||undefined,contactName:newPull.contactName||undefined,webhookUrl:newPull.webhookUrl||undefined,rateLimit:parseInt(newPull.rateLimit)||100,permissions:["read"],notes:newPull.notes||undefined,webhookPayloadVersion:newPull.webhookPayloadVersion||"v1_flat",allowedSegments:newPull.allowedSegments.length?newPull.allowedSegments:null,allowedStrategies:newPull.allowedStrategies.length?newPull.allowedStrategies:null,webhookTimeoutMs:parseInt(newPull.webhookTimeoutMs)||10000});setShowSecret(r);setShowAddPull(false);setNewPull({brokerName:"",contactEmail:"",contactName:"",webhookUrl:"",rateLimit:"100",notes:"",webhookPayloadVersion:"v1_flat",allowedSegments:[],allowedStrategies:[],webhookTimeoutMs:"10000"});loadPull();showToast("Broker added!");}catch(e:any){showToast(e.message,false);}setSaving(false);};
   const togglePullBroker=async(b:any)=>{try{await api("PATCH","/api/admin/pull-api/brokers/"+b.id,{isActive:!b.is_active});showToast(b.broker_name+" "+(b.is_active?"disabled":"enabled"));loadPull();}catch(e:any){showToast(e.message,false);}};
   const togglePullAdvisor=async(a:any)=>{if(!pullSelected)return;try{const curr=pullAdvisors.filter((x:any)=>x.enabled).map((x:any)=>x.id);const nl=a.enabled?curr.filter((id:string)=>id!==a.id):[...curr,a.id];await api("PUT","/api/admin/pull-api/brokers/"+pullSelected.id+"/advisors",{advisorIds:nl});loadPullTab();loadPull();}catch(e:any){showToast(e.message,false);}};
@@ -77,7 +83,7 @@ export default function BrokerAdmin(){
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');*{box-sizing:border-box}`}</style>
       {toast&&<div style={{position:"fixed",top:20,right:20,zIndex:1000,background:toast.ok?C.green:C.red,color:"#fff",padding:"10px 18px",borderRadius:8,fontSize:13,fontWeight:500,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>{toast.msg}</div>}
       <div style={{background:C.dark,padding:"14px 28px",display:"flex",alignItems:"center",gap:16}}>
-        <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,color:"#fff"}}>Broker Integrations</div><div style={{display:"flex",gap:0,marginTop:6}}>{(["xts","pullapi"] as const).map(m=>(<div key={m} onClick={()=>{setMode(m);setSelected(null);setPullSelected(null);}} style={{padding:"4px 14px",fontSize:11,fontWeight:mode===m?700:400,color:mode===m?"#fff":"#9CA3AF",borderBottom:mode===m?"2px solid #fff":"2px solid transparent",cursor:"pointer"}}>{m==="xts"?"XTS Push Brokers":"Pull API Brokers"}</div>))}</div></div>
+        <div style={{flex:1}}><div style={{fontSize:16,fontWeight:700,color:"#fff"}}>Broker Integrations</div><div style={{display:"flex",gap:0,marginTop:6}}>{(["xts","pullapi","partner"] as const).map(m=>(<div key={m} onClick={()=>{setMode(m);setSelected(null);setPullSelected(null);setPartnerSelected(null);}} style={{padding:"4px 14px",fontSize:11,fontWeight:mode===m?700:400,color:mode===m?"#fff":"#9CA3AF",borderBottom:mode===m?"2px solid #fff":"2px solid transparent",cursor:"pointer"}}>{m==="xts"?"XTS Push Brokers":m==="pullapi"?"Pull API Brokers":"Partner Integrations"}</div>))}</div></div>
         {dashboard&&<div style={{display:"flex",gap:20}}>{[["Active",`${dashboard.brokers?.enabled||0}/${dashboard.brokers?.total||0}`,C.green],["Published 24h",dashboard.publishing?.success_24h||0,C.green],["Errors 24h",dashboard.publishing?.error_24h||0,(dashboard.publishing?.error_24h||0)>0?C.red:C.green]].map(([l,v,c])=>(<div key={l as string} style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:700,color:c as string}}>{v as string}</div><div style={{fontSize:10,color:"#9CA3AF"}}>{l as string}</div></div>))}</div>}
         {mode==="xts"?btn("+ Add Broker",()=>setShowAdd(true),"secondary"):btn("+ Add Pull Broker",()=>setShowAddPull(true),"secondary")}
       </div>
@@ -185,6 +191,79 @@ export default function BrokerAdmin(){
           </div>
         )}
       </div>)}
+    </div>)}
+    {mode==="partner"&&(<div style={{display:"flex",flex:1,overflow:"hidden"}}>
+      <div style={{width:280,background:C.panel,borderRight:"1px solid "+C.border,overflowY:"auto"}}>
+        <div style={{padding:"14px 16px",fontSize:11,fontWeight:700,color:C.muted,letterSpacing:1,borderBottom:"1px solid "+C.border}}>PARTNER INTEGRATIONS</div>
+        {partners.length===0&&<div style={{padding:24,textAlign:"center",color:C.muted,fontSize:13}}>No partners configured</div>}
+        {partners.map((p:any)=>(<div key={p.id} onClick={()=>{setPartnerSelected(p);setPartnerTab("config");}} style={{padding:"14px 16px",cursor:"pointer",borderBottom:"1px solid "+C.border,background:partnerSelected?.id===p.id?C.blueBg:"transparent",borderLeft:partnerSelected?.id===p.id?"3px solid "+C.blue:"3px solid transparent"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}><div style={{flex:1,fontWeight:600,fontSize:13}}>{p.partner_name}</div><Toggle checked={p.is_active} onChange={async()=>{try{await api("PUT","/api/admin/partners/"+p.id,{is_active:!p.is_active});loadPartners();}catch(e:any){showToast(e.message,false);}}}/></div>
+          <div style={{fontSize:11,color:C.muted,marginBottom:4}}>{p.contact_email||""}</div>
+          <div style={{display:"flex",gap:6}}>
+            <Badge label={p.sso_enabled?"SSO":"No SSO"} color={p.sso_enabled?C.green:C.muted} bg={p.sso_enabled?C.greenBg:C.bg}/>
+            <Badge label={p.sso_provider||"—"} color={C.blue} bg={C.blueBg}/>
+            <Badge label={p.access_mode||"marketplace"} color={C.muted} bg={C.bg}/>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:6,fontSize:11,color:C.muted}}>
+            <span>{p.total_users||0} users</span><span>{p.active_sessions||0} sessions</span><span>{p.users_24h||0} today</span>
+          </div>
+        </div>))}
+      </div>
+      {!partnerSelected&&<div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:C.muted,fontSize:14}}>Select a partner to manage</div>}
+      {partnerSelected&&(<div style={{flex:1,display:"flex",flexDirection:"column" as any,overflow:"hidden"}}>
+        <div style={{background:C.panel,padding:"16px 24px",borderBottom:"1px solid "+C.border}}>
+          <div style={{fontSize:16,fontWeight:700}}>{partnerSelected.partner_name}</div>
+          <div style={{fontSize:12,color:C.muted,marginTop:4}}>Provider: {partnerSelected.sso_provider} | Client ID: {partnerSelected.sso_client_id} | {partnerSelected.sso_api_url}</div>
+          {partnerStats&&<div style={{display:"flex",gap:20,marginTop:10}}>{[["Total Users",partnerStats.total_users],["Active 24h",partnerStats.active_24h],["Live Sessions",partnerStats.live_sessions],["Logins 24h",partnerStats.logins_24h],["Brokers",partnerStats.unique_brokers]].map(([l,v]:any)=>(<div key={l} style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:700,color:C.green}}>{v||0}</div><div style={{fontSize:10,color:C.muted}}>{l}</div></div>))}</div>}
+        </div>
+        <div style={{background:C.panel,borderBottom:"1px solid "+C.border,display:"flex",padding:"0 24px"}}>{(["config","users","sessions","brokers"] as const).map(t=>(<div key={t} onClick={()=>setPartnerTab(t)} style={{padding:"12px 16px",fontSize:13,fontWeight:partnerTab===t?600:400,color:partnerTab===t?C.blue:C.muted,borderBottom:partnerTab===t?"2px solid "+C.blue:"2px solid transparent",cursor:"pointer"}}>{t==="config"?"Configuration":t==="users"?"Shadow Users":t==="sessions"?"Session Logs":t==="brokers"?"Broker Configs":t}</div>))}</div>
+        <div style={{flex:1,overflowY:"auto",padding:24}}>
+          {partnerLoading&&<div style={{textAlign:"center",padding:40,color:C.muted}}>Loading...</div>}
+
+          {!partnerLoading&&partnerTab==="config"&&partnerEdit&&(<div style={{maxWidth:600}}>
+            <div style={{fontSize:14,fontWeight:700,marginBottom:16}}>SSO Configuration</div>
+            {inp("Partner Name",partnerEdit.partner_name,(v:string)=>setPartnerEdit((p:any)=>({...p,partner_name:v})))}
+            {inp("Contact Email",partnerEdit.contact_email||"",(v:string)=>setPartnerEdit((p:any)=>({...p,contact_email:v})),"email")}
+            {inp("SSO Client ID",partnerEdit.sso_client_id||"",(v:string)=>setPartnerEdit((p:any)=>({...p,sso_client_id:v})))}
+            {inp("SSO Client Secret",partnerEdit.sso_client_secret||"",(v:string)=>setPartnerEdit((p:any)=>({...p,sso_client_secret:v})),"password")}
+            {inp("SSO API URL",partnerEdit.sso_api_url||"",(v:string)=>setPartnerEdit((p:any)=>({...p,sso_api_url:v})))}
+            {inp("Redirect URL",partnerEdit.sso_redirect_url||"",(v:string)=>setPartnerEdit((p:any)=>({...p,sso_redirect_url:v})))}
+            <div style={{marginTop:16,fontSize:14,fontWeight:700,marginBottom:12}}>Access Settings</div>
+            <div style={{marginBottom:12}}><div style={{fontSize:12,color:C.muted,marginBottom:4}}>Access Mode</div><select value={partnerEdit.access_mode||"marketplace"} onChange={(e:any)=>setPartnerEdit((p:any)=>({...p,access_mode:e.target.value}))} style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid "+C.border,background:C.bg,color:C.text,fontSize:13}}><option value="marketplace">Marketplace (Full catalog)</option><option value="curated">Curated (Selected advisors)</option><option value="open_access">Open Access (Broker-funded)</option></select></div>
+            <div style={{marginBottom:12}}><div style={{fontSize:12,color:C.muted,marginBottom:4}}>Payment Mode</div><select value={partnerEdit.payment_mode||"user_pays"} onChange={(e:any)=>setPartnerEdit((p:any)=>({...p,payment_mode:e.target.value}))} style={{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid "+C.border,background:C.bg,color:C.text,fontSize:13}}><option value="user_pays">User Pays (Subscription)</option><option value="broker_pays">Broker Pays</option><option value="free">Free Access</option></select></div>
+            {inp("Landing Page",partnerEdit.landing_page||"/dashboard/strategies",(v:string)=>setPartnerEdit((p:any)=>({...p,landing_page:v})))}
+            <div style={{display:"flex",gap:10,marginTop:16}}>{btn(partnerSaving?"Saving...":"Save Configuration",savePartner,"primary",partnerSaving)}</div>
+            <div style={{marginTop:24,padding:16,background:C.bg,borderRadius:8,border:"1px solid "+C.border}}>
+              <div style={{fontSize:12,fontWeight:700,marginBottom:8}}>Integration Details</div>
+              <div style={{fontSize:11,fontFamily:"monospace",color:C.muted,lineHeight:1.8}}>
+                <div>Partner Key: {partnerSelected.partner_key}</div>
+                <div>Callback URL: {partnerSelected.sso_redirect_url}</div>
+                <div>SSO Test: <a href="/auth/nextra/test" target="_blank" style={{color:C.blue}}>alphamarket.co.in/auth/nextra/test</a></div>
+              </div>
+            </div>
+          </div>)}
+
+          {!partnerLoading&&partnerTab==="users"&&(<div>
+            <div style={{fontSize:13,color:C.muted,marginBottom:12}}>{partnerUsers.length} shadow users</div>
+            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"2px solid "+C.border,textAlign:"left"}}><th style={{padding:"8px 12px"}}>UID</th><th style={{padding:"8px 12px"}}>Email</th><th style={{padding:"8px 12px"}}>Name</th><th style={{padding:"8px 12px"}}>Broker</th><th style={{padding:"8px 12px"}}>Sessions</th><th style={{padding:"8px 12px"}}>Last Seen</th></tr></thead><tbody>{partnerUsers.map((u:any)=>(<tr key={u.id} style={{borderBottom:"1px solid "+C.border}}><td style={{padding:"8px 12px",fontFamily:"monospace"}}>{u.uid||u.hashed_key?.slice(0,12)}</td><td style={{padding:"8px 12px"}}>{u.email||"—"}</td><td style={{padding:"8px 12px"}}>{u.display_name||"—"}</td><td style={{padding:"8px 12px"}}>{u.broker_name||u.broker_id||"—"}</td><td style={{padding:"8px 12px"}}>{u.active_sessions||0}</td><td style={{padding:"8px 12px",color:C.muted}}>{u.last_seen?new Date(u.last_seen).toLocaleString():"-"}</td></tr>))}</tbody></table>
+          </div>)}
+
+          {!partnerLoading&&partnerTab==="sessions"&&(<div>
+            <div style={{display:"flex",justifyContent:"space-between",marginBottom:12}}><div style={{fontSize:13,color:C.muted}}>{partnerSessions.length} recent sessions</div>{btn("Clean Expired",async()=>{try{await api("DELETE","/api/admin/partners/"+partnerSelected.id+"/sessions/expired");loadPartnerTab();showToast("Cleaned");}catch(e:any){showToast(e.message,false);}},"ghost")}</div>
+            <table style={{width:"100%",fontSize:12,borderCollapse:"collapse"}}><thead><tr style={{borderBottom:"2px solid "+C.border,textAlign:"left"}}><th style={{padding:"8px 12px"}}>UID</th><th style={{padding:"8px 12px"}}>Email</th><th style={{padding:"8px 12px"}}>Broker</th><th style={{padding:"8px 12px"}}>Product</th><th style={{padding:"8px 12px"}}>Login Time</th><th style={{padding:"8px 12px"}}>Expires</th><th style={{padding:"8px 12px"}}>Status</th></tr></thead><tbody>{partnerSessions.map((s:any)=>(<tr key={s.id} style={{borderBottom:"1px solid "+C.border}}><td style={{padding:"8px 12px",fontFamily:"monospace"}}>{s.uid||"—"}</td><td style={{padding:"8px 12px"}}>{s.email||"—"}</td><td style={{padding:"8px 12px"}}>{s.broker_name||s.broker_id||"—"}</td><td style={{padding:"8px 12px"}}><Badge label={s.product} color={C.blue} bg={C.blueBg}/></td><td style={{padding:"8px 12px",color:C.muted}}>{new Date(s.created_at).toLocaleString()}</td><td style={{padding:"8px 12px",color:C.muted}}>{new Date(s.expires_at).toLocaleString()}</td><td style={{padding:"8px 12px"}}>{new Date(s.expires_at)>new Date()?<Badge label="Active" color={C.green} bg={C.greenBg}/>:<Badge label="Expired" color={C.muted} bg={C.bg}/>}</td></tr>))}</tbody></table>
+          </div>)}
+
+          {!partnerLoading&&partnerTab==="brokers"&&(<div>
+            <div style={{fontSize:13,color:C.muted,marginBottom:12}}>{partnerBrokers.length} broker configurations</div>
+            {partnerBrokers.length===0&&<div style={{padding:24,textAlign:"center",color:C.muted}}>No broker-specific configs. All brokers use default partner settings.</div>}
+            {partnerBrokers.map((b:any)=>(<div key={b.id} style={{background:C.panel,border:"1px solid "+C.border,borderRadius:8,padding:"12px 16px",marginBottom:8}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}><div style={{fontWeight:600,fontSize:13}}>{b.broker_name||b.broker_id}</div><Badge label={b.is_active?"Active":"Inactive"} color={b.is_active?C.green:C.muted} bg={b.is_active?C.greenBg:C.bg}/></div>
+              <div style={{fontSize:11,color:C.muted,marginTop:4}}>Products: {(b.products_enabled||[]).join(", ")} | Users: {b.user_count||0}</div>
+            </div>))}
+          </div>)}
+        </div>
+      </div>)}
+    </div>)}
     </div>
   );
 }
