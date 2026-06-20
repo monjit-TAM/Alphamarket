@@ -324,7 +324,10 @@ export async function registerRoutes(
       // Update last seen
       await db.execute(sql`UPDATE partner_shadow_users SET last_seen = NOW() WHERE id = ${session.shadow_user_id}`);
 
-      // Serve the SPA with embed mode flag
+      // Redirect to real SPA route with embed flag
+      return res.redirect("/dashboard/strategies?embed=true&token=" + token);
+
+      // Serve the SPA with embed mode flag (fallback)
       const indexPath = require("path").resolve(__dirname, "public", "index.html");
       let html = require("fs").readFileSync(indexPath, "utf-8");
 

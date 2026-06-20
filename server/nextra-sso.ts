@@ -246,7 +246,7 @@ export function registerNextraSSO(app: Express) {
       console.log("[Nextra SSO] Session created, redirecting to dashboard");
 
       // 6. Redirect to embedded dashboard
-      const embedUrl = "/embed?token=" + sessionToken;
+      const embedUrl = "/dashboard/strategies?embed=true&token=" + sessionToken;
       res.redirect(embedUrl);
 
     } catch (err: any) {
