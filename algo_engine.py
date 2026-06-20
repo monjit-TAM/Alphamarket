@@ -77,7 +77,7 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
 
     for s in universe:
         sym = s.get("symbol", "")
-        if sym in open_syms or len(signals) + len(open_syms) >= max_open:
+        if sym in open_syms:
             continue
 
         price = s.get("price", 0)
@@ -102,7 +102,11 @@ def scan_alphascore_momentum(universe: List[dict], fundamentals: dict = None,
         vol_sc = min(1, vol_ratio / 2) * 15
         min_sc = (minervini / 8) * 10
         high_sc = min(1, max(0, (100 + pct_52h) / 100)) * 10
-        alpha_score = rsi_sc + trend_sc + rs_sc + vol_sc + min_sc + high_sc
+        change_pct = s.get("change_pct", 0)
+        change_sc = min(1, max(0, change_pct / 3)) * 10 if change_pct > 0 else 0
+        volume = s.get("volume", 0)
+        vol_quality = 5 if volume > 100000 else (3 if volume > 50000 else 0)
+        alpha_score = rsi_sc + trend_sc + rs_sc + vol_sc + min_sc + high_sc + change_sc + vol_quality
 
         if alpha_score < 55:
             continue
@@ -151,7 +155,7 @@ def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
 
     for s in universe:
         sym = s.get("symbol", "")
-        if sym in open_syms or len(signals) + len(open_syms) >= max_open:
+        if sym in open_syms:
             continue
 
         price = s.get("price", 0)
@@ -218,8 +222,8 @@ def scan_theta_decay(vix: float, vix_sma20: float, nifty_price: float,
     signals = []
     open_syms = {p.get("symbol", "") for p in (open_positions or [])}
 
-    if day_of_week > 2:  # Only Mon(0), Tue(1), Wed(2)
-        return []
+    # day_of_week check removed — fires every market day
+    # (was: return [])
 
     if vix >= 20 or vix > vix_sma20 + 2:  # Low vol regime (relaxed)
         return []
@@ -231,7 +235,7 @@ def scan_theta_decay(vix: float, vix_sma20: float, nifty_price: float,
         return []
 
     for idx_sym, idx_price, lot_size in [("NIFTY", nifty_price, 25), ("BANKNIFTY", banknifty_price, 15)]:
-        if idx_sym in open_syms or len(signals) + len(open_syms) >= max_open:
+        if idx_sym in open_syms:
             continue
 
         if idx_price <= 0:
@@ -288,7 +292,7 @@ def scan_momentum_surge(universe: List[dict], max_open: int = 3,
 
     for s in universe:
         sym = s.get("symbol", "")
-        if sym in open_syms or len(signals) + len(open_syms) >= max_open:
+        if sym in open_syms:
             continue
 
         price = s.get("price", 0)
@@ -350,7 +354,7 @@ def scan_oversold_snapback(universe: List[dict], max_open: int = 2,
 
     for s in universe:
         sym = s.get("symbol", "")
-        if sym in open_syms or len(signals) + len(open_syms) >= max_open:
+        if sym in open_syms:
             continue
 
         price = s.get("price", 0)

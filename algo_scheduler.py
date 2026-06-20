@@ -186,6 +186,15 @@ async def monitor_exits():
         tgt2 = float(pos.get("target2") or 0)
         opened = pos.get("opened_at") or pos["created_at"]
 
+        # Skip signals created less than 10 minutes ago
+        created = pos.get("opened_at") or pos.get("created_at")
+        if created:
+            if created.tzinfo is not None:
+                created = created.replace(tzinfo=None)
+            age_minutes = (datetime.now() - created).total_seconds() / 60
+            if age_minutes < 10:
+                continue
+
         # Fetch live price
         price = await fetch_live_price(symbol)
         if price <= 0:
@@ -279,9 +288,7 @@ def should_scan(algo_id: str, last_scan: dict) -> bool:
         if now.time() >= time(14, 30) and last and last.time() < time(14, 0):
             return True
     elif algo_id == "ALGO3":
-        # Every 30 min, Mon-Wed only
-        if now.weekday() > 2:
-            return False
+        # Every 30 min, every market day
         if not last or (now - last).total_seconds() >= 300:
             return True
     elif algo_id == "ALGO4":
@@ -353,9 +360,21 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
             elif algo_id == "ALGO5":
                 signals = scan_oversold_snapback(universe, open_positions=open_pos_list)
 
-            # Save signals to DB
+            # Save signals to DB (skip duplicates — same symbol+algo today)
             for sig in signals:
                 sig_dict = sig.to_dict()
+                sym = sig_dict.get("symbol", "")
+                import asyncpg as _apg
+                _conn = await _apg.connect(DB_URL)
+                try:
+                    existing = await _conn.fetchval(
+                        "SELECT COUNT(*) FROM algo_signals WHERE algo_id=$1 AND symbol=$2 AND created_at::date = CURRENT_DATE AND status='OPEN'",
+                        algo_id, sym
+                    )
+                finally:
+                    await _conn.close()
+                if existing and existing > 0:
+                    continue
                 await save_signal(sig_dict)
                 total_signals += 1
 
