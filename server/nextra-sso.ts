@@ -240,14 +240,56 @@ export function registerNextraSSO(app: Express) {
 
       console.log("[Nextra SSO] Shadow user:", shadowUserId, "uid:", uid, "broker:", brokerId);
 
-      // 5. Create session
+      // 5. Create partner session
       const sessionToken = await createSession(shadowUserId, config.partnerId, "alphamarket");
 
-      console.log("[Nextra SSO] Session created, redirecting to dashboard");
+      // 6. Create or find real app user (for req.session.userId)
+      let appUserId: string | null = null;
+      try {
+        if (email) {
+          // Check if user with this email already exists
+          const existingUser = await db.execute(sql`SELECT id FROM users WHERE email = ${email} LIMIT 1`);
+          if ((existingUser.rows as any[]).length > 0) {
+            appUserId = (existingUser.rows as any[])[0].id;
+            console.log("[Nextra SSO] Found existing app user:", appUserId);
+          }
+        }
+        if (!appUserId && uid) {
+          // Check by username = uid
+          const byUid = await db.execute(sql`SELECT id FROM users WHERE username = ${uid} LIMIT 1`);
+          if ((byUid.rows as any[]).length > 0) {
+            appUserId = (byUid.rows as any[])[0].id;
+            console.log("[Nextra SSO] Found app user by uid:", appUserId);
+          }
+        }
+        if (!appUserId) {
+          // Create new investor user
+          const { randomBytes: rb } = require("crypto");
+          const newId = rb(16).toString("hex");
+          const dummyPass = rb(32).toString("hex");
+          const uname = uid || ("nextra_" + rb(4).toString("hex"));
+          const userEmail = email || (uname + "@nextra-sso.alphamarket.co.in");
+          await db.execute(sql`INSERT INTO users (id, username, password, email, phone, role, company_name, is_registered, is_approved) VALUES (${newId}, ${uname}, ${dummyPass}, ${userEmail}, ${phone}, 'investor', ${displayName || uname}, true, true)`);
+          appUserId = newId;
+          console.log("[Nextra SSO] Created new app user:", appUserId, "email:", userEmail);
+        }
+        // Link shadow user to app user
+        await db.execute(sql`UPDATE partner_shadow_users SET user_data = jsonb_set(COALESCE(user_data, '{}'::jsonb), '{appUserId}', ${JSON.stringify(appUserId)}::jsonb) WHERE id = ${shadowUserId}`);
+      } catch (userErr: any) {
+        console.error("[Nextra SSO] App user creation error (non-fatal):", userErr.message);
+      }
 
-      // 6. Redirect to embedded dashboard
-      const embedUrl = "/dashboard/strategies?embed=true&token=" + sessionToken;
-      res.redirect(embedUrl);
+      // 7. Set app session
+      if (appUserId && req.session) {
+        req.session.userId = appUserId;
+        console.log("[Nextra SSO] App session set for userId:", appUserId);
+      }
+
+      console.log("[Nextra SSO] Redirecting to dashboard");
+
+      // 8. Redirect to dashboard
+      const landingPage = config.landingPage || "/dashboard/strategies";
+      res.redirect(landingPage + "?embed=true&token=" + sessionToken);
 
     } catch (err: any) {
       console.error("[Nextra SSO] Callback error:", err.message, err.stack);
