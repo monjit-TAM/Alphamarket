@@ -30,7 +30,13 @@ export function registerNextraTrade(app: Express) {
   app.post("/api/nextra/place-order", async (req: any, res: any) => {
     try {
       const { token, exch, tsym, qty, prc, trgprc, prd, trantype, prctyp, ret, callId, positionId, strategyId, symbol, remarks } = req.body;
+      if (typeof token !== "string" || token.length < 2) return res.status(401).json({ status: "error", message: "Session token required" });
+      if (typeof exch !== "string" || typeof tsym !== "string" || typeof qty === "undefined" || typeof trantype !== "string" || typeof prctyp !== "string") return res.status(400).json({ status: "error", message: "Missing: exch, tsym, qty, trantype, prctyp" });
+      if (prctyp === "LMT" && (prc === undefined || prc === null)) return res.status(400).json({ status: "error", message: "Price required for LMT" });
+      if (prctyp === "SL-LMT" && (prc === undefined || trgprc === undefined)) return res.status(400).json({ status: "error", message: "Price and trigger price required for SL-LMT" });
       const session = await validateSession(token);
+      if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid or expired session" });
+      if (typeof session.access_token !== "string" || session.access_token.length < 2) return res.status(401).json({ status: "error", message: "No trade access token. Re-login required." });
       const orderData: any = { uid: session.uid, actid: session.uid, exch, tsym, qty: String(qty), prc: String(prc||0), prd: prd||"I", trantype, prctyp: prctyp||"LMT", ret: ret||"DAY", ordersource: "WEB", remarks: remarks||"AlphaMarket" };
       if (trgprc && prctyp === "SL-LMT") orderData.trgprc = String(trgprc);
       const response = await nextraPost(session.sso_api_url, "PlaceOrder", session.access_token, orderData);
@@ -44,7 +50,10 @@ export function registerNextraTrade(app: Express) {
   app.post("/api/nextra/modify-order", async (req: any, res: any) => {
     try {
       const { token, norenordno, exch, prctyp, prc, qty, trgprc } = req.body;
+      if (typeof token !== "string" || token.length < 2) return res.status(401).json({ status: "error", message: "Token required" });
+      if (typeof norenordno !== "string" || typeof exch !== "string") return res.status(400).json({ status: "error", message: "norenordno and exch required" });
       const session = await validateSession(token);
+      if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid session" });
       const modData: any = { uid: session.uid, norenordno, exch };
       if (prctyp) modData.prctyp = prctyp; if (prc) modData.prc = String(prc); if (qty) modData.qty = String(qty); if (trgprc) modData.trgprc = String(trgprc);
       const response = await nextraPost(session.sso_api_url, "ModifyOrder", session.access_token, modData);
@@ -56,7 +65,10 @@ export function registerNextraTrade(app: Express) {
   app.post("/api/nextra/cancel-order", async (req: any, res: any) => {
     try {
       const { token, norenordno } = req.body;
+      if (typeof token !== "string" || token.length < 2) return res.status(401).json({ status: "error", message: "Token required" });
+      if (typeof norenordno !== "string") return res.status(400).json({ status: "error", message: "norenordno required" });
       const session = await validateSession(token);
+      if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid session" });
       const response = await nextraPost(session.sso_api_url, "CancelOrder", session.access_token, { uid: session.uid, norenordno });
       if (response.stat === "Ok") { await db.execute(sql`UPDATE nextra_orders SET status='CANCELLED', order_response=${JSON.stringify(response)}::jsonb, updated_at=NOW() WHERE norenordno=${norenordno} AND shadow_user_id=${session.shadow_user_id}`); res.json({ status: "success", message: "Order cancelled" }); }
       else { res.status(400).json({ status: "error", message: response.emsg||"Cancel failed" }); }
@@ -67,6 +79,7 @@ export function registerNextraTrade(app: Express) {
     try {
       const token = req.query.token as string;
       const session = await validateSession(token);
+      if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid session" });
       const response = await nextraPost(session.sso_api_url, "OrderBook", session.access_token, { uid: session.uid });
       res.json({ status: "success", orders: Array.isArray(response)?response:[] });
     } catch (err: any) { res.status(500).json({ status: "error", message: "Internal error" }); }
@@ -76,6 +89,7 @@ export function registerNextraTrade(app: Express) {
     try {
       const token = req.query.token as string;
       const session = await validateSession(token);
+      if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid session" });
       const response = await nextraPost(session.sso_api_url, "PositionBook", session.access_token, { uid: session.uid, actid: session.uid });
       res.json({ status: "success", positions: Array.isArray(response)?response:[] });
     } catch (err: any) { res.status(500).json({ status: "error", message: "Internal error" }); }
@@ -85,6 +99,7 @@ export function registerNextraTrade(app: Express) {
     try {
       const token = req.query.token as string;
       const session = await validateSession(token);
+      if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid session" });
       const response = await nextraPost(session.sso_api_url, "Holdings", session.access_token, { uid: session.uid, actid: session.uid, prd: "C" });
       res.json({ status: "success", holdings: Array.isArray(response)?response:[] });
     } catch (err: any) { res.status(500).json({ status: "error", message: "Internal error" }); }
