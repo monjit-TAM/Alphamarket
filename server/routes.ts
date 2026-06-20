@@ -56,6 +56,7 @@ import { initXTSBridge } from "./xts-bridge";
 import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 import { registerNextraSSO } from "./nextra-sso";
 import { registerNextraAdmin } from "./nextra-admin";
+import { registerNextraTrade } from "./nextra-trade";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -87,6 +88,7 @@ export async function registerRoutes(
   registerBrokerApiRoutes(app);
   registerNextraSSO(app);
   registerNextraAdmin(app);
+  registerNextraTrade(app);
   registerBrokerApiRoutesV2(app);
   app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(getSwaggerSpec(), { customCss: ".swagger-ui .topbar { display: none }", customSiteTitle: "AlphaMarket Broker API" }));
 
