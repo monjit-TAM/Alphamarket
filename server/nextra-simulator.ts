@@ -138,8 +138,14 @@ async function doDirectEmbed() {
   });
 
   // Mock GenAcsTok — exchange code for token
+  // Need express.text() for text/plain bodies
+  app.use("/auth/nextra/mock/GenAcsTok", (req: any, _res: any, next: any) => {
+    if (req.headers["content-type"]?.includes("text/plain") && !req.body) {
+      let data = ""; req.on("data", (c: any) => data += c); req.on("end", () => { req.body = data; next(); });
+    } else { next(); }
+  });
   app.post("/auth/nextra/mock/GenAcsTok", (req: any, res: any) => {
-    const bodyStr = typeof req.body === "string" ? req.body : "";
+    const bodyStr = typeof req.body === "string" ? req.body : JSON.stringify(req.body || {});
     let code = "", checksum = "";
     try {
       const raw = bodyStr.startsWith("jData=") ? bodyStr.slice(6) : bodyStr;
@@ -147,6 +153,7 @@ async function doDirectEmbed() {
       code = parsed.code || "";
       checksum = parsed.checksum || "";
     } catch { /* ignore parse errors */ }
+    console.log("[Nextra Sim] GenAcsTok body:", bodyStr.slice(0, 80));
 
     const stored = mockTokens.get(code);
     if (!stored) {
@@ -166,6 +173,11 @@ async function doDirectEmbed() {
   });
 
   // Mock UserDetails
+  app.use("/auth/nextra/mock/UserDetails", (req: any, _res: any, next: any) => {
+    if (req.headers["content-type"]?.includes("text/plain") && !req.body) {
+      let data = ""; req.on("data", (c: any) => data += c); req.on("end", () => { req.body = data; next(); });
+    } else { next(); }
+  });
   app.post("/auth/nextra/mock/UserDetails", (req: any, res: any) => {
     const auth = req.headers.authorization || "";
     const token = auth.replace("Bearer ", "");
@@ -186,6 +198,11 @@ async function doDirectEmbed() {
   });
 
   // Mock PlaceOrder
+  app.use("/auth/nextra/mock/PlaceOrder", (req: any, _res: any, next: any) => {
+    if (req.headers["content-type"]?.includes("text/plain") && !req.body) {
+      let data = ""; req.on("data", (c: any) => data += c); req.on("end", () => { req.body = data; next(); });
+    } else { next(); }
+  });
   app.post("/auth/nextra/mock/PlaceOrder", (req: any, res: any) => {
     mockOrderCounter++;
     const ordno = "SIM" + String(mockOrderCounter).padStart(10, "0");
