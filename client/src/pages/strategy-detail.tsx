@@ -92,6 +92,56 @@ export default function StrategyDetail() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [nextraToken, setNextraToken] = useState<string | null>(null);
+  const [isNextraEmbed, setIsNextraEmbed] = useState(false);
+  const [executingTrade, setExecutingTrade] = useState<string | null>(null);
+  const [tradeResult, setTradeResult] = useState<{id: string; ok: boolean; msg: string} | null>(null);
+
+  // Detect Nextra webview embed mode from URL params
+  useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const embed = params.get("embed");
+    const token = params.get("token");
+    if (embed === "true" && token && token.startsWith("nst_")) {
+      setIsNextraEmbed(true);
+      setNextraToken(token);
+    }
+  });
+
+  const executeTrade = async (symbol: string, price: number, action: string, callId?: string, strategyId?: string, isEquity?: boolean) => {
+    if (!nextraToken || executingTrade) return;
+    setExecutingTrade(callId || symbol);
+    setTradeResult(null);
+    try {
+      const resp = await fetch("/api/nextra/place-order", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token: nextraToken,
+          exch: isEquity ? "NSE" : "NFO",
+          tsym: symbol + (isEquity ? "-EQ" : ""),
+          qty: "1",
+          prc: String(price),
+          prd: "C",
+          trantype: action === "Sell" ? "S" : "B",
+          prctyp: "LMT",
+          ret: "DAY",
+          callId,
+          strategyId,
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data.norenordno) {
+        setTradeResult({ id: callId || symbol, ok: true, msg: "Order placed: " + data.norenordno });
+      } else {
+        setTradeResult({ id: callId || symbol, ok: false, msg: data.error || data.message || "Order failed" });
+      }
+    } catch (err: any) {
+      setTradeResult({ id: callId || symbol, ok: false, msg: err.message || "Network error" });
+    }
+    setExecutingTrade(null);
+    setTimeout(() => setTradeResult(null), 5000);
+  };
   const [revealed, setRevealed] = useState(() => id ? isPerformanceRevealed(id) : false);
 
   const { data: strategy, isLoading } = useQuery<Strategy & { advisor?: User }>({
@@ -683,6 +733,7 @@ export default function StrategyDetail() {
                       <th className="pb-2 font-medium text-muted-foreground">Target</th>
                       <th className="pb-2 font-medium text-muted-foreground">Stop Loss</th>
                       <th className="pb-2 font-medium text-muted-foreground">Date & Time</th>
+                      {isNextraEmbed && <th className="pb-2 font-medium text-muted-foreground">Trade</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -734,10 +785,25 @@ export default function StrategyDetail() {
                                 </span>
                               )}
                             </td>
+                            {isNextraEmbed && (
+                              <td className="py-2">
+                                {tradeResult?.id === call.id ? (
+                                  <span className={`text-xs font-medium ${tradeResult.ok ? "text-green-600" : "text-red-600"}`}>{tradeResult.msg}</span>
+                                ) : (
+                                  <button
+                                    onClick={() => executeTrade(call.stockName, Number(call.entryPrice || call.buyRangeStart || 0), call.action || "Buy", call.id, call.strategyId, true)}
+                                    disabled={executingTrade === call.id}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                                  >
+                                    {executingTrade === call.id ? "Placing..." : `${call.action === "Sell" ? "Sell" : "Buy"} Now`}
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                           {call.rationale && (
                             <tr key={`${call.id}-rationale`} className="border-b last:border-0">
-                              <td colSpan={7} className="py-1.5 px-2">
+                              <td colSpan={isNextraEmbed ? 8 : 7} className="py-1.5 px-2">
                                 <p className="text-xs text-muted-foreground italic">{call.rationale}</p>
                                 {(call as any).rationaleAttachment && (
                                   <a href={(call as any).rationaleAttachment} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline">
@@ -784,10 +850,25 @@ export default function StrategyDetail() {
                                 </span>
                               )}
                             </td>
+                            {isNextraEmbed && (
+                              <td className="py-2">
+                                {tradeResult?.id === pos.id ? (
+                                  <span className={`text-xs font-medium ${tradeResult.ok ? "text-green-600" : "text-red-600"}`}>{tradeResult.msg}</span>
+                                ) : (
+                                  <button
+                                    onClick={() => executeTrade(pos.symbol || "", Number(pos.entryPrice || 0), pos.buySell || "Buy", pos.id, pos.strategyId, false)}
+                                    disabled={executingTrade === pos.id}
+                                    className="px-3 py-1.5 text-xs font-semibold rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 disabled:cursor-wait transition-colors"
+                                  >
+                                    {executingTrade === pos.id ? "Placing..." : `${pos.buySell === "Sell" ? "Sell" : "Buy"} Now`}
+                                  </button>
+                                )}
+                              </td>
+                            )}
                           </tr>
                           {pos.rationale && (
                             <tr key={`${pos.id}-rationale`} className="border-b last:border-0">
-                              <td colSpan={7} className="py-1.5 px-2">
+                              <td colSpan={isNextraEmbed ? 8 : 7} className="py-1.5 px-2">
                                 <p className="text-xs text-muted-foreground italic">{pos.rationale}</p>
                               </td>
                             </tr>

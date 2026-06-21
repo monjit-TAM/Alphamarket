@@ -269,7 +269,7 @@ export function registerNextraSSO(app: Express) {
           const dummyPass = rb(32).toString("hex");
           const uname = uid || ("nextra_" + rb(4).toString("hex"));
           const userEmail = email || (uname + "@nextra-sso.alphamarket.co.in");
-          await db.execute(sql`INSERT INTO users (id, username, password, email, phone, role, company_name, is_registered, is_approved) VALUES (${newId}, ${uname}, ${dummyPass}, ${userEmail}, ${phone}, 'investor', ${displayName || uname}, true, true)`);
+          await db.execute(sql`INSERT INTO users (id, username, password, email, phone, role, company_name, is_registered, is_approved, agreement_consent, agreement_consent_date) VALUES (${newId}, ${uname}, ${dummyPass}, ${userEmail}, ${phone}, 'investor', ${displayName || uname}, true, true, true, NOW())`);
           appUserId = newId;
           console.log("[Nextra SSO] Created new app user:", appUserId, "email:", userEmail);
         }
