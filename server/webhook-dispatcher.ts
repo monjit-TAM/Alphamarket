@@ -102,11 +102,12 @@ export async function fireWebhookEvent(
                 `SELECT bwl.payload->'data'->>'recommendationId' as rec_id
                  FROM broker_webhook_logs bwl
                  WHERE bwl.api_key_id = '${target.api_key_id}'
-                   AND bwl.event IN ('CALL_CREATED', 'POSITION_CREATED')
+                   AND bwl.event = 'POSITION_CREATED'
                    AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
                    AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${String(strike).replace(/'/g, "''")}'
                    AND bwl.status_code BETWEEN 200 AND 299
+                   AND bwl.created_at > '2026-06-12'
                    AND NOT EXISTS (
                      SELECT 1 FROM broker_webhook_logs cl
                      WHERE cl.api_key_id = bwl.api_key_id
@@ -121,10 +122,11 @@ export async function fireWebhookEvent(
                 `SELECT bwl.payload->'data'->>'recommendationId' as rec_id
                  FROM broker_webhook_logs bwl
                  WHERE bwl.api_key_id = '${target.api_key_id}'
-                   AND bwl.event IN ('CALL_CREATED', 'POSITION_CREATED')
+                   AND bwl.event = 'CALL_CREATED'
                    AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
                    AND bwl.status_code BETWEEN 200 AND 299
+                   AND bwl.created_at > '2026-06-12'
                    AND NOT EXISTS (
                      SELECT 1 FROM broker_webhook_logs cl
                      WHERE cl.api_key_id = bwl.api_key_id
