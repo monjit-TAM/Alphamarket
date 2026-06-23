@@ -129,10 +129,64 @@ export default function AdminToolPricing() {
       </div>
 
       <div style={{ marginTop: 24, background: C.panel, borderRadius: 10, border: "1px solid " + C.border, padding: 20 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Broker Payment Modes</div>
+        <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>Control whether broker users pay for tools or get free access.</div>
+        <BrokerPaymentTable />
+      </div>
+
+      <div style={{ marginTop: 24, background: C.panel, borderRadius: 10, border: "1px solid " + C.border, padding: 20 }}>
         <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>Active Subscriptions</div>
         <SubscriptionTable />
       </div>
     </div>
+  );
+}
+
+function BrokerPaymentTable() {
+  const [partners, setPartners] = useState<any[]>([]);
+  const [saving, setSaving] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/admin/partners", { credentials: "include" }).then(r => r.ok ? r.json() : []).then(d => setPartners(Array.isArray(d) ? d : [])).catch(() => {});
+  }, []);
+
+  const updateMode = async (id: string, mode: string) => {
+    setSaving(id);
+    try {
+      await fetch("/api/admin/partners/" + id, {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ payment_mode: mode }), credentials: "include",
+      });
+      setPartners(prev => prev.map(p => p.id === id ? { ...p, payment_mode: mode } : p));
+    } catch {}
+    setSaving(null);
+  };
+
+  if (partners.length === 0) return <div style={{ color: C.muted, fontSize: 13, textAlign: "center", padding: 16 }}>No partners configured.</div>;
+
+  return (
+    <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+      <thead><tr style={{ borderBottom: "2px solid " + C.border, textAlign: "left" as any }}>
+        <th style={{ padding: "8px 12px" }}>Partner</th><th style={{ padding: "8px 12px" }}>SSO</th>
+        <th style={{ padding: "8px 12px" }}>Payment Mode</th><th style={{ padding: "8px 12px" }}>Users</th>
+      </tr></thead>
+      <tbody>{partners.map((p: any) => (
+        <tr key={p.id} style={{ borderBottom: "1px solid " + C.border }}>
+          <td style={{ padding: "8px 12px", fontWeight: 600 }}>{p.partner_name}</td>
+          <td style={{ padding: "8px 12px", color: p.sso_enabled ? C.green : C.muted }}>{p.sso_enabled ? "Active" : "Off"}</td>
+          <td style={{ padding: "8px 12px" }}>
+            <select value={p.payment_mode || "user_pays"} onChange={(e) => updateMode(p.id, e.target.value)}
+              disabled={saving === p.id}
+              style={{ padding: "5px 8px", borderRadius: 4, border: "1px solid " + C.border, background: C.bg, color: C.text, fontSize: 12 }}>
+              <option value="user_pays">User Pays</option>
+              <option value="broker_pays">Broker Pays</option>
+              <option value="free">Free Access</option>
+            </select>
+          </td>
+          <td style={{ padding: "8px 12px", color: C.muted }}>{p.total_users || 0}</td>
+        </tr>
+      ))}</tbody>
+    </table>
   );
 }
 

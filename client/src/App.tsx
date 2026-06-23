@@ -34,6 +34,7 @@ import GoalsPage from "@/pages/goals";
 import EsignAgreementPage from "@/pages/esign-agreement";
 import StrategyPerformance from "@/pages/strategy-performance";
 import DyorPage from "@/pages/dyor/index";
+import ToolPricingPage from "@/pages/tool-pricing";
 import { TermsAndConditions, CancellationPolicy, PrivacyPolicy, LegalAgreement, ShippingAndReturns, ContactUs } from "@/pages/legal";
 import BrokerAdmin from "@/pages/admin/BrokerAdmin";
 
@@ -77,6 +78,7 @@ function Router() {
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/:rest*" component={AdminDashboard} />
           <Route path="/admin/brokers" component={BrokerAdmin} />
+      <Route path="/pricing" component={ToolPricingPage} />
       <Route path="/dyor" component={DyorPage} />
       <Route path="/dyor/:rest*" component={DyorPage} />
       <Route component={NotFound} />
