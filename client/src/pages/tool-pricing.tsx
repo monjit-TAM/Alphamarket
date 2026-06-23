@@ -8,9 +8,24 @@ export default function ToolPricingPage() {
   const [selectedPlan, setSelectedPlan] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<string | null>(null);
 
+  const [activeSubs, setActiveSubs] = useState<any[]>([]);
+
   useEffect(() => {
     fetch("/api/monetization-config").then(r => r.json()).then(d => setConfig(d)).catch(() => {});
+    fetch("/api/my-tool-subscriptions", { credentials: "include" }).then(r => r.ok ? r.json() : []).then(d => setActiveSubs(Array.isArray(d) ? d : [])).catch(() => {});
   }, []);
+
+  const isToolActive = (toolKey: string) => {
+    return activeSubs.some(s => s.tool === toolKey && s.status === "active");
+  };
+  const getActivePlan = (toolKey: string) => {
+    const sub = activeSubs.find(s => s.tool === toolKey && s.status === "active");
+    return sub ? sub.plan_type : null;
+  };
+  const getExpiry = (toolKey: string) => {
+    const sub = activeSubs.find(s => s.tool === toolKey && s.status === "active");
+    return sub?.expires_at ? new Date(sub.expires_at).toLocaleDateString("en-IN") : null;
+  };
 
   const subscribe = async (tool: string) => {
     if (!user) { window.location.href = "/login"; return; }
@@ -101,18 +116,30 @@ export default function ToolPricingPage() {
                   )}
                 </div>
 
-                <button onClick={() => subscribe(t.key)} disabled={loading === t.key}
-                  style={{ width: "100%", padding: "12px 0", borderRadius: 8, border: "none", background: t.key === "dyor_bundle" ? "#4FC3F7" : "#2A3A4A", color: t.key === "dyor_bundle" ? "#0D1B2A" : "#E0E0E0", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: loading === t.key ? 0.6 : 1 }}>
-                  {loading === t.key ? "Processing..." : user ? "Subscribe Now" : "Login to Subscribe"}
-                </button>
+                {isToolActive(t.key) ? (
+                  <div style={{ width: "100%", padding: "12px 0", borderRadius: 8, background: "#1B3A1B", border: "1px solid #4CAF50", textAlign: "center" }}>
+                    <div style={{ color: "#4CAF50", fontSize: 14, fontWeight: 600 }}>Active — {getActivePlan(t.key)}</div>
+                    <div style={{ color: "#78909C", fontSize: 11, marginTop: 2 }}>Expires: {getExpiry(t.key)}</div>
+                  </div>
+                ) : (
+                  <button onClick={() => subscribe(t.key)} disabled={loading === t.key}
+                    style={{ width: "100%", padding: "12px 0", borderRadius: 8, border: "none", background: t.key === "dyor_bundle" ? "#4FC3F7" : "#2A3A4A", color: t.key === "dyor_bundle" ? "#0D1B2A" : "#E0E0E0", fontSize: 14, fontWeight: 600, cursor: "pointer", opacity: loading === t.key ? 0.6 : 1 }}>
+                    {loading === t.key ? "Processing..." : user ? "Subscribe Now" : "Login to Subscribe"}
+                  </button>
+                )}
               </div>
             );
           })}
         </div>
 
+        {user?.role === "advisor" && user?.isApproved && (
+          <div style={{ textAlign: "center", marginTop: 24, padding: 16, background: "#1B3A1B", borderRadius: 8, border: "1px solid #4CAF50" }}>
+            <div style={{ color: "#4CAF50", fontSize: 15, fontWeight: 600 }}>You have free access to all tools as an approved advisor</div>
+          </div>
+        )}
         <div style={{ textAlign: "center", marginTop: 32, color: "#78909C", fontSize: 13 }}>
           <p>All plans include full access to the tool. Approved advisors get free access.</p>
-          <p style={{ marginTop: 4 }}>Payments powered by Cashfree. Cancel anytime.</p>
+          <p style={{ marginTop: 4 }}>Payments powered by Cashfree. Secure transactions. Cancel anytime.</p>
         </div>
       </div>
     </div>
