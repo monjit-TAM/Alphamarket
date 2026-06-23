@@ -24,6 +24,7 @@ import BrokerAdmin from "./BrokerAdmin";
 import AdminCalls from "./admin-calls";
 import AdminBrokerCalls from "./admin-broker-calls";
 import AdminBrokerReports from "./admin-broker-reports";
+import AdminToolPricing from "./admin-tool-pricing";
 
 const sidebarItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/admin" },
