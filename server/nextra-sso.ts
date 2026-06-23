@@ -303,7 +303,10 @@ export function registerNextraSSO(app: Express) {
       }
 
       console.log("[Nextra SSO] Redirecting to:", landingPage);
-      res.redirect(landingPage);
+      req.session.save((err: any) => {
+        if (err) console.error("[Nextra SSO] Session save error:", err);
+        res.redirect(landingPage);
+      });
 
     } catch (err: any) {
       console.error("[Nextra SSO] Callback error:", err.message, err.stack);

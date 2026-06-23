@@ -62,7 +62,7 @@ export default function ToolPricingPage() {
   const planLabels: Record<string, string> = { monthly: "Monthly", quarterly: "Quarterly", annual: "Annual" };
 
   return (
-    <div style={{ background: "#0D1B2A", minHeight: "100vh" }}>
+    <div style={{ minHeight: "100vh" }}>
       <Navbar />
       <div style={{ maxWidth: 1100, margin: "0 auto", padding: "40px 20px" }}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
