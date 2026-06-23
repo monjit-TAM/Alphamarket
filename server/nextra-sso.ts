@@ -285,11 +285,25 @@ export function registerNextraSSO(app: Express) {
         console.log("[Nextra SSO] App session set for userId:", appUserId);
       }
 
-      console.log("[Nextra SSO] Redirecting to dashboard");
+      // 8. Redirect based on subscription status
+      let landingPage = "/";
+      try {
+        if (appUserId) {
+          const subResult = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${appUserId} AND status = 'active' LIMIT 1`);
+          if ((subResult.rows as any[]).length > 0) {
+            landingPage = "/strategies";
+            console.log("[Nextra SSO] User has active subscription, redirecting to strategies");
+          } else {
+            landingPage = "/";
+            console.log("[Nextra SSO] No active subscription, redirecting to homepage");
+          }
+        }
+      } catch (subErr: any) {
+        console.error("[Nextra SSO] Subscription check error (non-fatal):", subErr.message);
+      }
 
-      // 8. Redirect to dashboard
-      const landingPage = config.landingPage || "/dashboard/strategies";
-      res.redirect(landingPage + "?embed=true&token=" + sessionToken);
+      console.log("[Nextra SSO] Redirecting to:", landingPage);
+      res.redirect(landingPage);
 
     } catch (err: any) {
       console.error("[Nextra SSO] Callback error:", err.message, err.stack);
