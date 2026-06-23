@@ -6816,7 +6816,8 @@ export async function registerRoutes(
   // ── Tool Subscription: Create Cashfree order ───────────────────
   app.post("/api/tool-subscribe", requireAuth, async (req: any, res: any) => {
     try {
-      const { tool, couponCode } = req.body;
+      const { tool, planType: reqPlanType, couponCode } = req.body;
+      const planType = reqPlanType || "monthly";
       if (!tool) return res.status(400).json({ error: "tool is required" });
 
       const user = await storage.getUser(req.session.userId!);
@@ -6827,16 +6828,36 @@ export async function registerRoutes(
       let analysesIncluded: number | null = null;
       let toolConfig: any = null;
 
-      if (tool === "dyor") {
-        toolConfig = config.dyor || {};
-        amount = toolConfig.monthlyPrice || 4999;
-      } else if (tool === "stockMfBundle") {
-        toolConfig = config.stockMfBundle || {};
-        amount = toolConfig.monthlyPrice || 999;
-        analysesIncluded = toolConfig.includedAnalyses || 3;
-      } else {
-        return res.status(400).json({ error: "Unknown tool: " + tool });
+      const validTools = ["alpha_bot", "options_alpha", "alpha_ideas", "algo_trading", "dyor_bundle", "stockMfBundle", "dyor"];
+      if (!validTools.includes(tool)) return res.status(400).json({ error: "Unknown tool: " + tool });
+
+      // Map legacy "dyor" to "dyor_bundle"
+      const toolKey = tool === "dyor" ? "dyor_bundle" : tool;
+      toolConfig = config[toolKey] || {};
+
+      // Check broker-pays mode — skip payment for partner users
+      const shadowResult = await db.execute(sql`SELECT psu.id, pc.payment_mode FROM partner_shadow_users psu JOIN partner_configs pc ON pc.id = psu.partner_id WHERE psu.user_data->>'appUserId' = ${user.id} LIMIT 1`);
+      const shadow = ((shadowResult as any).rows || [])[0];
+      if (shadow && (shadow.payment_mode === "broker_pays" || shadow.payment_mode === "free")) {
+        // Auto-activate subscription without payment
+        const expiresAt = new Date();
+        if (planType === "annual") expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+        else if (planType === "quarterly") expiresAt.setMonth(expiresAt.getMonth() + 3);
+        else expiresAt.setMonth(expiresAt.getMonth() + 1);
+        const bundleTools = toolConfig.includes || [];
+        const toolsToGrant = bundleTools.length > 0 ? [toolKey, ...bundleTools] : [toolKey];
+        for (const t of toolsToGrant) {
+          await db.execute(sql`INSERT INTO tool_subscriptions (user_id, tool, plan_type, status, amount, analyses_included, expires_at) VALUES (${user.id}, ${t}, ${planType || "monthly"}, 'active', 0, ${analysesIncluded}, ${expiresAt.toISOString()})`);
+        }
+        return res.json({ success: true, status: "active", message: "Access granted by broker", broker_pays: true });
       }
+
+      // Get price based on plan type
+      if (planType === "quarterly") amount = toolConfig.quarterlyPrice || toolConfig.monthlyPrice * 3;
+      else if (planType === "annual") amount = toolConfig.annualPrice || toolConfig.monthlyPrice * 12;
+      else amount = toolConfig.monthlyPrice || 999;
+
+      if (toolKey === "stockMfBundle") analysesIncluded = toolConfig.includedAnalyses || 3;
 
       let discountAmount = 0;
       if (couponCode) {
@@ -6863,10 +6884,17 @@ export async function registerRoutes(
 
       // Store pending subscription
       const expiresAt = new Date();
-      expiresAt.setMonth(expiresAt.getMonth() + 1);
+      if (planType === "annual") expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      else if (planType === "quarterly") expiresAt.setMonth(expiresAt.getMonth() + 3);
+      else expiresAt.setMonth(expiresAt.getMonth() + 1);
 
-      await db.execute(sql`INSERT INTO tool_subscriptions (user_id, tool, plan_type, status, amount, analyses_included, payment_order_id, coupon_code, discount_amount, expires_at)
-        VALUES (${user.id}, ${tool}, 'monthly', 'pending', ${finalAmount}, ${analysesIncluded}, ${orderId}, ${couponCode || null}, ${discountAmount}, ${expiresAt.toISOString()})`);
+      // For bundles, create subscriptions for all included tools
+      const bundleTools = toolConfig.includes || [];
+      const toolsToSubscribe = bundleTools.length > 0 ? [toolKey, ...bundleTools] : [toolKey];
+      for (const t of toolsToSubscribe) {
+        await db.execute(sql`INSERT INTO tool_subscriptions (user_id, tool, plan_type, status, amount, analyses_included, payment_order_id, coupon_code, discount_amount, expires_at)
+          VALUES (${user.id}, ${t}, ${planType}, 'pending', ${finalAmount}, ${analysesIncluded}, ${orderId}, ${couponCode || null}, ${discountAmount}, ${expiresAt.toISOString()})`);
+      }
 
       if (couponCode) await useCoupon(couponCode);
 
@@ -6896,7 +6924,7 @@ export async function registerRoutes(
       const status = cfOrder.order_status;
 
       if (status === "PAID") {
-        await db.execute(sql`UPDATE tool_subscriptions SET status = 'active' WHERE payment_order_id = ${orderId} AND status = 'pending'`);
+        await db.execute(sql`UPDATE tool_subscriptions SET status = 'active', starts_at = NOW() WHERE payment_order_id = ${orderId} AND status = 'pending'`);
         const sub = await db.execute(sql`SELECT * FROM tool_subscriptions WHERE payment_order_id = ${orderId}`);
         const row = ((sub as any).rows || [])[0];
         res.json({ success: true, status: "active", subscription: row });
