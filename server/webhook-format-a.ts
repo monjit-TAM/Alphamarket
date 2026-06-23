@@ -162,7 +162,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
   }
   const inst = await lookupInstrument(c.stock_name || c.symbol || "");
   const action = String(c.action || "BUY").toUpperCase();
-  const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? 0;
+  const bp = toNum(c.entry_price) ?? toNum(c.buy_range_start) ?? toNum(c.buy_range_end) ?? 0;
   const tp = toNum(c.target_price);
   const profitGoal = toStr(c.profit_goal) || ((bp > 0 && tp) ? String(Math.round(Math.abs((tp - bp) / bp) * 100)) : null);
 
