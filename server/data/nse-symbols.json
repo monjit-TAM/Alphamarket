@@ -11,7 +11,7 @@
     "name": "360ONE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "3IINFOLTD",
@@ -172,7 +172,7 @@
     "name": "ABCAPITAL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ABCOTS",
@@ -368,7 +368,7 @@
     "name": "ADANIENSOL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ADANIENT",
@@ -907,7 +907,7 @@
     "name": "AMBER",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "AMBICAAGAR",
@@ -1005,7 +1005,7 @@
     "name": "ANGELONE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ANIKINDS",
@@ -1180,7 +1180,7 @@
     "name": "APLAPOLLO",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "APLLTD",
@@ -2020,7 +2020,7 @@
     "name": "BAJAJHLDNG",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "BAJAJINDEF",
@@ -2223,7 +2223,7 @@
     "name": "BANKINDIA",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "BANKNIFTY",
@@ -2384,7 +2384,7 @@
     "name": "BDL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "BEARDSELL",
@@ -2517,7 +2517,7 @@
     "name": "BHARATFORG",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "BHARATGEAR",
@@ -2706,7 +2706,7 @@
     "name": "BLUESTARCO",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "BLUESTONE",
@@ -2993,7 +2993,7 @@
     "name": "Computer Age Management Services Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "CANBK",
@@ -3259,7 +3259,7 @@
     "name": "CGPOWER",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "CHALET",
@@ -3483,7 +3483,7 @@
     "name": "COCHINSHIP",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "COFFEEDAY",
@@ -3826,7 +3826,7 @@
     "name": "DALBHARAT",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "DALMIASUG",
@@ -4043,7 +4043,7 @@
     "name": "Delhivery Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "DELPHIFX",
@@ -5135,7 +5135,7 @@
     "name": "ETERNAL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ETHOSLTD",
@@ -5247,7 +5247,7 @@
     "name": "EXIDEIND",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "EXPLEOSOL",
@@ -5499,7 +5499,7 @@
     "name": "FORCEMOT",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "FORTIS",
@@ -5912,7 +5912,7 @@
     "name": "GLENMARK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "GLOBAL",
@@ -5996,7 +5996,7 @@
     "name": "GMRAIRPORT",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "GMRINFRA",
@@ -6059,7 +6059,7 @@
     "name": "GODFRYPHLP",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "GODIGIT",
@@ -6829,7 +6829,7 @@
     "name": "GVT&D",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "HAL",
@@ -6997,7 +6997,7 @@
     "name": "HDFCAMC",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "HDFCBANK",
@@ -7473,7 +7473,7 @@
     "name": "HINDZINC",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "HIRECT",
@@ -7676,7 +7676,7 @@
     "name": "HYUNDAI",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "IBMFNIINAV",
@@ -8159,7 +8159,7 @@
     "name": "INDHOTEL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "INDIACEM",
@@ -8187,7 +8187,7 @@
     "name": "INDIANB",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "INDIANCARD",
@@ -8215,7 +8215,7 @@
     "name": "INDIGO",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "INDIGOPNTS",
@@ -8439,7 +8439,7 @@
     "name": "INOX WIND",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "INSECTICID",
@@ -8565,7 +8565,7 @@
     "name": "INDIAN RENEWABLE ENERGY",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "IRFC",
@@ -8950,7 +8950,7 @@
     "name": "JIOFIN",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "JISLDVREQS",
@@ -9258,7 +9258,7 @@
     "name": "KALYANKJIL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "KAMATHOTEL",
@@ -9391,7 +9391,7 @@
     "name": "KEI",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "KELLTONTEC",
@@ -9426,7 +9426,7 @@
     "name": "KFINTECH",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "KHADIM",
@@ -9748,7 +9748,7 @@
     "name": "KPITTECH",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "KPRMILL",
@@ -9993,7 +9993,7 @@
     "name": "LAURUSLABS",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "LAXMIDENTL",
@@ -10091,14 +10091,14 @@
     "name": "LICHSGFIN",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "LICI",
     "name": "LICI",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "LICMFGOLD",
@@ -10476,7 +10476,7 @@
     "name": "L&T FINANCE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "LTFOODS",
@@ -10518,7 +10518,7 @@
     "name": "LTIMINDTREE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "LTTS",
@@ -10882,7 +10882,7 @@
     "name": "MANKIND",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "MANOMAY",
@@ -11099,7 +11099,7 @@
     "name": "MAZDOCK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "MBAPL",
@@ -11274,7 +11274,7 @@
     "name": "MFSL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "MGBEESINAV",
@@ -12086,7 +12086,7 @@
     "name": "MOTILALOFS",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "MOTISONS",
@@ -12394,7 +12394,7 @@
     "name": "NAM-INDIA",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "NARMADA",
@@ -12436,7 +12436,7 @@
     "name": "NAUKRI",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "NAVA",
@@ -12492,7 +12492,7 @@
     "name": "NBCC",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "NBIFIN",
@@ -13164,7 +13164,7 @@
     "name": "NUVAMA WEALTH MANAGE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "NUVOCO",
@@ -13248,14 +13248,14 @@
     "name": "OFSS",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "OIL",
     "name": "OIL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "OILCOUNTUB",
@@ -13654,7 +13654,7 @@
     "name": "PATANJALI",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "PATELENG",
@@ -13794,7 +13794,7 @@
     "name": "PG ELECTROPLAST",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "PGHH",
@@ -13962,7 +13962,7 @@
     "name": "PNBHOUSING",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "PNC",
@@ -14074,7 +14074,7 @@
     "name": "POWERINDIA",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "POWERMECH",
@@ -14172,7 +14172,7 @@
     "name": "PREMIER ENERGIES",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "PRESTIGE",
@@ -14529,7 +14529,7 @@
     "name": "RADICO",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "RADIOCITY",
@@ -14732,7 +14732,7 @@
     "name": "RBLBANK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "RBZJEWEL",
@@ -15215,7 +15215,7 @@
     "name": "RVNL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "RVTH",
@@ -15383,7 +15383,7 @@
     "name": "SAMMAAN CAPITAL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SAMPANN",
@@ -16230,7 +16230,7 @@
     "name": "SHREECEM",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SHREEJISPG",
@@ -16755,7 +16755,7 @@
     "name": "SOLARINDS",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SOLARWORLD",
@@ -16790,7 +16790,7 @@
     "name": "SONACOMS",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SONAMLTD",
@@ -16930,7 +16930,7 @@
     "name": "SRF",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SRGHFL",
@@ -17301,7 +17301,7 @@
     "name": "Supreme Industries Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SUPRIYA",
@@ -17406,7 +17406,7 @@
     "name": "SUZLON ENERGY",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SVLL",
@@ -17455,7 +17455,7 @@
     "name": "SWIGGY",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SWSOLAR",
@@ -17959,7 +17959,7 @@
     "name": "TIINDIA",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "TIL",
@@ -18050,7 +18050,7 @@
     "name": "TATA MOTORS PASS VEH",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "TNIDETF",
@@ -18526,7 +18526,7 @@
     "name": "UNIONBANK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "UNIONGOLD",
@@ -18547,7 +18547,7 @@
     "name": "UNITDSPR",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "UNITECH",
@@ -18589,7 +18589,7 @@
     "name": "UNOMINDA",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "UPL",
@@ -18806,7 +18806,7 @@
     "name": "VARUN BEVERAGES",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "VBLLTD",
@@ -19121,7 +19121,7 @@
     "name": "VISHAL MEGA MART",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "VMSTMT",
@@ -19205,7 +19205,7 @@
     "name": "WAAREE ENERGIES",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "WAAREEINDO",
@@ -19478,7 +19478,7 @@
     "name": "YESBANK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "YUKEN",
@@ -19597,7 +19597,7 @@
     "name": "ZYDUSLIFE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ZYDUSWELL",
