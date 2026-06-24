@@ -9,9 +9,9 @@ import type { Express } from "express";
 
 async function nextraPost(apiUrl: string, endpoint: string, accessToken: string, jData: any): Promise<any> {
   const url = apiUrl + "/" + endpoint;
-  const body = "jData=" + JSON.stringify(jData);
+  const body = "jData=" + JSON.stringify(jData) + "&jKey=" + accessToken;
   console.log("[Nextra Trade] POST", endpoint, "uid:", jData.uid || "?");
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": accessToken }, body });
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain" }, body });
   const text = await response.text();
   try { return JSON.parse(text); } catch { return { stat: "Not_Ok", emsg: "Invalid response" }; }
 }
