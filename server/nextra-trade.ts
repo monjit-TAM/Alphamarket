@@ -9,9 +9,9 @@ import type { Express } from "express";
 
 async function nextraPost(apiUrl: string, endpoint: string, accessToken: string, jData: any): Promise<any> {
   const url = apiUrl + "/" + endpoint;
-  const body = "jData=" + JSON.stringify(jData) + "&jKey=" + accessToken;
+  const body = "jData=" + JSON.stringify(jData);
   console.log("[Nextra Trade] POST", endpoint, "uid:", jData.uid || "?");
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain" }, body });
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": accessToken }, body });
   const text = await response.text();
   try { return JSON.parse(text); } catch { return { stat: "Not_Ok", emsg: "Invalid response" }; }
 }
@@ -142,9 +142,12 @@ export function registerNextraTrade(app: Express) {
       if (trgprc && prctyp === "SL-LMT") orderData.trgprc = String(trgprc);
 
       const url = shadow.sso_api_url + "/PlaceOrder";
-      const body = "jData=" + JSON.stringify(orderData) + "&jKey=" + shadow.access_token;
+      const body = "jData=" + JSON.stringify(orderData);
       console.log("[Nextra Trade] Execute call:", tsym, trantype, qty, "@", prc);
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain" }, body });
+      console.log("[Nextra Trade] DEBUG url:", url);
+      console.log("[Nextra Trade] DEBUG token (first 20):", shadow.access_token?.substring(0,20), "len:", shadow.access_token?.length);
+      console.log("[Nextra Trade] DEBUG body (first 200):", body.substring(0,200));
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": shadow.access_token }, body });
       const text = await response.text();
       let result: any;
       try { result = JSON.parse(text); } catch { result = { stat: "Not_Ok", emsg: "Invalid response" }; }
