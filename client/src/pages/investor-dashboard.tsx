@@ -82,13 +82,26 @@ const PERFORMANCE_PERIODS = [
 ];
 
 export default function InvestorDashboard() {
-  const { user, isLoading } = useAuth();
+  const { user } = useAuth();
   const [, navigate] = useLocation();
   const [perfPeriod, setPerfPeriod] = useState("Max");
+  const [tradingCall, setTradingCall] = useState<any>(null);
+  const [tradeLoading, setTradeLoading] = useState(false);
+  const [tradeResult, setTradeResult] = useState<{ok:boolean;msg:string}|null>(null);
 
-  if (isLoading) {
-    return <div style={{display:"flex",justifyContent:"center",alignItems:"center",height:"100vh",color:"#78909C"}}>Loading...</div>;
-  }
+  const executeTrade = async (call: any, action: string) => {
+    setTradeLoading(true); setTradeResult(null);
+    try {
+      const buyPrice = Number(call.entryPrice || call.buyRangeStart || 0);
+      const r = await fetch("/api/nextra/execute-call", {
+        method: "POST", headers: {"Content-Type":"application/json"}, credentials: "include",
+        body: JSON.stringify({ callId: call.id, exch: "NSE", tsym: call.stockName + "-EQ", qty: 1, prc: buyPrice, prd: "C", trantype: action === "Sell" ? "S" : "B", prctyp: "LMT", strategyId: call.strategyId, symbol: call.stockName })
+      });
+      const d = await r.json();
+      setTradeResult({ ok: d.status === "success", msg: d.message || d.norenordno || "Done" });
+    } catch (e: any) { setTradeResult({ ok: false, msg: e.message }); }
+    setTradeLoading(false);
+  };
 
   if (!user) {
     navigate("/login");
@@ -543,6 +556,9 @@ export default function InvestorDashboard() {
                                   <td className="py-2 px-3 text-xs">
                                     {call.createdAt ? new Date(call.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "--"}
                                   </td>
+                                  <td className="py-2 px-3">
+                                    <button onClick={() => setTradingCall(call)} className="px-3 py-1 text-xs font-semibold rounded" style={{background: call.action === "Sell" ? "#EF5350" : "#4CAF50", color: "#fff", border: "none", cursor: "pointer"}}>{call.action === "Sell" ? "SELL" : "BUY"}</button>
+                                  </td>
                                 </tr>
                               );
                             })}
@@ -688,6 +704,29 @@ export default function InvestorDashboard() {
 
         <WatchlistSection items={watchlistItems || []} />
       </div>
+      {tradingCall && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center"}} onClick={() => {setTradingCall(null);setTradeResult(null);}}>
+          <div style={{background:"#1B2838",borderRadius:12,padding:24,width:420,maxWidth:"90vw",border:"1px solid #2A3A4A"}} onClick={e => e.stopPropagation()}>
+            <div style={{fontSize:18,fontWeight:700,marginBottom:4,color:"#E0E0E0"}}>Execute Trade</div>
+            <div style={{fontSize:13,color:"#78909C",marginBottom:16}}>Place order via your broker</div>
+            <div style={{background:"#0D1B2A",borderRadius:8,padding:16,marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#78909C",fontSize:13}}>Stock</span><span style={{fontWeight:600,color:"#E0E0E0"}}>{tradingCall.stockName}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#78909C",fontSize:13}}>Action</span><span style={{fontWeight:600,color:tradingCall.action==="Sell"?"#EF5350":"#4CAF50"}}>{tradingCall.action === "Sell" ? "SELL" : "BUY"}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#78909C",fontSize:13}}>Price</span><span style={{color:"#E0E0E0"}}>Rs.{tradingCall.entryPrice || tradingCall.buyRangeStart || "Market"}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#78909C",fontSize:13}}>Target</span><span style={{color:"#4CAF50"}}>Rs.{tradingCall.targetPrice || "--"}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}><span style={{color:"#78909C",fontSize:13}}>Stop Loss</span><span style={{color:"#EF5350"}}>Rs.{tradingCall.stopLoss || "--"}</span></div>
+              <div style={{display:"flex",justifyContent:"space-between"}}><span style={{color:"#78909C",fontSize:13}}>Qty</span><span style={{color:"#E0E0E0"}}>1</span></div>
+            </div>
+            {tradeResult && (
+              <div style={{padding:12,borderRadius:8,marginBottom:12,background:tradeResult.ok?"#1B3A1B":"#3A1B1B",border:tradeResult.ok?"1px solid #4CAF50":"1px solid #EF5350",color:tradeResult.ok?"#4CAF50":"#EF5350",fontSize:13,fontWeight:600}}>{tradeResult.ok ? "Order Placed: " : "Failed: "}{tradeResult.msg}</div>
+            )}
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={() => {setTradingCall(null);setTradeResult(null);}} style={{flex:1,padding:"10px 0",borderRadius:8,border:"1px solid #2A3A4A",background:"transparent",color:"#78909C",fontSize:14,cursor:"pointer"}}>Cancel</button>
+              <button onClick={() => executeTrade(tradingCall, tradingCall.action)} disabled={tradeLoading || tradeResult?.ok} style={{flex:1,padding:"10px 0",borderRadius:8,border:"none",background:tradingCall.action==="Sell"?"#EF5350":"#4CAF50",color:"#fff",fontSize:14,fontWeight:600,cursor:"pointer",opacity:tradeLoading?0.6:1}}>{tradeLoading ? "Placing..." : tradeResult?.ok ? "Done" : tradingCall.action === "Sell" ? "Confirm SELL" : "Confirm BUY"}</button>
+            </div>
+          </div>
+        </div>
+      )}
       <Footer />
     </div>
   );

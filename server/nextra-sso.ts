@@ -291,8 +291,8 @@ export function registerNextraSSO(app: Express) {
         if (appUserId) {
           const subResult = await db.execute(sql`SELECT id FROM subscriptions WHERE user_id = ${appUserId} AND status = 'active' LIMIT 1`);
           if ((subResult.rows as any[]).length > 0) {
-            landingPage = "/investor-dashboard";
-            console.log("[Nextra SSO] User has active subscription, redirecting to investor dashboard");
+            landingPage = "/";
+            console.log("[Nextra SSO] User has active subscription, redirecting to homepage (session set, user can navigate to dashboard)");
           } else {
             landingPage = "/";
             console.log("[Nextra SSO] No active subscription, redirecting to homepage");

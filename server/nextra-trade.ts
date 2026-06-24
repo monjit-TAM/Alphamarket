@@ -120,5 +120,51 @@ export function registerNextraTrade(app: Express) {
     } catch (err: any) { res.status(500).json({ error: err.message }); }
   });
 
+
+  /**
+   * POST /api/nextra/execute-call
+   * Cookie-auth version — user clicks "Execute" on a call card.
+   * Body: { callId, exch, tsym, qty, prc, prd, trantype, prctyp, trgprc? }
+   */
+  app.post("/api/nextra/execute-call", async (req: any, res: any) => {
+    try {
+      if (!req.session?.userId) return res.status(401).json({ status: "error", message: "Not authenticated" });
+      const { callId, exch, tsym, qty, prc, prd, trantype, prctyp, trgprc, strategyId, symbol } = req.body;
+      if (typeof exch !== "string" || typeof tsym !== "string" || typeof qty === "undefined" || typeof trantype !== "string") {
+        return res.status(400).json({ status: "error", message: "Missing: exch, tsym, qty, trantype" });
+      }
+      // Find shadow user by appUserId
+      const suResult = await db.execute(sql`SELECT psu.id, psu.uid, psu.access_token, pc.sso_api_url, psu.partner_id FROM partner_shadow_users psu JOIN partner_configs pc ON pc.id = psu.partner_id WHERE psu.user_data->>'appUserId' = ${req.session.userId} AND psu.access_token IS NOT NULL ORDER BY psu.last_seen DESC LIMIT 1`);
+      const shadow = (suResult.rows as any[])[0];
+      if (!shadow || !shadow.access_token) return res.status(400).json({ status: "error", message: "No linked broker account. Please login via your broker app." });
+
+      const orderData: any = { uid: shadow.uid, actid: shadow.uid, exch, tsym, qty: String(qty), prc: String(prc || 0), prd: prd || "I", trantype: trantype || "B", prctyp: prctyp || "LMT", ret: "DAY", ordersource: "WEB", remarks: "AlphaMarket" };
+      if (trgprc && prctyp === "SL-LMT") orderData.trgprc = String(trgprc);
+
+      const url = shadow.sso_api_url + "/PlaceOrder";
+      const body = "jData=" + JSON.stringify(orderData);
+      console.log("[Nextra Trade] Execute call:", tsym, trantype, qty, "@", prc);
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": "Bearer " + shadow.access_token }, body });
+      const text = await response.text();
+      let result: any;
+      try { result = JSON.parse(text); } catch { result = { stat: "Not_Ok", emsg: "Invalid response" }; }
+
+      const isOk = result.stat === "Ok" && result.norenordno;
+      // Log order
+      await db.execute(sql`INSERT INTO nextra_orders (shadow_user_id, partner_id, norenordno, exch, tsym, symbol, qty, prc, trgprc, prd, trantype, prctyp, ret, call_id, strategy_id, status, order_response, error_message, executed_at) VALUES (${shadow.id}, ${shadow.partner_id}, ${result.norenordno||null}, ${exch}, ${tsym}, ${symbol||null}, ${Number(qty)}, ${prc?Number(prc):null}, ${trgprc?Number(trgprc):null}, ${prd||"I"}, ${trantype}, ${prctyp||"LMT"}, 'DAY', ${callId||null}, ${strategyId||null}, ${isOk?"EXECUTED":"FAILED"}, ${JSON.stringify(result)}::jsonb, ${isOk?null:(result.emsg||"Failed")}, ${isOk?new Date():null})`);
+
+      if (isOk) {
+        console.log("[Nextra Trade] Order placed:", result.norenordno);
+        res.json({ status: "success", norenordno: result.norenordno, message: "Order placed successfully" });
+      } else {
+        console.error("[Nextra Trade] Order failed:", result.emsg);
+        res.status(400).json({ status: "error", message: result.emsg || "Order failed" });
+      }
+    } catch (err: any) {
+      console.error("[Nextra Trade] Execute error:", err.message);
+      res.status(500).json({ status: "error", message: "Internal error" });
+    }
+  });
+
   console.log("[Nextra Trade] Routes registered");
 }
