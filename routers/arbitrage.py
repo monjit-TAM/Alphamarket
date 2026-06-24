@@ -255,8 +255,14 @@ async def _fetch_kite_quotes(symbols: list, _retry=False) -> dict:
 
     req = urllib.request.Request(url, headers=headers)
     try:
-        resp = urllib.request.urlopen(req, timeout=15)
-        data = json.loads(resp.read().decode())
+        # FIX: run blocking urllib in a thread pool so it never blocks the event loop.
+        import asyncio as _asyncio
+        loop = _asyncio.get_event_loop()
+        def _blocking_fetch():
+            r = urllib.request.urlopen(req, timeout=6)
+            return r.read().decode()
+        raw = await loop.run_in_executor(None, _blocking_fetch)
+        data = json.loads(raw)
         if data.get("status") == "success":
             return data["data"]
         return {}

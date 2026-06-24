@@ -310,56 +310,63 @@ async def shared_kite_ltp(request: Request, symbol: str):
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
-    """System health status — check data sources, services, cache"""
-    import subprocess
+    """Lightweight liveness — redis + db only, NO blocking external calls."""
     results = {}
-    # Redis
     try:
         if redis_client:
             await redis_client.ping()
             results["redis"] = {"status": "ok"}
         else:
             results["redis"] = {"status": "error", "msg": "not connected"}
-    except:
+    except Exception:
         results["redis"] = {"status": "error", "msg": "ping failed"}
-    # DB
     try:
         async with db_pool.acquire() as conn:
             cnt = await conn.fetchval("SELECT COUNT(*) FROM users")
             results["database"] = {"status": "ok", "users": cnt}
     except Exception as e:
         results["database"] = {"status": "error", "msg": str(e)[:100]}
-    # Data service prices
-    import urllib.request, json as _json
-    for sym in ["RELIANCE", "NIFTY"]:
-        try:
-            r = urllib.request.urlopen(f"http://127.0.0.1:5004/data/equity/quote/{sym}", timeout=10)
-            d = _json.loads(r.read())
-            results[f"price_{sym}"] = {"status": "ok", "price": d.get("price"), "source": d.get("source")}
-        except Exception as e:
-            results[f"price_{sym}"] = {"status": "error", "msg": str(e)[:100]}
-    # Groww token
+    ok = all(v.get("status") == "ok" for v in results.values())
+    return {"status": "ok" if ok else "degraded", "checks": results}
+
+
+@app.get("/api/health/full", tags=["System"])
+async def health_check_full():
+    """Full diagnostics — async httpx, short timeouts. NOT used by watchdog."""
+    import httpx, time as _time
+    results = {}
     try:
-        req = urllib.request.Request("http://127.0.0.1:5001/api/shared/token/groww")
-        req.add_header("x-shared-secret", "alphamarket-shared-2026")
-        r = urllib.request.urlopen(req, timeout=10)
-        d = _json.loads(r.read())
-        import time as _time
-        expiry = d.get("expiry", 0)
-        remaining_hrs = (expiry - _time.time()*1000) / 3600000 if expiry else 0
-        results["groww_token"] = {"status": "ok" if remaining_hrs > 2 else "warn", "hours_remaining": round(remaining_hrs, 1)}
+        if redis_client:
+            await redis_client.ping(); results["redis"] = {"status": "ok"}
+        else:
+            results["redis"] = {"status": "error", "msg": "not connected"}
+    except Exception:
+        results["redis"] = {"status": "error", "msg": "ping failed"}
+    try:
+        async with db_pool.acquire() as conn:
+            cnt = await conn.fetchval("SELECT COUNT(*) FROM users")
+            results["database"] = {"status": "ok", "users": cnt}
     except Exception as e:
-        results["groww_token"] = {"status": "error", "msg": str(e)[:100]}
-    # Last health log
-    try:
-        with open("/var/log/dyor-health.log") as f:
-            lines = f.readlines()
-            last_lines = [l.strip() for l in lines[-5:]]
-            results["last_health_check"] = last_lines
-    except:
-        results["last_health_check"] = ["no log"]
-    overall = "ok" if all(v.get("status") == "ok" for v in results.values() if isinstance(v, dict)) else "degraded"
-    return {"status": overall, "checks": results, "timestamp": datetime.utcnow().isoformat()}
+        results["database"] = {"status": "error", "msg": str(e)[:100]}
+    async with httpx.AsyncClient(timeout=4) as client:
+        for sym in ["RELIANCE", "NIFTY"]:
+            try:
+                r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
+                d = r.json()
+                results[f"price_{sym}"] = {"status": "ok", "price": d.get("price"), "source": d.get("source")}
+            except Exception as e:
+                results[f"price_{sym}"] = {"status": "error", "msg": str(e)[:100]}
+        try:
+            r = await client.get("http://127.0.0.1:5001/api/shared/token/groww",
+                                 headers={"x-shared-secret": "alphamarket-shared-2026"})
+            d = r.json()
+            expiry = d.get("expiry", 0)
+            remaining_hrs = (expiry - _time.time()*1000) / 3600000 if expiry else 0
+            results["groww_token"] = {"status": "ok" if remaining_hrs > 2 else "warn",
+                                       "hours_remaining": round(remaining_hrs, 1)}
+        except Exception as e:
+            results["groww_token"] = {"status": "error", "msg": str(e)[:100]}
+    return {"status": "ok", "checks": results}
 
 async def _run_screener_internal(strategy: str, min_price: float = 50, max_price: float = 10000,
                                   sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = ""):
@@ -668,6 +675,7 @@ async def _precompute_loop():
         except Exception as e:
             print(f"[ALERTS] Check error: {e}")
         await asyncio.sleep(900)  # Re-check every 15 min
+
 
 @app.on_event("shutdown")
 async def shutdown():
