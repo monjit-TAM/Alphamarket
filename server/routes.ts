@@ -759,7 +759,7 @@ export async function registerRoutes(
         : `http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(symbol)}`;
       try {
         const kiteRes = await fetch(kiteUrl, {
-          headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+          headers: { "x-shared-secret": "alphamarket-shared-2026" },
           signal: AbortSignal.timeout(10000)
         });
         if (kiteRes.ok) {
@@ -804,7 +804,7 @@ export async function registerRoutes(
       // Kite primary for all option chains (NSE/NFO)
       try {
         const kiteChainRes = await fetch(`http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(symbol)}?expiry=${encodeURIComponent(expiry)}`, {
-          headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+          headers: { "x-shared-secret": "alphamarket-shared-2026" },
           signal: AbortSignal.timeout(10000)
         });
         if (kiteChainRes.ok) {
@@ -6036,7 +6036,7 @@ export async function registerRoutes(
           }));
           const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+            headers: { "Content-Type": "application/json", "x-shared-secret": "alphamarket-shared-2026" },
             body: JSON.stringify({ holdings: stockPayload }),
           });
           if (stockRes.ok) {
@@ -6543,7 +6543,7 @@ export async function registerRoutes(
         }));
         try {
           const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
-            method: "POST", headers: { "Content-Type": "application/json", "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+            method: "POST", headers: { "Content-Type": "application/json", "x-shared-secret": "alphamarket-shared-2026" },
             body: JSON.stringify({ holdings: stockPayload }),
           });
           if (stockRes.ok) {
