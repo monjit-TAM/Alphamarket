@@ -142,9 +142,9 @@ export function registerNextraTrade(app: Express) {
       if (trgprc && prctyp === "SL-LMT") orderData.trgprc = String(trgprc);
 
       const url = shadow.sso_api_url + "/PlaceOrder";
-      const body = "jData=" + JSON.stringify(orderData);
+      const body = "jData=" + JSON.stringify(orderData) + "&jKey=" + shadow.access_token;
       console.log("[Nextra Trade] Execute call:", tsym, trantype, qty, "@", prc);
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": shadow.access_token }, body });
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain" }, body });
       const text = await response.text();
       let result: any;
       try { result = JSON.parse(text); } catch { result = { stat: "Not_Ok", emsg: "Invalid response" }; }
