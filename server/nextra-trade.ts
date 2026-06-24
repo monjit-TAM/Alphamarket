@@ -11,7 +11,7 @@ async function nextraPost(apiUrl: string, endpoint: string, accessToken: string,
   const url = apiUrl + "/" + endpoint;
   const body = "jData=" + JSON.stringify(jData);
   console.log("[Nextra Trade] POST", endpoint, "uid:", jData.uid || "?");
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": accessToken }, body });
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": "Bearer " + accessToken }, body });
   const text = await response.text();
   try { return JSON.parse(text); } catch { return { stat: "Not_Ok", emsg: "Invalid response" }; }
 }
@@ -147,7 +147,7 @@ export function registerNextraTrade(app: Express) {
       console.log("[Nextra Trade] DEBUG url:", url);
       console.log("[Nextra Trade] DEBUG token (first 20):", shadow.access_token?.substring(0,20), "len:", shadow.access_token?.length);
       console.log("[Nextra Trade] DEBUG body (first 200):", body.substring(0,200));
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": shadow.access_token }, body });
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": "Bearer " + shadow.access_token }, body });
       const text = await response.text();
       let result: any;
       try { result = JSON.parse(text); } catch { result = { stat: "Not_Ok", emsg: "Invalid response" }; }
