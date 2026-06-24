@@ -11,7 +11,7 @@ async function nextraPost(apiUrl: string, endpoint: string, accessToken: string,
   const url = apiUrl + "/" + endpoint;
   const body = "jData=" + JSON.stringify(jData);
   console.log("[Nextra Trade] POST", endpoint, "uid:", jData.uid || "?");
-  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": "Bearer " + accessToken }, body });
+  const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": accessToken }, body });
   const text = await response.text();
   try { return JSON.parse(text); } catch { return { stat: "Not_Ok", emsg: "Invalid response" }; }
 }
@@ -37,7 +37,7 @@ export function registerNextraTrade(app: Express) {
       const session = await validateSession(token);
       if (session === null || session === undefined) return res.status(401).json({ status: "error", message: "Invalid or expired session" });
       if (typeof session.access_token !== "string" || session.access_token.length < 2) return res.status(401).json({ status: "error", message: "No trade access token. Re-login required." });
-      const orderData: any = { uid: session.uid, actid: session.uid, exch, tsym, qty: String(qty), prc: String(prc||0), prd: prd||"I", trantype, prctyp: prctyp||"LMT", ret: ret||"DAY", ordersource: "WEB", remarks: remarks||"AlphaMarket" };
+      const orderData: any = { uid: session.uid, actid: session.uid, exch, tsym, qty: String(qty), prc: String(prc||0), prd: prd||"I", trantype, prctyp: prctyp||"LMT", ret: ret||"DAY", ordersource: "API", remarks: remarks||"AlphaMarket" };
       if (trgprc && prctyp === "SL-LMT") orderData.trgprc = String(trgprc);
       const response = await nextraPost(session.sso_api_url, "PlaceOrder", session.access_token, orderData);
       const isOk = response.stat === "Ok" && response.norenordno;
@@ -138,13 +138,13 @@ export function registerNextraTrade(app: Express) {
       const shadow = (suResult.rows as any[])[0];
       if (!shadow || !shadow.access_token) return res.status(400).json({ status: "error", message: "No linked broker account. Please login via your broker app." });
 
-      const orderData: any = { uid: shadow.uid, actid: shadow.uid, exch, tsym, qty: String(qty), prc: String(prc || 0), prd: prd || "I", trantype: trantype || "B", prctyp: prctyp || "LMT", ret: "DAY", ordersource: "WEB", remarks: "AlphaMarket" };
+      const orderData: any = { uid: shadow.uid, actid: shadow.uid, exch, tsym, qty: String(qty), prc: String(prc || 0), prd: prd || "I", trantype: trantype || "B", prctyp: prctyp || "LMT", ret: "DAY", ordersource: "API", remarks: "AlphaMarket" };
       if (trgprc && prctyp === "SL-LMT") orderData.trgprc = String(trgprc);
 
       const url = shadow.sso_api_url + "/PlaceOrder";
       const body = "jData=" + JSON.stringify(orderData);
       console.log("[Nextra Trade] Execute call:", tsym, trantype, qty, "@", prc);
-      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": "Bearer " + shadow.access_token }, body });
+      const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": shadow.access_token }, body });
       const text = await response.text();
       let result: any;
       try { result = JSON.parse(text); } catch { result = { stat: "Not_Ok", emsg: "Invalid response" }; }
