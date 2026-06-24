@@ -82,9 +82,13 @@ const PERFORMANCE_PERIODS = [
 ];
 
 export default function InvestorDashboard() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const [, navigate] = useLocation();
   const [perfPeriod, setPerfPeriod] = useState("Max");
+
+  if (isLoading) {
+    return <div style={{display:"flex",justifyContent:"center",alignItems:"center",height:"100vh",color:"#78909C"}}>Loading...</div>;
+  }
 
   if (!user) {
     navigate("/login");
