@@ -204,6 +204,7 @@ export function registerNextraSSO(app: Express) {
         `);
       }
 
+      console.log("[Nextra SSO] GenAcsTok FULL response:", JSON.stringify(tokenResponse));
       const accessToken = tokenResponse.susertoken;
       const uid = tokenResponse.uid || tokenResponse.actid || "";
 

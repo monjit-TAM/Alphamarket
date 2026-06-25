@@ -10,10 +10,11 @@ import type { Express } from "express";
 async function nextraPost(apiUrl: string, endpoint: string, accessToken: string, jData: any): Promise<any> {
   const url = apiUrl + "/" + endpoint;
   const body = "jData=" + JSON.stringify(jData);
-  console.log("[Nextra Trade] POST", endpoint, "uid:", jData.uid || "?");
+  console.log("[Nextra Trade] POST", endpoint, "uid:", jData.uid || "?", "token:", accessToken?.substring(0, 12) + "...", "url:", url);
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain", "Authorization": "Bearer " + accessToken }, body });
   const text = await response.text();
-  try { return JSON.parse(text); } catch { return { stat: "Not_Ok", emsg: "Invalid response" }; }
+  console.log("[Nextra Trade]", endpoint, "response:", response.status, text.substring(0, 200));
+  try { const parsed = JSON.parse(text); if (parsed.stat === "Not_Ok") { console.error("[Nextra Trade] Order failed:", parsed.emsg); } return parsed; } catch { return { stat: "Not_Ok", emsg: "Invalid response" }; }
 }
 
 async function validateSession(token: string): Promise<any> {
