@@ -171,6 +171,32 @@ export async function fireWebhookEvent(
         continue; // Skip this target — don't block other deliveries
       }
 
+      // ── PAYLOAD VALIDATION: Block zero-entry or swapped SL/TP ──
+      try {
+        const eq = payloadBody?.data?.equityCall;
+        const fno = payloadBody?.data?.fnoCall?.[0];
+        const callData = eq || fno;
+        if (callData && (event === "CALL_CREATED" || event === "POSITION_CREATED")) {
+          const bp = Number(callData.buyPrice || 0);
+          const tp = Number(callData.targetPriceRange || callData.target || 0);
+          const sl = Number(callData.stopLossRange || callData.stopLoss || 0);
+          if (bp <= 0) {
+            console.error(`[Webhook] BLOCKED: ${callData.symbol || "?"} has zero entry price. Not sending to ${target.broker_name}.`);
+            continue;
+          }
+          // Warn on suspicious SL/TP (BUY: target should be > entry, SL < entry)
+          const isSell = callData.action === "Sell" || callData.buySell === "Sell";
+          if (!isSell && tp > 0 && sl > 0) {
+            if (tp < bp && sl > bp) {
+              console.error(`[Webhook] BLOCKED: ${callData.symbol} BUY has target(${tp}) < entry(${bp}) AND SL(${sl}) > entry. Likely swapped. Not sending to ${target.broker_name}.`);
+              continue;
+            }
+          }
+        }
+      } catch (valErr: any) {
+        console.warn("[Webhook] Payload validation error (sending anyway):", valErr?.message);
+      }
+
       // Sign
       const payloadStr = JSON.stringify(payloadBody);
       const signature = createHmac("sha256", target.api_secret)
