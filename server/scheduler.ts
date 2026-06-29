@@ -294,8 +294,9 @@ async function checkStopLossAndTargets() {
       const sl = Number(pos.stopLoss || 0);
       const tgt = Number(pos.target || 0);
       if (entryPx === 0 || (sl === 0 && tgt === 0)) continue;
-      const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity";
-      if (!isFutureSegment && pos.strikePrice && pos.expiry && pos.callPut) {
+      const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity" || pos.segment === "CommodityFuture";
+      const hasValidStrike = pos.strikePrice && pos.strikePrice !== "" && pos.strikePrice !== "0" && Number(pos.strikePrice) > 0;
+      if (!isFutureSegment && hasValidStrike && pos.expiry && pos.callPut) {
         optionPositions.push(pos);
       } else {
         equityPositions.push(pos);
