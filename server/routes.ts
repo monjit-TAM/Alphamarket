@@ -1580,6 +1580,55 @@ export async function registerRoutes(
       if (isPublished && (!req.body.rationale || !req.body.rationale.trim())) {
         return res.status(400).send("Rationale is required to publish a position");
       }
+      // ── Entry Price Sanity Check for FnO ──
+      const body = req.body;
+      const segment = body.segment || "";
+      const isFnOPosition = segment === "Option" || segment === "Future" || segment === "Index" ||
+        !!(body.strikePrice && body.callPut);
+      if (isFnOPosition && isPublished && body.entryPrice) {
+        const entryPx = Number(body.entryPrice);
+        const targetPx = Number(body.target || 0);
+        const slPx = Number(body.stopLoss || 0);
+        const strikePx = Number(body.strikePrice || 0);
+
+        // Option premiums are almost always < strike price (except deep ITM)
+        if (segment === "Option" && strikePx > 0 && entryPx > strikePx) {
+          return res.status(400).send(
+            `Entry price (₹${entryPx}) is higher than strike price (₹${strikePx}). ` +
+            `For options, entry price should be the premium amount (typically ₹1-₹2000), not the stock price. ` +
+            `Please correct and try again.`
+          );
+        }
+
+        // Option premiums rarely exceed ₹5000 (even deep ITM NIFTY)
+        if ((segment === "Option" || segment === "Index") && entryPx > 5000 && strikePx > 0) {
+          return res.status(400).send(
+            `Entry price (₹${entryPx}) seems too high for an option premium. ` +
+            `Did you enter the stock price instead of the option premium? Please verify and try again.`
+          );
+        }
+
+        // BUY: target should be > entry, SL < entry
+        const isSell = (body.buySell || "Buy") === "Sell";
+        if (!isSell && targetPx > 0 && slPx > 0) {
+          if (targetPx < entryPx && slPx > entryPx) {
+            return res.status(400).send(
+              `For a BUY position: Target (₹${targetPx}) should be above Entry (₹${entryPx}) ` +
+              `and Stop Loss (₹${slPx}) should be below Entry. Values appear swapped.`
+            );
+          }
+        }
+        // SELL: target should be < entry, SL > entry
+        if (isSell && targetPx > 0 && slPx > 0) {
+          if (targetPx > entryPx && slPx < entryPx) {
+            return res.status(400).send(
+              `For a SELL position: Target (₹${targetPx}) should be below Entry (₹${entryPx}) ` +
+              `and Stop Loss (₹${slPx}) should be above Entry. Values appear swapped.`
+            );
+          }
+        }
+      }
+
       const p = await storage.createPosition({
         ...sanitizeBody(req.body),
         strategyId: req.params.id,
@@ -1622,6 +1671,29 @@ export async function registerRoutes(
       const strategy = await storage.getStrategy(req.params.id);
       if (!strategy || strategy.advisorId !== req.session.userId) {
         return res.status(403).send("Not authorized");
+      }
+
+      // ── Entry Price Sanity Check for Multi-Leg ──
+      for (let v = 0; v < legs.length; v++) {
+        const vleg = legs[v];
+        const vSegment = vleg.segment || "";
+        const vIsFnO = vSegment === "Option" || vSegment === "Future" || vSegment === "Index" ||
+          !!(vleg.strikePrice && vleg.callPut);
+        if (vIsFnO && isPublished && vleg.entryPrice) {
+          const vEntry = Number(vleg.entryPrice);
+          const vStrike = Number(vleg.strikePrice || 0);
+          if (vSegment === "Option" && vStrike > 0 && vEntry > vStrike) {
+            return res.status(400).send(
+              `Leg ${v + 1}: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
+              `For options, entry price should be the premium, not the stock price.`
+            );
+          }
+          if ((vSegment === "Option" || vSegment === "Index") && vEntry > 5000 && vStrike > 0) {
+            return res.status(400).send(
+              `Leg ${v + 1}: Entry price (₹${vEntry}) seems too high for an option premium. Please verify.`
+            );
+          }
+        }
       }
 
       const created: any[] = [];
