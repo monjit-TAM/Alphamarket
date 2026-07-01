@@ -8398,19 +8398,26 @@ export async function registerRoutes(
         quotes = data.quotes || {};
         sources = data.sources || {};
       }
-      // For any missing symbols, try TrueData directly (commodity futures etc)
+      // For any missing symbols, try TrueData directly
       const rawSyms = symbols.split(",").map((s: string) => s.trim()).filter(Boolean);
       const missing = rawSyms.filter((s: string) => !quotes[s]);
       if (missing.length > 0) {
+        // Also try SYMBOL-I format for commodity/futures
+        const tdSyms = [...missing];
+        for (const s of missing) {
+          if (!s.endsWith("-I")) tdSyms.push(s + "-I");
+        }
         try {
-          const tdRes = await fetch(`http://localhost:8001/api/shared/truedata-quotes?symbols=${encodeURIComponent(missing.join(","))}`, {
+          const tdRes = await fetch(`http://localhost:8001/api/shared/truedata-quotes?symbols=${encodeURIComponent(tdSyms.join(","))}`, {
             headers: { "x-shared-secret": "alphamarket-shared-2026" },
             signal: AbortSignal.timeout(3000)
           });
           if (tdRes.ok) {
             const tdData = await tdRes.json();
             for (const [sym, val] of Object.entries(tdData.quotes || {})) {
-              quotes[sym] = { price: (val as any).ltp, source: "truedata", high: (val as any).high, low: (val as any).low };
+              const baseSym = sym.endsWith("-I") ? sym.slice(0, -2) : sym;
+              const origSym = missing.includes(sym) ? sym : (missing.includes(baseSym) ? baseSym : sym);
+              quotes[origSym] = { price: (val as any).ltp, source: "truedata", high: (val as any).high, low: (val as any).low };
               sources["truedata"] = (sources["truedata"] || 0) + 1;
             }
           }
