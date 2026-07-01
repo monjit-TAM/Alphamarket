@@ -15383,7 +15383,7 @@
     "name": "SAMMAAN CAPITAL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "SAMPANN",

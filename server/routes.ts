@@ -8233,6 +8233,156 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
+
+
+  // ── Enhanced New Calls Report (from DB, not webhook logs) ──
+  app.get("/api/admin/broker-reports/new-calls", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+      const today = new Date().toISOString().split('T')[0];
+
+      // Per-advisor new calls from DB (calls + positions combined)
+      const advisorNewCalls = await db.execute(sql.raw(\`
+        WITH combined AS (
+          SELECT 
+            u.company_name as advisor_name,
+            'equity' as call_type,
+            c.id,
+            c.stock_name as symbol,
+            c.action,
+            c.buy_range_start::numeric as entry_price,
+            c.target_price::numeric as target,
+            c.stop_loss::numeric as stop_loss,
+            c.sell_price::numeric as exit_price,
+            c.gain_percent::numeric as gain_pct,
+            c.status,
+            c.created_at,
+            c.exit_date,
+            c.webhook_rec_id,
+            NULL as segment,
+            NULL as strike_price,
+            NULL as call_put,
+            NULL as expiry
+          FROM calls c
+          JOIN strategies s ON s.id = c.strategy_id
+          JOIN users u ON u.id = s.advisor_id
+          WHERE c.is_published = true
+            AND c.created_at >= '\${from}T00:00:00Z'
+            AND c.created_at <= '\${to}T23:59:59Z'
+          UNION ALL
+          SELECT 
+            u.company_name,
+            CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END,
+            p.id,
+            p.symbol,
+            COALESCE(p.buy_sell, 'Buy'),
+            p.entry_price::numeric,
+            p.target::numeric,
+            p.stop_loss::numeric,
+            p.exit_price::numeric,
+            p.gain_percent::numeric,
+            p.status,
+            p.created_at,
+            p.exit_date,
+            p.webhook_rec_id,
+            p.segment,
+            p.strike_price::text,
+            p.call_put,
+            p.expiry::text
+          FROM positions p
+          JOIN strategies s ON s.id = p.strategy_id
+          JOIN users u ON u.id = s.advisor_id
+          WHERE p.is_published = true
+            AND p.created_at >= '\${from}T00:00:00Z'
+            AND p.created_at <= '\${to}T23:59:59Z'
+        )
+        SELECT 
+          advisor_name,
+          COUNT(*) as total_new,
+          COUNT(*) FILTER (WHERE call_type = 'equity') as equity_new,
+          COUNT(*) FILTER (WHERE call_type = 'fno') as fno_new,
+          COUNT(*) FILTER (WHERE created_at::date = '\${today}'::date) as today_new,
+          COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_new,
+          COUNT(*) FILTER (WHERE status = 'Active') as open_count,
+          COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct > 0) as profitable,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as loss,
+          ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return_pct,
+          ROUND(SUM(CASE WHEN status = 'Closed' THEN gain_pct ELSE 0 END)::numeric, 2) as total_return_pct,
+          COUNT(*) FILTER (WHERE webhook_rec_id IS NOT NULL) as sent_to_broker
+        FROM combined
+        GROUP BY advisor_name
+        ORDER BY total_new DESC
+      \`));
+
+      // Summary totals
+      const summary = await db.execute(sql.raw(\`
+        WITH combined AS (
+          SELECT c.status, c.created_at, c.gain_percent::numeric as gain_pct, 'equity' as type
+          FROM calls c
+          JOIN strategies s ON s.id = c.strategy_id
+          WHERE c.is_published = true
+            AND c.created_at >= '\${from}T00:00:00Z' AND c.created_at <= '\${to}T23:59:59Z'
+          UNION ALL
+          SELECT p.status, p.created_at, p.gain_percent::numeric, 
+            CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END
+          FROM positions p
+          JOIN strategies s ON s.id = p.strategy_id
+          WHERE p.is_published = true
+            AND p.created_at >= '\${from}T00:00:00Z' AND p.created_at <= '\${to}T23:59:59Z'
+        )
+        SELECT
+          COUNT(*) as total_new,
+          COUNT(*) FILTER (WHERE type = 'equity') as equity_new,
+          COUNT(*) FILTER (WHERE type = 'fno') as fno_new,
+          COUNT(*) FILTER (WHERE created_at::date = '\${today}'::date) as today_new,
+          COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_new,
+          COUNT(*) FILTER (WHERE status = 'Active') as total_open,
+          COUNT(*) FILTER (WHERE status = 'Closed') as total_closed,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct > 0) as total_profitable,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as total_loss,
+          ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return_pct
+        FROM combined
+      \`));
+
+      // Daily breakdown from DB
+      const daily = await db.execute(sql.raw(\`
+        WITH combined AS (
+          SELECT c.created_at, c.status, c.gain_percent::numeric as gain_pct, 'equity' as type
+          FROM calls c JOIN strategies s ON s.id = c.strategy_id
+          WHERE c.is_published = true
+            AND c.created_at >= '\${from}T00:00:00Z' AND c.created_at <= '\${to}T23:59:59Z'
+          UNION ALL
+          SELECT p.created_at, p.status, p.gain_percent::numeric,
+            CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END
+          FROM positions p JOIN strategies s ON s.id = p.strategy_id
+          WHERE p.is_published = true
+            AND p.created_at >= '\${from}T00:00:00Z' AND p.created_at <= '\${to}T23:59:59Z'
+        )
+        SELECT
+          created_at::date as date,
+          COUNT(*) as new_calls,
+          COUNT(*) FILTER (WHERE type = 'equity') as equity,
+          COUNT(*) FILTER (WHERE type = 'fno') as fno,
+          COUNT(*) FILTER (WHERE status = 'Closed') as closed,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct > 0) as profitable,
+          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as loss,
+          ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return
+        FROM combined
+        GROUP BY created_at::date
+        ORDER BY date DESC
+      \`));
+
+      res.json({
+        period: { from, to },
+        summary: summary.rows[0] || {},
+        advisors: advisorNewCalls.rows,
+        daily: daily.rows,
+      });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
   // ── Download Broker Report (XLSX / PDF) ──
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
     try {
