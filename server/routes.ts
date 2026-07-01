@@ -8242,135 +8242,133 @@ export async function registerRoutes(
       const to = req.query.to as string || new Date().toISOString().split('T')[0];
       const today = new Date().toISOString().split('T')[0];
 
-      // Per-advisor new calls from DB (calls + positions combined)
       const advisorNewCalls = await db.execute(sql.raw(`
-        WITH combined AS (
-          SELECT 
-            u.company_name as advisor_name,
-            'equity' as call_type,
-            c.id,
-            c.stock_name as symbol,
-            c.action,
-            c.buy_range_start::numeric as entry_price,
-            c.target_price::numeric as target,
-            c.stop_loss::numeric as stop_loss,
-            c.sell_price::numeric as exit_price,
-            c.gain_percent::numeric as gain_pct,
-            c.status,
-            c.created_at,
-            c.exit_date,
-            c.webhook_rec_id,
-            NULL as segment,
-            NULL as strike_price,
-            NULL as call_put,
-            NULL as expiry
+        WITH equity AS (
+          SELECT u.company_name as advisor_name,
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE c.created_at::date = '${today}'::date) as today_count,
+            COUNT(*) FILTER (WHERE c.created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(*) FILTER (WHERE c.status = 'Active') as open_count,
+            COUNT(*) FILTER (WHERE c.status = 'Closed') as closed_count,
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') +
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Sell') as profitable,
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Buy') +
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Sell') as loss,
+            ROUND(AVG(CASE
+              WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Buy' THEN ((c.sell_price - c.buy_range_start) / c.buy_range_start) * 100
+              WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Sell' THEN ((c.buy_range_start - c.sell_price) / c.buy_range_start) * 100
+            END)::numeric, 2) as avg_return_pct,
+            COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as sent_to_broker
           FROM calls c
           JOIN strategies s ON s.id = c.strategy_id
           JOIN users u ON u.id = s.advisor_id
           WHERE c.is_published = true
-            AND c.created_at >= '${from}T00:00:00Z'
-            AND c.created_at <= '${to}T23:59:59Z'
-          UNION ALL
-          SELECT 
-            u.company_name,
-            CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END,
-            p.id,
-            p.symbol,
-            COALESCE(p.buy_sell, 'Buy'),
-            p.entry_price::numeric,
-            p.target::numeric,
-            p.stop_loss::numeric,
-            p.exit_price::numeric,
-            p.gain_percent::numeric,
-            p.status,
-            p.created_at,
-            p.exit_date,
-            p.webhook_rec_id,
-            p.segment,
-            p.strike_price::text,
-            p.call_put,
-            p.expiry::text
+            AND c.created_at >= '${from}T00:00:00Z' AND c.created_at <= '${to}T23:59:59Z'
+          GROUP BY u.company_name
+        ),
+        fno AS (
+          SELECT u.company_name as advisor_name,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) as total,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.created_at::date = '${today}'::date) as today_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Active') as open_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Closed') as closed_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as profitable,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric <= 0) as loss,
+            ROUND(AVG(CASE WHEN p.status = 'Closed' THEN p.gain_percent::numeric END)::numeric, 2) as avg_return_pct,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as sent_to_broker
           FROM positions p
           JOIN strategies s ON s.id = p.strategy_id
           JOIN users u ON u.id = s.advisor_id
           WHERE p.is_published = true
-            AND p.created_at >= '${from}T00:00:00Z'
-            AND p.created_at <= '${to}T23:59:59Z'
+            AND p.created_at >= '${from}T00:00:00Z' AND p.created_at <= '${to}T23:59:59Z'
+          GROUP BY u.company_name
         )
-        SELECT 
-          advisor_name,
-          COUNT(*) as total_new,
-          COUNT(*) FILTER (WHERE call_type = 'equity') as equity_new,
-          COUNT(*) FILTER (WHERE call_type = 'fno') as fno_new,
-          COUNT(*) FILTER (WHERE created_at::date = '${today}'::date) as today_new,
-          COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_new,
-          COUNT(*) FILTER (WHERE status = 'Active') as open_count,
-          COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
-          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct > 0) as profitable,
-          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as loss,
-          ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return_pct,
-          ROUND(SUM(CASE WHEN status = 'Closed' THEN gain_pct ELSE 0 END)::numeric, 2) as total_return_pct,
-          COUNT(*) FILTER (WHERE webhook_rec_id IS NOT NULL) as sent_to_broker
-        FROM combined
-        GROUP BY advisor_name
+        SELECT
+          COALESCE(e.advisor_name, f.advisor_name) as advisor_name,
+          COALESCE(e.total, 0) + COALESCE(f.total, 0) as total_new,
+          COALESCE(e.total, 0) as equity_new,
+          COALESCE(f.total, 0) as fno_new,
+          COALESCE(e.today_count, 0) + COALESCE(f.today_count, 0) as today_new,
+          COALESCE(e.week_count, 0) + COALESCE(f.week_count, 0) as week_new,
+          COALESCE(e.open_count, 0) + COALESCE(f.open_count, 0) as open_count,
+          COALESCE(e.closed_count, 0) + COALESCE(f.closed_count, 0) as closed_count,
+          COALESCE(e.profitable, 0) + COALESCE(f.profitable, 0) as profitable,
+          COALESCE(e.loss, 0) + COALESCE(f.loss, 0) as loss,
+          ROUND(((COALESCE(e.avg_return_pct, 0) * COALESCE(e.closed_count, 0) + COALESCE(f.avg_return_pct, 0) * COALESCE(f.closed_count, 0))
+            / NULLIF(COALESCE(e.closed_count, 0) + COALESCE(f.closed_count, 0), 0))::numeric, 2) as avg_return_pct,
+          COALESCE(e.sent_to_broker, 0) + COALESCE(f.sent_to_broker, 0) as sent_to_broker
+        FROM equity e
+        FULL OUTER JOIN fno f ON e.advisor_name = f.advisor_name
         ORDER BY total_new DESC
       `));
 
-      // Summary totals
       const summary = await db.execute(sql.raw(`
-        WITH combined AS (
-          SELECT c.status, c.created_at, c.gain_percent::numeric as gain_pct, 'equity' as type
-          FROM calls c
-          JOIN strategies s ON s.id = c.strategy_id
-          WHERE c.is_published = true
-            AND c.created_at >= '${from}T00:00:00Z' AND c.created_at <= '${to}T23:59:59Z'
-          UNION ALL
-          SELECT p.status, p.created_at, p.gain_percent::numeric, 
-            CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END
-          FROM positions p
-          JOIN strategies s ON s.id = p.strategy_id
-          WHERE p.is_published = true
-            AND p.created_at >= '${from}T00:00:00Z' AND p.created_at <= '${to}T23:59:59Z'
+        WITH eq AS (
+          SELECT COUNT(*) as total,
+            COUNT(*) FILTER (WHERE created_at::date = '${today}'::date) as today_count,
+            COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(*) FILTER (WHERE status = 'Active') as open_count,
+            COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price > buy_range_start AND action = 'Buy') +
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price < buy_range_start AND action = 'Sell') as profit,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price < buy_range_start AND action = 'Buy') +
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price > buy_range_start AND action = 'Sell') as loss
+          FROM calls WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+        ),
+        fno AS (
+          SELECT COUNT(DISTINCT COALESCE(leg_group_id, id::text)) as total,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE created_at::date = '${today}'::date) as today_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Active') as open_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed') as closed_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric > 0) as profit,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric <= 0) as loss
+          FROM positions WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
         )
         SELECT
-          COUNT(*) as total_new,
-          COUNT(*) FILTER (WHERE type = 'equity') as equity_new,
-          COUNT(*) FILTER (WHERE type = 'fno') as fno_new,
-          COUNT(*) FILTER (WHERE created_at::date = '${today}'::date) as today_new,
-          COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_new,
-          COUNT(*) FILTER (WHERE status = 'Active') as total_open,
-          COUNT(*) FILTER (WHERE status = 'Closed') as total_closed,
-          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct > 0) as total_profitable,
-          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as total_loss,
-          ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return_pct
-        FROM combined
+          (SELECT total FROM eq) + (SELECT total FROM fno) as total_new,
+          (SELECT total FROM eq) as equity_new,
+          (SELECT total FROM fno) as fno_new,
+          (SELECT today_count FROM eq) + (SELECT today_count FROM fno) as today_new,
+          (SELECT week_count FROM eq) + (SELECT week_count FROM fno) as week_new,
+          (SELECT open_count FROM eq) + (SELECT open_count FROM fno) as total_open,
+          (SELECT closed_count FROM eq) + (SELECT closed_count FROM fno) as total_closed,
+          (SELECT profit FROM eq) + (SELECT profit FROM fno) as total_profitable,
+          (SELECT loss FROM eq) + (SELECT loss FROM fno) as total_loss
       `));
 
-      // Daily breakdown from DB
       const daily = await db.execute(sql.raw(`
-        WITH combined AS (
-          SELECT c.created_at, c.status, c.gain_percent::numeric as gain_pct, 'equity' as type
-          FROM calls c JOIN strategies s ON s.id = c.strategy_id
-          WHERE c.is_published = true
-            AND c.created_at >= '${from}T00:00:00Z' AND c.created_at <= '${to}T23:59:59Z'
-          UNION ALL
-          SELECT p.created_at, p.status, p.gain_percent::numeric,
-            CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END
-          FROM positions p JOIN strategies s ON s.id = p.strategy_id
-          WHERE p.is_published = true
-            AND p.created_at >= '${from}T00:00:00Z' AND p.created_at <= '${to}T23:59:59Z'
+        WITH eq_daily AS (
+          SELECT created_at::date as dt, COUNT(*) as total,
+            COUNT(*) FILTER (WHERE status = 'Closed') as closed,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price > buy_range_start AND action = 'Buy') as profit,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price < buy_range_start AND action = 'Buy') as loss
+          FROM calls WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+          GROUP BY created_at::date
+        ),
+        fno_daily AS (
+          SELECT created_at::date as dt,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) as total,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed') as closed,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric > 0) as profit,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric <= 0) as loss
+          FROM positions WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+          GROUP BY created_at::date
         )
-        SELECT
-          created_at::date as date,
-          COUNT(*) as new_calls,
-          COUNT(*) FILTER (WHERE type = 'equity') as equity,
-          COUNT(*) FILTER (WHERE type = 'fno') as fno,
-          COUNT(*) FILTER (WHERE status = 'Closed') as closed,
-          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct > 0) as profitable,
-          COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as loss,
-          ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return
-        FROM combined
-        GROUP BY created_at::date
+        SELECT COALESCE(e.dt, f.dt) as date,
+          COALESCE(e.total, 0) + COALESCE(f.total, 0) as new_calls,
+          COALESCE(e.total, 0) as equity,
+          COALESCE(f.total, 0) as fno,
+          COALESCE(e.closed, 0) + COALESCE(f.closed, 0) as closed,
+          COALESCE(e.profit, 0) + COALESCE(f.profit, 0) as profitable,
+          COALESCE(e.loss, 0) + COALESCE(f.loss, 0) as loss
+        FROM eq_daily e
+        FULL OUTER JOIN fno_daily f ON e.dt = f.dt
         ORDER BY date DESC
       `));
 
