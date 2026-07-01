@@ -8381,20 +8381,42 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
-  // ── Live Prices for Admin Dashboard ──
+  // ── Live Prices for Admin Dashboard (Kite+TrueData combined) ──
   app.get("/api/admin/broker-calls/live-prices", requireAdmin, async (req, res) => {
     try {
       const symbols = req.query.symbols as string || "";
       if (!symbols) return res.json({ quotes: {} });
+      // Fetch from Kite+TrueData combined endpoint
       const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbols)}`, {
         headers: { "x-shared-secret": "alphamarket-shared-2026" },
         signal: AbortSignal.timeout(5000)
       });
+      let quotes: Record<string, any> = {};
+      let sources: Record<string, number> = {};
       if (kiteRes.ok) {
         const data = await kiteRes.json();
-        return res.json({ quotes: data.quotes || {}, sources: data.sources, timestamp: Date.now() });
+        quotes = data.quotes || {};
+        sources = data.sources || {};
       }
-      res.json({ quotes: {}, error: "pricing unavailable" });
+      // For any missing symbols, try TrueData directly (commodity futures etc)
+      const rawSyms = symbols.split(",").map((s: string) => s.trim()).filter(Boolean);
+      const missing = rawSyms.filter((s: string) => !quotes[s]);
+      if (missing.length > 0) {
+        try {
+          const tdRes = await fetch(`http://localhost:8001/api/shared/truedata-quotes?symbols=${encodeURIComponent(missing.join(","))}`, {
+            headers: { "x-shared-secret": "alphamarket-shared-2026" },
+            signal: AbortSignal.timeout(3000)
+          });
+          if (tdRes.ok) {
+            const tdData = await tdRes.json();
+            for (const [sym, val] of Object.entries(tdData.quotes || {})) {
+              quotes[sym] = { price: (val as any).ltp, source: "truedata", high: (val as any).high, low: (val as any).low };
+              sources["truedata"] = (sources["truedata"] || 0) + 1;
+            }
+          }
+        } catch {}
+      }
+      return res.json({ quotes, sources, timestamp: Date.now() });
     } catch (err: any) { res.json({ quotes: {}, error: err.message }); }
   });
 
