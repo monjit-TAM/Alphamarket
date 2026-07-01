@@ -8243,7 +8243,7 @@ export async function registerRoutes(
       const today = new Date().toISOString().split('T')[0];
 
       // Per-advisor new calls from DB (calls + positions combined)
-      const advisorNewCalls = await db.execute(sql.raw(\`
+      const advisorNewCalls = await db.execute(sql.raw(`
         WITH combined AS (
           SELECT 
             u.company_name as advisor_name,
@@ -8314,10 +8314,10 @@ export async function registerRoutes(
         FROM combined
         GROUP BY advisor_name
         ORDER BY total_new DESC
-      \`));
+      `));
 
       // Summary totals
-      const summary = await db.execute(sql.raw(\`
+      const summary = await db.execute(sql.raw(`
         WITH combined AS (
           SELECT c.status, c.created_at, c.gain_percent::numeric as gain_pct, 'equity' as type
           FROM calls c
@@ -8344,10 +8344,10 @@ export async function registerRoutes(
           COUNT(*) FILTER (WHERE status = 'Closed' AND gain_pct <= 0) as total_loss,
           ROUND(AVG(CASE WHEN status = 'Closed' THEN gain_pct END)::numeric, 2) as avg_return_pct
         FROM combined
-      \`));
+      `));
 
       // Daily breakdown from DB
-      const daily = await db.execute(sql.raw(\`
+      const daily = await db.execute(sql.raw(`
         WITH combined AS (
           SELECT c.created_at, c.status, c.gain_percent::numeric as gain_pct, 'equity' as type
           FROM calls c JOIN strategies s ON s.id = c.strategy_id
@@ -8372,7 +8372,7 @@ export async function registerRoutes(
         FROM combined
         GROUP BY created_at::date
         ORDER BY date DESC
-      \`));
+      `));
 
       res.json({
         period: { from, to },
