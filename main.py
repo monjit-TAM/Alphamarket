@@ -271,9 +271,10 @@ def _start_truedata_feed(symbols_list=None):
             try:
                 import time as _t
                 sym = tick_data.symbol
+                ltp = float(tick_data.ltp)
                 with _td_lock:
                     _td_prices[sym] = {
-                        'ltp': float(tick_data.ltp),
+                        'ltp': ltp,
                         'high': float(getattr(tick_data, 'day_high', 0) or 0),
                         'low': float(getattr(tick_data, 'day_low', 0) or 0),
                         'open': float(getattr(tick_data, 'day_open', 0) or 0),
@@ -283,6 +284,8 @@ def _start_truedata_feed(symbols_list=None):
                         'timestamp': _t.time(),
                         'source': 'truedata'
                     }
+                # ── Tick-by-tick SL/TP check ──
+                _check_sl_tp_on_tick(sym, ltp)
             except Exception:
                 pass
         _td_connected = True
@@ -341,6 +344,198 @@ def _td_get_quotes(symbols):
                 result[sym] = data
     return result
 
+
+# ═══ Tick-by-Tick SL/TP Monitoring Engine ═══
+import asyncio as _sl_asyncio
+
+_sl_watchlist = {}  # symbol -> [{id, source, action, entry, sl, tp, strategy_id, segment, ...}]
+_sl_watchlist_lock = _td_threading.Lock()
+_sl_triggered_ids = set()  # Prevent duplicate triggers
+_sl_last_refresh = 0
+_SL_REFRESH_INTERVAL = 5  # Refresh watchlist from DB every 5 seconds
+_SL_NODE_URL = "http://localhost:5001"
+
+def _sl_refresh_watchlist():
+    """Load active calls/positions with SL/TP into memory watchlist."""
+    global _sl_last_refresh
+    import time as _sl_time
+    now = _sl_time.time()
+    if now - _sl_last_refresh < _SL_REFRESH_INTERVAL:
+        return
+    _sl_last_refresh = now
+    try:
+        import psycopg2
+        conn = psycopg2.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+        cur = conn.cursor()
+        new_watchlist = {}
+        
+        # Equity calls
+        cur.execute("""
+            SELECT c.id, c.stock_name, c.action, c.buy_range_start, c.stop_loss, c.target_price, c.strategy_id, c.webhook_rec_id
+            FROM calls c
+            WHERE c.status = 'Active' AND c.is_published = true
+              AND (c.stop_loss > 0 OR c.target_price > 0)
+        """)
+        for row in cur.fetchall():
+            sym = row[1]
+            if not sym:
+                continue
+            entry = {
+                'id': row[0], 'source': 'calls', 'symbol': sym,
+                'action': row[2] or 'Buy',
+                'entry': float(row[3] or 0), 'sl': float(row[4] or 0), 'tp': float(row[5] or 0),
+                'strategy_id': row[6], 'rec_id': row[7],
+                'segment': 'equity'
+            }
+            if sym not in new_watchlist:
+                new_watchlist[sym] = []
+            new_watchlist[sym].append(entry)
+        
+        # FnO positions (skip options — they need option chain pricing)
+        cur.execute("""
+            SELECT p.id, p.symbol, COALESCE(p.buy_sell, 'Buy'), p.entry_price, p.stop_loss, p.target, p.strategy_id, p.webhook_rec_id,
+                   p.segment, p.strike_price, p.call_put, p.expiry
+            FROM positions p
+            WHERE p.status = 'Active' AND p.is_published = true
+              AND (p.stop_loss::numeric > 0 OR p.target::numeric > 0)
+        """)
+        for row in cur.fetchall():
+            sym = row[1]
+            segment = row[8] or ''
+            strike = row[9]
+            has_strike = strike and str(strike) != '' and str(strike) != '0' and float(strike) > 0
+            # Options need option chain pricing (different symbol format) — handle via TrueData option chain later
+            # For now: futures + equity positions use stock symbol directly
+            if segment == 'Option' and has_strike:
+                continue  # Skip options for now — needs option premium, not stock LTP
+            if not sym:
+                continue
+            td_sym = sym
+            if segment in ('Future', 'CommodityFuture', 'Commodity'):
+                td_sym = sym + '-I'  # TrueData futures format
+            entry = {
+                'id': row[0], 'source': 'positions', 'symbol': sym, 'td_symbol': td_sym,
+                'action': row[2] or 'Buy',
+                'entry': float(row[3] or 0), 'sl': float(row[4] or 0), 'tp': float(row[5] or 0),
+                'strategy_id': row[6], 'rec_id': row[7],
+                'segment': segment
+            }
+            lookup_sym = td_sym if td_sym != sym else sym
+            if lookup_sym not in new_watchlist:
+                new_watchlist[lookup_sym] = []
+            new_watchlist[lookup_sym].append(entry)
+        
+        conn.close()
+        
+        with _sl_watchlist_lock:
+            _sl_watchlist.clear()
+            _sl_watchlist.update(new_watchlist)
+        
+        # Auto-subscribe any new symbols to TrueData
+        all_syms = list(new_watchlist.keys())
+        new_to_subscribe = [s for s in all_syms if s not in _td_subscribed_symbols]
+        if new_to_subscribe:
+            _td_subscribe_new(new_to_subscribe)
+        
+    except Exception as e:
+        print(f"[SL Engine] Watchlist refresh error: {e}")
+
+def _check_sl_tp_on_tick(symbol, ltp):
+    """Called on every TrueData tick — checks SL/TP for all calls on this symbol."""
+    # Refresh watchlist if stale
+    _sl_refresh_watchlist()
+    
+    with _sl_watchlist_lock:
+        entries = _sl_watchlist.get(symbol, [])
+    
+    if not entries:
+        return
+    
+    for entry in entries:
+        call_id = entry['id']
+        if call_id in _sl_triggered_ids:
+            continue
+        
+        sl = entry['sl']
+        tp = entry['tp']
+        action = entry['action']
+        is_sell = action == 'Sell'
+        triggered = None
+        
+        if is_sell:
+            if sl > 0 and ltp >= sl:
+                triggered = 'SL'
+            elif tp > 0 and ltp <= tp:
+                triggered = 'TARGET'
+        else:
+            if sl > 0 and ltp <= sl:
+                triggered = 'SL'
+            elif tp > 0 and ltp >= tp:
+                triggered = 'TARGET'
+        
+        if triggered:
+            _sl_triggered_ids.add(call_id)
+            print(f"[SL Engine] {triggered} TRIGGERED: {entry['symbol']} LTP={ltp} {'SL' if triggered == 'SL' else 'TP'}={sl if triggered == 'SL' else tp} (ID: {call_id}, source: {entry['source']})")
+            # Fire close via Node in a background thread
+            _td_threading.Thread(target=_fire_sl_close, args=(entry, ltp, triggered), daemon=True).start()
+
+def _fire_sl_close(entry, ltp, trigger_type):
+    """Call Node.js close endpoint to properly close the call and fire webhooks."""
+    import requests as _sl_requests
+    try:
+        call_id = entry['id']
+        source = entry['source']
+        
+        if source == 'calls':
+            url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
+            body = {"source": "calls", "exitPrice": ltp}
+        else:
+            url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
+            body = {"source": "positions", "exitPrice": ltp}
+        
+        # Get admin session cookie
+        import psycopg2, hashlib, hmac, base64, urllib.parse
+        conn = psycopg2.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+        cur = conn.cursor()
+        cur.execute("SELECT sid FROM sessions WHERE (sess::jsonb->>'userId') IN (SELECT id FROM users WHERE role='admin') AND expire > NOW() ORDER BY expire DESC LIMIT 1")
+        row = cur.fetchone()
+        conn.close()
+        
+        if not row:
+            print(f"[SL Engine] ERROR: No admin session for closing {entry['symbol']}")
+            _sl_triggered_ids.discard(call_id)  # Allow retry
+            return
+        
+        sid = row[0]
+        secret = "j7LzUgscsxhDpM3SuS/iuz3SkjQcR5XIjxfMwEQxybHw27zRVj1khGafjxC35Nltgqz/j7ZM10WacTstOOw4qQ=="
+        sig = base64.b64encode(hmac.new(secret.encode(), sid.encode(), hashlib.sha256).digest()).decode().rstrip('=')
+        cookie_val = urllib.parse.quote(f"s:{sid}.{sig}", safe='')
+        
+        resp = _sl_requests.post(url, json=body, headers={
+            "Content-Type": "application/json",
+            "Cookie": f"connect.sid={cookie_val}"
+        }, timeout=10)
+        
+        event_label = "STOPLOSS_TRIGGERED" if trigger_type == "SL" else "TARGET_ACHIEVED"
+        print(f"[SL Engine] {event_label}: {entry['symbol']} closed at {ltp} via Node (HTTP {resp.status_code})")
+        
+    except Exception as e:
+        print(f"[SL Engine] Close error for {entry['symbol']}: {e}")
+        _sl_triggered_ids.discard(call_id)  # Allow retry
+
+def _sl_watchlist_refresh_loop():
+    """Background thread: refresh watchlist every 5 seconds."""
+    import time as _sl_time
+    _sl_time.sleep(5)  # Wait for DB to be ready
+    while True:
+        try:
+            _sl_refresh_watchlist()
+        except Exception:
+            pass
+        _sl_time.sleep(_SL_REFRESH_INTERVAL)
+
+# ═══ End SL/TP Engine ═══
+
 print("[TrueData] Module loaded")
 # ═══ End TrueData Module ═══
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
@@ -395,6 +590,10 @@ async def startup():
             _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
             _td_thread.start()
             print("[TrueData] Background thread started")
+            # Start SL/TP watchlist refresh loop
+            _sl_thread = _td_threading.Thread(target=_sl_watchlist_refresh_loop, daemon=True)
+            _sl_thread.start()
+            print("[SL Engine] Watchlist refresh thread started (every 5s)")
         except Exception as td_err:
             print(f"[TrueData] Startup error (non-fatal): {td_err}")
     except Exception as e:
@@ -492,6 +691,26 @@ async def shared_truedata_status(request: Request):
             "sample_symbols": list(_td_prices.keys())[:30],
             "sample_prices": {k: v.get("ltp") for k, v in list(_td_prices.items())[:10]}
         }
+
+@app.get("/api/shared/sl-engine-status", include_in_schema=False)
+async def sl_engine_status(request: Request):
+    """SL/TP tick-by-tick engine status."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    with _sl_watchlist_lock:
+        total_entries = sum(len(v) for v in _sl_watchlist.values())
+        symbols = list(_sl_watchlist.keys())
+    return {
+        "watchlist_symbols": len(symbols),
+        "watchlist_entries": total_entries,
+        "triggered_count": len(_sl_triggered_ids),
+        "triggered_ids": list(_sl_triggered_ids)[:20],
+        "symbols": symbols[:50],
+        "refresh_interval": _SL_REFRESH_INTERVAL,
+        "td_connected": _td_connected,
+        "td_cached_prices": len(_td_prices)
+    }
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
