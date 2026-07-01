@@ -7889,7 +7889,7 @@ export async function registerRoutes(
         FROM calls c
         JOIN strategies s ON s.id = c.strategy_id
         JOIN users u ON u.id = s.advisor_id
-        WHERE c.status = 'Active' AND c.webhook_rec_id IS NOT NULL
+        WHERE c.status = 'Active' AND (c.webhook_rec_id IS NOT NULL OR '${req.query.showAll}' = 'true')
         ORDER BY c.created_at DESC
       `);
 
@@ -7903,7 +7903,7 @@ export async function registerRoutes(
         FROM positions p
         JOIN strategies s ON s.id = p.strategy_id
         JOIN users u ON u.id = s.advisor_id
-        WHERE p.status = 'Active' AND p.webhook_rec_id IS NOT NULL
+        WHERE p.status = 'Active' AND (p.webhook_rec_id IS NOT NULL OR '${req.query.showAll}' = 'true')
         ORDER BY p.created_at DESC
       `);
 
@@ -8379,6 +8379,23 @@ export async function registerRoutes(
         daily: daily.rows,
       });
     } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Live Prices for Admin Dashboard ──
+  app.get("/api/admin/broker-calls/live-prices", requireAdmin, async (req, res) => {
+    try {
+      const symbols = req.query.symbols as string || "";
+      if (!symbols) return res.json({ quotes: {} });
+      const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbols)}`, {
+        headers: { "x-shared-secret": "alphamarket-shared-2026" },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (kiteRes.ok) {
+        const data = await kiteRes.json();
+        return res.json({ quotes: data.quotes || {}, sources: data.sources, timestamp: Date.now() });
+      }
+      res.json({ quotes: {}, error: "pricing unavailable" });
+    } catch (err: any) { res.json({ quotes: {}, error: err.message }); }
   });
 
   // ── Download Broker Report (XLSX / PDF) ──

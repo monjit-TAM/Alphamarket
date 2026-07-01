@@ -286,6 +286,9 @@ def _start_truedata_feed(symbols_list=None):
                     }
                 # ── Tick-by-tick SL/TP check ──
                 _check_sl_tp_on_tick(sym, ltp)
+                # Also check base symbol (e.g. CRUDEOIL-I -> CRUDEOIL, CRUDEOILM)
+                if sym.endswith('-I'):
+                    _check_sl_tp_on_tick(sym[:-2], ltp)
             except Exception:
                 pass
         _td_connected = True
@@ -432,10 +435,13 @@ def _sl_refresh_watchlist():
             _sl_watchlist.update(new_watchlist)
         
         # Auto-subscribe any new symbols to TrueData
+        # Also add -I suffix for commodity symbols
+        COMMODITY_SYMBOLS = {'CRUDEOIL','CRUDEOILM','GOLD','GOLDM','SILVER','SILVERM','NATURALGAS','COPPER','ZINC','ALUMINIUM','NICKEL','LEAD','COTTONCANDY','MENTHAOIL'}
         all_syms = list(new_watchlist.keys())
-        new_to_subscribe = [s for s in all_syms if s not in _td_subscribed_symbols]
-        if new_to_subscribe:
-            _td_subscribe_new(new_to_subscribe)
+        extra_commodity = [s + '-I' for s in all_syms if s.upper() in COMMODITY_SYMBOLS and (s + '-I') not in _td_subscribed_symbols]
+        to_subscribe = [s for s in all_syms if s not in _td_subscribed_symbols] + extra_commodity
+        if to_subscribe:
+            _td_subscribe_new(to_subscribe)
         
     except Exception as e:
         print(f"[SL Engine] Watchlist refresh error: {e}")
