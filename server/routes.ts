@@ -7880,7 +7880,9 @@ export async function registerRoutes(
       const type = req.query.type as string || "";  // equity, fno, commodity
       const advisor = req.query.advisor as string || "";
 
-      const conn = await db.execute(sql`
+      const showAll = req.query.showAll === 'true';
+      const callsWhere = showAll ? "WHERE c.status = 'Active'" : "WHERE c.status = 'Active' AND c.webhook_rec_id IS NOT NULL";
+      const conn = await db.execute(sql.raw(`
         SELECT c.id, c.stock_name as symbol, c.action, c.buy_range_start as entry_price,
                c.target_price, c.stop_loss, c.sell_price, c.status, c.webhook_rec_id,
                c.created_at, c.strategy_id, 'equity' as call_type,
@@ -7889,11 +7891,11 @@ export async function registerRoutes(
         FROM calls c
         JOIN strategies s ON s.id = c.strategy_id
         JOIN users u ON u.id = s.advisor_id
-        WHERE c.status = 'Active' AND (c.webhook_rec_id IS NOT NULL OR '${req.query.showAll}' = 'true')
+        ${callsWhere}
         ORDER BY c.created_at DESC
-      `);
+      `));
 
-      const posConn = await db.execute(sql`
+      const posConn = await db.execute(sql.raw(`
         SELECT p.id, p.symbol, COALESCE(p.buy_sell, 'Buy') as action, p.entry_price,
                p.target, p.stop_loss, p.exit_price as sell_price, p.status, p.webhook_rec_id,
                p.created_at, p.strategy_id, 'fno' as call_type,
@@ -7903,9 +7905,9 @@ export async function registerRoutes(
         FROM positions p
         JOIN strategies s ON s.id = p.strategy_id
         JOIN users u ON u.id = s.advisor_id
-        WHERE p.status = 'Active' AND (p.webhook_rec_id IS NOT NULL OR '${req.query.showAll}' = 'true')
+        ${showAll ? "WHERE p.status = 'Active' AND p.is_published = true" : "WHERE p.status = 'Active' AND p.webhook_rec_id IS NOT NULL"}
         ORDER BY p.created_at DESC
-      `);
+      `))
 
       let calls = (conn.rows as any[]).map(r => ({ ...r, source: 'calls' }));
       let positions = (posConn.rows as any[]).map(r => ({ ...r, source: 'positions' }));
