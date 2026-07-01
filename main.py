@@ -214,6 +214,135 @@ app = FastAPI(
         {"name": "Basket Orders", "description": "Multi-leg F&O basket orders with broker webhook integration"},
     ]
 )
+
+
+# ═══ TrueData WebSocket Market Data Integration ═══
+import threading as _td_threading
+
+_TD_USERNAME = "tdwsp531"
+_TD_PASSWORD = "monjit@531"
+_TD_PORT = 8084
+_TD_URL = "push.truedata.in"
+
+_td_prices = {}
+_td_connected = False
+_td_obj = None
+_td_lock = _td_threading.Lock()
+_td_subscribed_symbols = set()
+
+def _start_truedata_feed(symbols_list=None):
+    global _td_obj, _td_connected, _td_subscribed_symbols
+    try:
+        from truedata import TD_live
+        import logging as _td_logging
+        _td_obj = TD_live(
+            _TD_USERNAME, _TD_PASSWORD,
+            live_port=_TD_PORT,
+            url=_TD_URL,
+            log_level=_td_logging.WARNING
+        )
+        if not symbols_list:
+            symbols_list = ["NIFTY 50", "NIFTY BANK", "SBIN", "RELIANCE", "HDFCBANK", "INFY", "TCS", "ITC", "ICICIBANK", "KOTAKBANK"]
+        req_ids = _td_obj.start_live_data(symbols_list)
+        _td_subscribed_symbols = set(symbols_list)
+        import time as _td_time
+        _td_time.sleep(2)
+        # Populate from touchline
+        for sym in symbols_list:
+            try:
+                td = _td_obj.live_data.get(sym)
+                if td and hasattr(td, 'ltp') and td.ltp:
+                    with _td_lock:
+                        _td_prices[sym] = {
+                            'ltp': float(td.ltp),
+                            'high': float(getattr(td, 'day_high', 0) or 0),
+                            'low': float(getattr(td, 'day_low', 0) or 0),
+                            'open': float(getattr(td, 'day_open', 0) or 0),
+                            'close': float(getattr(td, 'prev_day_close', 0) or 0),
+                            'volume': int(getattr(td, 'ttq', 0) or 0),
+                            'oi': int(getattr(td, 'oi', 0) or 0),
+                            'timestamp': _td_time.time(),
+                            'source': 'truedata'
+                        }
+            except Exception:
+                pass
+        @_td_obj.trade_callback
+        def _on_td_trade(tick_data):
+            try:
+                import time as _t
+                sym = tick_data.symbol
+                with _td_lock:
+                    _td_prices[sym] = {
+                        'ltp': float(tick_data.ltp),
+                        'high': float(getattr(tick_data, 'day_high', 0) or 0),
+                        'low': float(getattr(tick_data, 'day_low', 0) or 0),
+                        'open': float(getattr(tick_data, 'day_open', 0) or 0),
+                        'close': float(getattr(tick_data, 'prev_day_close', 0) or 0),
+                        'volume': int(getattr(tick_data, 'ttq', 0) or 0),
+                        'oi': int(getattr(tick_data, 'oi', 0) or 0),
+                        'timestamp': _t.time(),
+                        'source': 'truedata'
+                    }
+            except Exception:
+                pass
+        _td_connected = True
+        print(f"[TrueData] Connected — {len(symbols_list)} symbols subscribed, {len(_td_prices)} prices loaded")
+    except Exception as e:
+        _td_connected = False
+        print(f"[TrueData] Connection failed: {e}")
+
+def _td_subscribe_new(symbols):
+    global _td_obj, _td_subscribed_symbols
+    if not _td_obj or not _td_connected:
+        return False
+    new_syms = [s for s in symbols if s not in _td_subscribed_symbols]
+    if not new_syms:
+        return True
+    if len(_td_subscribed_symbols) + len(new_syms) > 590:
+        return False
+    try:
+        import time as _sub_time
+        _td_obj.start_live_data(new_syms)
+        _td_subscribed_symbols.update(new_syms)
+        _sub_time.sleep(1)  # Wait for touchline
+        # Read touchline/live_data for newly subscribed symbols
+        populated = 0
+        for sym in new_syms:
+            try:
+                td = _td_obj.live_data.get(sym)
+                if td and hasattr(td, 'ltp') and td.ltp:
+                    with _td_lock:
+                        _td_prices[sym] = {
+                            'ltp': float(td.ltp),
+                            'high': float(getattr(td, 'day_high', 0) or 0),
+                            'low': float(getattr(td, 'day_low', 0) or 0),
+                            'open': float(getattr(td, 'day_open', 0) or 0),
+                            'close': float(getattr(td, 'prev_day_close', 0) or 0),
+                            'volume': int(getattr(td, 'ttq', 0) or 0),
+                            'oi': int(getattr(td, 'oi', 0) or 0),
+                            'timestamp': _sub_time.time(),
+                            'source': 'truedata'
+                        }
+                    populated += 1
+            except Exception:
+                pass
+        print(f"[TrueData] Added {len(new_syms)} symbols, {populated} prices loaded (total: {len(_td_subscribed_symbols)})")
+        return True
+    except Exception as e:
+        print(f"[TrueData] Subscribe error: {e}")
+        return False
+
+def _td_get_quotes(symbols):
+    result = {}
+    with _td_lock:
+        for sym in symbols:
+            data = _td_prices.get(sym) or _td_prices.get(sym.upper())
+            if data and data.get('ltp', 0) > 0:
+                result[sym] = data
+    return result
+
+print("[TrueData] Module loaded")
+# ═══ End TrueData Module ═══
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # Force OpenAPI 3.0.3 for Swagger UI compatibility
@@ -261,6 +390,13 @@ async def startup():
         print(f"AlphaLab v2.0 startup complete | Universe: {len(NIFTY_UNIVERSE)} stocks | Sectors: {len(set(SECTOR_MAP.values()))}")
         # Start background pre-computation task
         asyncio.create_task(_precompute_loop())
+        # Start TrueData WebSocket feed in background thread
+        try:
+            _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
+            _td_thread.start()
+            print("[TrueData] Background thread started")
+        except Exception as td_err:
+            print(f"[TrueData] Startup error (non-fatal): {td_err}")
     except Exception as e:
         print(f"Startup error: {e}")
 
@@ -269,25 +405,44 @@ async def startup():
 
 @app.get("/api/shared/kite-quotes", include_in_schema=False)
 async def shared_kite_quotes(request: Request, symbols: str = ""):
-    """Internal endpoint: Data Service calls this for Kite live quotes."""
+    """Internal endpoint: Kite first, TrueData fallback, then Groww (via Node)."""
     secret = request.headers.get("x-shared-secret", "")
     if secret != "alphamarket-shared-2026":
         raise HTTPException(403, "Unauthorized")
     if not symbols:
         return {"quotes": {}, "source": "kite", "error": "No symbols"}
+    raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    quotes = {}
+    missing_syms = list(raw_syms)
+    source_stats = {"kite": 0, "truedata": 0}
+    # ── Source 1: Kite ──
     from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
-    if not _is_kite_connected():
-        return {"quotes": {}, "source": "kite", "connected": False}
-    sym_list = [f"NSE:{s}" for s in symbols.split(",") if s.strip()]
-    try:
-        data = await _fetch_kite_quotes(sym_list)
-        quotes = {}
-        for key, val in data.items():
-            sym = key.replace("NSE:", "")
-            quotes[sym] = {"price": val.get("last_price", 0), "source": "kite"}
-        return {"quotes": quotes, "source": "kite", "connected": True, "count": len(quotes)}
-    except Exception as e:
-        return {"quotes": {}, "source": "kite", "error": str(e)}
+    if _is_kite_connected():
+        try:
+            sym_list = [f"NSE:{s}" for s in raw_syms]
+            data = await _fetch_kite_quotes(sym_list)
+            for key, val in data.items():
+                sym = key.replace("NSE:", "")
+                ltp = val.get("last_price", 0)
+                if ltp and ltp > 0:
+                    quotes[sym] = {"price": ltp, "source": "kite"}
+                    source_stats["kite"] += 1
+                    if sym in missing_syms:
+                        missing_syms.remove(sym)
+        except Exception as e:
+            pass  # Fall through to TrueData
+    # ── Source 2: TrueData (in-memory cache — instant, no network call) ──
+    if missing_syms and _td_connected:
+        td_quotes = _td_get_quotes(missing_syms)
+        for sym, data in td_quotes.items():
+            quotes[sym] = {"price": data["ltp"], "source": "truedata"}
+            source_stats["truedata"] += 1
+            if sym in missing_syms:
+                missing_syms.remove(sym)
+        # Auto-subscribe any symbols not yet in TrueData
+        if missing_syms:
+            _td_subscribe_new(missing_syms)
+    return {"quotes": quotes, "source": "kite+truedata", "connected": True, "count": len(quotes), "sources": source_stats, "missing": missing_syms if missing_syms else None}
 
 @app.get("/api/shared/kite-ltp/{symbol}", include_in_schema=False)
 async def shared_kite_ltp(request: Request, symbol: str):
@@ -307,6 +462,36 @@ async def shared_kite_ltp(request: Request, symbol: str):
     except Exception as e:
         return {"symbol": symbol.upper(), "price": 0, "source": "kite", "error": str(e)}
 
+
+@app.get("/api/shared/truedata-quotes", include_in_schema=False)
+async def shared_truedata_quotes(request: Request, symbols: str = ""):
+    """Direct TrueData quotes endpoint."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    if not symbols:
+        return {"quotes": {}, "source": "truedata"}
+    raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    # Auto-subscribe if needed
+    if _td_connected:
+        _td_subscribe_new(raw_syms)
+    quotes = _td_get_quotes(raw_syms)
+    return {"quotes": quotes, "source": "truedata", "connected": _td_connected, "count": len(quotes)}
+
+@app.get("/api/shared/truedata-status", include_in_schema=False)
+async def shared_truedata_status(request: Request):
+    """TrueData connection status."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    with _td_lock:
+        return {
+            "connected": _td_connected,
+            "subscribed_symbols": len(_td_subscribed_symbols),
+            "cached_prices": len(_td_prices),
+            "sample_symbols": list(_td_prices.keys())[:30],
+            "sample_prices": {k: v.get("ltp") for k, v in list(_td_prices.items())[:10]}
+        }
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
