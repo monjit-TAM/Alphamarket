@@ -8268,8 +8268,8 @@ export async function registerRoutes(
           JOIN strategies s ON s.id = c.strategy_id
           JOIN users u ON u.id = s.advisor_id
           WHERE c.is_published = true
-            AND c.created_at >= '\${from}T00:00:00Z'
-            AND c.created_at <= '\${to}T23:59:59Z'
+            AND c.created_at >= '${from}T00:00:00Z'
+            AND c.created_at <= '${to}T23:59:59Z'
           UNION ALL
           SELECT 
             u.company_name,
@@ -8294,15 +8294,15 @@ export async function registerRoutes(
           JOIN strategies s ON s.id = p.strategy_id
           JOIN users u ON u.id = s.advisor_id
           WHERE p.is_published = true
-            AND p.created_at >= '\${from}T00:00:00Z'
-            AND p.created_at <= '\${to}T23:59:59Z'
+            AND p.created_at >= '${from}T00:00:00Z'
+            AND p.created_at <= '${to}T23:59:59Z'
         )
         SELECT 
           advisor_name,
           COUNT(*) as total_new,
           COUNT(*) FILTER (WHERE call_type = 'equity') as equity_new,
           COUNT(*) FILTER (WHERE call_type = 'fno') as fno_new,
-          COUNT(*) FILTER (WHERE created_at::date = '\${today}'::date) as today_new,
+          COUNT(*) FILTER (WHERE created_at::date = '${today}'::date) as today_new,
           COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_new,
           COUNT(*) FILTER (WHERE status = 'Active') as open_count,
           COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
@@ -8323,20 +8323,20 @@ export async function registerRoutes(
           FROM calls c
           JOIN strategies s ON s.id = c.strategy_id
           WHERE c.is_published = true
-            AND c.created_at >= '\${from}T00:00:00Z' AND c.created_at <= '\${to}T23:59:59Z'
+            AND c.created_at >= '${from}T00:00:00Z' AND c.created_at <= '${to}T23:59:59Z'
           UNION ALL
           SELECT p.status, p.created_at, p.gain_percent::numeric, 
             CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END
           FROM positions p
           JOIN strategies s ON s.id = p.strategy_id
           WHERE p.is_published = true
-            AND p.created_at >= '\${from}T00:00:00Z' AND p.created_at <= '\${to}T23:59:59Z'
+            AND p.created_at >= '${from}T00:00:00Z' AND p.created_at <= '${to}T23:59:59Z'
         )
         SELECT
           COUNT(*) as total_new,
           COUNT(*) FILTER (WHERE type = 'equity') as equity_new,
           COUNT(*) FILTER (WHERE type = 'fno') as fno_new,
-          COUNT(*) FILTER (WHERE created_at::date = '\${today}'::date) as today_new,
+          COUNT(*) FILTER (WHERE created_at::date = '${today}'::date) as today_new,
           COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_new,
           COUNT(*) FILTER (WHERE status = 'Active') as total_open,
           COUNT(*) FILTER (WHERE status = 'Closed') as total_closed,
@@ -8352,13 +8352,13 @@ export async function registerRoutes(
           SELECT c.created_at, c.status, c.gain_percent::numeric as gain_pct, 'equity' as type
           FROM calls c JOIN strategies s ON s.id = c.strategy_id
           WHERE c.is_published = true
-            AND c.created_at >= '\${from}T00:00:00Z' AND c.created_at <= '\${to}T23:59:59Z'
+            AND c.created_at >= '${from}T00:00:00Z' AND c.created_at <= '${to}T23:59:59Z'
           UNION ALL
           SELECT p.created_at, p.status, p.gain_percent::numeric,
             CASE WHEN p.segment IN ('Option','Future','Index') THEN 'fno' ELSE 'equity' END
           FROM positions p JOIN strategies s ON s.id = p.strategy_id
           WHERE p.is_published = true
-            AND p.created_at >= '\${from}T00:00:00Z' AND p.created_at <= '\${to}T23:59:59Z'
+            AND p.created_at >= '${from}T00:00:00Z' AND p.created_at <= '${to}T23:59:59Z'
         )
         SELECT
           created_at::date as date,
