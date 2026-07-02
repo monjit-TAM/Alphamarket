@@ -1580,9 +1580,15 @@ export async function registerRoutes(
       if (isPublished && (!req.body.rationale || !req.body.rationale.trim())) {
         return res.status(400).send("Rationale is required to publish a position");
       }
-      // ── Entry Price Sanity Check for FnO ──
+      // ── Auto-correct segment if advisor selected wrong one ──
       const body = req.body;
-      const segment = body.segment || "";
+      let segment = body.segment || "";
+      if (segment === "Equity" && body.strikePrice && body.callPut && body.expiry) {
+        // Has strike + callPut + expiry = this is an option, not equity
+        segment = "Option";
+        body.segment = "Option";
+        console.log("[routes] Auto-corrected segment from Equity to Option for", body.symbol, body.strikePrice, body.callPut);
+      }
       const isFnOPosition = segment === "Option" || segment === "Future" || segment === "Index" ||
         !!(body.strikePrice && body.callPut);
       if (isFnOPosition && isPublished && body.entryPrice) {
