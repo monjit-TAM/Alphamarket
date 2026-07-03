@@ -630,7 +630,7 @@ async def shared_kite_quotes(request: Request, symbols: str = ""):
     from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
     if _is_kite_connected():
         try:
-            sym_list = [f"NSE:{s}" for s in raw_syms]
+            sym_list = [f"NSE:{s}" for s in raw_syms if " " not in s and "&" not in s]  # Skip symbols with special chars (handled by TrueData fallback)
             data = await _fetch_kite_quotes(sym_list)
             for key, val in data.items():
                 sym = key.replace("NSE:", "")
