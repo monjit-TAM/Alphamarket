@@ -8438,36 +8438,37 @@ export async function registerRoutes(
   // ── Option Premium Prices for Admin Dashboard ──
   app.get("/api/admin/broker-calls/option-prices", requireAdmin, async (req, res) => {
     try {
-      // Expects JSON array of positions: [{symbol, strike, callPut, expiry}]
       const positions = JSON.parse(req.query.positions as string || "[]");
       if (!positions.length) return res.json({ quotes: {} });
       
-      // Build NFO tradingsymbols from instrument_master
       const results: Record<string, any> = {};
       const kiteSymbols: string[] = [];
-      const posMap: Record<string, string> = {}; // kiteSymbol -> positionKey
+      const posMap: Record<string, string> = {};
       
       for (const pos of positions) {
         const { id, symbol, strike, callPut, expiry } = pos;
         if (!symbol || !strike || !callPut || !expiry) continue;
         
         const series = callPut === "Call" ? "CE" : "PE";
+        const strikeNum = parseFloat(strike);
+        if (isNaN(strikeNum)) continue;
+        
         const expiryDate = new Date(expiry);
         if (isNaN(expiryDate.getTime())) continue;
+        const expiryStr = expiryDate.toISOString().split("T")[0];
         
-        // Lookup tradingsymbol from instrument_master
-        const lookup = await db.execute(sql.raw(\`
-          SELECT tradingsymbol, exchange_token FROM instrument_master
-          WHERE name = '\${symbol}' AND strike = \${parseFloat(strike)}
-            AND instrument_type = '\${series}'
-            AND exchange IN ('NFO','BFO')
-            AND expiry::date = '\${expiry}'::date
-          LIMIT 1
-        \`));
+        const lookup = await db.execute(
+          sql`SELECT tradingsymbol, exchange_token FROM instrument_master
+              WHERE name = ${symbol} AND strike = ${strikeNum}
+              AND instrument_type = ${series}
+              AND exchange IN ('NFO','BFO')
+              AND expiry::date = ${expiryStr}::date
+              LIMIT 1`
+        );
         
         if (lookup.rows.length > 0) {
           const row = lookup.rows[0] as any;
-          const kiteSym = \`NFO:\${row.tradingsymbol}\`;
+          const kiteSym = "NFO:" + row.tradingsymbol;
           kiteSymbols.push(kiteSym);
           posMap[kiteSym] = id;
         }
@@ -8475,8 +8476,7 @@ export async function registerRoutes(
       
       if (kiteSymbols.length === 0) return res.json({ quotes: {} });
       
-      // Fetch premiums from Kite via Python
-      const kiteRes = await fetch(\`http://localhost:8001/api/shared/kite-quotes-raw?symbols=\${encodeURIComponent(kiteSymbols.join(","))}\`, {
+      const kiteRes = await fetch("http://localhost:8001/api/shared/kite-quotes-raw?symbols=" + encodeURIComponent(kiteSymbols.join(",")), {
         headers: { "x-shared-secret": "alphamarket-shared-2026" },
         signal: AbortSignal.timeout(5000)
       });
