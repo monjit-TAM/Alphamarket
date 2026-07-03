@@ -74,6 +74,18 @@ export default function AdminBrokerCalls() {
       for (const [sym, val] of Object.entries(q)) {
         newPrices[sym] = (val as any).price || (val as any).ltp || 0;
       }
+      // Fetch option premiums for positions with strike+callPut
+      const optionPositions = calls.filter((c: any) => c.strike_price && c.call_put && c.expiry).map((c: any) => ({
+        id: c.id, symbol: c.symbol, strike: c.strike_price, callPut: c.call_put, expiry: c.expiry
+      }));
+      if (optionPositions.length > 0) {
+        try {
+          const optData = await api("GET", `/api/admin/broker-calls/option-prices?positions=${encodeURIComponent(JSON.stringify(optionPositions))}`);
+          for (const [posId, val] of Object.entries(optData.quotes || {})) {
+            newPrices["opt_" + posId] = (val as any).price || 0;
+          }
+        } catch {}
+      }
       setPrices(newPrices);
       setLastUpdate(Date.now());
     } catch (e) { console.error(e); }
@@ -168,7 +180,7 @@ export default function AdminBrokerCalls() {
           </thead>
           <tbody>
             {calls.map((c: any) => {
-              const ltp = prices[c.symbol] || null;
+              const ltp = (c.strike_price && c.call_put) ? (prices["opt_" + c.id] || null) : (prices[c.symbol] || null);
               const prev = prevPrices[c.symbol] || null;
               return (
               <tr key={c.id} style={{ borderBottom: `1px solid ${C.border}` }}>

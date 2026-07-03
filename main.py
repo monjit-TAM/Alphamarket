@@ -655,6 +655,28 @@ async def shared_kite_quotes(request: Request, symbols: str = ""):
             _td_subscribe_new(missing_syms)
     return {"quotes": quotes, "source": "kite+truedata", "connected": True, "count": len(quotes), "sources": source_stats, "missing": missing_syms if missing_syms else None}
 
+@app.get("/api/shared/kite-quotes-raw", include_in_schema=False)
+async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
+    """Internal: fetch Kite quotes with raw symbol format (supports NFO:TRADINGSYMBOL)."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    if not symbols:
+        return {"quotes": {}}
+    raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    if not _is_kite_connected():
+        return {"quotes": {}, "connected": False}
+    try:
+        data = await _fetch_kite_quotes(raw_syms)
+        quotes = {}
+        for key, val in data.items():
+            ltp = val.get("last_price", 0)
+            quotes[key] = {"price": ltp, "ltp": ltp, "source": "kite"}
+        return {"quotes": quotes, "count": len(quotes)}
+    except Exception as e:
+        return {"quotes": {}, "error": str(e)}
+
 @app.get("/api/shared/kite-ltp/{symbol}", include_in_schema=False)
 async def shared_kite_ltp(request: Request, symbol: str):
     """Internal: single stock LTP from Kite."""

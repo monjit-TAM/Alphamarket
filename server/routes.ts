@@ -8435,6 +8435,66 @@ export async function registerRoutes(
     } catch (err: any) { res.json({ quotes: {}, error: err.message }); }
   });
 
+  // ── Option Premium Prices for Admin Dashboard ──
+  app.get("/api/admin/broker-calls/option-prices", requireAdmin, async (req, res) => {
+    try {
+      // Expects JSON array of positions: [{symbol, strike, callPut, expiry}]
+      const positions = JSON.parse(req.query.positions as string || "[]");
+      if (!positions.length) return res.json({ quotes: {} });
+      
+      // Build NFO tradingsymbols from instrument_master
+      const results: Record<string, any> = {};
+      const kiteSymbols: string[] = [];
+      const posMap: Record<string, string> = {}; // kiteSymbol -> positionKey
+      
+      for (const pos of positions) {
+        const { id, symbol, strike, callPut, expiry } = pos;
+        if (!symbol || !strike || !callPut || !expiry) continue;
+        
+        const series = callPut === "Call" ? "CE" : "PE";
+        const expiryDate = new Date(expiry);
+        if (isNaN(expiryDate.getTime())) continue;
+        
+        // Lookup tradingsymbol from instrument_master
+        const lookup = await db.execute(sql.raw(\`
+          SELECT tradingsymbol, exchange_token FROM instrument_master
+          WHERE name = '\${symbol}' AND strike = \${parseFloat(strike)}
+            AND instrument_type = '\${series}'
+            AND exchange IN ('NFO','BFO')
+            AND expiry::date = '\${expiry}'::date
+          LIMIT 1
+        \`));
+        
+        if (lookup.rows.length > 0) {
+          const row = lookup.rows[0] as any;
+          const kiteSym = \`NFO:\${row.tradingsymbol}\`;
+          kiteSymbols.push(kiteSym);
+          posMap[kiteSym] = id;
+        }
+      }
+      
+      if (kiteSymbols.length === 0) return res.json({ quotes: {} });
+      
+      // Fetch premiums from Kite via Python
+      const kiteRes = await fetch(\`http://localhost:8001/api/shared/kite-quotes-raw?symbols=\${encodeURIComponent(kiteSymbols.join(","))}\`, {
+        headers: { "x-shared-secret": "alphamarket-shared-2026" },
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (kiteRes.ok) {
+        const data = await kiteRes.json();
+        for (const [kiteSym, val] of Object.entries(data.quotes || {})) {
+          const posId = posMap[kiteSym];
+          if (posId) {
+            results[posId] = { price: (val as any).price || (val as any).ltp || 0, source: "kite", tradingsymbol: kiteSym.replace("NFO:", "") };
+          }
+        }
+      }
+      
+      res.json({ quotes: results, count: Object.keys(results).length });
+    } catch (err: any) { res.json({ quotes: {}, error: err.message }); }
+  });
+
   // ── Download Broker Report (XLSX / PDF) ──
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
     try {
