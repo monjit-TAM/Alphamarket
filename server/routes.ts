@@ -1614,6 +1614,34 @@ export async function registerRoutes(
           );
         }
 
+        // BUY with SL above entry = wrong direction (futures/equity only)
+        if (slPx > 0 && entryPx > 0 && segment !== "Option" && segment !== "Index") {
+          const action = (body.buySell || body.buy_sell || "Buy").toLowerCase();
+          if (action === "buy" && slPx > entryPx) {
+            return res.status(400).send(
+              "Stop-loss (" + slPx + ") is above entry price (" + entryPx + ") for a BUY position. " +
+              "For BUY, stop-loss should be below entry price."
+            );
+          }
+          if (action === "sell" && slPx < entryPx) {
+            return res.status(400).send(
+              "Stop-loss (" + slPx + ") is below entry price (" + entryPx + ") for a SELL position. " +
+              "For SELL, stop-loss should be above entry price."
+            );
+          }
+        }
+
+        // SL absurdly far from entry (more than 80% away) — likely a typo
+        if (slPx > 0 && entryPx > 0) {
+          const slDistance = Math.abs(slPx - entryPx) / entryPx;
+          if (slDistance > 0.8) {
+            return res.status(400).send(
+              "Stop-loss (" + slPx + ") is " + Math.round(slDistance * 100) + "% away from entry (" + entryPx + "). " +
+              "This looks like a typo. Please verify and re-submit."
+            );
+          }
+        }
+
         // BUY: target should be > entry, SL < entry
         const isSell = (body.buySell || "Buy") === "Sell";
         if (!isSell && targetPx > 0 && slPx > 0) {
