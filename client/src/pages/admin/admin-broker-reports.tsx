@@ -65,6 +65,8 @@ export default function AdminBrokerReports() {
   const nc = newCallsData?.summary || {};
   const ncAdvisors = newCallsData?.advisors || [];
   const ncDaily = newCallsData?.daily || [];
+  const ncDailyAdvisor = newCallsData?.dailyAdvisor || [];
+  const ncBrokerAdvisor = newCallsData?.brokerAdvisor || [];
 
   const btnStyle = (active: boolean) => ({
     padding: "5px 10px", border: `1px solid ${active ? C.blue : C.border}`, borderRadius: 6, fontSize: 12,
