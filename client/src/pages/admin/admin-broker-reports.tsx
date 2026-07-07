@@ -65,6 +65,8 @@ export default function AdminBrokerReports() {
   const nc = newCallsData?.summary || {};
   const ncAdvisors = newCallsData?.advisors || [];
   const ncDaily = newCallsData?.daily || [];
+  const ncDailyAdvisor = newCallsData?.dailyAdvisor || [];
+  const ncBrokerAdvisor = newCallsData?.brokerAdvisor || [];
 
   const btnStyle = (active: boolean) => ({
     padding: "5px 10px", border: `1px solid ${active ? C.blue : C.border}`, borderRadius: 6, fontSize: 12,
@@ -270,6 +272,67 @@ export default function AdminBrokerReports() {
               </table>
               </div>
             </div>
+
+            {/* Broker Per-Advisor Breakdown */}
+            {ncBrokerAdvisor.length > 0 && (
+            <div style={{ background: C.panel, borderRadius: 8, border: `1px solid ${C.border}`, padding: 16, marginBottom: 16 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Broker-Advisor Breakdown</h2>
+              <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr style={{ background: C.bg }}>
+                  {["Broker", "Advisor", "Creates", "Closes", "SL Hit", "Target Hit", "OK", "Errors"].map(h => (
+                    <th key={h} style={{ padding: "8px 6px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {ncBrokerAdvisor.map((r: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: "6px", fontSize: 12, fontWeight: 600 }}>{r.broker_name}</td>
+                      <td style={{ padding: "6px", fontSize: 12 }}>{r.advisor}</td>
+                      <td style={{ padding: "6px", fontSize: 12, color: C.blue, fontWeight: 600 }}>{r.creates}</td>
+                      <td style={{ padding: "6px", fontSize: 12 }}>{r.closes}</td>
+                      <td style={{ padding: "6px", fontSize: 12, color: C.red }}>{r.sl_triggered || 0}</td>
+                      <td style={{ padding: "6px", fontSize: 12, color: C.green }}>{r.target_hit || 0}</td>
+                      <td style={{ padding: "6px", fontSize: 12, color: C.green }}>{r.ok}</td>
+                      <td style={{ padding: "6px", fontSize: 12, color: Number(r.errors) > 0 ? C.red : C.muted }}>{r.errors}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+            </div>
+            )}
+
+            {/* Daily Per-Advisor Calls */}
+            {ncDailyAdvisor.length > 0 && (
+            <div style={{ background: C.panel, borderRadius: 8, border: `1px solid ${C.border}`, padding: 16, marginBottom: 16 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>Daily Per-Advisor Calls</h2>
+              <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead><tr style={{ background: C.bg }}>
+                  {["Date", "Advisor", "Equity", "F&O", "Total", "Open", "Closed", "Profitable", "Mapped"].map(h => (
+                    <th key={h} style={{ padding: "8px 6px", fontSize: 11, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}` }}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {ncDailyAdvisor.map((r: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                      <td style={{ padding: "5px 6px", fontSize: 12 }}>{new Date(r.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12 }}>{r.advisor}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12 }}>{r.equity}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12 }}>{r.fno}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12, color: C.blue, fontWeight: 600 }}>{r.total}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12, color: C.amber }}>{r.open}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12 }}>{r.closed}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12, color: C.green }}>{r.profitable}</td>
+                      <td style={{ padding: "5px 6px", fontSize: 12, color: Number(r.mapped_to_broker) > 0 ? C.green : C.muted }}>{r.mapped_to_broker}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              </div>
+            </div>
+            )}
 
             {/* Daily New Calls */}
             <div>

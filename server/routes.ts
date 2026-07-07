@@ -8408,11 +8408,64 @@ export async function registerRoutes(
         ORDER BY date DESC
       `));
 
+      // Daily per-advisor breakdown
+      const dailyAdvisor = await db.execute(sql.raw(
+        "WITH eq AS (" +
+        "  SELECT c.created_at::date as dt, u.company_name as advisor," +
+        "    COUNT(*) as equity_calls," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') as eq_profit," +
+        "    COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as eq_mapped" +
+        "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE c.is_published = true" +
+        "    AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY c.created_at::date, u.company_name" +
+        "), fno AS (" +
+        "  SELECT p.created_at::date as dt, u.company_name as advisor," +
+        "    COUNT(*) as fno_positions," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as fno_profit," +
+        "    COUNT(*) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as fno_mapped" +
+        "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE p.is_published = true" +
+        "    AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY p.created_at::date, u.company_name" +
+        ") SELECT COALESCE(e.dt, f.dt) as date, COALESCE(e.advisor, f.advisor) as advisor," +
+        "  COALESCE(e.equity_calls, 0) as equity, COALESCE(f.fno_positions, 0) as fno," +
+        "  COALESCE(e.equity_calls, 0) + COALESCE(f.fno_positions, 0) as total," +
+        "  COALESCE(e.eq_open, 0) + COALESCE(f.fno_open, 0) as open," +
+        "  COALESCE(e.eq_closed, 0) + COALESCE(f.fno_closed, 0) as closed," +
+        "  COALESCE(e.eq_profit, 0) + COALESCE(f.fno_profit, 0) as profitable," +
+        "  COALESCE(e.eq_mapped, 0) + COALESCE(f.fno_mapped, 0) as mapped_to_broker" +
+        " FROM eq e FULL OUTER JOIN fno f ON e.dt = f.dt AND e.advisor = f.advisor" +
+        " ORDER BY date DESC, total DESC"
+      ));
+
+      const brokerCalls = await db.execute(sql.raw(
+        "SELECT bak.broker_name," +
+        "  payload->'data'->>'advisorName' as advisor," +
+        "  COUNT(*) FILTER (WHERE event IN ('CALL_CREATED','POSITION_CREATED')) as creates," +
+        "  COUNT(*) FILTER (WHERE event IN ('CALL_CLOSED','POSITION_CLOSED','STOPLOSS_TRIGGERED','TARGET_ACHIEVED')) as closes," +
+        "  COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as sl_triggered," +
+        "  COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as target_hit," +
+        "  COUNT(*) FILTER (WHERE status_code = 200) as ok," +
+        "  COUNT(*) FILTER (WHERE status_code != 200) as errors" +
+        " FROM broker_webhook_logs bwl" +
+        " JOIN broker_api_keys bak ON bak.id = bwl.api_key_id" +
+        " WHERE bwl.created_at >= '" + from + "T00:00:00Z' AND bwl.created_at <= '" + to + "T23:59:59Z'" +
+        " GROUP BY bak.broker_name, payload->'data'->>'advisorName'" +
+        " ORDER BY bak.broker_name, creates DESC"
+      ));
+
       res.json({
         period: { from, to },
         summary: summary.rows[0] || {},
         advisors: advisorNewCalls.rows,
         daily: daily.rows,
+        dailyAdvisor: dailyAdvisor.rows,
+        brokerAdvisor: brokerCalls.rows,
       });
     } catch (err: any) { res.status(500).send(err.message); }
   });
@@ -8606,6 +8659,106 @@ export async function registerRoutes(
           if (r.event === 'CALL_MODIFIED' || r.event === 'POSITION_MODIFIED') advisorMap[adv].modified++;
         });
         Object.values(advisorMap).forEach((a: any) => ws2.addRow(a));
+
+        // Sheet 3: Advisor Summary (equity + FnO combined)
+        const ws3 = workbook.addWorksheet('Advisor Summary');
+        const advSummData = await db.execute(sql.raw(
+          "WITH eq AS (" +
+          "  SELECT u.company_name as advisor, COUNT(*) as equity_calls," +
+          "    COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open," +
+          "    COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed," +
+          "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') as eq_profit," +
+          "    COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as eq_mapped" +
+          "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE c.is_published = true AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY u.company_name" +
+          "), fno AS (" +
+          "  SELECT u.company_name as advisor, COUNT(*) as fno_positions," +
+          "    COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open," +
+          "    COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed," +
+          "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as fno_profit," +
+          "    COUNT(*) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as fno_mapped" +
+          "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE p.is_published = true AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY u.company_name" +
+          ") SELECT COALESCE(e.advisor, f.advisor) as advisor," +
+          "  COALESCE(e.equity_calls, 0) as equity_calls, COALESCE(f.fno_positions, 0) as fno_positions," +
+          "  COALESCE(e.equity_calls, 0) + COALESCE(f.fno_positions, 0) as total," +
+          "  COALESCE(e.eq_open, 0) + COALESCE(f.fno_open, 0) as open_count," +
+          "  COALESCE(e.eq_closed, 0) + COALESCE(f.fno_closed, 0) as closed," +
+          "  COALESCE(e.eq_profit, 0) + COALESCE(f.fno_profit, 0) as profitable," +
+          "  COALESCE(e.eq_mapped, 0) + COALESCE(f.fno_mapped, 0) as mapped" +
+          " FROM eq e FULL OUTER JOIN fno f ON e.advisor = f.advisor ORDER BY total DESC"
+        ));
+        ws3.columns = [
+          { header: 'Advisor', key: 'advisor', width: 30 },
+          { header: 'Equity Calls', key: 'equity_calls', width: 12 },
+          { header: 'F&O Positions', key: 'fno_positions', width: 14 },
+          { header: 'Total', key: 'total', width: 10 },
+          { header: 'Open', key: 'open_count', width: 10 },
+          { header: 'Closed', key: 'closed', width: 10 },
+          { header: 'Profitable', key: 'profitable', width: 12 },
+          { header: 'Mapped', key: 'mapped', width: 12 },
+        ];
+        for (const row of advSummData.rows) { ws3.addRow(row); }
+        ws3.getRow(1).font = { bold: true };
+
+        // Sheet 4: Daily Per Advisor
+        const ws4 = workbook.addWorksheet('Daily Per Advisor');
+        const dailyAdvData = await db.execute(sql.raw(
+          "WITH eq AS (" +
+          "  SELECT c.created_at::date as dt, u.company_name as advisor, COUNT(*) as equity" +
+          "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE c.is_published = true AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY c.created_at::date, u.company_name" +
+          "), fno AS (" +
+          "  SELECT p.created_at::date as dt, u.company_name as advisor, COUNT(*) as fno" +
+          "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE p.is_published = true AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY p.created_at::date, u.company_name" +
+          ") SELECT COALESCE(e.dt, f.dt) as date, COALESCE(e.advisor, f.advisor) as advisor," +
+          "  COALESCE(e.equity, 0) as equity, COALESCE(f.fno, 0) as fno," +
+          "  COALESCE(e.equity, 0) + COALESCE(f.fno, 0) as total" +
+          " FROM eq e FULL OUTER JOIN fno f ON e.dt = f.dt AND e.advisor = f.advisor" +
+          " ORDER BY date DESC, total DESC"
+        ));
+        ws4.columns = [
+          { header: 'Date', key: 'date', width: 12 },
+          { header: 'Advisor', key: 'advisor', width: 30 },
+          { header: 'Equity', key: 'equity', width: 12 },
+          { header: 'F&O', key: 'fno', width: 12 },
+          { header: 'Total', key: 'total', width: 10 },
+        ];
+        for (const row of dailyAdvData.rows) { ws4.addRow(row); }
+        ws4.getRow(1).font = { bold: true };
+
+        // Sheet 5: Broker Breakdown
+        const ws5 = workbook.addWorksheet('Broker Breakdown');
+        const brokerAdvData = await db.execute(sql.raw(
+          "SELECT bak.broker_name, payload->'data'->>'advisorName' as advisor," +
+          "  COUNT(*) FILTER (WHERE event IN ('CALL_CREATED','POSITION_CREATED')) as creates," +
+          "  COUNT(*) FILTER (WHERE event IN ('CALL_CLOSED','POSITION_CLOSED','STOPLOSS_TRIGGERED','TARGET_ACHIEVED')) as closes," +
+          "  COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as sl_triggered," +
+          "  COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as target_hit," +
+          "  COUNT(*) FILTER (WHERE status_code = 200) as ok," +
+          "  COUNT(*) FILTER (WHERE status_code != 200) as errors" +
+          " FROM broker_webhook_logs bwl JOIN broker_api_keys bak ON bak.id = bwl.api_key_id" +
+          " WHERE bwl.created_at >= '" + from + "T00:00:00Z' AND bwl.created_at <= '" + to + "T23:59:59Z'" +
+          " GROUP BY bak.broker_name, payload->'data'->>'advisorName'" +
+          " ORDER BY bak.broker_name, creates DESC"
+        ));
+        ws5.columns = [
+          { header: 'Broker', key: 'broker_name', width: 20 },
+          { header: 'Advisor', key: 'advisor', width: 30 },
+          { header: 'Creates', key: 'creates', width: 10 },
+          { header: 'Closes', key: 'closes', width: 10 },
+          { header: 'SL Triggered', key: 'sl_triggered', width: 12 },
+          { header: 'Target Hit', key: 'target_hit', width: 12 },
+          { header: 'OK', key: 'ok', width: 10 },
+          { header: 'Errors', key: 'errors', width: 10 },
+        ];
+        for (const row of brokerAdvData.rows) { ws5.addRow(row); }
+        ws5.getRow(1).font = { bold: true };
 
         const buffer = await workbook.xlsx.writeBuffer();
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
