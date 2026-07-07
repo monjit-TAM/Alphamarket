@@ -8468,6 +8468,19 @@ async def commodity_options(symbol: str, expiry: str = None):
 # ── NFO Option Chain via Kite (added 20 May 2026) ────────────────────────
 @app.get("/api/nfo/option-chain/{symbol}", tags=["NFO"], summary="Get NFO option chain via Kite")
 async def nfo_option_chain(symbol: str, expiry: str = None):
+    # Validate and fix expiry format
+    if expiry:
+        import re as _re
+        # Fix zero-padded months: 2026-0-26 -> 2026-07-26 (can't guess, so try to fix)
+        parts = expiry.split("-")
+        if len(parts) == 3:
+            try:
+                y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                if m == 0:
+                    m = datetime.now().month  # Use current month as fallback
+                expiry = f"{y:04d}-{m:02d}-{d:02d}"
+            except (ValueError, IndexError):
+                raise HTTPException(400, f"Invalid expiry format: {expiry}. Expected YYYY-MM-DD")
     """Fetch live option chain for NSE F&O symbols using Kite instrument_master + LTP quotes.
     No auth required (bypass in alphamarket_auth.py). Used by AlphaMarket advisory dashboard."""
     import asyncpg
