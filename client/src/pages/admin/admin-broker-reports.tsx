@@ -45,7 +45,7 @@ export default function AdminBrokerReports() {
     setLoading(false);
   };
 
-  useEffect(() => { loadReport(); }, []);
+  useEffect(() => { loadReport(); }, [from, to, broker]);
 
   const setPreset = (days: number, label: string) => {
     const end = new Date();
