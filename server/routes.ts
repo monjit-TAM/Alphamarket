@@ -8408,11 +8408,71 @@ export async function registerRoutes(
         ORDER BY date DESC
       `));
 
+      // Daily per-advisor breakdown
+      const dailyAdvisor = await db.execute(sql.raw(\`
+        WITH eq AS (
+          SELECT c.created_at::date as dt, u.company_name as advisor,
+            COUNT(*) as equity_calls,
+            COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open,
+            COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed,
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') as eq_profit,
+            COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as eq_mapped
+          FROM calls c
+          JOIN strategies s ON s.id = c.strategy_id
+          JOIN users u ON u.id = s.advisor_id
+          WHERE c.is_published = true
+            AND c.created_at >= '\${from}T00:00:00Z' AND c.created_at <= '\${to}T23:59:59Z'
+          GROUP BY c.created_at::date, u.company_name
+        ),
+        fno AS (
+          SELECT p.created_at::date as dt, u.company_name as advisor,
+            COUNT(*) as fno_positions,
+            COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open,
+            COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed,
+            COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as fno_profit,
+            COUNT(*) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as fno_mapped
+          FROM positions p
+          JOIN strategies s ON s.id = p.strategy_id
+          JOIN users u ON u.id = s.advisor_id
+          WHERE p.is_published = true
+            AND p.created_at >= '\${from}T00:00:00Z' AND p.created_at <= '\${to}T23:59:59Z'
+          GROUP BY p.created_at::date, u.company_name
+        )
+        SELECT COALESCE(e.dt, f.dt) as date, COALESCE(e.advisor, f.advisor) as advisor,
+          COALESCE(e.equity_calls, 0) as equity,
+          COALESCE(f.fno_positions, 0) as fno,
+          COALESCE(e.equity_calls, 0) + COALESCE(f.fno_positions, 0) as total,
+          COALESCE(e.eq_open, 0) + COALESCE(f.fno_open, 0) as open,
+          COALESCE(e.eq_closed, 0) + COALESCE(f.fno_closed, 0) as closed,
+          COALESCE(e.eq_profit, 0) + COALESCE(f.fno_profit, 0) as profitable,
+          COALESCE(e.eq_mapped, 0) + COALESCE(f.fno_mapped, 0) as mapped_to_broker
+        FROM eq e
+        FULL OUTER JOIN fno f ON e.dt = f.dt AND e.advisor = f.advisor
+        ORDER BY date DESC, total DESC
+      \`));
+
+      // Per-broker call counts
+      const brokerCalls = await db.execute(sql.raw(\`
+        SELECT bak.broker_name,
+          payload->'data'->>'advisorName' as advisor,
+          COUNT(*) FILTER (WHERE event IN ('CALL_CREATED','POSITION_CREATED')) as creates,
+          COUNT(*) FILTER (WHERE event IN ('CALL_CLOSED','POSITION_CLOSED','STOPLOSS_TRIGGERED','TARGET_ACHIEVED')) as closes,
+          COUNT(*) FILTER (WHERE status_code = 200) as ok,
+          COUNT(*) FILTER (WHERE status_code != 200) as errors
+        FROM broker_webhook_logs bwl
+        JOIN broker_api_keys bak ON bak.id = bwl.api_key_id
+        WHERE bwl.created_at >= '\${from}T00:00:00Z' AND bwl.created_at <= '\${to}T23:59:59Z'
+        GROUP BY bak.broker_name, payload->'data'->>'advisorName'
+        ORDER BY bak.broker_name, creates DESC
+      \`));
+
       res.json({
         period: { from, to },
         summary: summary.rows[0] || {},
         advisors: advisorNewCalls.rows,
         daily: daily.rows,
+        dailyAdvisor: dailyAdvisor.rows,
+        brokerAdvisor: brokerCalls.rows,
       });
     } catch (err: any) { res.status(500).send(err.message); }
   });
