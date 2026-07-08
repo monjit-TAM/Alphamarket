@@ -442,9 +442,11 @@ def _sl_refresh_watchlist():
         
         # ── Check for expired positions and close them ──
         try:
+            import psycopg2 as _exp_pg
             from datetime import date as _sl_date
-            today = _sl_date.today()
-            cur.execute("""
+            _exp_conn = _exp_pg.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+            _exp_cur = _exp_conn.cursor()
+            _exp_cur.execute("""
                 SELECT p.id, p.symbol, p.strike_price, p.call_put, p.expiry::text,
                        p.buy_sell, p.entry_price, p.webhook_rec_id, p.segment
                 FROM positions p
@@ -452,7 +454,8 @@ def _sl_refresh_watchlist():
                   AND p.expiry IS NOT NULL AND p.expiry != ''
                   AND p.expiry::date < CURRENT_DATE
             """)
-            expired = cur.fetchall()
+            expired = _exp_cur.fetchall()
+            _exp_conn.close()
             for row in expired:
                 pos_id = row[0]
                 sym = row[1]
