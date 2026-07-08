@@ -214,6 +214,378 @@ app = FastAPI(
         {"name": "Basket Orders", "description": "Multi-leg F&O basket orders with broker webhook integration"},
     ]
 )
+
+
+# ═══ TrueData WebSocket Market Data Integration ═══
+import threading as _td_threading
+
+_TD_USERNAME = "tdwsp531"
+_TD_PASSWORD = "monjit@531"
+_TD_PORT = 8084
+_TD_URL = "push.truedata.in"
+
+_td_prices = {}
+_td_connected = False
+_td_obj = None
+_td_lock = _td_threading.Lock()
+_td_subscribed_symbols = set()
+
+def _start_truedata_feed(symbols_list=None):
+    global _td_obj, _td_connected, _td_subscribed_symbols
+    try:
+        from truedata import TD_live
+        import logging as _td_logging
+        _td_obj = TD_live(
+            _TD_USERNAME, _TD_PASSWORD,
+            live_port=_TD_PORT,
+            url=_TD_URL,
+            log_level=_td_logging.WARNING
+        )
+        if not symbols_list:
+            symbols_list = ["NIFTY 50", "NIFTY BANK", "SBIN", "RELIANCE", "HDFCBANK", "INFY", "TCS", "ITC", "ICICIBANK", "KOTAKBANK"]
+        req_ids = _td_obj.start_live_data(symbols_list)
+        _td_subscribed_symbols = set(symbols_list)
+        import time as _td_time
+        _td_time.sleep(2)
+        # Populate from touchline
+        for sym in symbols_list:
+            try:
+                td = _td_obj.live_data.get(sym)
+                if td and hasattr(td, 'ltp') and td.ltp:
+                    with _td_lock:
+                        _td_prices[sym] = {
+                            'ltp': float(td.ltp),
+                            'high': float(getattr(td, 'day_high', 0) or 0),
+                            'low': float(getattr(td, 'day_low', 0) or 0),
+                            'open': float(getattr(td, 'day_open', 0) or 0),
+                            'close': float(getattr(td, 'prev_day_close', 0) or 0),
+                            'volume': int(getattr(td, 'ttq', 0) or 0),
+                            'oi': int(getattr(td, 'oi', 0) or 0),
+                            'timestamp': _td_time.time(),
+                            'source': 'truedata'
+                        }
+            except Exception:
+                pass
+        @_td_obj.trade_callback
+        def _on_td_trade(tick_data):
+            try:
+                import time as _t
+                sym = tick_data.symbol
+                ltp = float(tick_data.ltp)
+                with _td_lock:
+                    _td_prices[sym] = {
+                        'ltp': ltp,
+                        'high': float(getattr(tick_data, 'day_high', 0) or 0),
+                        'low': float(getattr(tick_data, 'day_low', 0) or 0),
+                        'open': float(getattr(tick_data, 'day_open', 0) or 0),
+                        'close': float(getattr(tick_data, 'prev_day_close', 0) or 0),
+                        'volume': int(getattr(tick_data, 'ttq', 0) or 0),
+                        'oi': int(getattr(tick_data, 'oi', 0) or 0),
+                        'timestamp': _t.time(),
+                        'source': 'truedata'
+                    }
+                # ── Tick-by-tick SL/TP check ──
+                _check_sl_tp_on_tick(sym, ltp)
+                # Also check base symbol (e.g. CRUDEOIL-I -> CRUDEOIL, CRUDEOILM)
+                if sym.endswith('-I'):
+                    _check_sl_tp_on_tick(sym[:-2], ltp)
+            except Exception:
+                pass
+        _td_connected = True
+        print(f"[TrueData] Connected — {len(symbols_list)} symbols subscribed, {len(_td_prices)} prices loaded")
+    except Exception as e:
+        _td_connected = False
+        print(f"[TrueData] Connection failed: {e}")
+
+def _td_subscribe_new(symbols):
+    global _td_obj, _td_subscribed_symbols
+    if not _td_obj or not _td_connected:
+        return False
+    new_syms = [s for s in symbols if s not in _td_subscribed_symbols]
+    if not new_syms:
+        return True
+    if len(_td_subscribed_symbols) + len(new_syms) > 590:
+        return False
+    try:
+        import time as _sub_time
+        _td_obj.start_live_data(new_syms)
+        _td_subscribed_symbols.update(new_syms)
+        _sub_time.sleep(1)  # Wait for touchline
+        # Read touchline/live_data for newly subscribed symbols
+        populated = 0
+        for sym in new_syms:
+            try:
+                td = _td_obj.live_data.get(sym)
+                if td and hasattr(td, 'ltp') and td.ltp:
+                    with _td_lock:
+                        _td_prices[sym] = {
+                            'ltp': float(td.ltp),
+                            'high': float(getattr(td, 'day_high', 0) or 0),
+                            'low': float(getattr(td, 'day_low', 0) or 0),
+                            'open': float(getattr(td, 'day_open', 0) or 0),
+                            'close': float(getattr(td, 'prev_day_close', 0) or 0),
+                            'volume': int(getattr(td, 'ttq', 0) or 0),
+                            'oi': int(getattr(td, 'oi', 0) or 0),
+                            'timestamp': _sub_time.time(),
+                            'source': 'truedata'
+                        }
+                    populated += 1
+            except Exception:
+                pass
+        print(f"[TrueData] Added {len(new_syms)} symbols, {populated} prices loaded (total: {len(_td_subscribed_symbols)})")
+        return True
+    except Exception as e:
+        print(f"[TrueData] Subscribe error: {e}")
+        return False
+
+def _td_get_quotes(symbols):
+    result = {}
+    with _td_lock:
+        for sym in symbols:
+            data = _td_prices.get(sym) or _td_prices.get(sym.upper())
+            if data and data.get('ltp', 0) > 0:
+                result[sym] = data
+    return result
+
+
+# ═══ Tick-by-Tick SL/TP Monitoring Engine ═══
+import asyncio as _sl_asyncio
+
+_sl_watchlist = {}  # symbol -> [{id, source, action, entry, sl, tp, strategy_id, segment, ...}]
+_sl_watchlist_lock = _td_threading.Lock()
+_sl_triggered_ids = set()  # Prevent duplicate triggers
+_sl_last_refresh = 0
+_SL_REFRESH_INTERVAL = 5  # Refresh watchlist from DB every 5 seconds
+_SL_NODE_URL = "http://localhost:5001"
+
+def _sl_refresh_watchlist():
+    """Load active calls/positions with SL/TP into memory watchlist."""
+    global _sl_last_refresh
+    import time as _sl_time
+    now = _sl_time.time()
+    if now - _sl_last_refresh < _SL_REFRESH_INTERVAL:
+        return
+    _sl_last_refresh = now
+    try:
+        import psycopg2
+        conn = psycopg2.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+        cur = conn.cursor()
+        new_watchlist = {}
+        
+        # Equity calls
+        cur.execute("""
+            SELECT c.id, c.stock_name, c.action, c.buy_range_start, c.stop_loss, c.target_price, c.strategy_id, c.webhook_rec_id
+            FROM calls c
+            WHERE c.status = 'Active' AND c.is_published = true
+              AND (c.stop_loss > 0 OR c.target_price > 0)
+        """)
+        for row in cur.fetchall():
+            sym = row[1]
+            if not sym:
+                continue
+            entry = {
+                'id': row[0], 'source': 'calls', 'symbol': sym,
+                'action': row[2] or 'Buy',
+                'entry': float(row[3] or 0), 'sl': float(row[4] or 0), 'tp': float(row[5] or 0),
+                'strategy_id': row[6], 'rec_id': row[7],
+                'segment': 'equity'
+            }
+            if sym not in new_watchlist:
+                new_watchlist[sym] = []
+            new_watchlist[sym].append(entry)
+        
+        # FnO positions (skip options — they need option chain pricing)
+        cur.execute("""
+            SELECT p.id, p.symbol, COALESCE(p.buy_sell, 'Buy'), p.entry_price, p.stop_loss, p.target, p.strategy_id, p.webhook_rec_id,
+                   p.segment, p.strike_price, p.call_put, p.expiry
+            FROM positions p
+            WHERE p.status = 'Active' AND p.is_published = true
+              AND (p.stop_loss::numeric > 0 OR p.target::numeric > 0)
+        """)
+        for row in cur.fetchall():
+            sym = row[1]
+            segment = row[8] or ''
+            strike = row[9]
+            has_strike = strike and str(strike) != '' and str(strike) != '0' and float(strike) > 0
+            # Options need option chain pricing (different symbol format) — handle via TrueData option chain later
+            # For now: futures + equity positions use stock symbol directly
+            # Skip options/index — these need option premium pricing, not stock/index LTP
+            # Also catch mis-segmented options (segment=Equity but has strike+callPut)
+            call_put = row[10] or ''
+            is_option_by_data = has_strike and bool(call_put)
+            if segment in ('Option', 'Index') and has_strike:
+                continue
+            if is_option_by_data and segment not in ('Future', 'CommodityFuture', 'Commodity'):
+                continue  # Has strike+callPut = option, regardless of segment label
+            if not sym:
+                continue
+            td_sym = sym
+            if segment in ('Future', 'CommodityFuture', 'Commodity'):
+                td_sym = sym + '-I'  # TrueData futures format
+            entry = {
+                'id': row[0], 'source': 'positions', 'symbol': sym, 'td_symbol': td_sym,
+                'action': row[2] or 'Buy',
+                'entry': float(row[3] or 0), 'sl': float(row[4] or 0), 'tp': float(row[5] or 0),
+                'strategy_id': row[6], 'rec_id': row[7],
+                'segment': segment
+            }
+            lookup_sym = td_sym if td_sym != sym else sym
+            if lookup_sym not in new_watchlist:
+                new_watchlist[lookup_sym] = []
+            new_watchlist[lookup_sym].append(entry)
+        
+        conn.close()
+        
+        with _sl_watchlist_lock:
+            _sl_watchlist.clear()
+            _sl_watchlist.update(new_watchlist)
+        
+        # ── Check for expired positions and close them ──
+        try:
+            import psycopg2 as _exp_pg
+            from datetime import date as _sl_date
+            _exp_conn = _exp_pg.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+            _exp_cur = _exp_conn.cursor()
+            _exp_cur.execute("""
+                SELECT p.id, p.symbol, p.strike_price, p.call_put, p.expiry::text,
+                       p.buy_sell, p.entry_price, p.webhook_rec_id, p.segment
+                FROM positions p
+                WHERE p.status = 'Active' AND p.is_published = true
+                  AND p.expiry IS NOT NULL AND p.expiry != ''
+                  AND p.expiry::date < CURRENT_DATE
+            """)
+            expired = _exp_cur.fetchall()
+            _exp_conn.close()
+            for row in expired:
+                pos_id = row[0]
+                sym = row[1]
+                rec_id = row[7]
+                if pos_id in _sl_triggered_ids:
+                    continue
+                _sl_triggered_ids.add(pos_id)
+                print(f"[SL Engine] EXPIRED: {sym} {row[2]} {row[3]} expiry={row[4]} (ID: {pos_id})")
+                entry = {
+                    'id': pos_id, 'source': 'positions', 'symbol': sym,
+                    'action': row[5] or 'Buy', 'entry': float(row[6] or 0),
+                    'sl': 0, 'tp': 0, 'strategy_id': None, 'rec_id': rec_id,
+                    'segment': row[8] or ''
+                }
+                # Close at 0 (expired worthless for buyers, full profit for sellers)
+                _td_threading.Thread(target=_fire_sl_close, args=(entry, 0, 'EXPIRED'), daemon=True).start()
+        except Exception as exp_err:
+            print(f"[SL Engine] Expiry check error: {exp_err}")
+
+        # Auto-subscribe any new symbols to TrueData
+        # Also add -I suffix for commodity symbols
+        COMMODITY_SYMBOLS = {'CRUDEOIL','CRUDEOILM','GOLD','GOLDM','SILVER','SILVERM','NATURALGAS','COPPER','ZINC','ALUMINIUM','NICKEL','LEAD','COTTONCANDY','MENTHAOIL'}
+        all_syms = list(new_watchlist.keys())
+        extra_commodity = [s + '-I' for s in all_syms if s.upper() in COMMODITY_SYMBOLS and (s + '-I') not in _td_subscribed_symbols]
+        to_subscribe = [s for s in all_syms if s not in _td_subscribed_symbols] + extra_commodity
+        if to_subscribe:
+            _td_subscribe_new(to_subscribe)
+        
+    except Exception as e:
+        print(f"[SL Engine] Watchlist refresh error: {e}")
+
+def _check_sl_tp_on_tick(symbol, ltp):
+    """Called on every TrueData tick — checks SL/TP for all calls on this symbol."""
+    # Refresh watchlist if stale
+    _sl_refresh_watchlist()
+    
+    with _sl_watchlist_lock:
+        entries = _sl_watchlist.get(symbol, [])
+    
+    if not entries:
+        return
+    
+    for entry in entries:
+        call_id = entry['id']
+        if call_id in _sl_triggered_ids:
+            continue
+        
+        sl = entry['sl']
+        tp = entry['tp']
+        action = entry['action']
+        is_sell = action == 'Sell'
+        triggered = None
+        
+        if is_sell:
+            if sl > 0 and ltp >= sl:
+                triggered = 'SL'
+            elif tp > 0 and ltp <= tp:
+                triggered = 'TARGET'
+        else:
+            if sl > 0 and ltp <= sl:
+                triggered = 'SL'
+            elif tp > 0 and ltp >= tp:
+                triggered = 'TARGET'
+        
+        if triggered:
+            _sl_triggered_ids.add(call_id)
+            print(f"[SL Engine] {triggered} TRIGGERED: {entry['symbol']} LTP={ltp} {'SL' if triggered == 'SL' else 'TP'}={sl if triggered == 'SL' else tp} (ID: {call_id}, source: {entry['source']})")
+            # Fire close via Node in a background thread
+            _td_threading.Thread(target=_fire_sl_close, args=(entry, ltp, triggered), daemon=True).start()
+
+def _fire_sl_close(entry, ltp, trigger_type):
+    """Call Node.js close endpoint to properly close the call and fire webhooks."""
+    import requests as _sl_requests
+    try:
+        call_id = entry['id']
+        source = entry['source']
+        
+        if source == 'calls':
+            url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
+            body = {"source": "calls", "exitPrice": ltp}
+        else:
+            url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
+            body = {"source": "positions", "exitPrice": ltp}
+        
+        # Get admin session cookie
+        import psycopg2, hashlib, hmac, base64, urllib.parse
+        conn = psycopg2.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+        cur = conn.cursor()
+        cur.execute("SELECT sid FROM sessions WHERE (sess::jsonb->>'userId') IN (SELECT id FROM users WHERE role='admin') AND expire > NOW() ORDER BY expire DESC LIMIT 1")
+        row = cur.fetchone()
+        conn.close()
+        
+        if not row:
+            print(f"[SL Engine] ERROR: No admin session for closing {entry['symbol']}")
+            _sl_triggered_ids.discard(call_id)  # Allow retry
+            return
+        
+        sid = row[0]
+        secret = "j7LzUgscsxhDpM3SuS/iuz3SkjQcR5XIjxfMwEQxybHw27zRVj1khGafjxC35Nltgqz/j7ZM10WacTstOOw4qQ=="
+        sig = base64.b64encode(hmac.new(secret.encode(), sid.encode(), hashlib.sha256).digest()).decode().rstrip('=')
+        cookie_val = urllib.parse.quote(f"s:{sid}.{sig}", safe='')
+        
+        resp = _sl_requests.post(url, json=body, headers={
+            "Content-Type": "application/json",
+            "Cookie": f"connect.sid={cookie_val}"
+        }, timeout=10)
+        
+        event_labels = {"SL": "STOPLOSS_TRIGGERED", "TARGET": "TARGET_ACHIEVED", "EXPIRED": "POSITION_EXPIRED"}
+        event_label = event_labels.get(trigger_type, trigger_type)
+        print(f"[SL Engine] {event_label}: {entry['symbol']} closed at {ltp} via Node (HTTP {resp.status_code})")
+        
+    except Exception as e:
+        print(f"[SL Engine] Close error for {entry['symbol']}: {e}")
+        _sl_triggered_ids.discard(call_id)  # Allow retry
+
+def _sl_watchlist_refresh_loop():
+    """Background thread: refresh watchlist every 5 seconds."""
+    import time as _sl_time
+    _sl_time.sleep(5)  # Wait for DB to be ready
+    while True:
+        try:
+            _sl_refresh_watchlist()
+        except Exception:
+            pass
+        _sl_time.sleep(_SL_REFRESH_INTERVAL)
+
+# ═══ End SL/TP Engine ═══
+
+print("[TrueData] Module loaded")
+# ═══ End TrueData Module ═══
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # Force OpenAPI 3.0.3 for Swagger UI compatibility
@@ -261,6 +633,17 @@ async def startup():
         print(f"AlphaLab v2.0 startup complete | Universe: {len(NIFTY_UNIVERSE)} stocks | Sectors: {len(set(SECTOR_MAP.values()))}")
         # Start background pre-computation task
         asyncio.create_task(_precompute_loop())
+        # Start TrueData WebSocket feed in background thread
+        try:
+            _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
+            _td_thread.start()
+            print("[TrueData] Background thread started")
+            # Start SL/TP watchlist refresh loop
+            _sl_thread = _td_threading.Thread(target=_sl_watchlist_refresh_loop, daemon=True)
+            _sl_thread.start()
+            print("[SL Engine] Watchlist refresh thread started (every 5s)")
+        except Exception as td_err:
+            print(f"[TrueData] Startup error (non-fatal): {td_err}")
     except Exception as e:
         print(f"Startup error: {e}")
 
@@ -269,25 +652,68 @@ async def startup():
 
 @app.get("/api/shared/kite-quotes", include_in_schema=False)
 async def shared_kite_quotes(request: Request, symbols: str = ""):
-    """Internal endpoint: Data Service calls this for Kite live quotes."""
+    """Internal endpoint: Kite first, TrueData fallback, then Groww (via Node)."""
     secret = request.headers.get("x-shared-secret", "")
     if secret != "alphamarket-shared-2026":
         raise HTTPException(403, "Unauthorized")
     if not symbols:
         return {"quotes": {}, "source": "kite", "error": "No symbols"}
+    raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    quotes = {}
+    missing_syms = list(raw_syms)
+    source_stats = {"kite": 0, "truedata": 0}
+    # ── Source 1: Kite ──
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    if _is_kite_connected():
+        try:
+            sym_list = [f"NSE:{s}" for s in raw_syms if " " not in s and "&" not in s]  # Skip symbols with special chars (handled by TrueData fallback)
+            data = await _fetch_kite_quotes(sym_list)
+            for key, val in data.items():
+                sym = key.replace("NSE:", "")
+                ltp = val.get("last_price", 0)
+                if ltp and ltp > 0:
+                    quotes[sym] = {"price": ltp, "source": "kite"}
+                    source_stats["kite"] += 1
+                    if sym in missing_syms:
+                        missing_syms.remove(sym)
+        except Exception as e:
+            pass  # Fall through to TrueData
+    # ── Source 2: TrueData (in-memory cache — instant, no network call) ──
+    if missing_syms and _td_connected:
+        td_quotes = _td_get_quotes(missing_syms)
+        for sym, data in td_quotes.items():
+            quotes[sym] = {"price": data["ltp"], "source": "truedata"}
+            source_stats["truedata"] += 1
+            if sym in missing_syms:
+                missing_syms.remove(sym)
+        # Auto-subscribe any symbols not yet in TrueData
+        if missing_syms:
+            _td_subscribe_new(missing_syms)
+    return {"quotes": quotes, "source": "kite+truedata", "connected": True, "count": len(quotes), "sources": source_stats, "missing": missing_syms if missing_syms else None}
+
+@app.get("/api/shared/kite-quotes-raw", include_in_schema=False)
+async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
+    """Internal: fetch Kite quotes with raw symbol format (supports NFO:TRADINGSYMBOL)."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    if not symbols:
+        return {"quotes": {}}
+    raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
     from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
     if not _is_kite_connected():
-        return {"quotes": {}, "source": "kite", "connected": False}
-    sym_list = [f"NSE:{s}" for s in symbols.split(",") if s.strip()]
+        return {"quotes": {}, "connected": False}
     try:
-        data = await _fetch_kite_quotes(sym_list)
+        data = await _fetch_kite_quotes(raw_syms, mode="full")
         quotes = {}
         for key, val in data.items():
-            sym = key.replace("NSE:", "")
-            quotes[sym] = {"price": val.get("last_price", 0), "source": "kite"}
-        return {"quotes": quotes, "source": "kite", "connected": True, "count": len(quotes)}
+            ltp = val.get("last_price", 0)
+            quotes[key] = {"price": ltp, "ltp": ltp, "ohlc": val.get("ohlc"),
+                           "volume": val.get("volume") or val.get("volume_traded") or 0,
+                           "source": "kite"}
+        return {"quotes": quotes, "count": len(quotes)}
     except Exception as e:
-        return {"quotes": {}, "source": "kite", "error": str(e)}
+        return {"quotes": {}, "error": str(e)}
 
 @app.get("/api/shared/kite-ltp/{symbol}", include_in_schema=False)
 async def shared_kite_ltp(request: Request, symbol: str):
@@ -307,6 +733,56 @@ async def shared_kite_ltp(request: Request, symbol: str):
     except Exception as e:
         return {"symbol": symbol.upper(), "price": 0, "source": "kite", "error": str(e)}
 
+
+@app.get("/api/shared/truedata-quotes", include_in_schema=False)
+async def shared_truedata_quotes(request: Request, symbols: str = ""):
+    """Direct TrueData quotes endpoint."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    if not symbols:
+        return {"quotes": {}, "source": "truedata"}
+    raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
+    # Auto-subscribe if needed
+    if _td_connected:
+        _td_subscribe_new(raw_syms)
+    quotes = _td_get_quotes(raw_syms)
+    return {"quotes": quotes, "source": "truedata", "connected": _td_connected, "count": len(quotes)}
+
+@app.get("/api/shared/truedata-status", include_in_schema=False)
+async def shared_truedata_status(request: Request):
+    """TrueData connection status."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    with _td_lock:
+        return {
+            "connected": _td_connected,
+            "subscribed_symbols": len(_td_subscribed_symbols),
+            "cached_prices": len(_td_prices),
+            "sample_symbols": list(_td_prices.keys())[:30],
+            "sample_prices": {k: v.get("ltp") for k, v in list(_td_prices.items())[:10]}
+        }
+
+@app.get("/api/shared/sl-engine-status", include_in_schema=False)
+async def sl_engine_status(request: Request):
+    """SL/TP tick-by-tick engine status."""
+    secret = request.headers.get("x-shared-secret", "")
+    if secret != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    with _sl_watchlist_lock:
+        total_entries = sum(len(v) for v in _sl_watchlist.values())
+        symbols = list(_sl_watchlist.keys())
+    return {
+        "watchlist_symbols": len(symbols),
+        "watchlist_entries": total_entries,
+        "triggered_count": len(_sl_triggered_ids),
+        "triggered_ids": list(_sl_triggered_ids)[:20],
+        "symbols": symbols[:50],
+        "refresh_interval": _SL_REFRESH_INTERVAL,
+        "td_connected": _td_connected,
+        "td_cached_prices": len(_td_prices)
+    }
 
 @app.get("/api/health", tags=["System"])
 async def health_check():
@@ -386,9 +862,9 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
         "pivot_breakout": "recent_breakout", "vwap_reclaim": "pullback_buy",
     }
     strategy = STRATEGY_ALIASES.get(strategy, strategy)
-    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
+    cache_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
     # Also check normalized key (frontend uses 0:999999 as defaults)
-    norm_key = f"screener:{strategy}:0:999999::::"
+    norm_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strategy}:0:999999::::"
     if redis_client:
         cached = await redis_client.get(cache_key) or await redis_client.get(norm_key)
         if cached:
@@ -657,7 +1133,7 @@ async def _precompute_loop():
                 # Step 3: Warm all screener strategies
                 for strat in ALL_STRATEGIES:
                     try:
-                        cache_key = f"screener:{strat}:50:10000::::"
+                        cache_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strat}:50:10000::::"
                         cached = await redis_client.get(cache_key) if redis_client else None
                         if cached:
                             continue
@@ -4350,7 +4826,7 @@ async def screener(strategy: str = "momentum", min_price: float = 50, max_price:
 async def _screener_legacy_unused(strategy: str = "momentum", min_price: float = 50, max_price: float = 10000, sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = "", user=Depends(get_current_user)):
     from datetime import date, timedelta
 
-    cache_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
+    cache_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
     if redis_client:
         cached = await redis_client.get(cache_key)
         if cached:
@@ -8030,6 +8506,19 @@ async def commodity_options(symbol: str, expiry: str = None):
 # ── NFO Option Chain via Kite (added 20 May 2026) ────────────────────────
 @app.get("/api/nfo/option-chain/{symbol}", tags=["NFO"], summary="Get NFO option chain via Kite")
 async def nfo_option_chain(symbol: str, expiry: str = None):
+    # Validate and fix expiry format
+    if expiry:
+        import re as _re
+        # Fix zero-padded months: 2026-0-26 -> 2026-07-26 (can't guess, so try to fix)
+        parts = expiry.split("-")
+        if len(parts) == 3:
+            try:
+                y, m, d = int(parts[0]), int(parts[1]), int(parts[2])
+                if m == 0:
+                    m = datetime.now().month  # Use current month as fallback
+                expiry = f"{y:04d}-{m:02d}-{d:02d}"
+            except (ValueError, IndexError):
+                raise HTTPException(400, f"Invalid expiry format: {expiry}. Expected YYYY-MM-DD")
     """Fetch live option chain for NSE F&O symbols using Kite instrument_master + LTP quotes.
     No auth required (bypass in alphamarket_auth.py). Used by AlphaMarket advisory dashboard."""
     import asyncpg
@@ -8507,14 +8996,14 @@ async def build_model_portfolio(portfolio_id: int, user_id: int):
         # Step 1: Get candidate stocks from screener cache
         screener_stocks = []
         if screener_strat and redis_client:
-            all_keys = await redis_client.keys(f"screener:{screener_strat}:*")
+            all_keys = await redis_client.keys(f"screener:{__import__('datetime').date.today().isoformat()}:{screener_strat}:*")
             if all_keys:
                 cached = await redis_client.get(all_keys[0])
                 if cached:
                     data = json.loads(cached)
                     screener_stocks = data.get("stocks", data) if isinstance(data, dict) else data
             if not screener_stocks:
-                cached = await redis_client.get(f"screener:{screener_strat}")
+                cached = await redis_client.get(f"screener:{__import__('datetime').date.today().isoformat()}:{screener_strat}")
                 if cached:
                     data = json.loads(cached)
                     screener_stocks = data.get("stocks", data) if isinstance(data, dict) else data
@@ -9178,7 +9667,7 @@ async def _check_all_alerts():
                 elif atype == "strategy_signal" and alert["symbol"]:
                     strategy = conditions.get("strategy", "momentum")
                     # Check if the stock currently appears in the screener for this strategy
-                    cache_key = f"screener:{strategy}:50:10000:"
+                    cache_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strategy}:50:10000:"
                     cached = await redis_client.get(cache_key) if redis_client else None
                     if cached:
                         results = json.loads(cached)
@@ -9463,7 +9952,7 @@ async def morning_brief(user=Depends(get_current_user)):
     top_picks = {"momentum": [], "oversold": [], "breakout": []}
     for strat in ["momentum", "oversold", "breakout"]:
         try:
-            ck = f"screener:{strat}:50:10000:"
+            ck = f"screener:{__import__('datetime').date.today().isoformat()}:{strat}:50:10000:"
             if redis_client:
                 cv = await redis_client.get(ck)
                 if cv:
@@ -10373,7 +10862,7 @@ async def bridge_publish_call(req: dict, user=Depends(get_current_user)):
             # ── Screener signals data from cache ──
             if screener_strat and redis_client:
                 try:
-                    cache_key = f"screener:{screener_strat}:50:10000::::"
+                    cache_key = f"screener:{__import__('datetime').date.today().isoformat()}:{screener_strat}:50:10000::::"
                     scr_cached = await redis_client.get(cache_key)
                     if scr_cached:
                         scr_data = json.loads(scr_cached)
