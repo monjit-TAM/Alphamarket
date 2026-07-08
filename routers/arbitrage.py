@@ -238,7 +238,7 @@ async def kite_status():
 # CASH-FUTURES SPREAD SCANNER
 # ══════════════════════════════════════════════════════════════════
 
-async def _fetch_kite_quotes(symbols: list, _retry=False) -> dict:
+async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> dict:
     """Fetch LTP from Kite API for multiple instruments.
     On 403/401: invalidates in-memory token, reloads from DB, retries once.
     This is the PERMANENT fix for multi-worker stale token issues.
@@ -250,8 +250,11 @@ async def _fetch_kite_quotes(symbols: list, _retry=False) -> dict:
     if not headers:
         raise HTTPException(401, "Kite not connected. Please login via Settings.")
 
-    params = "&".join([f"i={s}" for s in symbols])
-    url = f"https://api.kite.trade/quote/ltp?{params}"
+    import urllib.parse as _urlparse
+    # URL-encode symbols to handle spaces (MANKIND PHARMA, NIFTY 50) and & (ARE&M)
+    params = "&".join([f"i={_urlparse.quote(s)}" for s in symbols])
+    _endpoint = "quote/ltp" if mode == "ltp" else "quote"
+    url = f"https://api.kite.trade/{_endpoint}?{params}"
 
     req = urllib.request.Request(url, headers=headers)
     try:
@@ -273,7 +276,7 @@ async def _fetch_kite_quotes(symbols: list, _retry=False) -> dict:
             _load_kite_token()  # Reload from DB (another worker may have refreshed it)
             if _kite_store["access_token"]:
                 logger.info("Kite token reloaded from DB, retrying...")
-                return await _fetch_kite_quotes(symbols, _retry=True)
+                return await _fetch_kite_quotes(symbols, _retry=True, mode=mode)
             else:
                 logger.error("Kite token reload failed — needs fresh login")
                 return {}
