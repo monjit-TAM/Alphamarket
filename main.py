@@ -8696,26 +8696,44 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
     days = period_days.get(period, 365)
     start = (date.today() - timedelta(days=days + 50)).isoformat()
     end = date.today().isoformat()
-    _ds_rows = await ds_ohlcv(symbol, period)
+    # Map period to DS-compatible: use "1y" minimum for indicator computation
+    ds_period = period if period in ("1y","2y","3y","5y","max") else "1y"
+    _ds_rows = await ds_ohlcv(symbol, ds_period)
     if _ds_rows:
         df = pd.DataFrame(_ds_rows)
-        df.columns = [c.lower() for c in df.columns]
+        df.columns = [col.lower() for col in df.columns]
         for dc in ["date","datetime","timestamp"]:
             if dc in df.columns:
                 df[dc] = pd.to_datetime(df[dc])
                 df = df.set_index(dc)
                 break
         df.index.name = "date"
-        keep = [c for c in ["open","high","low","close","volume"] if c in df.columns]
-        df = df[keep].astype({c: float for c in keep}).dropna().sort_index()
+        keep = [col for col in ["open","high","low","close","volume"] if col in df.columns]
+        df = df[keep].astype({col: float for col in keep}).dropna().sort_index()
+
+        # Append today's forming candle from Kite quote if missing
+        from datetime import date as _dt_date
+        today_str = _dt_date.today().isoformat()
+        last_date = df.index[-1].strftime("%Y-%m-%d") if len(df) > 0 else ""
+        if last_date < today_str:
+            try:
+                _today_ds = await ds_ohlcv(symbol, "5d")
+                if _today_ds:
+                    for row in _today_ds:
+                        rd = row.get("date","")
+                        if rd > last_date:
+                            new_row = pd.DataFrame([{
+                                "open": float(row["open"]), "high": float(row["high"]),
+                                "low": float(row["low"]), "close": float(row["close"]),
+                                "volume": float(row.get("volume",0))
+                            }], index=[pd.Timestamp(rd)])
+                            new_row.index.name = "date"
+                            df = pd.concat([df, new_row])
+                    df = df.sort_index()
+            except Exception as _kq_err:
+                pass  # Today's candle unavailable, continue with historical
     else:
-        import yfinance as yf
-        yf_sym = f"{symbol.upper()}.NS"
-        loop = asyncio.get_event_loop()
-        raw = await loop.run_in_executor(None, lambda: yf.download(
-            tickers=yf_sym, start=start, end=end, interval=interval, auto_adjust=True, progress=False
-        ))
-        df = yf_extract_ticker(raw, yf_sym, single_mode=True)
+        raise HTTPException(status_code=404, detail=f"No chart data available for {symbol}")
     if df.empty:
         raise HTTPException(status_code=404, detail=f"No data for {symbol}")
 
@@ -10311,54 +10329,103 @@ async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: flo
 @app.get("/api/dividends", tags=["Market Intelligence"], summary="Top dividend stocks",
     description="30 major Indian stocks sorted by dividend yield. Returns yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached 1 hour.")
 async def dividend_tracker(user=Depends(get_current_user)):
-    """Dividend tracker for 30 major Indian stocks sorted by yield. Returns dividend yield %, rate, payout ratio, P/E, market cap, sector, and ex-dividend dates. Cached in Redis for 1 hour."""
-    import yfinance as yf  # kept: needs detailed dividend info (exDividendDate, dividendRate)
-    from datetime import date as _date, datetime as _dt
+    """Dividend tracker for 30 major Indian stocks sorted by yield. Uses Data Service for fundamentals + live prices."""
+    from datetime import date as _date
     cache_key = "dividends:" + _date.today().isoformat()
     if redis_client:
         cached = await redis_client.get(cache_key)
         if cached: return json.loads(cached)
-    loop = asyncio.get_event_loop()
+
     top_div = ["COALINDIA","VEDL","IOC","HINDPETRO","BPCL","ONGC","NTPC","POWERGRID","GAIL","RECLTD",
                "PFC","NHPC","SAIL","NMDC","HDFCBANK","ICICIBANK","SBIN","ITC","TCS","INFY",
                "WIPRO","BAJAJ-AUTO","HEROMOTOCO","MARUTI","TATAMOTORS","RELIANCE","LT","TITAN","HINDALCO","TATASTEEL"]
-    dividends = []
-    for sym in top_div:
+
+    # Parallel DS fundamentals fetch
+    import httpx as _hx
+    async def _fetch_fund(sym):
         try:
-            tk = await loop.run_in_executor(None, lambda s=sym: yf.Ticker(s+".NS"))
-            info = await loop.run_in_executor(None, lambda t=tk: t.info)
-            price = info.get("currentPrice", 0) or 0
-            div_rate = info.get("dividendRate", 0) or 0
-            div_yield = info.get("dividendYield", 0) or 0
-            if div_yield and div_yield < 1:
-                div_yield = div_yield * 100
-            ex_date = info.get("exDividendDate", 0)
-            ex_str = ""
-            upcoming = False
-            if ex_date and ex_date > 0:
-                try:
-                    ex_dt = _dt.fromtimestamp(ex_date)
-                    ex_str = ex_dt.strftime("%Y-%m-%d")
-                    upcoming = ex_dt.date() >= _date.today()
-                except: pass
-            payout = info.get("payoutRatio", 0) or 0
-            if price > 0 and div_rate > 0:
-                dividends.append({
-                    "symbol": sym,
-                    "name": info.get("shortName", sym),
-                    "sector": info.get("sector", ""),
-                    "price": round(price, 2),
-                    "dividend_rate": round(div_rate, 2),
-                    "dividend_yield": round(div_yield, 2),
-                    "ex_dividend_date": ex_str,
-                    "upcoming": upcoming,
-                    "payout_ratio": round(payout * 100, 1) if payout < 1 else round(payout, 1),
-                    "pe": round(info.get("trailingPE", 0) or 0, 1),
-                    "market_cap": info.get("marketCap", 0),
-                })
-        except: pass
+            async with _hx.AsyncClient(timeout=5) as cl:
+                r = await cl.get(f"http://localhost:5004/data/equity/fundamentals/{sym}",
+                                 headers={"X-API-Key": "alpha_data_internal_2026"})
+                if r.status_code == 200:
+                    return sym, r.json()
+        except:
+            pass
+        return sym, None
+
+    # Parallel live quotes
+    async def _fetch_quote(sym):
+        try:
+            async with _hx.AsyncClient(timeout=3) as cl:
+                r = await cl.get(f"http://localhost:5004/data/equity/quote/{sym}",
+                                 headers={"X-API-Key": "alpha_data_internal_2026"})
+                if r.status_code == 200:
+                    return sym, r.json()
+        except:
+            pass
+        return sym, None
+
+    fund_tasks = [_fetch_fund(sym) for sym in top_div]
+    quote_tasks = [_fetch_quote(sym) for sym in top_div]
+    fund_results = await asyncio.gather(*fund_tasks, return_exceptions=True)
+    quote_results = await asyncio.gather(*quote_tasks, return_exceptions=True)
+
+    quotes = {}
+    for item in quote_results:
+        if isinstance(item, tuple) and item[1]:
+            quotes[item[0]] = item[1]
+
+    dividends = []
+    for item in fund_results:
+        if isinstance(item, Exception) or not isinstance(item, tuple):
+            continue
+        sym, info = item
+        if not info:
+            continue
+        try:
+            # Live price from quote, fallback to fundamentals
+            live = quotes.get(sym, {})
+            price = live.get("price", 0) or info.get("price", 0) or 0
+            if price <= 0:
+                continue
+
+            # Dividend yield: DS fundamentals provides it; compute from rate if available
+            dy_raw = info.get("dividend_yield", 0) or 0
+            div_rate = info.get("dividend_rate", 0) or 0
+            if dy_raw > 100:
+                dy_raw = dy_raw / price * 100 if price > 0 else 0  # Raw amount, compute yield
+            elif dy_raw > 1 and dy_raw < 100:
+                pass  # Already percentage
+            elif 0 < dy_raw <= 1:
+                dy_raw = dy_raw * 100  # Decimal, convert to %
+
+            if dy_raw <= 0 and div_rate > 0 and price > 0:
+                dy_raw = round(div_rate / price * 100, 2)
+
+            pe = info.get("pe_trailing", 0) or info.get("pe_ratio", 0) or 0
+            if pe <= 0 and price > 0:
+                eps = info.get("eps", 0) or 0
+                if eps > 0:
+                    pe = round(price / eps, 1)
+
+            dividends.append({
+                "symbol": sym,
+                "name": info.get("company_name", info.get("shortName", sym)),
+                "sector": info.get("sector", ""),
+                "price": round(price, 2),
+                "dividend_rate": round(div_rate, 2) if div_rate else 0,
+                "dividend_yield": round(dy_raw, 2),
+                "ex_dividend_date": info.get("ex_dividend_date", ""),
+                "upcoming": False,
+                "payout_ratio": round(info.get("payout_ratio", 0) or 0, 1),
+                "pe": round(pe, 1),
+                "market_cap": info.get("market_cap", 0) or 0,
+            })
+        except:
+            pass
+
     dividends.sort(key=lambda x: x["dividend_yield"], reverse=True)
-    upcoming = [d for d in dividends if d["upcoming"]]
+    upcoming = [d for d in dividends if d.get("upcoming")]
     result = {
         "date": _date.today().isoformat(),
         "by_yield": dividends,
