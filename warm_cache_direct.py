@@ -239,10 +239,14 @@ async def main():
         result = {"stocks":filtered[:50],"count":len(filtered),"strategy":strat,
                   "as_of":today,"universe_size":len(universe),"scanned":len(stocks),"cached":True}
         cache_key = f"screener:{strat}:50:10000::::"
+        dated_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strat}:50:10000::::"
         await redis_client.setex(cache_key, 43200, json.dumps(result))
+        await redis_client.setex(dated_key, 43200, json.dumps(result))
         # Also cache the norm_key format used by dashboard (min=0, max=999999)
         norm_key = f"screener:{strat}:0:999999::::"
+        dated_norm_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strat}:0:999999::::"
         await redis_client.setex(norm_key, 43200, json.dumps(result))
+        await redis_client.setex(dated_norm_key, 43200, json.dumps(result))
         alt_key = f"screener:{strat}:0:999999::::"
         data_json = json.dumps(result)
         await redis_client.setex(cache_key, 43200, data_json)

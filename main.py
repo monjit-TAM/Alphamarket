@@ -865,8 +865,11 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
     cache_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
     # Also check normalized key (frontend uses 0:999999 as defaults)
     norm_key = f"screener:{__import__('datetime').date.today().isoformat()}:{strategy}:0:999999::::"
+    # Undated fallback keys (written by warm_cache_direct)
+    undated_key = f"screener:{strategy}:{int(min_price)}:{int(max_price)}:{sector}:{industry}:{basic_industry}:{cap_segment}"
+    undated_norm = f"screener:{strategy}:0:999999::::"
     if redis_client:
-        cached = await redis_client.get(cache_key) or await redis_client.get(norm_key)
+        cached = await redis_client.get(cache_key) or await redis_client.get(norm_key) or await redis_client.get(undated_key) or await redis_client.get(undated_norm)
         if cached:
             result = json.loads(cached)
             stocks = result.get("stocks", [])
@@ -10153,6 +10156,19 @@ async def sector_heatmap(user=Depends(get_current_user)):
 # DCF / INTRINSIC VALUE CALCULATOR
 # ==============================================================================
 
+
+async def ds_quote_fn(sym):
+    """Get live quote from Data Service."""
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=3) as client:
+            r = await client.get(f"http://localhost:5004/data/equity/quote/{sym}", headers={"X-API-Key": "alpha_data_internal_2026"})
+            if r.status_code == 200:
+                return r.json()
+    except:
+        pass
+    return None
+
 @app.get("/api/dcf/{symbol}", tags=["Market Intelligence"], summary="DCF intrinsic value calculator",
     description="Three-method valuation: EPS-based DCF, FCF-based DCF, and Graham Number. Returns intrinsic values, average fair value, margin of safety %, and verdict. Set growth_rate=0 for auto-detect.")
 async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: float = 12, terminal_growth: float = 3, years: int = 10, user=Depends(get_current_user)):
@@ -10222,17 +10238,68 @@ async def dcf_calculator(symbol: str, growth_rate: float = 0, discount_rate: flo
     avg_intrinsic = round((intrinsic_eps + (intrinsic_fcf if intrinsic_fcf > 0 else intrinsic_eps)) / 2, 2)
     margin = round((avg_intrinsic - price) / avg_intrinsic * 100, 1) if avg_intrinsic > 0 else 0
     verdict = "UNDERVALUED" if margin > 15 else ("FAIRLY VALUED" if margin > -10 else "OVERVALUED")
+    # Live price override from Data Service quote
+    try:
+        ds_quote = await ds_quote_fn(sym)
+        if ds_quote and ds_quote.get("price", 0) > 0:
+            price = ds_quote["price"]
+            if eps > 0:
+                pe = round(price / eps, 1)
+    except:
+        pass  # Keep fundamentals price as fallback
+
+    # FCF plausibility guard — check financial_currency
+    fcf_note = ""
+    fin_currency = info.get("financial_currency", "INR")
+    if fin_currency and fin_currency != "INR" and intrinsic_fcf > 0:
+        fcf_note = f"FCF data is in {fin_currency}. Value may not be directly comparable to INR stock price."
+        intrinsic_fcf = 0  # Do not use for average
+
+    # EPV (Earnings Power Value) fallback
+    epv_value = 0
+    if eps > 0 and dr > 0:
+        epv_value = round(eps / dr, 2)
+
+    # Recalculate average with EPV as fallback when FCF is zero
+    methods_used = [intrinsic_eps]
+    if intrinsic_fcf > 0:
+        methods_used.append(intrinsic_fcf)
+    if epv_value > 0 and intrinsic_fcf <= 0:
+        methods_used.append(epv_value)
+    avg_intrinsic = round(sum(methods_used) / len(methods_used), 2) if methods_used else 0
+    margin = round((avg_intrinsic - price) / avg_intrinsic * 100, 1) if avg_intrinsic > 0 else 0
+    verdict = "UNDERVALUED" if margin > 15 else ("FAIRLY VALUED" if margin > -10 else "OVERVALUED")
+
+    # Narration
+    narration_parts = []
+    narration_parts.append(f"{info.get('shortName', sym)} trades at Rs.{price:.0f} (PE {pe:.1f}x).")
+    if intrinsic_eps > 0:
+        prem_disc = "below" if price < intrinsic_eps else "above"
+        narration_parts.append(f"EPS-based DCF values it at Rs.{intrinsic_eps:.0f}, current price is {abs(round((price/intrinsic_eps-1)*100))}% {prem_disc} this.")
+    if intrinsic_fcf > 0:
+        narration_parts.append(f"FCF-based DCF gives Rs.{intrinsic_fcf:.0f} per share.")
+    elif fcf_note:
+        narration_parts.append(fcf_note)
+    elif epv_value > 0:
+        narration_parts.append(f"FCF data unavailable; EPV (earnings capitalized at {discount_rate}%) gives Rs.{epv_value:.0f}.")
+    if graham > 0:
+        narration_parts.append(f"Graham Number is Rs.{graham:.0f}.")
+    narration_parts.append(f"Average fair value: Rs.{avg_intrinsic:.0f}. Margin of safety: {margin}%. Verdict: {verdict}.")
+    narration = " ".join(narration_parts)
+
     return {
-        "symbol": sym, "price": price, "eps": eps, "pe": round(pe, 1),
+        "symbol": sym, "price": price, "cmp": price, "eps": eps, "pe": round(pe, 1),
         "book_value": bv, "roe": round(roe, 1),
         "fcf_per_share": fcf_per_share,
         "assumptions": {"growth_rate": growth_rate, "discount_rate": discount_rate, "terminal_growth": terminal_growth, "years": years},
         "eps_dcf": {"intrinsic_value": intrinsic_eps, "projections": eps_projections, "terminal_value": round(pv_terminal, 2)},
-        "fcf_dcf": {"intrinsic_value": intrinsic_fcf},
+        "fcf_dcf": {"intrinsic_value": intrinsic_fcf, "note": fcf_note},
+        "epv": {"value": epv_value, "method": f"EPS / discount_rate ({discount_rate}%)"},
         "graham_number": graham,
         "avg_intrinsic": avg_intrinsic,
         "margin_of_safety": margin,
         "verdict": verdict,
+        "narration": narration,
         "company": info.get("shortName", sym), "sector": info.get("sector", ""),
     }
 
