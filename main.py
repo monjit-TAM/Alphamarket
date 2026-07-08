@@ -10389,18 +10389,22 @@ async def dividend_tracker(user=Depends(get_current_user)):
             if price <= 0:
                 continue
 
-            # Dividend yield: DS fundamentals provides it; compute from rate if available
-            dy_raw = info.get("dividend_yield", 0) or 0
+            # Dividend yield: DS returns raw amount, not %. Always compute from rate/price.
             div_rate = info.get("dividend_rate", 0) or 0
-            if dy_raw > 100:
-                dy_raw = dy_raw / price * 100 if price > 0 else 0  # Raw amount, compute yield
-            elif dy_raw > 1 and dy_raw < 100:
-                pass  # Already percentage
-            elif 0 < dy_raw <= 1:
-                dy_raw = dy_raw * 100  # Decimal, convert to %
-
-            if dy_raw <= 0 and div_rate > 0 and price > 0:
+            dy_raw = 0
+            if div_rate > 0 and price > 0:
                 dy_raw = round(div_rate / price * 100, 2)
+            else:
+                # Fallback: DS dividend_yield might be raw amount or %
+                ds_dy = info.get("dividend_yield", 0) or 0
+                if ds_dy > 0 and price > 0:
+                    # If value is larger than 20, it is likely a raw amount not a %
+                    if ds_dy > 20:
+                        dy_raw = round(ds_dy / price * 100, 2)
+                    elif ds_dy > 1:
+                        dy_raw = round(ds_dy, 2)  # Already %
+                    else:
+                        dy_raw = round(ds_dy * 100, 2)  # Decimal
 
             pe = info.get("pe_trailing", 0) or info.get("pe_ratio", 0) or 0
             if pe <= 0 and price > 0:
