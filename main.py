@@ -440,6 +440,38 @@ def _sl_refresh_watchlist():
             _sl_watchlist.clear()
             _sl_watchlist.update(new_watchlist)
         
+        # ── Check for expired positions and close them ──
+        try:
+            from datetime import date as _sl_date
+            today = _sl_date.today()
+            cur.execute("""
+                SELECT p.id, p.symbol, p.strike_price, p.call_put, p.expiry::text,
+                       p.buy_sell, p.entry_price, p.webhook_rec_id, p.segment
+                FROM positions p
+                WHERE p.status = 'Active' AND p.is_published = true
+                  AND p.expiry IS NOT NULL AND p.expiry != ''
+                  AND p.expiry::date < CURRENT_DATE
+            """)
+            expired = cur.fetchall()
+            for row in expired:
+                pos_id = row[0]
+                sym = row[1]
+                rec_id = row[7]
+                if pos_id in _sl_triggered_ids:
+                    continue
+                _sl_triggered_ids.add(pos_id)
+                print(f"[SL Engine] EXPIRED: {sym} {row[2]} {row[3]} expiry={row[4]} (ID: {pos_id})")
+                entry = {
+                    'id': pos_id, 'source': 'positions', 'symbol': sym,
+                    'action': row[5] or 'Buy', 'entry': float(row[6] or 0),
+                    'sl': 0, 'tp': 0, 'strategy_id': None, 'rec_id': rec_id,
+                    'segment': row[8] or ''
+                }
+                # Close at 0 (expired worthless for buyers, full profit for sellers)
+                _td_threading.Thread(target=_fire_sl_close, args=(entry, 0, 'EXPIRED'), daemon=True).start()
+        except Exception as exp_err:
+            print(f"[SL Engine] Expiry check error: {exp_err}")
+
         # Auto-subscribe any new symbols to TrueData
         # Also add -I suffix for commodity symbols
         COMMODITY_SYMBOLS = {'CRUDEOIL','CRUDEOILM','GOLD','GOLDM','SILVER','SILVERM','NATURALGAS','COPPER','ZINC','ALUMINIUM','NICKEL','LEAD','COTTONCANDY','MENTHAOIL'}
@@ -528,7 +560,8 @@ def _fire_sl_close(entry, ltp, trigger_type):
             "Cookie": f"connect.sid={cookie_val}"
         }, timeout=10)
         
-        event_label = "STOPLOSS_TRIGGERED" if trigger_type == "SL" else "TARGET_ACHIEVED"
+        event_labels = {"SL": "STOPLOSS_TRIGGERED", "TARGET": "TARGET_ACHIEVED", "EXPIRED": "POSITION_EXPIRED"}
+        event_label = event_labels.get(trigger_type, trigger_type)
         print(f"[SL Engine] {event_label}: {entry['symbol']} closed at {ltp} via Node (HTTP {resp.status_code})")
         
     except Exception as e:
