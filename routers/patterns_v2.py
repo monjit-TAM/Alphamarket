@@ -92,7 +92,7 @@ def _kite_daily_sync(symbol, years):
     ak, tok = _kite_creds()
     if not (ak and tok):
         return None
-    conn = _pg.connect(DB_URL); cur = conn.cursor()
+    conn = _pg.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db"); cur = conn.cursor()
     cur.execute("SELECT instrument_token FROM instrument_master "
                 "WHERE tradingsymbol=%s LIMIT 1", (symbol.upper(),))
     row = cur.fetchone(); cur.close(); conn.close()
