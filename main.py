@@ -169,6 +169,7 @@ from routers.alpha_options import router as alpha_options_router
 from routers.algo_strategies import router as algo_strategies_router
 from routers.trading_tools import router as trading_router
 from routers.alphabot import router as alphabot_router
+from routers.patterns_v2 import router as patterns_v2_router
 from routers.upstox import router as upstox_router
 from routers.basket_publisher import router as basket_router
 from routers.options_backtest import router as options_bt_router
