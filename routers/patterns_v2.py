@@ -76,7 +76,7 @@ def _kite_creds():
     if _KITE_CREDS["ak"] and now - _KITE_CREDS["ts"] < 300:
         return _KITE_CREDS["ak"], _KITE_CREDS["tok"]
     import psycopg2 as _pg
-    env = open("/var/www/testalpha/.env").read()
+    env = open("/opt/dyor-backend/.env").read()
     m = _re.search(r"KITE_API_KEY=(\S+)", env)
     ak = m.group(1).strip().strip('"').strip("'") if m else None
     conn = _pg.connect(DB_URL); cur = conn.cursor()
