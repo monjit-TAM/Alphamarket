@@ -86,6 +86,37 @@ export async function fireWebhookEvent(
         }
       }
 
+      // ── MODIFY GUARD: Skip MODIFY if position has no stored rec_id (prevents phantoms) ──
+      if (event === "CALL_MODIFIED" || event === "POSITION_MODIFIED") {
+        const itemId = (data as any).id || (data as any).uid;
+        if (itemId) {
+          try {
+            const table = event === "CALL_MODIFIED" ? "calls" : "positions";
+            const recCheck = await db.execute(
+              sql`SELECT webhook_rec_id FROM positions WHERE id = ${String(itemId)} LIMIT 1`
+            );
+            if (table === "calls") {
+              const recCheck2 = await db.execute(
+                sql`SELECT webhook_rec_id FROM calls WHERE id = ${String(itemId)} LIMIT 1`
+              );
+              const storedRec2 = (recCheck2.rows[0] as any)?.webhook_rec_id;
+              if (!storedRec2) {
+                console.log(`[Webhook] MODIFY SKIPPED: ${(data as any).stock_name || "?"} (call) has no webhook_rec_id`);
+                continue;
+              }
+            } else {
+              const storedRec = (recCheck.rows[0] as any)?.webhook_rec_id;
+              if (!storedRec) {
+                console.log(`[Webhook] MODIFY SKIPPED: ${(data as any).symbol || "?"} (position) has no webhook_rec_id`);
+                continue;
+              }
+            }
+          } catch (modErr: any) {
+            console.warn("[Webhook] MODIFY guard check failed (sending anyway):", modErr?.message);
+          }
+        }
+      }
+
       // ── Duplicate check: prevent same symbol (equity) or symbol+strike (F&O) going to same broker twice ──
       if (event === "CALL_CREATED" || event === "POSITION_CREATED") {
         try {
@@ -169,6 +200,32 @@ export async function fireWebhookEvent(
       } catch (buildErr: any) {
         console.error(`[Webhook] Payload build failed for ${target.broker_name} (${payloadVersion}):`, buildErr.message);
         continue; // Skip this target — don't block other deliveries
+      }
+
+      // ── PAYLOAD VALIDATION: Block zero-entry or swapped SL/TP ──
+      try {
+        const eq = payloadBody?.data?.equityCall;
+        const fno = payloadBody?.data?.fnoCall?.[0];
+        const callData = eq || fno;
+        if (callData && (event === "CALL_CREATED" || event === "POSITION_CREATED")) {
+          const bp = Number(callData.buyPrice || 0);
+          const tp = Number(callData.targetPriceRange || callData.target || 0);
+          const sl = Number(callData.stopLossRange || callData.stopLoss || 0);
+          if (bp <= 0) {
+            console.error(`[Webhook] BLOCKED: ${callData.symbol || "?"} has zero entry price. Not sending to ${target.broker_name}.`);
+            continue;
+          }
+          // Warn on suspicious SL/TP (BUY: target should be > entry, SL < entry)
+          const isSell = callData.action === "Sell" || callData.buySell === "Sell";
+          if (!isSell && tp > 0 && sl > 0) {
+            if (tp < bp && sl > bp) {
+              console.error(`[Webhook] BLOCKED: ${callData.symbol} BUY has target(${tp}) < entry(${bp}) AND SL(${sl}) > entry. Likely swapped. Not sending to ${target.broker_name}.`);
+              continue;
+            }
+          }
+        }
+      } catch (valErr: any) {
+        console.warn("[Webhook] Payload validation error (sending anyway):", valErr?.message);
       }
 
       // Sign

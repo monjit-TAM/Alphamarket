@@ -2836,7 +2836,14 @@ function AddPositionSheet({
                   type="button"
                   variant={form.callPut === cp ? "default" : "outline"}
                   size="sm"
-                  onClick={() => setForm({ ...form, callPut: cp })}
+                  onClick={() => {
+                    const updates: any = { callPut: cp };
+                    // Auto-switch segment to Option if currently Equity and user is selecting Call/Put
+                    if (form.segment === "Equity") {
+                      updates.segment = "Option";
+                    }
+                    setForm({ ...form, ...updates });
+                  }}
                 >
                   {cp}
                 </Button>

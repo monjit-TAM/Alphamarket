@@ -494,7 +494,7 @@ export async function getLiveQuote(
   // Try Kite for F&O quotes (faster, no rate limits)
   try {
     const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbol)}`, { 
-      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      headers: { "x-shared-secret": KITE_SHARED_SECRET },
       signal: AbortSignal.timeout(5000) 
     });
     if (kiteRes.ok) {
@@ -553,6 +553,10 @@ export async function getLiveQuote(
   }
 }
 
+// ── KITE AUTH: Single source of truth — never hardcode elsewhere ──
+const KITE_SHARED_SECRET = "alphamarket-shared-2026";
+const KITE_QUOTES_URL = "http://localhost:8001/api/shared/kite-quotes";
+
 export async function getBulkLTP(
   symbols: Array<{ symbol: string; strategyType?: string }>
 ): Promise<Record<string, LivePrice>> {
@@ -576,7 +580,7 @@ export async function getBulkLTP(
   try {
     const symbolList = uncached.map(i => i.symbol).join(",");
     const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbolList)}`, {
-      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      headers: { "x-shared-secret": KITE_SHARED_SECRET },
       signal: AbortSignal.timeout(8000)
     });
     if (kiteRes.ok) {
@@ -857,7 +861,7 @@ export async function getOptionChain(
   // ── Try DYOR/Kite first (Groww option-chain API broken since ~May 2026) ──
   try {
     const kiteRes = await fetch(`http://127.0.0.1:8001/api/nfo/option-chain/${encodeURIComponent(underlying)}?expiry=${encodeURIComponent(expiryDate)}`, { 
-      headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+      headers: { "x-shared-secret": KITE_SHARED_SECRET },
       signal: AbortSignal.timeout(15000) 
     });
     if (kiteRes.ok) {

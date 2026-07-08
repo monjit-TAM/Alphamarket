@@ -86,8 +86,67 @@ async function lookupFnoInstrument(symbol: string, strike: number, series: strin
   try {
     const exch = exchange || "NSE";
     const instType = series; // CE, PE, or FUT
-    // Try exact match on instrument_master: name + strike + instrument_type + nearest expiry
-    const r = await db.execute(sql`
+    
+    // Parse expiry to ISO date string (YYYY-MM-DD) for exact match — handles ALL formats
+    let expiryDate: string | null = null;
+    if (expiry) {
+      if (typeof expiry === "number") {
+        // Epoch timestamp
+        expiryDate = new Date(expiry).toISOString().split("T")[0];
+      } else if (typeof expiry === "string") {
+        const trimmed = expiry.trim();
+        if (trimmed.includes("T")) {
+          expiryDate = trimmed.split("T")[0];
+        } else if (/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
+          // DD-MM-YYYY → YYYY-MM-DD
+          const [dd, mm, yyyy] = trimmed.split("-");
+          expiryDate = yyyy + "-" + mm + "-" + dd;
+        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+          // DD/MM/YYYY → YYYY-MM-DD
+          const [dd, mm, yyyy] = trimmed.split("/");
+          expiryDate = yyyy + "-" + mm + "-" + dd;
+        } else {
+          // Already YYYY-MM-DD or other parseable format
+          expiryDate = trimmed;
+        }
+        // Validate: must be YYYY-MM-DD
+        if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) {
+          try {
+            const parsed = new Date(expiryDate);
+            if (!isNaN(parsed.getTime())) {
+              expiryDate = parsed.toISOString().split("T")[0];
+            } else {
+              console.warn("[Format A] Unparseable expiry:", expiry);
+              expiryDate = null;
+            }
+          } catch { expiryDate = null; }
+        }
+      } else if (expiry instanceof Date) {
+        expiryDate = expiry.toISOString().split("T")[0];
+      }
+    }
+    
+    // Step 1: Try EXACT expiry match first
+    if (expiryDate) {
+      const exact = await db.execute(sql`
+        SELECT exchange_token, instrument_token, tradingsymbol, expiry
+        FROM instrument_master
+        WHERE name = ${symbol}
+          AND strike = ${strike}
+          AND instrument_type = ${instType}
+          AND expiry::date = ${expiryDate}::date
+          AND exchange = ${exch === "NSE" ? "NFO" : exch}
+        LIMIT 1
+      `);
+      const row = (exact.rows[0] as any);
+      if (row?.exchange_token) {
+        console.log("[Format A] Exact expiry match:", symbol, strike, instType, expiryDate, "→", row.tradingsymbol);
+        return String(row.exchange_token);
+      }
+    }
+    
+    // Step 2: Fallback to nearest expiry (for cases where expiry format doesn't match exactly)
+    const fallback = await db.execute(sql`
       SELECT exchange_token, instrument_token, tradingsymbol, expiry
       FROM instrument_master
       WHERE name = ${symbol}
@@ -97,9 +156,14 @@ async function lookupFnoInstrument(symbol: string, strike: number, series: strin
       ORDER BY expiry ASC
       LIMIT 1
     `);
-    const row = (r.rows[0] as any);
-    if (row?.exchange_token) return String(row.exchange_token);
-    if (row?.instrument_token) return String(row.instrument_token);
+    const fbRow = (fallback.rows[0] as any);
+    if (fbRow?.exchange_token) {
+      if (expiryDate) {
+        console.warn("[Format A] Expiry FALLBACK: wanted", expiryDate, "but matched", fbRow.tradingsymbol, fbRow.expiry);
+      }
+      return String(fbRow.exchange_token);
+    }
+    if (fbRow?.instrument_token) return String(fbRow.instrument_token);
     return "";
   } catch (err: any) {
     console.error("[Format A] lookupFnoInstrument error:", err.message);
@@ -298,7 +362,16 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
   let series = "CE";
   let optionType = "Option";
   if (cp.startsWith("P") || cp === "PE") { series = "PE"; }
-  if (p.segment === "Future") { series = "XX"; optionType = "Future"; }
+  // Auto-detect segment from data signals — advisors sometimes set segment wrong
+  const effectiveSegment = (() => {
+    if (p.segment === "Future" || p.segment === "Option" || p.segment === "Index") return p.segment;
+    // If segment is "Equity" but has strike + callPut + expiry → it's an option
+    if (strike > 0 && cp) return "Option";
+    // If segment is "Equity" but has expiry and no strike → it's a future
+    if (p.expiry && !strike && !cp) return "Future";
+    return p.segment;
+  })();
+  if (effectiveSegment === "Future") { series = "XX"; optionType = "Future"; }
 
   const isCommodity = strategy.type === "Commodity" || strategy.type === "CommodityFuture" || p.segment === "Commodity";
   const inst = await lookupInstrument(p.symbol || "", isCommodity ? "MCX" : undefined);
@@ -315,6 +388,15 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     name: inst.companyName || p.symbol,
     series: series,
     isStoppLossAbsolute: { code: "Y", name: "Yes" },
+    expiry: (() => {
+      const raw = p.expiry;
+      if (!raw) return null;
+      if (typeof raw === "string" && /^\d{2}-\d{2}-\d{4}$/.test(raw.trim())) {
+        const [dd, mm, yyyy] = raw.trim().split("-");
+        return yyyy + "-" + mm + "-" + dd;
+      }
+      return raw;
+    })(),
     expiryDate: epochMs(p.expiry),
     lotSize: toNum(p.lots) || 1,
     strike: strike,
@@ -514,13 +596,19 @@ export async function buildFormatAPayload(
       const isCommodityLeg = loaded.strategy.type === "Commodity" || loaded.strategy.type === "CommodityFuture" || ln.segment === "Commodity";
       const instLeg = await lookupInstrument(ln.symbol || "", isCommodityLeg ? "MCX" : undefined);
       const fnoSeriesLeg = optionType === "Future" ? "FUT" : series;
-      const fnoTokenLeg = await lookupFnoInstrument(ln.symbol || "", strike, fnoSeriesLeg, ln.expiry, isCommodityLeg ? "MCX" : "NSE");
+      // Normalize multi-leg expiry to ISO format
+      let mlExpiry = ln.expiry;
+      if (typeof mlExpiry === "string" && /^\d{2}-\d{2}-\d{4}$/.test(mlExpiry.trim())) {
+        const [dd, mm, yyyy] = mlExpiry.trim().split("-");
+        mlExpiry = yyyy + "-" + mm + "-" + dd;
+      }
+      const fnoTokenLeg = await lookupFnoInstrument(ln.symbol || "", strike, fnoSeriesLeg, mlExpiry, isCommodityLeg ? "MCX" : "NSE");
       const entryPrice = toNum(ln.entry_price) ?? 0;
 
       // Store recId on each individual position for future CLOSE matching
       const posLegId = ln.id || ln.uid;
       if (posLegId) {
-        try { await db.execute(sql`UPDATE positions SET webhook_rec_id = ${recId} WHERE id = ${posLegId} AND webhook_rec_id IS NULL`); } catch {}
+        try { await db.execute(sql`UPDATE positions SET webhook_rec_id = ${recId} WHERE id = ${posLegId}`); } catch {}
       }
 
       legs.push({
@@ -531,6 +619,7 @@ export async function buildFormatAPayload(
         name: instLeg.companyName || ln.symbol,
         series,
         isStoppLossAbsolute: { code: "Y", name: "Yes" },
+        expiry: ln.expiry || null,
         expiryDate: epochMs(ln.expiry),
         lotSize: toNum(ln.lots) || 1,
         strike,

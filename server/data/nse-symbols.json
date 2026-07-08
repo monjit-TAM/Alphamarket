@@ -305,7 +305,7 @@
     "name": "ACC Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "ACCELYA",
@@ -1215,7 +1215,7 @@
     "name": "Apollo Tyres Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "APOLSINHOT",
@@ -2083,7 +2083,7 @@
     "name": "Balkrishna Industries Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "BALMLAWRIE",
@@ -2447,7 +2447,7 @@
     "name": "Berger Paints India Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "BETA",
@@ -4015,7 +4015,7 @@
     "name": "Deepak Nitrite Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "DEEPINDS",
@@ -5072,7 +5072,7 @@
     "name": "Escorts Kubota Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "ESENSEINAV",
@@ -8054,7 +8054,7 @@
     "name": "Indraprastha Gas Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "IGPL",
@@ -8558,7 +8558,7 @@
     "name": "Indian Railway Catering & Tourism Corporation Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "IREDA",
@@ -9937,7 +9937,7 @@
     "name": "Dr. Lal PathLabs Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "LAMBODHARA",
@@ -10511,7 +10511,7 @@
     "name": "LTIMindtree Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "LTM",
@@ -10525,7 +10525,7 @@
     "name": "L&T Technology Services Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "LUMAXIND",
@@ -11295,7 +11295,7 @@
     "name": "Mahanagar Gas Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "MHLXMIRU",
@@ -12156,7 +12156,7 @@
     "name": "MRF Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "MRPL",
@@ -15383,7 +15383,7 @@
     "name": "SAMMAAN CAPITAL",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "SAMPANN",
@@ -15866,7 +15866,7 @@
     "name": "S&P BSE SENSEX",
     "exchange": "NSE",
     "segment": "Index",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "SENSEXADD",
@@ -16419,7 +16419,7 @@
     "name": "Silver Futures",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "SILVER1",
@@ -16566,7 +16566,7 @@
     "name": "SJVN Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "SKFINDIA",
@@ -17602,7 +17602,7 @@
     "name": "Tata Communications Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "TATACONSUM",
@@ -17637,7 +17637,7 @@
     "name": "Tata Motors Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "TATAPOWER",
@@ -18169,7 +18169,7 @@
     "name": "Torrent Power Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "TOTAL",
@@ -19569,7 +19569,7 @@
     "name": "Zomato Ltd",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "ZOTA",

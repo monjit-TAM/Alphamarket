@@ -759,7 +759,7 @@ export async function registerRoutes(
         : `http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(symbol)}`;
       try {
         const kiteRes = await fetch(kiteUrl, {
-          headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+          headers: { "x-shared-secret": "alphamarket-shared-2026" },
           signal: AbortSignal.timeout(10000)
         });
         if (kiteRes.ok) {
@@ -804,7 +804,7 @@ export async function registerRoutes(
       // Kite primary for all option chains (NSE/NFO)
       try {
         const kiteChainRes = await fetch(`http://localhost:8001/api/nfo/option-chain/${encodeURIComponent(symbol)}?expiry=${encodeURIComponent(expiry)}`, {
-          headers: { "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+          headers: { "x-shared-secret": "alphamarket-shared-2026" },
           signal: AbortSignal.timeout(10000)
         });
         if (kiteChainRes.ok) {
@@ -1580,6 +1580,89 @@ export async function registerRoutes(
       if (isPublished && (!req.body.rationale || !req.body.rationale.trim())) {
         return res.status(400).send("Rationale is required to publish a position");
       }
+      // ── Auto-correct segment if advisor selected wrong one ──
+      const body = req.body;
+      let segment = body.segment || "";
+      if (segment === "Equity" && body.strikePrice && body.callPut && body.expiry) {
+        // Has strike + callPut + expiry = this is an option, not equity
+        segment = "Option";
+        body.segment = "Option";
+        console.log("[routes] Auto-corrected segment from Equity to Option for", body.symbol, body.strikePrice, body.callPut);
+      }
+      const isFnOPosition = segment === "Option" || segment === "Future" || segment === "Index" ||
+        !!(body.strikePrice && body.callPut);
+      if (isFnOPosition && isPublished && body.entryPrice) {
+        const entryPx = Number(body.entryPrice);
+        const targetPx = Number(body.target || 0);
+        const slPx = Number(body.stopLoss || 0);
+        const strikePx = Number(body.strikePrice || 0);
+
+        // Option premiums are almost always < strike price (except deep ITM)
+        if (segment === "Option" && strikePx > 0 && entryPx > strikePx) {
+          return res.status(400).send(
+            `Entry price (₹${entryPx}) is higher than strike price (₹${strikePx}). ` +
+            `For options, entry price should be the premium amount (typically ₹1-₹2000), not the stock price. ` +
+            `Please correct and try again.`
+          );
+        }
+
+        // Option premiums rarely exceed ₹5000 (even deep ITM NIFTY)
+        if ((segment === "Option" || segment === "Index") && entryPx > 5000 && strikePx > 0) {
+          return res.status(400).send(
+            `Entry price (₹${entryPx}) seems too high for an option premium. ` +
+            `Did you enter the stock price instead of the option premium? Please verify and try again.`
+          );
+        }
+
+        // BUY with SL above entry = wrong direction (futures/equity only)
+        if (slPx > 0 && entryPx > 0 && segment !== "Option" && segment !== "Index") {
+          const action = (body.buySell || body.buy_sell || "Buy").toLowerCase();
+          if (action === "buy" && slPx > entryPx) {
+            return res.status(400).send(
+              "Stop-loss (" + slPx + ") is above entry price (" + entryPx + ") for a BUY position. " +
+              "For BUY, stop-loss should be below entry price."
+            );
+          }
+          if (action === "sell" && slPx < entryPx) {
+            return res.status(400).send(
+              "Stop-loss (" + slPx + ") is below entry price (" + entryPx + ") for a SELL position. " +
+              "For SELL, stop-loss should be above entry price."
+            );
+          }
+        }
+
+        // SL absurdly far from entry (more than 80% away) — likely a typo
+        if (slPx > 0 && entryPx > 0) {
+          const slDistance = Math.abs(slPx - entryPx) / entryPx;
+          if (slDistance > 0.8) {
+            return res.status(400).send(
+              "Stop-loss (" + slPx + ") is " + Math.round(slDistance * 100) + "% away from entry (" + entryPx + "). " +
+              "This looks like a typo. Please verify and re-submit."
+            );
+          }
+        }
+
+        // BUY: target should be > entry, SL < entry
+        const isSell = (body.buySell || "Buy") === "Sell";
+        if (!isSell && targetPx > 0 && slPx > 0) {
+          if (targetPx < entryPx && slPx > entryPx) {
+            return res.status(400).send(
+              `For a BUY position: Target (₹${targetPx}) should be above Entry (₹${entryPx}) ` +
+              `and Stop Loss (₹${slPx}) should be below Entry. Values appear swapped.`
+            );
+          }
+        }
+        // SELL: target should be < entry, SL > entry
+        if (isSell && targetPx > 0 && slPx > 0) {
+          if (targetPx > entryPx && slPx < entryPx) {
+            return res.status(400).send(
+              `For a SELL position: Target (₹${targetPx}) should be below Entry (₹${entryPx}) ` +
+              `and Stop Loss (₹${slPx}) should be above Entry. Values appear swapped.`
+            );
+          }
+        }
+      }
+
       const p = await storage.createPosition({
         ...sanitizeBody(req.body),
         strategyId: req.params.id,
@@ -1622,6 +1705,29 @@ export async function registerRoutes(
       const strategy = await storage.getStrategy(req.params.id);
       if (!strategy || strategy.advisorId !== req.session.userId) {
         return res.status(403).send("Not authorized");
+      }
+
+      // ── Entry Price Sanity Check for Multi-Leg ──
+      for (let v = 0; v < legs.length; v++) {
+        const vleg = legs[v];
+        const vSegment = vleg.segment || "";
+        const vIsFnO = vSegment === "Option" || vSegment === "Future" || vSegment === "Index" ||
+          !!(vleg.strikePrice && vleg.callPut);
+        if (vIsFnO && isPublished && vleg.entryPrice) {
+          const vEntry = Number(vleg.entryPrice);
+          const vStrike = Number(vleg.strikePrice || 0);
+          if (vSegment === "Option" && vStrike > 0 && vEntry > vStrike) {
+            return res.status(400).send(
+              `Leg ${v + 1}: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
+              `For options, entry price should be the premium, not the stock price.`
+            );
+          }
+          if ((vSegment === "Option" || vSegment === "Index") && vEntry > 5000 && vStrike > 0) {
+            return res.status(400).send(
+              `Leg ${v + 1}: Entry price (₹${vEntry}) seems too high for an option premium. Please verify.`
+            );
+          }
+        }
       }
 
       const created: any[] = [];
@@ -6036,7 +6142,7 @@ export async function registerRoutes(
           }));
           const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+            headers: { "Content-Type": "application/json", "x-shared-secret": "alphamarket-shared-2026" },
             body: JSON.stringify({ holdings: stockPayload }),
           });
           if (stockRes.ok) {
@@ -6543,7 +6649,7 @@ export async function registerRoutes(
         }));
         try {
           const stockRes = await fetch(STOCK_ANALYZER_URL + "/api/v1/analyze", {
-            method: "POST", headers: { "Content-Type": "application/json", "X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c" },
+            method: "POST", headers: { "Content-Type": "application/json", "x-shared-secret": "alphamarket-shared-2026" },
             body: JSON.stringify({ holdings: stockPayload }),
           });
           if (stockRes.ok) {
@@ -7808,7 +7914,9 @@ export async function registerRoutes(
       const type = req.query.type as string || "";  // equity, fno, commodity
       const advisor = req.query.advisor as string || "";
 
-      const conn = await db.execute(sql`
+      const showAll = req.query.showAll === 'true';
+      const callsWhere = showAll ? "WHERE c.status = 'Active'" : "WHERE c.status = 'Active' AND c.webhook_rec_id IS NOT NULL";
+      const conn = await db.execute(sql.raw(`
         SELECT c.id, c.stock_name as symbol, c.action, c.buy_range_start as entry_price,
                c.target_price, c.stop_loss, c.sell_price, c.status, c.webhook_rec_id,
                c.created_at, c.strategy_id, 'equity' as call_type,
@@ -7817,11 +7925,11 @@ export async function registerRoutes(
         FROM calls c
         JOIN strategies s ON s.id = c.strategy_id
         JOIN users u ON u.id = s.advisor_id
-        WHERE c.status = 'Active' AND c.webhook_rec_id IS NOT NULL
+        ${callsWhere}
         ORDER BY c.created_at DESC
-      `);
+      `));
 
-      const posConn = await db.execute(sql`
+      const posConn = await db.execute(sql.raw(`
         SELECT p.id, p.symbol, COALESCE(p.buy_sell, 'Buy') as action, p.entry_price,
                p.target, p.stop_loss, p.exit_price as sell_price, p.status, p.webhook_rec_id,
                p.created_at, p.strategy_id, 'fno' as call_type,
@@ -7831,9 +7939,9 @@ export async function registerRoutes(
         FROM positions p
         JOIN strategies s ON s.id = p.strategy_id
         JOIN users u ON u.id = s.advisor_id
-        WHERE p.status = 'Active' AND p.webhook_rec_id IS NOT NULL
+        ${showAll ? "WHERE p.status = 'Active' AND p.is_published = true" : "WHERE p.status = 'Active' AND p.webhook_rec_id IS NOT NULL"}
         ORDER BY p.created_at DESC
-      `);
+      `))
 
       let calls = (conn.rows as any[]).map(r => ({ ...r, source: 'calls' }));
       let positions = (posConn.rows as any[]).map(r => ({ ...r, source: 'positions' }));
@@ -8161,6 +8269,313 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).send(err.message); }
   });
 
+
+
+  // ── Enhanced New Calls Report (from DB, not webhook logs) ──
+  app.get("/api/admin/broker-reports/new-calls", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+      const today = new Date().toISOString().split('T')[0];
+
+      const advisorNewCalls = await db.execute(sql.raw(`
+        WITH equity AS (
+          SELECT u.company_name as advisor_name,
+            COUNT(*) as total,
+            COUNT(*) FILTER (WHERE c.created_at::date = '${today}'::date) as today_count,
+            COUNT(*) FILTER (WHERE c.created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(*) FILTER (WHERE c.status = 'Active') as open_count,
+            COUNT(*) FILTER (WHERE c.status = 'Closed') as closed_count,
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') +
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Sell') as profitable,
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Buy') +
+            COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Sell') as loss,
+            ROUND(AVG(CASE
+              WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Buy' THEN ((c.sell_price - c.buy_range_start) / c.buy_range_start) * 100
+              WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Sell' THEN ((c.buy_range_start - c.sell_price) / c.buy_range_start) * 100
+            END)::numeric, 2) as avg_return_pct,
+            COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as sent_to_broker
+          FROM calls c
+          JOIN strategies s ON s.id = c.strategy_id
+          JOIN users u ON u.id = s.advisor_id
+          WHERE c.is_published = true
+            AND c.created_at >= '${from}T00:00:00Z' AND c.created_at <= '${to}T23:59:59Z'
+          GROUP BY u.company_name
+        ),
+        fno AS (
+          SELECT u.company_name as advisor_name,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) as total,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.created_at::date = '${today}'::date) as today_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Active') as open_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Closed') as closed_count,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as profitable,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric <= 0) as loss,
+            ROUND(AVG(CASE WHEN p.status = 'Closed' THEN p.gain_percent::numeric END)::numeric, 2) as avg_return_pct,
+            COUNT(DISTINCT COALESCE(p.leg_group_id, p.id::text)) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as sent_to_broker
+          FROM positions p
+          JOIN strategies s ON s.id = p.strategy_id
+          JOIN users u ON u.id = s.advisor_id
+          WHERE p.is_published = true
+            AND p.created_at >= '${from}T00:00:00Z' AND p.created_at <= '${to}T23:59:59Z'
+          GROUP BY u.company_name
+        )
+        SELECT
+          COALESCE(e.advisor_name, f.advisor_name) as advisor_name,
+          COALESCE(e.total, 0) + COALESCE(f.total, 0) as total_new,
+          COALESCE(e.total, 0) as equity_new,
+          COALESCE(f.total, 0) as fno_new,
+          COALESCE(e.today_count, 0) + COALESCE(f.today_count, 0) as today_new,
+          COALESCE(e.week_count, 0) + COALESCE(f.week_count, 0) as week_new,
+          COALESCE(e.open_count, 0) + COALESCE(f.open_count, 0) as open_count,
+          COALESCE(e.closed_count, 0) + COALESCE(f.closed_count, 0) as closed_count,
+          COALESCE(e.profitable, 0) + COALESCE(f.profitable, 0) as profitable,
+          COALESCE(e.loss, 0) + COALESCE(f.loss, 0) as loss,
+          ROUND(((COALESCE(e.avg_return_pct, 0) * COALESCE(e.closed_count, 0) + COALESCE(f.avg_return_pct, 0) * COALESCE(f.closed_count, 0))
+            / NULLIF(COALESCE(e.closed_count, 0) + COALESCE(f.closed_count, 0), 0))::numeric, 2) as avg_return_pct,
+          COALESCE(e.sent_to_broker, 0) + COALESCE(f.sent_to_broker, 0) as sent_to_broker
+        FROM equity e
+        FULL OUTER JOIN fno f ON e.advisor_name = f.advisor_name
+        ORDER BY total_new DESC
+      `));
+
+      const summary = await db.execute(sql.raw(`
+        WITH eq AS (
+          SELECT COUNT(*) as total,
+            COUNT(*) FILTER (WHERE created_at::date = '${today}'::date) as today_count,
+            COUNT(*) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(*) FILTER (WHERE status = 'Active') as open_count,
+            COUNT(*) FILTER (WHERE status = 'Closed') as closed_count,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price > buy_range_start AND action = 'Buy') +
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price < buy_range_start AND action = 'Sell') as profit,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price < buy_range_start AND action = 'Buy') +
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price > buy_range_start AND action = 'Sell') as loss
+          FROM calls WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+        ),
+        fno AS (
+          SELECT COUNT(DISTINCT COALESCE(leg_group_id, id::text)) as total,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE created_at::date = '${today}'::date) as today_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE created_at >= (CURRENT_DATE - INTERVAL '7 days')) as week_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Active') as open_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed') as closed_count,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric > 0) as profit,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric <= 0) as loss
+          FROM positions WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+        )
+        SELECT
+          (SELECT total FROM eq) + (SELECT total FROM fno) as total_new,
+          (SELECT total FROM eq) as equity_new,
+          (SELECT total FROM fno) as fno_new,
+          (SELECT today_count FROM eq) + (SELECT today_count FROM fno) as today_new,
+          (SELECT week_count FROM eq) + (SELECT week_count FROM fno) as week_new,
+          (SELECT open_count FROM eq) + (SELECT open_count FROM fno) as total_open,
+          (SELECT closed_count FROM eq) + (SELECT closed_count FROM fno) as total_closed,
+          (SELECT profit FROM eq) + (SELECT profit FROM fno) as total_profitable,
+          (SELECT loss FROM eq) + (SELECT loss FROM fno) as total_loss
+      `));
+
+      const daily = await db.execute(sql.raw(`
+        WITH eq_daily AS (
+          SELECT created_at::date as dt, COUNT(*) as total,
+            COUNT(*) FILTER (WHERE status = 'Closed') as closed,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price > buy_range_start AND action = 'Buy') as profit,
+            COUNT(*) FILTER (WHERE status = 'Closed' AND sell_price < buy_range_start AND action = 'Buy') as loss
+          FROM calls WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+          GROUP BY created_at::date
+        ),
+        fno_daily AS (
+          SELECT created_at::date as dt,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) as total,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed') as closed,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric > 0) as profit,
+            COUNT(DISTINCT COALESCE(leg_group_id, id::text)) FILTER (WHERE status = 'Closed' AND gain_percent::numeric <= 0) as loss
+          FROM positions WHERE is_published = true
+            AND created_at >= '${from}T00:00:00Z' AND created_at <= '${to}T23:59:59Z'
+          GROUP BY created_at::date
+        )
+        SELECT COALESCE(e.dt, f.dt) as date,
+          COALESCE(e.total, 0) + COALESCE(f.total, 0) as new_calls,
+          COALESCE(e.total, 0) as equity,
+          COALESCE(f.total, 0) as fno,
+          COALESCE(e.closed, 0) + COALESCE(f.closed, 0) as closed,
+          COALESCE(e.profit, 0) + COALESCE(f.profit, 0) as profitable,
+          COALESCE(e.loss, 0) + COALESCE(f.loss, 0) as loss
+        FROM eq_daily e
+        FULL OUTER JOIN fno_daily f ON e.dt = f.dt
+        ORDER BY date DESC
+      `));
+
+      // Daily per-advisor breakdown
+      const dailyAdvisor = await db.execute(sql.raw(
+        "WITH eq AS (" +
+        "  SELECT c.created_at::date as dt, u.company_name as advisor," +
+        "    COUNT(*) as equity_calls," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') as eq_profit," +
+        "    COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as eq_mapped" +
+        "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE c.is_published = true" +
+        "    AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY c.created_at::date, u.company_name" +
+        "), fno AS (" +
+        "  SELECT p.created_at::date as dt, u.company_name as advisor," +
+        "    COUNT(*) as fno_positions," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as fno_profit," +
+        "    COUNT(*) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as fno_mapped" +
+        "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE p.is_published = true" +
+        "    AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY p.created_at::date, u.company_name" +
+        ") SELECT COALESCE(e.dt, f.dt) as date, COALESCE(e.advisor, f.advisor) as advisor," +
+        "  COALESCE(e.equity_calls, 0) as equity, COALESCE(f.fno_positions, 0) as fno," +
+        "  COALESCE(e.equity_calls, 0) + COALESCE(f.fno_positions, 0) as total," +
+        "  COALESCE(e.eq_open, 0) + COALESCE(f.fno_open, 0) as open," +
+        "  COALESCE(e.eq_closed, 0) + COALESCE(f.fno_closed, 0) as closed," +
+        "  COALESCE(e.eq_profit, 0) + COALESCE(f.fno_profit, 0) as profitable," +
+        "  COALESCE(e.eq_mapped, 0) + COALESCE(f.fno_mapped, 0) as mapped_to_broker" +
+        " FROM eq e FULL OUTER JOIN fno f ON e.dt = f.dt AND e.advisor = f.advisor" +
+        " ORDER BY date DESC, total DESC"
+      ));
+
+      const brokerCalls = await db.execute(sql.raw(
+        "SELECT bak.broker_name," +
+        "  payload->'data'->>'advisorName' as advisor," +
+        "  COUNT(*) FILTER (WHERE event IN ('CALL_CREATED','POSITION_CREATED')) as creates," +
+        "  COUNT(*) FILTER (WHERE event IN ('CALL_CLOSED','POSITION_CLOSED','STOPLOSS_TRIGGERED','TARGET_ACHIEVED')) as closes," +
+        "  COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as sl_triggered," +
+        "  COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as target_hit," +
+        "  COUNT(*) FILTER (WHERE status_code = 200) as ok," +
+        "  COUNT(*) FILTER (WHERE status_code != 200) as errors" +
+        " FROM broker_webhook_logs bwl" +
+        " JOIN broker_api_keys bak ON bak.id = bwl.api_key_id" +
+        " WHERE bwl.created_at >= '" + from + "T00:00:00Z' AND bwl.created_at <= '" + to + "T23:59:59Z'" +
+        " GROUP BY bak.broker_name, payload->'data'->>'advisorName'" +
+        " ORDER BY bak.broker_name, creates DESC"
+      ));
+
+      res.json({
+        period: { from, to },
+        summary: summary.rows[0] || {},
+        advisors: advisorNewCalls.rows,
+        daily: daily.rows,
+        dailyAdvisor: dailyAdvisor.rows,
+        brokerAdvisor: brokerCalls.rows,
+      });
+    } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Live Prices for Admin Dashboard (Kite+TrueData combined) ──
+  app.get("/api/admin/broker-calls/live-prices", requireAdmin, async (req, res) => {
+    try {
+      const symbols = req.query.symbols as string || "";
+      if (!symbols) return res.json({ quotes: {} });
+      // Fetch from Kite+TrueData combined endpoint
+      const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbols)}`, {
+        headers: { "x-shared-secret": "alphamarket-shared-2026" },
+        signal: AbortSignal.timeout(5000)
+      });
+      let quotes: Record<string, any> = {};
+      let sources: Record<string, number> = {};
+      if (kiteRes.ok) {
+        const data = await kiteRes.json();
+        quotes = data.quotes || {};
+        sources = data.sources || {};
+      }
+      // For any missing symbols, try TrueData directly
+      const rawSyms = symbols.split(",").map((s: string) => s.trim()).filter(Boolean);
+      const missing = rawSyms.filter((s: string) => !quotes[s]);
+      if (missing.length > 0) {
+        // Also try SYMBOL-I format for commodity/futures
+        const tdSyms = [...missing];
+        for (const s of missing) {
+          if (!s.endsWith("-I")) tdSyms.push(s + "-I");
+        }
+        try {
+          const tdRes = await fetch(`http://localhost:8001/api/shared/truedata-quotes?symbols=${encodeURIComponent(tdSyms.join(","))}`, {
+            headers: { "x-shared-secret": "alphamarket-shared-2026" },
+            signal: AbortSignal.timeout(3000)
+          });
+          if (tdRes.ok) {
+            const tdData = await tdRes.json();
+            for (const [sym, val] of Object.entries(tdData.quotes || {})) {
+              const baseSym = sym.endsWith("-I") ? sym.slice(0, -2) : sym;
+              const origSym = missing.includes(sym) ? sym : (missing.includes(baseSym) ? baseSym : sym);
+              quotes[origSym] = { price: (val as any).ltp, source: "truedata", high: (val as any).high, low: (val as any).low };
+              sources["truedata"] = (sources["truedata"] || 0) + 1;
+            }
+          }
+        } catch {}
+      }
+      return res.json({ quotes, sources, timestamp: Date.now() });
+    } catch (err: any) { res.json({ quotes: {}, error: err.message }); }
+  });
+
+  // ── Option Premium Prices for Admin Dashboard ──
+  app.get("/api/admin/broker-calls/option-prices", requireAdmin, async (req, res) => {
+    try {
+      const positions = JSON.parse(req.query.positions as string || "[]");
+      if (!positions.length) return res.json({ quotes: {} });
+      
+      const results: Record<string, any> = {};
+      const kiteSymbols: string[] = [];
+      const posMap: Record<string, string> = {};
+      
+      for (const pos of positions) {
+        const { id, symbol, strike, callPut, expiry } = pos;
+        if (!symbol || !strike || !callPut || !expiry) continue;
+        
+        const series = callPut === "Call" ? "CE" : "PE";
+        const strikeNum = parseFloat(strike);
+        if (isNaN(strikeNum)) continue;
+        
+        const expiryDate = new Date(expiry);
+        if (isNaN(expiryDate.getTime())) continue;
+        const expiryStr = expiryDate.toISOString().split("T")[0];
+        
+        const lookup = await db.execute(
+          sql`SELECT tradingsymbol, exchange_token FROM instrument_master
+              WHERE name = ${symbol} AND strike = ${strikeNum}
+              AND instrument_type = ${series}
+              AND exchange IN ('NFO','BFO')
+              AND expiry::date = ${expiryStr}::date
+              LIMIT 1`
+        );
+        
+        if (lookup.rows.length > 0) {
+          const row = lookup.rows[0] as any;
+          const kiteSym = "NFO:" + row.tradingsymbol;
+          kiteSymbols.push(kiteSym);
+          posMap[kiteSym] = id;
+        }
+      }
+      
+      if (kiteSymbols.length === 0) return res.json({ quotes: {} });
+      
+      const kiteRes = await fetch("http://localhost:8001/api/shared/kite-quotes-raw?symbols=" + encodeURIComponent(kiteSymbols.join(",")), {
+        headers: { "x-shared-secret": "alphamarket-shared-2026" },
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (kiteRes.ok) {
+        const data = await kiteRes.json();
+        for (const [kiteSym, val] of Object.entries(data.quotes || {})) {
+          const posId = posMap[kiteSym];
+          if (posId) {
+            results[posId] = { price: (val as any).price || (val as any).ltp || 0, source: "kite", tradingsymbol: kiteSym.replace("NFO:", "") };
+          }
+        }
+      }
+      
+      res.json({ quotes: results, count: Object.keys(results).length });
+    } catch (err: any) { res.json({ quotes: {}, error: err.message }); }
+  });
+
   // ── Download Broker Report (XLSX / PDF) ──
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
     try {
@@ -8244,6 +8659,106 @@ export async function registerRoutes(
           if (r.event === 'CALL_MODIFIED' || r.event === 'POSITION_MODIFIED') advisorMap[adv].modified++;
         });
         Object.values(advisorMap).forEach((a: any) => ws2.addRow(a));
+
+        // Sheet 3: Advisor Summary (equity + FnO combined)
+        const ws3 = workbook.addWorksheet('Advisor Summary');
+        const advSummData = await db.execute(sql.raw(
+          "WITH eq AS (" +
+          "  SELECT u.company_name as advisor, COUNT(*) as equity_calls," +
+          "    COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open," +
+          "    COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed," +
+          "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') as eq_profit," +
+          "    COUNT(*) FILTER (WHERE c.webhook_rec_id IS NOT NULL) as eq_mapped" +
+          "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE c.is_published = true AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY u.company_name" +
+          "), fno AS (" +
+          "  SELECT u.company_name as advisor, COUNT(*) as fno_positions," +
+          "    COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open," +
+          "    COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed," +
+          "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.gain_percent::numeric > 0) as fno_profit," +
+          "    COUNT(*) FILTER (WHERE p.webhook_rec_id IS NOT NULL) as fno_mapped" +
+          "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE p.is_published = true AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY u.company_name" +
+          ") SELECT COALESCE(e.advisor, f.advisor) as advisor," +
+          "  COALESCE(e.equity_calls, 0) as equity_calls, COALESCE(f.fno_positions, 0) as fno_positions," +
+          "  COALESCE(e.equity_calls, 0) + COALESCE(f.fno_positions, 0) as total," +
+          "  COALESCE(e.eq_open, 0) + COALESCE(f.fno_open, 0) as open_count," +
+          "  COALESCE(e.eq_closed, 0) + COALESCE(f.fno_closed, 0) as closed," +
+          "  COALESCE(e.eq_profit, 0) + COALESCE(f.fno_profit, 0) as profitable," +
+          "  COALESCE(e.eq_mapped, 0) + COALESCE(f.fno_mapped, 0) as mapped" +
+          " FROM eq e FULL OUTER JOIN fno f ON e.advisor = f.advisor ORDER BY total DESC"
+        ));
+        ws3.columns = [
+          { header: 'Advisor', key: 'advisor', width: 30 },
+          { header: 'Equity Calls', key: 'equity_calls', width: 12 },
+          { header: 'F&O Positions', key: 'fno_positions', width: 14 },
+          { header: 'Total', key: 'total', width: 10 },
+          { header: 'Open', key: 'open_count', width: 10 },
+          { header: 'Closed', key: 'closed', width: 10 },
+          { header: 'Profitable', key: 'profitable', width: 12 },
+          { header: 'Mapped', key: 'mapped', width: 12 },
+        ];
+        for (const row of advSummData.rows) { ws3.addRow(row); }
+        ws3.getRow(1).font = { bold: true };
+
+        // Sheet 4: Daily Per Advisor
+        const ws4 = workbook.addWorksheet('Daily Per Advisor');
+        const dailyAdvData = await db.execute(sql.raw(
+          "WITH eq AS (" +
+          "  SELECT c.created_at::date as dt, u.company_name as advisor, COUNT(*) as equity" +
+          "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE c.is_published = true AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY c.created_at::date, u.company_name" +
+          "), fno AS (" +
+          "  SELECT p.created_at::date as dt, u.company_name as advisor, COUNT(*) as fno" +
+          "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+          "  WHERE p.is_published = true AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+          "  GROUP BY p.created_at::date, u.company_name" +
+          ") SELECT COALESCE(e.dt, f.dt) as date, COALESCE(e.advisor, f.advisor) as advisor," +
+          "  COALESCE(e.equity, 0) as equity, COALESCE(f.fno, 0) as fno," +
+          "  COALESCE(e.equity, 0) + COALESCE(f.fno, 0) as total" +
+          " FROM eq e FULL OUTER JOIN fno f ON e.dt = f.dt AND e.advisor = f.advisor" +
+          " ORDER BY date DESC, total DESC"
+        ));
+        ws4.columns = [
+          { header: 'Date', key: 'date', width: 12 },
+          { header: 'Advisor', key: 'advisor', width: 30 },
+          { header: 'Equity', key: 'equity', width: 12 },
+          { header: 'F&O', key: 'fno', width: 12 },
+          { header: 'Total', key: 'total', width: 10 },
+        ];
+        for (const row of dailyAdvData.rows) { ws4.addRow(row); }
+        ws4.getRow(1).font = { bold: true };
+
+        // Sheet 5: Broker Breakdown
+        const ws5 = workbook.addWorksheet('Broker Breakdown');
+        const brokerAdvData = await db.execute(sql.raw(
+          "SELECT bak.broker_name, payload->'data'->>'advisorName' as advisor," +
+          "  COUNT(*) FILTER (WHERE event IN ('CALL_CREATED','POSITION_CREATED')) as creates," +
+          "  COUNT(*) FILTER (WHERE event IN ('CALL_CLOSED','POSITION_CLOSED','STOPLOSS_TRIGGERED','TARGET_ACHIEVED')) as closes," +
+          "  COUNT(*) FILTER (WHERE event = 'STOPLOSS_TRIGGERED') as sl_triggered," +
+          "  COUNT(*) FILTER (WHERE event = 'TARGET_ACHIEVED') as target_hit," +
+          "  COUNT(*) FILTER (WHERE status_code = 200) as ok," +
+          "  COUNT(*) FILTER (WHERE status_code != 200) as errors" +
+          " FROM broker_webhook_logs bwl JOIN broker_api_keys bak ON bak.id = bwl.api_key_id" +
+          " WHERE bwl.created_at >= '" + from + "T00:00:00Z' AND bwl.created_at <= '" + to + "T23:59:59Z'" +
+          " GROUP BY bak.broker_name, payload->'data'->>'advisorName'" +
+          " ORDER BY bak.broker_name, creates DESC"
+        ));
+        ws5.columns = [
+          { header: 'Broker', key: 'broker_name', width: 20 },
+          { header: 'Advisor', key: 'advisor', width: 30 },
+          { header: 'Creates', key: 'creates', width: 10 },
+          { header: 'Closes', key: 'closes', width: 10 },
+          { header: 'SL Triggered', key: 'sl_triggered', width: 12 },
+          { header: 'Target Hit', key: 'target_hit', width: 12 },
+          { header: 'OK', key: 'ok', width: 10 },
+          { header: 'Errors', key: 'errors', width: 10 },
+        ];
+        for (const row of brokerAdvData.rows) { ws5.addRow(row); }
+        ws5.getRow(1).font = { bold: true };
 
         const buffer = await workbook.xlsx.writeBuffer();
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');

@@ -294,8 +294,9 @@ async function checkStopLossAndTargets() {
       const sl = Number(pos.stopLoss || 0);
       const tgt = Number(pos.target || 0);
       if (entryPx === 0 || (sl === 0 && tgt === 0)) continue;
-      const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity";
-      if (!isFutureSegment && pos.strikePrice && pos.expiry && pos.callPut) {
+      const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity" || pos.segment === "CommodityFuture";
+      const hasValidStrike = pos.strikePrice && pos.strikePrice !== "" && pos.strikePrice !== "0" && Number(pos.strikePrice) > 0;
+      if (!isFutureSegment && hasValidStrike && pos.expiry && pos.callPut) {
         optionPositions.push(pos);
       } else {
         equityPositions.push(pos);
@@ -322,6 +323,29 @@ async function checkStopLossAndTargets() {
     const optionLTPMap = new Map<string, number>();
     for (const op of optionPrices) {
       if (op && op.ltp != null && op.ltp > 0) optionLTPMap.set(op.posId, op.ltp);
+    }
+
+    // ── Phase 3.5: PRICING HEALTH CHECK — alert if coverage is low ──
+    const totalCallSymbols = bulkSymbols.length;
+    const pricedSymbols = Object.keys(bulkPrices).length;
+    const coveragePct = totalCallSymbols > 0 ? Math.round(pricedSymbols / totalCallSymbols * 100) : 100;
+    if (totalCallSymbols > 0 && coveragePct < 50) {
+      console.error(`[Scheduler] CRITICAL: Pricing coverage only ${coveragePct}% (${pricedSymbols}/${totalCallSymbols} symbols). Kite may be down!`);
+    }
+    // Heartbeat every ~5 min (every 20th cycle at 15s interval)
+    const now = Date.now();
+    if (!globalThis.__schedulerLastHeartbeat || now - globalThis.__schedulerLastHeartbeat > 300000) {
+      globalThis.__schedulerLastHeartbeat = now;
+      const missedCalls: string[] = [];
+      for (const call of filteredCalls) {
+        const sym = call.stockName || "";
+        const ep = Number(call.entryPrice || call.buyRangeStart || 0);
+        const sl = Number(call.stopLoss || 0);
+        const tp = Number(call.targetPrice || 0);
+        if (ep === 0 || (sl === 0 && tp === 0)) continue;
+        if (!bulkPrices[sym]) missedCalls.push(sym);
+      }
+      console.log(`[Scheduler] Heartbeat: ${filteredCalls.length} calls, ${filteredPositions.length} positions, ${pricedSymbols}/${totalCallSymbols} priced, ${optionPositions.length} options${missedCalls.length > 0 ? ", NO PRICE: " + missedCalls.slice(0, 10).join(",") : ""}`);
     }
 
     // ── Phase 4: Check calls against bulk prices ──
@@ -584,6 +608,29 @@ let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startScheduler() {
   if (schedulerInterval) return;
+
+  // ── STARTUP SELF-TEST: Verify Kite pricing works before accepting market responsibility ──
+  (async () => {
+    try {
+      const testRes = await fetch("http://localhost:8001/api/shared/kite-quotes?symbols=SBIN", {
+        headers: { "x-shared-secret": "alphamarket-shared-2026" },
+        signal: AbortSignal.timeout(5000)
+      });
+      if (testRes.ok) {
+        const testData = await testRes.json();
+        const hasPrices = Object.keys(testData.quotes || {}).length > 0;
+        if (hasPrices) {
+          console.log("[Scheduler] ✅ Kite pricing self-test PASSED — equity call monitoring is ACTIVE");
+        } else {
+          console.error("[Scheduler] ⚠️ Kite connected but returned 0 prices — token may be expired. Equity calls will NOT be auto-closed until Kite returns prices!");
+        }
+      } else {
+        console.error(`[Scheduler] 🔴 CRITICAL: Kite self-test FAILED (HTTP ${testRes.status}). Equity call auto-close is BROKEN! Check x-shared-secret header and Kite token.`);
+      }
+    } catch (e: any) {
+      console.error("[Scheduler] 🔴 CRITICAL: Kite self-test exception:", e?.message, "— Equity call auto-close will NOT work!");
+    }
+  })();
 
   // SL/Target check runs every 15 seconds for fast detection
   schedulerInterval = setInterval(() => {
