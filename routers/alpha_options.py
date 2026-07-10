@@ -213,32 +213,6 @@ async def get_signals(
                 "signal_count": 0, "signals": []}
 
     # Market open: always generate fresh
-    _dummy_regime = classify_regime(
-        vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
-                bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-                trend=nifty["trend"], pcr=nifty.get("pcr", 1)
-            )
-            return {"date": str(datetime.now(_IST).date()), "regime": regime,
-                    "capital": capital, "risk_level": risk_level,
-                    "max_positions": max_positions, "signal_count": len(signals),
-                    "signals": signals, "disclaimer": "Not investment advice."}
-    except Exception as e:
-        import logging
-        logging.getLogger("alpha_options").warning(f"DB read failed: {e}")
-
-    if not _is_market_open():
-        return {"date": str(datetime.now(_IST).date()), "market_closed": True,
-                "message": _MARKET_CLOSED_MSG, "signal_count": 0, "signals": []}
-    from alpha_options_engine import classify_regime, generate_signals, format_signal
-    
-    vix_data = _get_vix_data()
-    nifty = _get_nifty_technicals()
-    regime = classify_regime(
-        vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
-        bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
-    )
-    
     # Adjust max positions by risk level
     if risk_level == "LOW": max_positions = min(max_positions, 3)
     elif risk_level == "HIGH": max_positions = min(max_positions, 7)
