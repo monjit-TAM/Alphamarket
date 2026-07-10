@@ -78,29 +78,29 @@ async def get_pool():
 # HELPER: FETCH LIVE DATA (reuse existing Kite/Groww infrastructure)
 # ═══════════════════════════════════════════════════════════════════════════════
 async def fetch_index_data(symbol: str) -> dict:
-    """Fetch live index + futures data from Kite + Data Service"""
+    """Fetch live index data — TrueData (instant) → DS → Kite (last resort)"""
     import urllib.request, urllib.parse
     
-    # Map index symbols to correct Data Service format
+    td_map = {"NIFTY": "NIFTY 50", "BANKNIFTY": "NIFTY BANK"}
     ds_map = {"NIFTY": "%5ENSEI", "BANKNIFTY": "%5ENSEBANK", "FINNIFTY": "%5ENSEBANK"}
     kite_map = {"NIFTY": "NSE:NIFTY 50", "BANKNIFTY": "NSE:NIFTY BANK", "FINNIFTY": "NSE:NIFTY FIN SERVICE"}
     
-    # Try Kite first (most accurate for live)
+    # Try TrueData first (in-memory, instant, no API call)
     try:
-        from routers.arbitrage import _fetch_kite_quotes, _kite_store
-        if _kite_store.get("access_token") and symbol in kite_map:
-            data = await _fetch_kite_quotes([kite_map[symbol]])
-            for k, v in data.items():
-                price = v.get("last_price", 0)
-                prev = v.get("ohlc", {}).get("close", 0) or price
-                change = v.get("net_change", 0)
-                change_pct = round((change / prev) * 100, 2) if prev else 0
-                if price > 0:
-                    return {"symbol": symbol, "price": price, "change": change, "change_pct": change_pct, "source": "kite"}
+        from main import _td_prices, _td_lock
+        td_sym = td_map.get(symbol, symbol)
+        with _td_lock:
+            td = _td_prices.get(td_sym)
+        if td and td.get("ltp", 0) > 0:
+            ltp = td["ltp"]
+            prev = td.get("close", 0) or ltp
+            change = round(ltp - prev, 2)
+            change_pct = round((change / prev) * 100, 2) if prev > 0 else 0
+            return {"symbol": symbol, "price": ltp, "change": change, "change_pct": change_pct, "source": "truedata"}
     except Exception as e:
-        logger.warning(f"Kite fetch failed for {symbol}: {e}")
+        logger.debug(f"TrueData lookup failed for {symbol}: {e}")
     
-    # Fallback to Data Service with correct symbol
+    # Fallback to Data Service
     try:
         ds_sym = ds_map.get(symbol, symbol)
         url = f"http://127.0.0.1:5004/data/equity/quote/{ds_sym}"
@@ -114,12 +114,34 @@ async def fetch_index_data(symbol: str) -> dict:
     return {}
 
 async def fetch_kite_ltp(instruments: list) -> dict:
-    """Fetch LTP from Kite for multiple instruments"""
-    from routers.arbitrage import _fetch_kite_quotes
+    """Fetch LTP — TrueData first, then Kite as fallback"""
+    result = {}
+    # Try TrueData first for each instrument
     try:
-        return await _fetch_kite_quotes(instruments)
+        from main import _td_prices, _td_lock
+        remaining = []
+        for inst in instruments:
+            # Convert NFO:NIFTY26JULFUT -> NIFTY 50, NSE:RELIANCE -> RELIANCE
+            td_sym = inst.replace("NSE:", "").replace("NFO:", "")
+            with _td_lock:
+                td = _td_prices.get(td_sym)
+            if td and td.get("ltp", 0) > 0:
+                result[inst] = {"last_price": td["ltp"], "source": "truedata"}
+            else:
+                remaining.append(inst)
+        if not remaining:
+            return result
+        instruments = remaining
     except:
-        return {}
+        pass
+    # Fallback to Kite for remaining
+    try:
+        from routers.arbitrage import _fetch_kite_quotes
+        kite_data = await _fetch_kite_quotes(instruments)
+        result.update(kite_data)
+    except:
+        pass
+    return result
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPER: EXPIRY CALCULATION
