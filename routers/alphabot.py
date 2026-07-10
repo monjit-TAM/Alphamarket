@@ -211,7 +211,7 @@ async def strategy_momentum_futures(index: str, config: dict) -> list:
         return signals
 
     # Strategy parameters
-    min_move_pct = config.get("min_move_pct", 0.3)
+    min_move_pct = config.get("min_move_pct", 0.15)
     sl_points = config.get("sl_points", idx["sl_points"])
     target_points = config.get("target_points", idx["target_points"])
     lots = config.get("lots", 1)
