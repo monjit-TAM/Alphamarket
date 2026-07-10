@@ -214,65 +214,102 @@ def scan_smart_money_breakout(universe: List[dict], prev_smart: dict = None,
 def scan_theta_decay(vix: float, vix_sma20: float, nifty_price: float,
                      banknifty_price: float, atr_pct: float,
                      theta_score: int = 0, day_of_week: int = 0,
-                     max_open: int = 2, open_positions: list = None) -> List[AlgoSignal]:
+                     max_open: int = 5, open_positions: list = None,
+                     universe: list = None) -> List[AlgoSignal]:
     """
-    Iron Condor signals when VIX is low and market is range-bound.
-    Scanner: Every 30 min during market hours (Mon-Wed only)
+    Iron Condor / Short Strangle signals on indices AND top F&O stocks.
+    Fires when VIX is low-moderate and market/stock is range-bound.
+    Scanner: Every 15 min during market hours.
     """
     signals = []
     open_syms = {p.get("symbol", "") for p in (open_positions or [])}
 
-    # day_of_week check removed — fires every market day
-    # (was: return [])
-
-    if vix >= 20 or vix > vix_sma20 + 2:  # Low vol regime (relaxed)
+    # Relaxed VIX filter — allow up to 22 (was 20)
+    if vix >= 22 or vix > vix_sma20 + 3:
         return []
 
-    if atr_pct > 1.5:  # Range-bound only
+    if theta_score < 50:  # Relaxed from 60
         return []
 
-    if theta_score < 60:
-        return []
-
+    # --- INDEX IRON CONDORS (original) ---
     for idx_sym, idx_price, lot_size in [("NIFTY", nifty_price, 25), ("BANKNIFTY", banknifty_price, 15)]:
-        if idx_sym in open_syms:
+        if idx_sym in open_syms or idx_price <= 0:
+            continue
+        if atr_pct > 1.8:  # Relaxed from 1.5
             continue
 
-        if idx_price <= 0:
-            continue
-
-        # Calculate iron condor strikes
-        width = round(idx_price * 0.02)  # 2% OTM each side
-        width = round(width / 50) * 50  # Round to nearest 50
-
+        width = round(idx_price * 0.02)
+        width = round(width / 50) * 50
         sell_ce = round((idx_price + width) / 50) * 50
         sell_pe = round((idx_price - width) / 50) * 50
         buy_ce = sell_ce + (500 if idx_sym == "NIFTY" else 1000)
         buy_pe = sell_pe - (500 if idx_sym == "NIFTY" else 1000)
 
-        # Estimate premium (simplified)
-        prem_per_lot = round(idx_price * 0.005 * lot_size)  # ~0.5% of index * lot
+        prem_per_lot = round(idx_price * 0.005 * lot_size)
         max_loss = round((500 if idx_sym == "NIFTY" else 1000) * lot_size - prem_per_lot)
-        capital = max_loss + round(idx_price * 0.05 * lot_size)  # Margin estimate
-
-        reasons = []
-        reasons.append(f"VIX {vix:.1f} (below SMA20 {vix_sma20:.1f})")
-        reasons.append(f"Theta Score {theta_score}/100")
-        reasons.append(f"ATR {atr_pct:.1f}% (range-bound)")
-        reasons.append(f"Profit zone: {sell_pe}-{sell_ce}")
+        capital = max_loss + round(idx_price * 0.05 * lot_size)
 
         signals.append(AlgoSignal(
             algo_id="ALGO3", algo_name="Theta Decay Machine",
             symbol=idx_sym, action="SELL", entry_price=idx_price,
             stop_loss=0, target=0, hold_days="1-4 days (weekly)",
             segment="options", confidence=min(85, theta_score),
-            reasoning=" | ".join(reasons),
+            reasoning=f"VIX {vix:.1f} (below SMA20 {vix_sma20:.1f}) | Theta Score {theta_score}/100 | ATR {atr_pct:.1f}% | Profit zone: {sell_pe}-{sell_ce}",
             strategy_type="Iron Condor",
             sell_ce=sell_ce, sell_pe=sell_pe, buy_ce=buy_ce, buy_pe=buy_pe,
             max_profit=prem_per_lot, max_loss=max_loss, capital=capital,
             profit_zone=f"{sell_pe}-{sell_ce}",
-            pop=round(70 + (17 - vix) * 2),  # Higher PoP at lower VIX
+            pop=round(70 + (17 - vix) * 2),
         ))
+
+    # --- F&O STOCK THETA PLAYS ---
+    if universe:
+        for s in universe:
+            sym = s.get("symbol", "")
+            if sym in open_syms or not s.get("is_fno"):
+                continue
+            price = s.get("price", 0)
+            if price <= 0:
+                continue
+            rsi = s.get("rsi", 50)
+            stock_atr = s.get("atr_pct", 2)
+            bb_width = s.get("bb_width", 10)
+
+            # Stock must be range-bound: RSI 35-65, low ATR, narrow BB
+            if not (35 <= rsi <= 65 and stock_atr < 2.5 and bb_width < 6):
+                continue
+
+            # Short Strangle on the stock
+            lot_size = s.get("lot_size", 1)
+            width_pct = 0.03  # 3% OTM each side
+            strike_gap = 50 if price > 2000 else 25 if price > 500 else 10 if price > 100 else 5
+
+            sell_ce = round((price * (1 + width_pct)) / strike_gap) * strike_gap
+            sell_pe = round((price * (1 - width_pct)) / strike_gap) * strike_gap
+
+            if sell_ce <= sell_pe:
+                continue
+
+            est_prem = round(price * 0.008 * lot_size)  # ~0.8% of stock price
+            conf = min(80, 50 + (1 if rsi > 45 else 0) + (1 if rsi < 55 else 0) * 5
+                       + (5 if stock_atr < 1.5 else 0) + (5 if bb_width < 4 else 0)
+                       + (5 if s.get("above_200dma") else 0))
+
+            signals.append(AlgoSignal(
+                algo_id="ALGO3", algo_name="Theta Decay Machine",
+                symbol=sym, action="SELL", entry_price=price,
+                stop_loss=0, target=0, hold_days="1-7 days",
+                segment="options", confidence=conf,
+                reasoning=f"VIX {vix:.1f} | RSI {rsi:.0f} (neutral) | ATR {stock_atr:.1f}% (range-bound) | BB Width {bb_width:.1f} (squeeze) | Profit zone: {sell_pe}-{sell_ce}",
+                strategy_type="Short Strangle",
+                sell_ce=sell_ce, sell_pe=sell_pe,
+                max_profit=est_prem, capital=round(price * 0.15 * lot_size),
+                profit_zone=f"{sell_pe}-{sell_ce}",
+                pop=round(65 + (18 - vix)),
+            ))
+
+        # Cap at max_open
+        signals = sorted(signals, key=lambda x: x.confidence, reverse=True)[:max_open]
 
     return signals
 

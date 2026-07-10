@@ -288,8 +288,8 @@ def should_scan(algo_id: str, last_scan: dict) -> bool:
         if now.time() >= time(14, 30) and last and last.time() < time(14, 0):
             return True
     elif algo_id == "ALGO3":
-        # Every 30 min, every market day
-        if not last or (now - last).total_seconds() >= 300:
+        # Every 15 min, every market day (scans indices + F&O stocks)
+        if not last or (now - last).total_seconds() >= 900:
             return True
     elif algo_id == "ALGO4":
         # Every 1 min (trader algo)
@@ -354,7 +354,8 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
                 signals = scan_theta_decay(vix=vix, vix_sma20=17, nifty_price=nifty,
                                             banknifty_price=bnf, atr_pct=1.2,
                                             theta_score=80, day_of_week=dow,
-                                            open_positions=open_pos_list)
+                                            open_positions=open_pos_list,
+                                            universe=universe)
             elif algo_id == "ALGO4":
                 signals = scan_momentum_surge(universe, open_positions=open_pos_list)
             elif algo_id == "ALGO5":
