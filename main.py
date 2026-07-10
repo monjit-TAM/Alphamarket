@@ -7772,7 +7772,9 @@ async def add_recommendation(req: dict, user=Depends(get_current_user)):
                     if isinstance(scr_stocks, list):
                         for ss in scr_stocks:
                             if ss.get("symbol") == symbol:
-                                scr_name = sk.split(":")[1] if ":" in sk else sk
+                                _skp = sk.split(":")
+                                scr_name = (_skp[2] if len(_skp) > 2 and _skp[1][:2] == "20" and "-" in _skp[1]
+                                            else (_skp[1] if len(_skp) > 1 else sk))
                                 screener_appearances.append(scr_name)
                                 break
         alpha_data["screener_appearances"] = screener_appearances
