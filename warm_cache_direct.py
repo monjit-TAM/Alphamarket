@@ -192,6 +192,13 @@ async def main():
     print(f"[{time.strftime('%H:%M:%S')}] Computed {len(stocks)} stocks")
 
     # Save sb_universe
+    # Enrich with F&O flag
+    try:
+        fno_set = set(s["symbol"] for s in json.load(open("/var/www/alphamarket/server/data/nse-symbols.json")) if s.get("isFnO"))
+        for s in stocks:
+            if s["symbol"] in fno_set:
+                s["is_fno"] = True
+    except: pass
     await redis_client.set("sb_universe", json.dumps(stocks), ex=43200)
     print(f"[{time.strftime('%H:%M:%S')}] sb_universe cached ({len(stocks)} stocks)")
 

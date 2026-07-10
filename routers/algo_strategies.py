@@ -96,7 +96,8 @@ async def scan_algo(algo_id: str):
         dow = datetime.now(IST).weekday()
         signals = scan_theta_decay(vix=vix, vix_sma20=vix+1, nifty_price=nifty,
                                     banknifty_price=bnf, atr_pct=1.2,
-                                    theta_score=80, day_of_week=dow)
+                                    theta_score=80, day_of_week=dow,
+                                    universe=universe)
     elif algo_id == "ALGO4":
         signals = scan_momentum_surge(universe)
     elif algo_id == "ALGO5":
