@@ -846,6 +846,52 @@ async def health_check_full():
             results["groww_token"] = {"status": "error", "msg": str(e)[:100]}
     return {"status": "ok", "checks": results}
 
+
+async def _overlay_live_prices(stocks: list) -> list:
+    """Overlay live Kite prices on cached screener/MTF results."""
+    if not stocks:
+        return stocks
+    try:
+        symbols = [s.get("symbol","") for s in stocks if s.get("symbol")]
+        if not symbols:
+            return stocks
+        # Batch fetch from Data Service (faster than Kite for bulk)
+        import httpx as _hx
+        batch_size = 30
+        live = {}
+        for i in range(0, len(symbols), batch_size):
+            batch = symbols[i:i+batch_size]
+            kite_syms = ",".join([f"NSE:{s}" for s in batch])
+            try:
+                async with _hx.AsyncClient(timeout=3) as cl:
+                    r = await cl.get(
+                        f"http://localhost:8001/api/shared/kite-quotes-raw?symbols={kite_syms}",
+                        headers={"x-shared-secret": "alphamarket-shared-2026"}
+                    )
+                    if r.status_code == 200:
+                        quotes = r.json().get("quotes", {})
+                        for k, v in quotes.items():
+                            sym = k.replace("NSE:", "")
+                            if v.get("ltp") or v.get("price"):
+                                live[sym] = v
+            except:
+                pass
+        # Overlay
+        for s in stocks:
+            sym = s.get("symbol", "")
+            q = live.get(sym)
+            if q:
+                ltp = q.get("ltp") or q.get("price") or q.get("last_price", 0)
+                prev_close = q.get("ohlc", {}).get("close", 0)
+                if ltp and ltp > 0:
+                    s["price"] = round(ltp, 2)
+                    if prev_close and prev_close > 0:
+                        s["change_pct"] = round((ltp - prev_close) / prev_close * 100, 2)
+                    s["live"] = True
+    except Exception as e:
+        pass  # Fail silently, keep cached prices
+    return stocks
+
 async def _run_screener_internal(strategy: str, min_price: float = 50, max_price: float = 10000,
                                   sector: str = "", industry: str = "", basic_industry: str = "", cap_segment: str = ""):
     """Internal screener runner — bypasses auth, used by precompute loop and warm endpoint."""
@@ -885,8 +931,8 @@ async def _run_screener_internal(strategy: str, min_price: float = 50, max_price
                 stocks = [s for s in stocks if s.get("cap_segment","").lower() == cap_segment.lower()]
             if int(min_price) > 0 or int(max_price) < 999999:
                 stocks = [s for s in stocks if min_price <= s.get("price",0) <= max_price]
-            result["stocks"] = stocks
-            result["count"] = len(stocks)
+            result["stocks"] = await _overlay_live_prices(stocks)
+            result["count"] = len(result["stocks"])
             return result
         else:
             # Cache miss — return empty instead of blocking for 2+ min Yahoo download
@@ -12362,6 +12408,7 @@ async def mtf_scan(
 
     result_stocks.sort(key=lambda x: (x["score"], x["strat_count"]), reverse=True)
 
+    result_stocks = await _overlay_live_prices(result_stocks)
     return {
         "stocks": result_stocks,
         "count": len(result_stocks),
