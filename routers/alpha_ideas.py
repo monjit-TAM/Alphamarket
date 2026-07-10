@@ -157,6 +157,42 @@ def _long_garp(stocks, fund_map):
         ideas.append({"symbol": sym, "price": price, "entry": price, "target": target, "stop": stop, "risk_pct": risk_pct, "reward_pct": reward_pct, "rr_ratio": round(reward_pct / risk_pct, 1), "horizon": "LONG", "strategy": "GARP", "confidence": confidence, "risk": "MEDIUM", "signals": {"pe_ttm": round(pe, 1), "peg": round(calc_peg, 2), "growth": round(growth, 1), "roe": round(roe, 1)}, "fundamentals": {"pe_ttm": round(pe, 1), "peg_ratio": round(calc_peg, 2), "roe": round(roe, 1), "revenue_growth": round(rev_g, 1), "pat_growth": round(pat_g, 1), "ebitda_margin": round(margin, 1)}, "reasoning": garp_reason(s, pe, calc_peg, growth, roe, margin, rev_g), "sector": s.get("sector", ""), "cap_segment": s.get("cap_segment", "")})
     return sorted(ideas, key=lambda x: x["confidence"], reverse=True)
 
+
+async def _overlay_ideas_prices(ideas):
+    """Overlay live prices on Alpha Ideas results."""
+    if not ideas: return ideas
+    try:
+        import httpx
+        symbols = [s.get("symbol","") for s in ideas if s.get("symbol")]
+        if not symbols: return ideas
+        live = {}
+        for i in range(0, len(symbols), 30):
+            batch = symbols[i:i+30]
+            kite_syms = ",".join([f"NSE:{s}" for s in batch])
+            try:
+                async with httpx.AsyncClient(timeout=3) as cl:
+                    r = await cl.get(
+                        f"http://localhost:8001/api/shared/kite-quotes-raw?symbols={kite_syms}",
+                        headers={"x-shared-secret": "alphamarket-shared-2026"}
+                    )
+                    if r.status_code == 200:
+                        for k, v in r.json().get("quotes", {}).items():
+                            sym = k.replace("NSE:", "")
+                            if v.get("ltp") or v.get("price"):
+                                live[sym] = v
+            except: pass
+        for s in ideas:
+            q = live.get(s.get("symbol",""))
+            if q:
+                ltp = q.get("ltp") or q.get("price") or 0
+                prev = q.get("ohlc",{}).get("close",0)
+                if ltp > 0:
+                    s["price"] = round(ltp, 2)
+                    if prev > 0: s["change_pct"] = round((ltp-prev)/prev*100, 2)
+                    s["live"] = True
+    except: pass
+    return ideas
+
 @router.get("", summary="Daily Alpha Ideas")
 @router.get("/", summary="Daily Alpha Ideas", include_in_schema=False)
 async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWING, SHORT, MEDIUM, LONG or ALL"), strategy: Optional[str] = None, sector: Optional[str] = None, min_confidence: int = Query(5, ge=1, le=10), limit: int = Query(30, ge=1, le=100)):
@@ -252,6 +288,7 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
         if h not in by_horizon: by_horizon[h] = []
         by_horizon[h].append(idea)
     deduped = await _enrich_live_prices(deduped)
+    deduped = await _overlay_ideas_prices(deduped)
     return {"ideas": deduped, "count": len(deduped), "timestamp": now.isoformat(), "date": now.strftime("%d-%b-%Y"), "market_date": now.strftime("%A, %d %B %Y"), "summary": {h: {"count": len(ideas), "top": ideas[0]["symbol"] if ideas else None} for h, ideas in by_horizon.items()}, "filters": {"horizon": horizon, "strategy": strategy, "sector": sector, "min_confidence": min_confidence}}
 
 @router.get("/horizons", summary="Ideas grouped by horizon")
