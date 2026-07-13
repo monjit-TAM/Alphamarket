@@ -369,7 +369,7 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
                 _conn = await _apg.connect(DB_URL)
                 try:
                     existing = await _conn.fetchval(
-                        "SELECT COUNT(*) FROM algo_signals WHERE algo_id=$1 AND symbol=$2 AND created_at::date = CURRENT_DATE AND status='OPEN'",
+                        "SELECT COUNT(*) FROM algo_signals WHERE algo_id=$1 AND symbol=$2 AND created_at::date = CURRENT_DATE",
                         algo_id, sym
                     )
                 finally:
