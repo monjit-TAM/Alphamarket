@@ -319,6 +319,30 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
     if not universe:
         return {"error": "universe empty", "signals": 0}
 
+    # ── LIVE PRICE OVERLAY (13 Jul): sb_universe carries EOD prices (warm cron
+    # 15:45/17:45/01:45 IST) — scanners saw yesterday's close all day, minting
+    # phantom signals on gap days (BUILDPRO born past target). Overlay live LTP;
+    # if quotes unavailable, SKIP the cycle honestly rather than scan stale.
+    try:
+        from routers.arbitrage import _fetch_kite_quotes
+        _syms = [s.get("symbol") for s in universe if s.get("symbol")]
+        _live = {}
+        for _i in range(0, len(_syms), 450):
+            _chunk = [f"NSE:{x}" for x in _syms[_i:_i+450]]
+            _data = await _fetch_kite_quotes(_chunk)
+            for _k, _v in (_data or {}).items():
+                _lp = _v.get("last_price", 0)
+                if _lp and _lp > 0:
+                    _live[_k.replace("NSE:", "")] = float(_lp)
+        if len(_live) < len(_syms) * 0.5:
+            return {"error": f"live overlay thin ({len(_live)}/{len(_syms)}) — cycle skipped, no stale-price signals", "signals": 0}
+        for s in universe:
+            _lp = _live.get(s.get("symbol"))
+            if _lp:
+                s["price"] = _lp
+    except Exception as _ove:
+        return {"error": f"live overlay failed: {_ove} — cycle skipped", "signals": 0}
+
     results = {}
     total_signals = 0
 
