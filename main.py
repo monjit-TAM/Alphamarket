@@ -414,7 +414,8 @@ def _sl_refresh_watchlist():
             # Also catch mis-segmented options (segment=Equity but has strike+callPut)
             call_put = row[10] or ''
             is_option_by_data = has_strike and bool(call_put)
-            if segment in ('Option', 'Index') and has_strike:
+            # Exclude ALL Option/Index segment positions (even without strike — e.g. INDUSINDBK with strike=NULL)
+            if segment in ('Option', 'Index'):
                 continue
             if is_option_by_data and segment not in ('Future', 'CommodityFuture', 'Commodity'):
                 continue  # Has strike+callPut = option, regardless of segment label
