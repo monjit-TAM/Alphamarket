@@ -12,7 +12,7 @@ import {
   SidebarProvider,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import { Users, BarChart3, LayoutDashboard, LogOut, Settings, IndianRupee, PieChart, Link2, TrendingUp } from "lucide-react";
+import { Users, BarChart3, LayoutDashboard, LogOut, Settings, IndianRupee, PieChart, Link2, TrendingUp, Package } from "lucide-react";
 
 import AdminAdvisors from "./admin-advisors";
 import AdminStrategies from "./admin-strategies";
@@ -24,6 +24,7 @@ import BrokerAdmin from "./BrokerAdmin";
 import AdminCalls from "./admin-calls";
 import AdminBrokerCalls from "./admin-broker-calls";
 import AdminBrokerReports from "./admin-broker-reports";
+import AdminBaskets from "./admin-baskets";
 import AdminToolPricing from "./admin-tool-pricing";
 
 const sidebarItems = [
@@ -37,6 +38,7 @@ const sidebarItems = [
   { title: "Closed Calls", icon: BarChart3, path: "/admin/calls" },
   { title: "Broker Calls", icon: Link2, path: "/admin/broker-calls" },
   { title: "Broker Reports", icon: BarChart3, path: "/admin/broker-reports" },
+  { title: "Basket Publishing", icon: Package, path: "/admin/baskets" },
   { title: "Tool Pricing", icon: IndianRupee, path: "/admin/tool-pricing" },
 ];
 
@@ -74,6 +76,7 @@ export default function AdminDashboard() {
     if (location === "/admin/calls") return <AdminCalls />;
     if (location === "/admin/brokers") return <BrokerAdmin />;
     if (location === "/admin/broker-calls") return <AdminBrokerCalls />;
+    if (location === "/admin/baskets") return <AdminBaskets />;
     if (location === "/admin/broker-reports") return <AdminBrokerReports />;
     if (location === "/admin/tool-pricing") return <AdminToolPricing />;
     return <AdminHome />;
