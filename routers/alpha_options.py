@@ -412,9 +412,31 @@ async def generate_and_save(
     )
 
     saved_ids = []
+    skipped = []
     for sig in signals[:max_positions]:
         sig["regime_key"] = regime["regime"]
         sig["vix"] = vix_data["vix"]
+
+        # ── Pre-persistence guards (15 Jul) ──
+        _t = sig.get("total", {}) or {}
+        _mp = float(_t.get("max_profit", sig.get("max_profit", 0)) or 0)
+        _ml = float(_t.get("max_loss", sig.get("max_loss", 0)) or 0)
+        # Guard 1: impossible structures (negative/zero max loss on defined-risk spreads
+        # means generation-time chain quotes were stale or crossed — #37 incident)
+        if _ml <= 0 and sig.get("strategy") not in ("CE_BUY", "PE_BUY"):
+            skipped.append({"symbol": sig.get("symbol"), "reason": f"impossible pricing: max_loss={_ml} (stale/crossed chain quotes)"})
+            logger.warning(f"[OPTIONS-GUARD] skip {sig.get('symbol')} {sig.get('strategy')}: max_loss={_ml}")
+            continue
+        # Guard 2: implied PoP for anything the engine didn't price itself
+        if not sig.get("probability_of_profit") and _mp > 0 and _ml > 0:
+            sig["probability_of_profit"] = min(95, max(1, round(_ml / (_mp + _ml) * 100)))
+        # Guard 3: minimum win-probability floor — Monjit's threshold; set to 0 to disable
+        _POP_FLOOR = 10
+        if (sig.get("probability_of_profit") or 0) < _POP_FLOOR and sig.get("probability_of_profit") is not None:
+            skipped.append({"symbol": sig.get("symbol"), "reason": f"implied PoP {sig.get('probability_of_profit')}% below floor {_POP_FLOOR}%"})
+            logger.warning(f"[OPTIONS-GUARD] skip {sig.get('symbol')} {sig.get('strategy')}: PoP {sig.get('probability_of_profit')}% < {_POP_FLOOR}%")
+            continue
+
         try:
             sid = await save_signal(pool, sig)
             saved_ids.append(sid)
@@ -427,6 +449,7 @@ async def generate_and_save(
         "regime": regime,
         "saved_count": len(saved_ids),
         "signal_ids": saved_ids,
+        "skipped": skipped,
         "signals": formatted,
     }
 
