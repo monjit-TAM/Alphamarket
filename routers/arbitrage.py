@@ -246,6 +246,9 @@ async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> 
     import urllib.request, urllib.error
     if not _is_kite_connected():
         raise HTTPException(401, "Kite not connected. Please login via Settings.")
+    if not _kite_rate_acquire():
+        logger.warning(f"Kite rate limit — dropping request for {len(symbols)} symbols, use TrueData fallback")
+        return {}  # Caller falls back to TrueData
     headers = _get_kite_headers()
     if not headers:
         raise HTTPException(401, "Kite not connected. Please login via Settings.")

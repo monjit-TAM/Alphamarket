@@ -849,32 +849,34 @@ async def health_check_full():
 
 
 async def _overlay_live_prices(stocks: list) -> list:
-    """Overlay live Kite prices on cached screener/MTF results."""
+    """Overlay live prices on cached screener/MTF results. Uses kite-quotes (batched + TrueData fallback)."""
     if not stocks:
         return stocks
     try:
         symbols = [s.get("symbol","") for s in stocks if s.get("symbol")]
         if not symbols:
             return stocks
-        # Batch fetch from Data Service (faster than Kite for bulk)
+        # Use the batched kite-quotes endpoint (handles Kite+TrueData fallback, rate-limit safe)
         import httpx as _hx
-        batch_size = 30
+        # Single batched call — kite-quotes accepts comma-separated symbols (up to 500)
+        # Skip special-char symbols (handled by TrueData inside the endpoint)
+        clean_syms = [s for s in symbols if " " not in s and "&" not in s]
         live = {}
-        for i in range(0, len(symbols), batch_size):
-            batch = symbols[i:i+batch_size]
-            kite_syms = ",".join([f"NSE:{s}" for s in batch])
+        # Batch in groups of 100 (kite-quotes handles the Kite→TrueData fallback internally)
+        for i in range(0, len(clean_syms), 100):
+            batch = clean_syms[i:i+100]
+            syms_str = ",".join(batch)
             try:
-                async with _hx.AsyncClient(timeout=3) as cl:
+                async with _hx.AsyncClient(timeout=5) as cl:
                     r = await cl.get(
-                        f"http://localhost:8001/api/shared/kite-quotes-raw?symbols={kite_syms}",
+                        f"http://localhost:8001/api/shared/kite-quotes?symbols={syms_str}",
                         headers={"x-shared-secret": "alphamarket-shared-2026"}
                     )
                     if r.status_code == 200:
-                        quotes = r.json().get("quotes", {})
-                        for k, v in quotes.items():
-                            sym = k.replace("NSE:", "")
-                            if v.get("ltp") or v.get("price"):
-                                live[sym] = v
+                        for k, v in r.json().get("quotes", {}).items():
+                            ltp = v.get("price", 0)
+                            if ltp and ltp > 0:
+                                live[k] = v
             except:
                 pass
         # Overlay
@@ -882,12 +884,9 @@ async def _overlay_live_prices(stocks: list) -> list:
             sym = s.get("symbol", "")
             q = live.get(sym)
             if q:
-                ltp = q.get("ltp") or q.get("price") or q.get("last_price", 0)
-                prev_close = q.get("ohlc", {}).get("close", 0)
+                ltp = q.get("price") or q.get("ltp") or 0
                 if ltp and ltp > 0:
                     s["price"] = round(ltp, 2)
-                    if prev_close and prev_close > 0:
-                        s["change_pct"] = round((ltp - prev_close) / prev_close * 100, 2)
                     s["live"] = True
     except Exception as e:
         pass  # Fail silently, keep cached prices
