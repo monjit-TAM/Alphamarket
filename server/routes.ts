@@ -55,6 +55,7 @@ function validateVerifyToken(token: string, orderId: string, userId: string): bo
 import { initXTSBridge } from "./xts-bridge";
 import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 import { registerBasketAdminRoutes } from "./routes-basket-admin";
+import { registerBasketValidateRoutes } from "./routes-basket-validate";
 import { registerNextraSSO } from "./nextra-sso";
 import { registerNextraAdmin } from "./nextra-admin";
 import { registerNextraTrade } from "./nextra-trade";
@@ -1643,6 +1644,68 @@ export async function registerRoutes(
           }
         }
 
+        // ── Expiry validation for F&O positions ──
+        if (isFnOPosition && isPublished) {
+          const rawExpiry = body.expiry || "";
+          // Option/Index MUST have expiry
+          if ((segment === "Option" || segment === "Index") && !rawExpiry) {
+            return res.status(400).send(
+              "Expiry date is required for Option/Index positions. Please select an expiry date."
+            );
+          }
+          // Future MUST have expiry
+          if ((segment === "Future" || segment === "CommodityFuture") && !rawExpiry) {
+            return res.status(400).send(
+              "Expiry date is required for Future positions. Please select an expiry date."
+            );
+          }
+          // Normalize expiry format to YYYY-MM-DD
+          if (rawExpiry) {
+            let normalized = rawExpiry;
+            // DD-MM-YYYY or DD/MM/YYYY -> YYYY-MM-DD
+            const ddmmyyyy = rawExpiry.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+            if (ddmmyyyy) {
+              normalized = ddmmyyyy[3] + "-" + ddmmyyyy[2].padStart(2, "0") + "-" + ddmmyyyy[1].padStart(2, "0");
+            }
+            // YYYYMMDD -> YYYY-MM-DD
+            const compact = rawExpiry.match(/^(\d{4})(\d{2})(\d{2})$/);
+            if (compact) {
+              normalized = compact[1] + "-" + compact[2] + "-" + compact[3];
+            }
+            // "26 May 2026" style -> parse with Date
+            if (!normalized.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              const parsed = new Date(rawExpiry);
+              if (!isNaN(parsed.getTime())) {
+                normalized = parsed.toISOString().split("T")[0];
+              }
+            }
+            // Final check: must be YYYY-MM-DD
+            if (!normalized.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              return res.status(400).send(
+                "Invalid expiry format: '" + rawExpiry + "'. Expected YYYY-MM-DD (e.g. 2026-07-28)."
+              );
+            }
+            // Validate it's a real date
+            const expDate = new Date(normalized);
+            if (isNaN(expDate.getTime())) {
+              return res.status(400).send(
+                "Invalid expiry date: '" + normalized + "'. Please enter a valid date."
+              );
+            }
+            // Auto-correct to normalized format
+            if (normalized !== rawExpiry) {
+              body.expiry = normalized;
+              console.log("[routes] Auto-corrected expiry from '" + rawExpiry + "' to '" + normalized + "' for " + body.symbol);
+            }
+          }
+          // Option/Index MUST have strike price
+          if ((segment === "Option" || segment === "Index") && !body.strikePrice) {
+            return res.status(400).send(
+              "Strike price is required for Option/Index positions. Please enter a strike price."
+            );
+          }
+        }
+
         // BUY: target should be > entry, SL < entry
         const isSell = (body.buySell || "Buy") === "Sell";
         if (!isSell && targetPx > 0 && slPx > 0) {
@@ -1717,6 +1780,28 @@ export async function registerRoutes(
         if (vIsFnO && isPublished && vleg.entryPrice) {
           const vEntry = Number(vleg.entryPrice);
           const vStrike = Number(vleg.strikePrice || 0);
+          // Validate expiry for each leg
+          const vExpiry = vleg.expiry || "";
+          if ((vSegment === "Option" || vSegment === "Index" || vSegment === "Future") && !vExpiry && isPublished) {
+            return res.status(400).send("Leg " + (v + 1) + ": Expiry date is required for " + vSegment + " positions.");
+          }
+          if (vExpiry && !vExpiry.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // Try to normalize
+            let vNorm = vExpiry;
+            const vDDMM = vExpiry.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+            if (vDDMM) vNorm = vDDMM[3] + "-" + vDDMM[2].padStart(2, "0") + "-" + vDDMM[1].padStart(2, "0");
+            const vComp = vExpiry.match(/^(\d{4})(\d{2})(\d{2})$/);
+            if (vComp) vNorm = vComp[1] + "-" + vComp[2] + "-" + vComp[3];
+            if (vNorm.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              legs[v].expiry = vNorm;
+              console.log("[routes] Multi-leg: Auto-corrected expiry from '" + vExpiry + "' to '" + vNorm + "'");
+            } else {
+              return res.status(400).send("Leg " + (v + 1) + ": Invalid expiry format '" + vExpiry + "'. Expected YYYY-MM-DD.");
+            }
+          }
+          if ((vSegment === "Option" || vSegment === "Index") && !vleg.strikePrice && isPublished) {
+            return res.status(400).send("Leg " + (v + 1) + ": Strike price is required for " + vSegment + " positions.");
+          }
           if (vSegment === "Option" && vStrike > 0 && vEntry > vStrike) {
             return res.status(400).send(
               `Leg ${v + 1}: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
@@ -7912,6 +7997,7 @@ export async function registerRoutes(
   // Model-portfolio basket publishing. Separate router, tables, dispatcher.
   // Does not touch the recommendation webhook path.
   registerBasketAdminRoutes(app, requireAdmin);
+  registerBasketValidateRoutes(app, requireAdvisor);
 
   app.get("/api/admin/broker-calls/active", requireAdmin, async (req, res) => {
     try {

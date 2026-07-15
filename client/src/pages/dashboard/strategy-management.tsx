@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { UpstoxEligibilityPanel, type EligibilityResult } from "@/components/upstox-eligibility-panel";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -3668,6 +3669,10 @@ function BasketBuilderPanel({ strategy }: { strategy: Strategy }) {
   const csvInputRef = useRef<HTMLInputElement>(null);
   const [showRebalance, setShowRebalance] = useState(false);
   const [showRationale, setShowRationale] = useState(false);
+  const [upstoxEligibility, setUpstoxEligibility] = useState<EligibilityResult | null>(null);
+  // Model portfolio = non-intraday basket. Only these are Upstox-publishable;
+  // only for these do we show the panel / guard submit. Intraday & multi-leg untouched.
+  const isModelPortfolio = strategy.type === "Basket" && !!strategy.horizon && strategy.horizon.toLowerCase() !== "intraday";
   const [constituents, setConstituents] = useState<{ symbol: string; exchange: string; weightPercent: string; quantity: string; priceAtRebalance: string; action: string }[]>([]);
   const [rebalanceNotes, setRebalanceNotes] = useState("");
   const [rationaleTitle, setRationaleTitle] = useState("");
@@ -3813,6 +3818,15 @@ function BasketBuilderPanel({ strategy }: { strategy: Strategy }) {
       toast({ title: "Total weight must equal 100%", description: `Current total: ${totalWeight.toFixed(1)}%. Adjust weights before submitting.`, variant: "destructive" });
       return;
     }
+    if (isModelPortfolio && upstoxEligibility && !upstoxEligibility.eligible) {
+      const reasons = upstoxEligibility.errors.map(e => `\u2022 ${e.reason}`).join("\n");
+      const proceed = window.confirm(
+        "This basket can't be published to Upstox yet:\n\n" + reasons +
+        "\n\nYou can still save it, but it won't be publishable until these are fixed.\n\nSave anyway?"
+      );
+      if (!proceed) return;
+    }
+
     rebalanceMutation.mutate({
       constituents: constituents.map(c => ({
         symbol: c.symbol,
@@ -4062,6 +4076,14 @@ function BasketBuilderPanel({ strategy }: { strategy: Strategy }) {
                 </div>
               </div>
             ))}
+
+            {isModelPortfolio && (
+              <UpstoxEligibilityPanel
+                strategyId={strategy.id}
+                constituents={constituents}
+                onEligibilityChange={setUpstoxEligibility}
+              />
+            )}
 
             <div className="space-y-1.5">
               <Label>Rebalance Notes (optional)</Label>
