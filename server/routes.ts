@@ -54,6 +54,7 @@ function validateVerifyToken(token: string, orderId: string, userId: string): bo
 
 import { initXTSBridge } from "./xts-bridge";
 import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
+import { registerBasketAdminRoutes } from "./routes-basket-admin";
 import { registerNextraSSO } from "./nextra-sso";
 import { registerNextraAdmin } from "./nextra-admin";
 import { registerNextraTrade } from "./nextra-trade";
@@ -7908,6 +7909,10 @@ export async function registerRoutes(
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ── Active Broker Calls (calls + positions with webhook_rec_id) ──
+  // Model-portfolio basket publishing. Separate router, tables, dispatcher.
+  // Does not touch the recommendation webhook path.
+  registerBasketAdminRoutes(app, requireAdmin);
+
   app.get("/api/admin/broker-calls/active", requireAdmin, async (req, res) => {
     try {
       const broker = req.query.broker as string || "";
