@@ -166,21 +166,21 @@ async def _overlay_ideas_prices(ideas):
         symbols = [s.get("symbol","") for s in ideas if s.get("symbol")]
         if not symbols: return ideas
         live = {}
-        for i in range(0, len(symbols), 30):
-            batch = symbols[i:i+30]
-            kite_syms = ",".join([f"NSE:{s}" for s in batch])
-            try:
-                async with httpx.AsyncClient(timeout=3) as cl:
-                    r = await cl.get(
-                        f"http://localhost:8001/api/shared/kite-quotes-raw?symbols={kite_syms}",
-                        headers={"x-shared-secret": "alphamarket-shared-2026"}
-                    )
-                    if r.status_code == 200:
-                        for k, v in r.json().get("quotes", {}).items():
-                            sym = k.replace("NSE:", "")
-                            if v.get("ltp") or v.get("price"):
-                                live[sym] = v
-            except: pass
+        # Use batched kite-quotes (Kite + TrueData fallback, rate-limit safe)
+        clean_syms = [s for s in symbols if " " not in s and "&" not in s]
+        syms_str = ",".join(clean_syms[:100])  # Cap at 100 per call
+        try:
+            async with httpx.AsyncClient(timeout=5) as cl:
+                r = await cl.get(
+                    f"http://localhost:8001/api/shared/kite-quotes?symbols={syms_str}",
+                    headers={"x-shared-secret": "alphamarket-shared-2026"}
+                )
+                if r.status_code == 200:
+                    for k, v in r.json().get("quotes", {}).items():
+                        ltp = v.get("price", 0)
+                        if ltp and ltp > 0:
+                            live[k] = v
+        except: pass
         for s in ideas:
             q = live.get(s.get("symbol",""))
             if q:

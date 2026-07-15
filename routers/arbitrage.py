@@ -238,6 +238,27 @@ async def kite_status():
 # CASH-FUTURES SPREAD SCANNER
 # ══════════════════════════════════════════════════════════════════
 
+# ── Kite rate limiter: 3 requests/sec (token bucket) ──
+import time as _rl_time
+_kite_rate_tokens = 3.0
+_kite_rate_max = 3.0
+_kite_rate_per_sec = 3.0
+_kite_rate_last = _rl_time.monotonic()
+_kite_rate_lock = __import__('threading').Lock()
+
+def _kite_rate_acquire():
+    """Token bucket rate limiter. Returns True if request is allowed."""
+    global _kite_rate_tokens, _kite_rate_last
+    with _kite_rate_lock:
+        now = _rl_time.monotonic()
+        elapsed = now - _kite_rate_last
+        _kite_rate_last = now
+        _kite_rate_tokens = min(_kite_rate_max, _kite_rate_tokens + elapsed * _kite_rate_per_sec)
+        if _kite_rate_tokens >= 1.0:
+            _kite_rate_tokens -= 1.0
+            return True
+        return False
+
 async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> dict:
     """Fetch LTP from Kite API for multiple instruments.
     On 403/401: invalidates in-memory token, reloads from DB, retries once.
@@ -246,6 +267,9 @@ async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> 
     import urllib.request, urllib.error
     if not _is_kite_connected():
         raise HTTPException(401, "Kite not connected. Please login via Settings.")
+    if not _kite_rate_acquire():
+        logger.warning(f"Kite rate limit — dropping request for {len(symbols)} symbols, use TrueData fallback")
+        return {}  # Caller falls back to TrueData
     headers = _get_kite_headers()
     if not headers:
         raise HTTPException(401, "Kite not connected. Please login via Settings.")
