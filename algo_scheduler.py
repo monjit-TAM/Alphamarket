@@ -324,16 +324,28 @@ async def run_scanner_cycle(last_scan: dict) -> dict:
     # phantom signals on gap days (BUILDPRO born past target). Overlay live LTP;
     # if quotes unavailable, SKIP the cycle honestly rather than scan stale.
     try:
-        from routers.arbitrage import _fetch_kite_quotes
+        # 15 Jul: route via the shared kite-quotes endpoint (Kite -> TrueData ladder
+        # built in). Direct _fetch_kite_quotes calls were dropped by the 3/sec rate
+        # limiter under contention -> overlay 0/780 -> every cycle skipped.
+        import aiohttp as _ah
         _syms = [s.get("symbol") for s in universe if s.get("symbol")]
         _live = {}
-        for _i in range(0, len(_syms), 450):
-            _chunk = [f"NSE:{x}" for x in _syms[_i:_i+450]]
-            _data = await _fetch_kite_quotes(_chunk)
-            for _k, _v in (_data or {}).items():
-                _lp = _v.get("last_price", 0)
-                if _lp and _lp > 0:
-                    _live[_k.replace("NSE:", "")] = float(_lp)
+        async with _ah.ClientSession() as _sess:
+            for _i in range(0, len(_syms), 300):
+                _chunk = ",".join(_syms[_i:_i+300])
+                try:
+                    async with _sess.get(
+                        "http://localhost:8001/api/shared/kite-quotes",
+                        params={"symbols": _chunk},
+                        headers={"x-shared-secret": "alphamarket-shared-2026"},
+                        timeout=_ah.ClientTimeout(total=10)) as _r:
+                        _j = await _r.json()
+                    for _sym, _q in (_j.get("quotes") or {}).items():
+                        _lp = _q.get("price", 0)
+                        if _lp and _lp > 0:
+                            _live[_sym] = float(_lp)
+                except Exception as _ce:
+                    logger.warning(f"[OVERLAY] chunk fetch failed: {_ce}")
         if len(_live) < len(_syms) * 0.5:
             return {"error": f"live overlay thin ({len(_live)}/{len(_syms)}) — cycle skipped, no stale-price signals", "signals": 0}
         for s in universe:
