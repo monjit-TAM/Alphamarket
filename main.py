@@ -714,6 +714,15 @@ async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
             quotes[key] = {"price": ltp, "ltp": ltp, "ohlc": val.get("ohlc"),
                            "volume": val.get("volume") or val.get("volume_traded") or 0,
                            "source": "kite"}
+        # ── TrueData fallback (15 Jul): when Kite is rate-limited/down, raw callers
+        # (Data Services, scanner overlay) got {} — same Kite->TrueData ladder as
+        # kite-quotes. Price-only (no ohlc), honestly tagged source=truedata.
+        _missing = [s for s in raw_syms if s not in quotes and s.startswith("NSE:")]
+        if _missing and _td_connected:
+            _td = _td_get_quotes([s.replace("NSE:", "") for s in _missing])
+            for _sym, _d in (_td or {}).items():
+                if _d.get("ltp") and _d["ltp"] > 0:
+                    quotes[f"NSE:{_sym}"] = {"price": _d["ltp"], "ltp": _d["ltp"], "source": "truedata"}
         return {"quotes": quotes, "count": len(quotes)}
     except Exception as e:
         return {"quotes": {}, "error": str(e)}
