@@ -653,6 +653,46 @@ async def startup():
 
 
 
+@app.get("/api/shared/profile/{symbol}", include_in_schema=False)
+async def shared_profile(symbol: str, date: str = "", days: int = 1):
+    """Market Profile / Order Flow proxy -> DS engine (same numbers as AlphaLab)."""
+    import httpx as _hx
+    try:
+        async with _hx.AsyncClient(timeout=30) as c:
+            r = await c.get(f"{DATA_SERVICE_URL}/data/equity/profile/{symbol.upper()}",
+                            params={"date": date, "days": days},
+                            headers={"X-API-Key": "alpha_data_internal_2026"})
+            return r.json()
+    except Exception as e:
+        return {"detail": f"Profile service unavailable: {e}"}
+
+
+@app.get("/api/shared/dom/{symbol}", include_in_schema=False)
+async def shared_dom(symbol: str):
+    """Live 5-level depth via Kite full quote (rate-limited, token-retrying helper)."""
+    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+    sym = symbol.upper()
+    if not _is_kite_connected():
+        return {"symbol": sym, "live": False, "note": "Kite not connected.", "bids": [], "asks": []}
+    try:
+        data = await _fetch_kite_quotes([f"NSE:{sym}"], mode="quote")
+        d = data.get(f"NSE:{sym}")
+    except Exception as e:
+        return {"symbol": sym, "live": False, "note": f"Depth source unavailable: {e}", "bids": [], "asks": []}
+    if not d:
+        return {"symbol": sym, "live": False, "note": "No quote returned.", "bids": [], "asks": []}
+    dep = d.get("depth") or {}
+    bids = [{"price": x.get("price"), "qty": x.get("quantity"), "orders": x.get("orders")} for x in (dep.get("buy") or [])]
+    asks = [{"price": x.get("price"), "qty": x.get("quantity"), "orders": x.get("orders")} for x in (dep.get("sell") or [])]
+    tbq, tsq = d.get("buy_quantity") or 0, d.get("sell_quantity") or 0
+    live = any(x["qty"] for x in bids + asks)
+    return {"symbol": sym, "ltp": d.get("last_price"), "bids": bids, "asks": asks,
+            "total_buy_qty": tbq, "total_sell_qty": tsq,
+            "imbalance_pct": round((tbq - tsq) / (tbq + tsq) * 100, 1) if (tbq + tsq) else None,
+            "live": live, "source": "kite_depth5",
+            "note": None if live else "Market closed — depth is live-only (Mon-Fri 09:15-15:30 IST)."}
+
+
 @app.get("/api/shared/kite-quotes", include_in_schema=False)
 async def shared_kite_quotes(request: Request, symbols: str = ""):
     """Internal endpoint: Kite first, TrueData fallback, then Groww (via Node)."""
