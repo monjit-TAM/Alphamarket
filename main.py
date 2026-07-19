@@ -653,6 +653,18 @@ async def startup():
 
 
 
+@app.get("/api/shared/baserates", include_in_schema=False)
+async def shared_baserates(timeframe: str = "daily"):
+    """Historical pattern base rates — proxied from the AlphaLab evidence DB (same numbers both platforms)."""
+    import httpx as _hx
+    try:
+        async with _hx.AsyncClient(timeout=20) as c:
+            r = await c.get("https://testalpha.in/api/patterns/baserates", params={"timeframe": timeframe})
+            return r.json()
+    except Exception as e:
+        return {"patterns": {}, "detail": f"baserates unavailable: {e}"}
+
+
 @app.get("/api/shared/profile/{symbol}", include_in_schema=False)
 async def shared_profile(symbol: str, date: str = "", days: int = 1):
     """Market Profile / Order Flow proxy -> DS engine (same numbers as AlphaLab)."""
