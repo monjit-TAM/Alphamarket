@@ -653,6 +653,19 @@ async def startup():
 
 
 
+@app.get("/api/shared/structure-screener", include_in_schema=False)
+async def shared_structure_screener(mode: str = "untested_poc", within_pct: float = 1.0, min_streak: int = 3, limit: int = 50):
+    import httpx as _hx
+    try:
+        async with _hx.AsyncClient(timeout=25) as c:
+            r = await c.get("https://data.alphamarket.co.in/data/equity/structure-screener",
+                            params={"mode": mode, "within_pct": within_pct, "min_streak": min_streak, "limit": limit},
+                            headers={"X-API-Key": "alpha_data_internal_2026"})
+            return r.json()
+    except Exception as e:
+        return {"results": [], "detail": f"structure screener unavailable: {e}"}
+
+
 @app.get("/api/shared/baserates", include_in_schema=False)
 async def shared_baserates(timeframe: str = "daily"):
     """Historical pattern base rates — proxied from the AlphaLab evidence DB (same numbers both platforms)."""
