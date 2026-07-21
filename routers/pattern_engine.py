@@ -383,7 +383,7 @@ def _sma(vals, n):
     return out
 
 
-def _atr(candles, n=10):
+def _atr(candles, n=14):
     trs = []
     for i, c in enumerate(candles):
         if i == 0:
