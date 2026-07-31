@@ -27,7 +27,7 @@ export default function AdminBrokerReports() {
   const [perfData, setPerfData] = useState<any>(null);
   const [newCallsData, setNewCallsData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"overview" | "newcalls">("overview");
+  const [tab, setTab] = useState<"overview" | "newcalls" | "alladvisors">("overview");
 
   const loadReport = async () => {
     setLoading(true);
@@ -36,7 +36,8 @@ export default function AdminBrokerReports() {
       const [d, p, nc] = await Promise.all([
         api(`/api/admin/broker-reports?${params}`),
         api(`/api/admin/broker-reports/advisor-performance?from=${from}&to=${to}`),
-        api(`/api/admin/broker-reports/new-calls?from=${from}&to=${to}`)
+        api(`/api/admin/broker-reports/new-calls?from=${from}&to=${to}`),
+        api(`/api/admin/broker-reports/all-advisors?from=${from}&to=${to}`)
       ]);
       setData(d);
       setPerfData(p);
@@ -67,6 +68,7 @@ export default function AdminBrokerReports() {
   const ncDaily = newCallsData?.daily || [];
   const ncDailyAdvisor = newCallsData?.dailyAdvisor || [];
   const ncBrokerAdvisor = newCallsData?.brokerAdvisor || [];
+  const [allAdvisorsData, setAllAdvisorsData] = useState<any>(null);
 
   const btnStyle = (active: boolean) => ({
     padding: "5px 10px", border: `1px solid ${active ? C.blue : C.border}`, borderRadius: 6, fontSize: 12,
@@ -104,6 +106,7 @@ export default function AdminBrokerReports() {
         <div style={{ display: "flex", gap: 4, background: C.bg, borderRadius: 8, padding: 3 }}>
           <button onClick={() => setTab("overview")} style={{ ...btnStyle(tab === "overview"), borderRadius: 6 }}>Webhook Overview</button>
           <button onClick={() => setTab("newcalls")} style={{ ...btnStyle(tab === "newcalls"), borderRadius: 6 }}>New Calls (DB)</button>
+          <button onClick={() => setTab("alladvisors")} style={{ ...btnStyle(tab === "alladvisors"), borderRadius: 6 }}>All Advisors</button>
         </div>
       </div>
 
@@ -361,6 +364,51 @@ export default function AdminBrokerReports() {
             </div>
           </>
         )
+      
+      ) : tab === "alladvisors" ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
+            <Stat label="Total Advisors" value={(allAdvisorsData?.advisors || []).length} color={C.blue} />
+            <Stat label="Total Calls" value={(allAdvisorsData?.advisors || []).reduce((a: number, v: any) => a + Number(v.grand_total || 0), 0)} color={C.blue} />
+            <Stat label="Total Wins" value={(allAdvisorsData?.advisors || []).reduce((a: number, v: any) => a + Number(v.total_wins || 0), 0)} color={C.green} />
+            <Stat label="Total Losses" value={(allAdvisorsData?.advisors || []).reduce((a: number, v: any) => a + Number(v.total_losses || 0), 0)} color={C.red} />
+          </div>
+
+          <div style={{ background: C.panel, borderRadius: 8, border: `1px solid ${C.border}`, padding: 16, overflowX: "auto" }}>
+            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 10 }}>All Advisor Performance</h2>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1100 }}>
+              <thead><tr style={{ background: C.bg }}>
+                {["Advisor", "SEBI", "Equity", "E-Win", "E-Loss", "E-Hit%", "E-Avg%", "E-P&L", "F&O", "F-Win", "F-Loss", "F-Hit%", "F-Avg%", "Total"].map(h => (
+                  <th key={h} style={{ padding: "8px 6px", fontSize: 10, fontWeight: 700, color: C.muted, textAlign: "left", borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {(allAdvisorsData?.advisors || []).map((a: any, i: number) => {
+                  const eqHitRate = (Number(a.eq_wins) + Number(a.eq_losses)) > 0 ? Math.round(Number(a.eq_wins) / (Number(a.eq_wins) + Number(a.eq_losses)) * 100) : 0;
+                  const fnoHitRate = (Number(a.fno_wins) + Number(a.fno_losses)) > 0 ? Math.round(Number(a.fno_wins) / (Number(a.fno_wins) + Number(a.fno_losses)) * 100) : 0;
+                  return (
+                  <tr key={i} style={{ borderBottom: `1px solid ${C.border}` }}>
+                    <td style={{ padding: "6px", fontSize: 12, fontWeight: 600, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.advisor}</td>
+                    <td style={{ padding: "6px", fontSize: 10, color: C.muted, whiteSpace: "nowrap" }}>{a.sebi || "-"}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: C.blue, fontWeight: 600 }}>{a.equity_calls}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: C.green }}>{a.eq_wins}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: C.red }}>{a.eq_losses}</td>
+                    <td style={{ padding: "6px", fontSize: 12, fontWeight: 600, color: eqHitRate >= 50 ? C.green : C.red }}>{eqHitRate || "-"}%</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: Number(a.eq_avg_return || 0) >= 0 ? C.green : C.red }}>{a.eq_avg_return || "-"}%</td>
+                    <td style={{ padding: "6px", fontSize: 12, fontWeight: 500, color: Number(a.eq_abs_pnl || 0) >= 0 ? C.green : C.red }}>{Number(a.eq_abs_pnl || 0) > 0 ? "+" : ""}{Math.round(Number(a.eq_abs_pnl || 0))}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: C.blue, fontWeight: 600 }}>{a.fno_positions}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: C.green }}>{a.fno_wins}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: C.red }}>{a.fno_losses}</td>
+                    <td style={{ padding: "6px", fontSize: 12, fontWeight: 600, color: fnoHitRate >= 50 ? C.green : C.red }}>{a.fno_positions > 0 ? fnoHitRate + "%" : "-"}</td>
+                    <td style={{ padding: "6px", fontSize: 12, color: Number(a.fno_avg_return || 0) >= 0 ? C.green : C.red }}>{a.fno_avg_return || "-"}%</td>
+                    <td style={{ padding: "6px", fontSize: 13, fontWeight: 700, color: C.blue }}>{a.grand_total}</td>
+                  </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
       ) : null}
     </div>
   );

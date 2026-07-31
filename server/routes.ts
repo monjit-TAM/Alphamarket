@@ -56,6 +56,7 @@ import { initXTSBridge } from "./xts-bridge";
 import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 import { registerBasketAdminRoutes } from "./routes-basket-admin";
 import { registerBasketValidateRoutes } from "./routes-basket-validate";
+import { autoDispatchOnRebalance } from "./basket-auto-dispatch";
 import { registerNextraSSO } from "./nextra-sso";
 import { registerNextraAdmin } from "./nextra-admin";
 import { registerNextraTrade } from "./nextra-trade";
@@ -1447,6 +1448,12 @@ export async function registerRoutes(
       }
 
       res.json({ rebalance, constituents: createdConstituents });
+
+      // Fire-and-forget: push the new version to any broker this basket is
+      // already live on. Deliberately NOT awaited — a broker being down must
+      // never fail an advisor's save. Outcome lands in
+      // broker_basket_publish_log and the admin panel.
+      autoDispatchOnRebalance(req.params.id, req.session.userId ?? null);
     } catch (err: any) {
       res.status(500).send(err.message);
     }
@@ -8668,6 +8675,79 @@ export async function registerRoutes(
   });
 
   // ── Download Broker Report (XLSX / PDF) ──
+  // ── All Advisors Performance (not broker-filtered) ──
+  app.get("/api/admin/broker-reports/all-advisors", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+
+      const advisors = await db.execute(sql.raw(
+        "WITH eq AS (" +
+        "  SELECT u.company_name, u.sebi_reg_number," +
+        "    COUNT(*) as equity_total," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Sell') as eq_wins," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price <= c.buy_range_start AND c.action = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price >= c.buy_range_start AND c.action = 'Sell') as eq_losses," +
+        "    ROUND(AVG(CASE WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Buy'" +
+        "      THEN ((c.sell_price - c.buy_range_start) / c.buy_range_start) * 100" +
+        "      WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Sell'" +
+        "      THEN ((c.buy_range_start - c.sell_price) / c.buy_range_start) * 100 END)::numeric, 2) as eq_avg_return," +
+        "    ROUND(SUM(CASE WHEN c.status = 'Closed' AND c.action = 'Buy' THEN c.sell_price - c.buy_range_start" +
+        "      WHEN c.status = 'Closed' AND c.action = 'Sell' THEN c.buy_range_start - c.sell_price ELSE 0 END)::numeric, 2) as eq_abs_pnl," +
+        "    string_agg(DISTINCT s.horizon, ', ') as eq_horizons" +
+        "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE c.is_published = true AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY u.company_name, u.sebi_reg_number" +
+        "), fno AS (" +
+        "  SELECT u.company_name, u.sebi_reg_number," +
+        "    COUNT(*) as fno_total," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric > p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric < p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Sell') as fno_wins," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric <= p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric >= p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Sell') as fno_losses," +
+        "    ROUND(AVG(CASE WHEN p.status = 'Closed' AND p.entry_price::numeric > 0 AND COALESCE(p.buy_sell,'Buy') = 'Buy'" +
+        "      THEN ((p.exit_price::numeric - p.entry_price::numeric) / p.entry_price::numeric) * 100" +
+        "      WHEN p.status = 'Closed' AND p.entry_price::numeric > 0 AND COALESCE(p.buy_sell,'Buy') = 'Sell'" +
+        "      THEN ((p.entry_price::numeric - p.exit_price::numeric) / p.entry_price::numeric) * 100 END)::numeric, 2) as fno_avg_return," +
+        "    string_agg(DISTINCT p.segment, ', ') as fno_segments," +
+        "    string_agg(DISTINCT s.horizon, ', ') as fno_horizons" +
+        "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE p.is_published = true AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY u.company_name, u.sebi_reg_number" +
+        ") SELECT COALESCE(e.company_name, f.company_name) as advisor," +
+        "  COALESCE(e.sebi_reg_number, f.sebi_reg_number) as sebi," +
+        "  COALESCE(e.equity_total, 0) as equity_calls," +
+        "  COALESCE(e.eq_open, 0) as eq_open," +
+        "  COALESCE(e.eq_closed, 0) as eq_closed," +
+        "  COALESCE(e.eq_wins, 0) as eq_wins," +
+        "  COALESCE(e.eq_losses, 0) as eq_losses," +
+        "  e.eq_avg_return," +
+        "  COALESCE(e.eq_abs_pnl, 0) as eq_abs_pnl," +
+        "  e.eq_horizons," +
+        "  COALESCE(f.fno_total, 0) as fno_positions," +
+        "  COALESCE(f.fno_open, 0) as fno_open," +
+        "  COALESCE(f.fno_closed, 0) as fno_closed," +
+        "  COALESCE(f.fno_wins, 0) as fno_wins," +
+        "  COALESCE(f.fno_losses, 0) as fno_losses," +
+        "  f.fno_avg_return," +
+        "  f.fno_segments," +
+        "  f.fno_horizons," +
+        "  COALESCE(e.equity_total, 0) + COALESCE(f.fno_total, 0) as grand_total," +
+        "  COALESCE(e.eq_wins, 0) + COALESCE(f.fno_wins, 0) as total_wins," +
+        "  COALESCE(e.eq_losses, 0) + COALESCE(f.fno_losses, 0) as total_losses" +
+        " FROM eq e FULL OUTER JOIN fno f ON e.company_name = f.company_name" +
+        " ORDER BY grand_total DESC"
+      ));
+
+      res.json({ period: { from, to }, advisors: advisors.rows });
+    } catch (err) { res.status(500).send((err as any).message); }
+  });
+
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
     try {
       const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];

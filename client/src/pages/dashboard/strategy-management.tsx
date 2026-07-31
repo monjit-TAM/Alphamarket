@@ -3818,13 +3818,17 @@ function BasketBuilderPanel({ strategy }: { strategy: Strategy }) {
       toast({ title: "Total weight must equal 100%", description: `Current total: ${totalWeight.toFixed(1)}%. Adjust weights before submitting.`, variant: "destructive" });
       return;
     }
+    // Model portfolios are published to brokers under the advisor's SEBI
+    // registration, so they must be compliant at rest. Hard block.
+    // Intraday / multi-leg baskets are never gated (isModelPortfolio is false).
     if (isModelPortfolio && upstoxEligibility && !upstoxEligibility.eligible) {
       const reasons = upstoxEligibility.errors.map(e => `\u2022 ${e.reason}`).join("\n");
-      const proceed = window.confirm(
-        "This basket can't be published to Upstox yet:\n\n" + reasons +
-        "\n\nYou can still save it, but it won't be publishable until these are fixed.\n\nSave anyway?"
-      );
-      if (!proceed) return;
+      toast({
+        title: "This basket cannot be saved until these are fixed",
+        description: reasons,
+        variant: "destructive",
+      });
+      return;
     }
 
     rebalanceMutation.mutate({

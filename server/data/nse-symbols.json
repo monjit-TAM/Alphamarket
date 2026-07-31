@@ -5247,7 +5247,7 @@
     "name": "EXIDEIND",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "EXPLEOSOL",
@@ -13164,7 +13164,7 @@
     "name": "NUVAMA WEALTH MANAGE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "NUVOCO",
