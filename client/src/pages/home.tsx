@@ -59,11 +59,12 @@ export default function Home() {
     if (themeFilter && themeFilter !== "all") {
       const themes = (s.theme || []).map((t: string) => t.toLowerCase());
       const ft = themeFilter.toLowerCase();
-      const themeMatch = themes.some((t: string) => t.includes(ft) || ft.includes(t));
-      const typeMatch = (s.type || "").toLowerCase().includes(ft) || ft.includes((s.type || "").toLowerCase());
+      const themeMatch = themes.includes(ft);
+      const typeMatch = (s.type || "").toLowerCase() === ft;
       const horizonMatch = (s.horizon || "").toLowerCase().includes(ft);
       const fnoMatch = ft === "f&o" && ["Option", "Future", "CommodityFuture"].includes(s.type);
-      if (!themeMatch && !typeMatch && !horizonMatch && !fnoMatch) return false;
+      const swingMatch = (ft === "swingtrade" || ft === "swing") && (s.horizon || "").toLowerCase().includes("swing");
+      if (!themeMatch && !typeMatch && !horizonMatch && !fnoMatch && !swingMatch) return false;
     }
     if (volatilityFilter && volatilityFilter !== "all" && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
     if (horizonFilter && horizonFilter !== "all" && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
@@ -154,7 +155,7 @@ export default function Home() {
                     <CardContent className="p-3 text-center space-y-1">
                       <p className="text-2xl font-bold text-primary">{count}</p>
                       <p className="text-xs text-muted-foreground leading-tight">{cat.label}</p>
-                      <Link href={`/strategies?horizon=${cat.key}`}>
+                      <Link href={`/strategies?category=${encodeURIComponent(cat.key)}`}>
                         <Button variant="ghost" size="sm" className="text-xs px-2 h-6 mt-1" data-testid={`button-view-${cat.key.toLowerCase().replace(/\s+/g, '-')}`}>
                           View
                         </Button>
