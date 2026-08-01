@@ -179,18 +179,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteUser(id: string): Promise<void> {
-    const userStrats = await db.select().from(strategies).where(eq(strategies.advisorId, id));
-    for (const s of userStrats) {
-      await db.delete(calls).where(eq(calls.strategyId, s.id));
-      await db.delete(positions).where(eq(positions.strategyId, s.id));
-    }
-    await db.delete(strategies).where(eq(strategies.advisorId, id));
-    await db.delete(plans).where(eq(plans.advisorId, id));
-    await db.delete(content).where(eq(content.advisorId, id));
-    await db.delete(scores).where(eq(scores.advisorId, id));
-    await db.delete(subscriptions).where(eq(subscriptions.advisorId, id));
-    await db.delete(subscriptions).where(eq(subscriptions.userId, id));
-    await db.delete(users).where(eq(users.id, id));
+    // Use safe_delete_user DB function which cleans up all 39 FK references
+    // in the correct order (esign_agreements, ekyc, pmla, payments, etc.)
+    await db.execute(sql`SELECT safe_delete_user(${id})`);
   }
 
   async getAllUsers(): Promise<User[]> {

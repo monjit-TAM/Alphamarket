@@ -238,6 +238,10 @@ export function RegisterPage() {
       toast({ title: "SEBI Registration Number is required for advisors", variant: "destructive" });
       return;
     }
+    if (form.role === "advisor" && !form.sebiCertUrl) {
+      toast({ title: "SEBI Registration Certificate upload is required for advisors", variant: "destructive" });
+      return;
+    }
     if (form.role === "advisor" && (!agreement1Checked || !agreement2Checked)) {
       toast({ title: "You must agree to both agreements to register as an advisor", variant: "destructive" });
       return;
@@ -356,7 +360,7 @@ export function RegisterPage() {
                   <Label>
                     <span className="flex items-center gap-1">
                       <Upload className="w-3 h-3" />
-                      SEBI Registration Certificate
+                      SEBI Registration Certificate *
                     </span>
                   </Label>
                   {uploadedFile ? (
