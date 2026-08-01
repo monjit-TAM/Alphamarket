@@ -1,8 +1,18 @@
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { Helmet } from "react-helmet-async";
+import { useQuery } from "@tanstack/react-query";
+import { MarkdownContent } from "@/components/markdown-content";
 
-function LegalPageLayout({ title, lastUpdated, children }: { title: string; lastUpdated: string; children: React.ReactNode }) {
+const PROSE_CLASSES = "prose prose-sm max-w-none dark:prose-invert space-y-4 text-sm leading-relaxed text-muted-foreground [&_h2]:text-foreground [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:text-foreground [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6 [&_h3]:mb-2 [&_h4]:text-foreground [&_h4]:text-base [&_h4]:font-semibold [&_h4]:mt-5 [&_h4]:mb-2 [&_h5]:text-foreground [&_h5]:font-semibold [&_h5]:mt-4 [&_h5]:mb-1 [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1.5";
+
+function LegalPageLayout({ title, lastUpdated, children, slug }: { title: string; lastUpdated: string; children: React.ReactNode; slug?: string }) {
+  const { data: pageData } = useQuery<any>({
+    queryKey: [`/api/page-content/${slug}`],
+    enabled: !!slug,
+  });
+  const customContent = pageData?.hasCustomContent ? pageData.content : null;
+
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
@@ -11,8 +21,8 @@ function LegalPageLayout({ title, lastUpdated, children }: { title: string; last
           <h1 className="text-3xl font-bold mb-1" data-testid="legal-page-title">{title}</h1>
           {lastUpdated && <p className="text-sm text-muted-foreground mb-8">Last Updated: {lastUpdated}</p>}
           {!lastUpdated && <div className="mb-8" />}
-          <div className="prose prose-sm max-w-none dark:prose-invert space-y-4 text-sm leading-relaxed text-muted-foreground [&_h2]:text-foreground [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:text-foreground [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6 [&_h3]:mb-2 [&_h4]:text-foreground [&_h4]:text-base [&_h4]:font-semibold [&_h4]:mt-5 [&_h4]:mb-2 [&_h5]:text-foreground [&_h5]:font-semibold [&_h5]:mt-4 [&_h5]:mb-1 [&_strong]:text-foreground [&_a]:text-primary [&_a]:underline [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:mb-1.5">
-            {children}
+          <div className={PROSE_CLASSES}>
+            {customContent ? <MarkdownContent markdown={customContent} /> : children}
           </div>
         </div>
       </main>
@@ -23,7 +33,7 @@ function LegalPageLayout({ title, lastUpdated, children }: { title: string; last
 
 export function TermsAndConditions() {
   return (
-    <LegalPageLayout title="Terms and Conditions" lastUpdated="Oct 15, 2024">
+    <LegalPageLayout title="Terms and Conditions" lastUpdated="Oct 15, 2024" slug="terms-and-conditions">
       <Helmet>
         <title>Terms and Conditions | AlphaMarket</title>
         <meta name="description" content="AlphaMarket Terms and Conditions - Read the terms governing use of our SaaS marketplace platform connecting SEBI-registered advisors with investors." />
@@ -162,7 +172,7 @@ export function TermsAndConditions() {
 
 export function CancellationPolicy() {
   return (
-    <LegalPageLayout title="Cancellation & Refund Policy" lastUpdated="November 11, 2023">
+    <LegalPageLayout title="Cancellation & Refund Policy" lastUpdated="November 11, 2023" slug="cancellation-policy">
       <Helmet>
         <title>Cancellation & Refund Policy | AlphaMarket</title>
         <meta name="description" content="AlphaMarket Cancellation and Refund Policy for Investment Advisory Services subscriptions." />
@@ -196,7 +206,7 @@ export function CancellationPolicy() {
 
 export function PrivacyPolicy() {
   return (
-    <LegalPageLayout title="Privacy Policy" lastUpdated="Oct 15, 2024">
+    <LegalPageLayout title="Privacy Policy" lastUpdated="Oct 15, 2024" slug="privacy-policy">
       <Helmet>
         <title>Privacy Policy | AlphaMarket</title>
         <meta name="description" content="AlphaMarket Privacy Policy - Learn how we collect, use, and protect your personal information when using our platform." />
@@ -287,7 +297,7 @@ export function PrivacyPolicy() {
 
 export function LegalAgreement() {
   return (
-    <LegalPageLayout title="Disclosures - Edhaz Markets Private Limited" lastUpdated="Oct 15, 2024">
+    <LegalPageLayout title="Disclosures - Edhaz Markets Private Limited" lastUpdated="Oct 15, 2024" slug="legal-agreement">
       <Helmet>
         <title>Legal Disclosures | AlphaMarket</title>
         <meta name="description" content="AlphaMarket legal disclosures by Edhaz Markets Private Limited - transparency about our role as a technology platform." />
@@ -343,7 +353,7 @@ export function LegalAgreement() {
 
 export function ShippingAndReturns() {
   return (
-    <LegalPageLayout title="Shipping and Delivery Policy" lastUpdated="November 11, 2023">
+    <LegalPageLayout title="Shipping and Delivery Policy" lastUpdated="November 11, 2023" slug="shipping-and-delivery">
       <Helmet>
         <title>Shipping & Delivery Policy | AlphaMarket</title>
         <meta name="description" content="AlphaMarket Shipping and Delivery Policy - Our services are entirely digital with no physical shipment involved." />
@@ -399,7 +409,7 @@ export function ShippingAndReturns() {
 
 export function ContactUs() {
   return (
-    <LegalPageLayout title="Contact Us" lastUpdated="">
+    <LegalPageLayout title="Contact Us" lastUpdated="" slug="contact-us">
       <Helmet>
         <title>Contact Us | AlphaMarket</title>
         <meta name="description" content="Get in touch with AlphaMarket - Contact us via phone, email, or visit our office in Andheri West, Mumbai, India." />

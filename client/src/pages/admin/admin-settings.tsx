@@ -48,6 +48,56 @@ export default function AdminSettings() {
     },
   });
 
+  const FOOTER_PAGES = [
+    { slug: "privacy-policy", name: "Privacy Policy" },
+    { slug: "terms-and-conditions", name: "Terms and Conditions" },
+    { slug: "legal-agreement", name: "Legal Disclosures" },
+    { slug: "cancellation-policy", name: "Cancellation & Refund" },
+    { slug: "shipping-and-delivery", name: "Shipping & Delivery" },
+    { slug: "contact-us", name: "Contact Us" },
+  ];
+  const [selectedPage, setSelectedPage] = useState("privacy-policy");
+  const [pageMarkdown, setPageMarkdown] = useState("");
+  const [pageLoadedFor, setPageLoadedFor] = useState("");
+
+  const { data: pageContentData } = useQuery<any>({
+    queryKey: [`/api/page-content/${selectedPage}`],
+  });
+  if (pageContentData && pageLoadedFor !== selectedPage) {
+    setPageMarkdown(pageContentData.content || "");
+    setPageLoadedFor(selectedPage);
+  }
+
+  const savePageMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/admin/page-content/${selectedPage}`, { content: pageMarkdown });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Page Saved", description: "Page content updated. Changes are live." });
+      queryClient.invalidateQueries({ queryKey: [`/api/page-content/${selectedPage}`] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to save page", variant: "destructive" });
+    },
+  });
+
+  const resetPageMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", `/api/admin/page-content/${selectedPage}`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Reset", description: "Page reverted to built-in default." });
+      setPageMarkdown("");
+      setPageLoadedFor("");
+      queryClient.invalidateQueries({ queryKey: [`/api/page-content/${selectedPage}`] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to reset", variant: "destructive" });
+    },
+  });
+
 
   const { data: tokenStatus, isLoading } = useQuery<TokenStatus>({
     queryKey: ["/api/admin/groww-token-status"],
@@ -295,6 +345,78 @@ export default function AdminSettings() {
               onChange={(e) => setSiteContent((p: any) => ({ ...p, footerTagline: e.target.value }))}
               data-testid="input-footer-tagline" />
           </div>
+
+          <div className="border-t pt-4">
+            <Label className="text-sm font-semibold">Footer Link Columns</Label>
+            <p className="text-xs text-muted-foreground mb-3">Edit headings, link labels and URLs. Leave URL blank for non-clickable text. Use full https:// for external links or /path for internal pages.</p>
+            <div className="space-y-4">
+              {(siteContent.footerColumns || []).map((col: any, ci: number) => (
+                <div key={ci} className="border rounded-md p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Input className="font-semibold" value={col.heading || ""} placeholder="Column Heading"
+                      onChange={(e) => setSiteContent((p: any) => {
+                        const cols = [...(p.footerColumns || [])];
+                        cols[ci] = { ...cols[ci], heading: e.target.value };
+                        return { ...p, footerColumns: cols };
+                      })} />
+                    <Button variant="ghost" size="sm" className="text-destructive"
+                      onClick={() => setSiteContent((p: any) => {
+                        const cols = [...(p.footerColumns || [])];
+                        cols.splice(ci, 1);
+                        return { ...p, footerColumns: cols };
+                      })}>Remove Column</Button>
+                  </div>
+                  {(col.links || []).map((link: any, li: number) => (
+                    <div key={li} className="flex items-center gap-2 pl-2">
+                      <Input className="text-xs" value={link.label || ""} placeholder="Link Label"
+                        onChange={(e) => setSiteContent((p: any) => {
+                          const cols = [...(p.footerColumns || [])];
+                          const links = [...(cols[ci].links || [])];
+                          links[li] = { ...links[li], label: e.target.value };
+                          cols[ci] = { ...cols[ci], links };
+                          return { ...p, footerColumns: cols };
+                        })} />
+                      <Input className="text-xs" value={link.url || ""} placeholder="/path or https://..."
+                        onChange={(e) => setSiteContent((p: any) => {
+                          const cols = [...(p.footerColumns || [])];
+                          const links = [...(cols[ci].links || [])];
+                          links[li] = { ...links[li], url: e.target.value };
+                          cols[ci] = { ...cols[ci], links };
+                          return { ...p, footerColumns: cols };
+                        })} />
+                      <Button variant="ghost" size="sm" className="text-destructive px-2"
+                        onClick={() => setSiteContent((p: any) => {
+                          const cols = [...(p.footerColumns || [])];
+                          const links = [...(cols[ci].links || [])];
+                          links.splice(li, 1);
+                          cols[ci] = { ...cols[ci], links };
+                          return { ...p, footerColumns: cols };
+                        })}>×</Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" className="ml-2 text-xs"
+                    onClick={() => setSiteContent((p: any) => {
+                      const cols = [...(p.footerColumns || [])];
+                      const links = [...(cols[ci].links || []), { label: "New Link", url: "" }];
+                      cols[ci] = { ...cols[ci], links };
+                      return { ...p, footerColumns: cols };
+                    })}>+ Add Link</Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm"
+                onClick={() => setSiteContent((p: any) => ({
+                  ...p, footerColumns: [...(p.footerColumns || []), { heading: "New Column", links: [] }]
+                }))}>+ Add Column</Button>
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs">Footer Disclaimer (bottom text)</Label>
+            <Textarea rows={3} value={siteContent.footerDisclaimer || ""} placeholder="Investment in securities market is subject to market risk..."
+              onChange={(e) => setSiteContent((p: any) => ({ ...p, footerDisclaimer: e.target.value }))}
+              data-testid="input-footer-disclaimer" />
+          </div>
+
           <Button
             disabled={saveContentMutation.isPending}
             onClick={() => saveContentMutation.mutate(siteContent)}
@@ -302,6 +424,67 @@ export default function AdminSettings() {
           >
             {saveContentMutation.isPending ? "Saving..." : "Save Content"}
           </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Key className="w-5 h-5 text-muted-foreground" />
+            <CardTitle>Footer Page Content Editor</CardTitle>
+          </div>
+          <CardDescription>
+            Rewrite the full content of any footer page using Markdown. Supports # headings, **bold**, [links](url), and - bullet lists.
+            Leave empty and click Reset to restore the built-in default. Changes go live immediately.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-xs">Select Page</Label>
+            <Select value={selectedPage} onValueChange={(v) => { setSelectedPage(v); setPageLoadedFor(""); }}>
+              <SelectTrigger data-testid="select-footer-page"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {FOOTER_PAGES.map((p) => (
+                  <SelectItem key={p.slug} value={p.slug}>{p.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {pageContentData && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {pageContentData.hasCustomContent
+                  ? "This page is using custom content."
+                  : "This page is using the built-in default. Start typing to override it."}
+              </p>
+            )}
+          </div>
+          <div>
+            <Label className="text-xs">Page Content (Markdown)</Label>
+            <Textarea
+              rows={18}
+              className="font-mono text-xs"
+              value={pageMarkdown}
+              placeholder={"# Section Heading\n\nYour paragraph text here. Use **bold** for emphasis and [link text](https://example.com) for links.\n\n## Subheading\n\n- First bullet point\n- Second bullet point"}
+              onChange={(e) => setPageMarkdown(e.target.value)}
+              data-testid="input-page-markdown"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              disabled={savePageMutation.isPending || !pageMarkdown.trim()}
+              onClick={() => savePageMutation.mutate()}
+              data-testid="button-save-page"
+            >
+              {savePageMutation.isPending ? "Saving..." : "Save Page"}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={resetPageMutation.isPending || !pageContentData?.hasCustomContent}
+              onClick={() => { if (confirm("Reset this page to the built-in default? Your custom content will be deleted.")) resetPageMutation.mutate(); }}
+              data-testid="button-reset-page"
+            >
+              Reset to Default
+            </Button>
+          </div>
         </CardContent>
       </Card>
     </div>

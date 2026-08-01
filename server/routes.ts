@@ -4927,6 +4927,29 @@ export async function registerRoutes(
         statsStrategies: "100+",
         statsCustomers: "3M+",
         footerTagline: "India's marketplace connecting investors with SEBI-registered advisors.",
+        footerDisclaimer: "AlphaMarket connects investors with advisors to receive advice on investing or trading in stock market, commodity, and F&O segments. Investment in securities market is subject to market risk. Read all related documents carefully before investing.",
+        footerColumns: [
+          { heading: "Advisors", links: [
+            { label: "Browse Advisors", url: "/advisors" },
+            { label: "Partnerships", url: "" },
+            { label: "Data Partners", url: "" },
+          ]},
+          { heading: "Company", links: [
+            { label: "Careers", url: "" },
+            { label: "Press", url: "" },
+          ]},
+          { heading: "Disclosures", links: [
+            { label: "Privacy Policy", url: "/privacy-policy" },
+            { label: "Terms and Conditions", url: "/terms-and-conditions" },
+            { label: "Legal Disclosures", url: "/legal-agreement" },
+            { label: "Cancellation & Refund", url: "/cancellation-policy" },
+            { label: "Shipping & Delivery", url: "/shipping-and-delivery" },
+          ]},
+          { heading: "About us", links: [
+            { label: "Contact Us", url: "/contact-us" },
+            { label: "Site Map", url: "/sitemap.xml" },
+          ]},
+        ],
       };
       const value = row?.value ? { ...defaults, ...JSON.parse(row.value) } : defaults;
       res.json(value);
@@ -4943,6 +4966,49 @@ export async function registerRoutes(
       await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
         VALUES ('site_content', ${jsonStr}, NOW())
         ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Editable Page Content (footer pages) ───
+  const VALID_PAGE_SLUGS = ["privacy-policy", "terms-and-conditions", "legal-agreement", "cancellation-policy", "shipping-and-delivery", "contact-us"];
+
+  app.get("/api/page-content/:slug", async (req: any, res: any) => {
+    try {
+      const slug = req.params.slug;
+      if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(404).json({ error: "Unknown page" });
+      const result = await db.execute(sql`SELECT value, updated_at FROM app_settings WHERE key = ${'page:' + slug}`);
+      const row = (result as any).rows?.[0];
+      if (!row) return res.json({ slug, content: null, hasCustomContent: false });
+      res.json({ slug, content: row.value, hasCustomContent: true, updatedAt: row.updated_at });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/admin/page-content/:slug", requireAdmin, async (req: any, res: any) => {
+    try {
+      const slug = req.params.slug;
+      if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(400).json({ error: "Unknown page" });
+      const { content } = req.body;
+      if (typeof content !== "string") return res.status(400).json({ error: "content must be a string" });
+      const key = 'page:' + slug;
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES (${key}, ${content}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${content}, updated_at = NOW()`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/page-content/:slug", requireAdmin, async (req: any, res: any) => {
+    try {
+      const slug = req.params.slug;
+      if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(400).json({ error: "Unknown page" });
+      await db.execute(sql`DELETE FROM app_settings WHERE key = ${'page:' + slug}`);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
