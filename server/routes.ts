@@ -4917,6 +4917,38 @@ export async function registerRoutes(
     }
   });
 
+  // ─── Site Content (editable footer stats & marketing copy) ───
+  app.get("/api/site-content", async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'site_content'`);
+      const row = (result as any).rows?.[0];
+      const defaults = {
+        statsAdvisors: "60+",
+        statsStrategies: "100+",
+        statsCustomers: "3M+",
+        footerTagline: "India's marketplace connecting investors with SEBI-registered advisors.",
+      };
+      const value = row?.value ? { ...defaults, ...JSON.parse(row.value) } : defaults;
+      res.json(value);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/admin/site-content", requireAdmin, async (req: any, res: any) => {
+    try {
+      const config = req.body;
+      if (!config || typeof config !== "object") return res.status(400).json({ error: "Invalid content" });
+      const jsonStr = JSON.stringify(config);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('site_content', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
 
   // ─── Admin: Advisor Analytics ────────────────────────────────
 

@@ -1,7 +1,9 @@
 import { Link } from "wouter";
 import { TrendingUp } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 export function Footer() {
+  const { data: siteContent } = useQuery<any>({ queryKey: ["/api/site-content"] });
   return (
     <footer className="border-t bg-muted/30">
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-10">
@@ -18,7 +20,7 @@ export function Footer() {
               </div>
             </Link>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              India's premier SaaS platform connecting SEBI-registered advisors with investors and brokers.
+              {siteContent?.footerTagline || "India's premier SaaS platform connecting SEBI-registered advisors with investors and brokers."}
             </p>
           </div>
           <div>

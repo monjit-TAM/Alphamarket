@@ -26,6 +26,28 @@ export default function AdminSettings() {
   const [notifBody, setNotifBody] = useState("");
   const [notifUrl, setNotifUrl] = useState("");
   const [notifScope, setNotifScope] = useState("all_users");
+  const [siteContent, setSiteContent] = useState<any>({ statsAdvisors: "", statsStrategies: "", statsCustomers: "", footerTagline: "" });
+
+  const { data: loadedContent } = useQuery<any>({ queryKey: ["/api/site-content"] });
+  if (loadedContent && !siteContent._loaded) {
+    setSiteContent({ ...loadedContent, _loaded: true });
+  }
+
+  const saveContentMutation = useMutation({
+    mutationFn: async (content: any) => {
+      const { _loaded, ...clean } = content;
+      const res = await apiRequest("PUT", "/api/admin/site-content", clean);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Saved", description: "Site content updated successfully." });
+      queryClient.invalidateQueries({ queryKey: ["/api/site-content"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Error", description: err.message || "Failed to save", variant: "destructive" });
+    },
+  });
+
 
   const { data: tokenStatus, isLoading } = useQuery<TokenStatus>({
     queryKey: ["/api/admin/groww-token-status"],
@@ -234,6 +256,51 @@ export default function AdminSettings() {
           >
             <Send className="w-4 h-4 mr-1" />
             Send Notification
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2 flex-wrap">
+            <RefreshCw className="w-5 h-5 text-muted-foreground" />
+            <CardTitle>Homepage & Footer Content</CardTitle>
+          </div>
+          <CardDescription>Edit the stat counters and tagline shown on the homepage and footer. Changes go live immediately.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <Label className="text-xs">Advisors Count</Label>
+              <Input value={siteContent.statsAdvisors || ""} placeholder="60+"
+                onChange={(e) => setSiteContent((p: any) => ({ ...p, statsAdvisors: e.target.value }))}
+                data-testid="input-stats-advisors" />
+            </div>
+            <div>
+              <Label className="text-xs">Strategies Count</Label>
+              <Input value={siteContent.statsStrategies || ""} placeholder="100+"
+                onChange={(e) => setSiteContent((p: any) => ({ ...p, statsStrategies: e.target.value }))}
+                data-testid="input-stats-strategies" />
+            </div>
+            <div>
+              <Label className="text-xs">Customers Reached</Label>
+              <Input value={siteContent.statsCustomers || ""} placeholder="3M+"
+                onChange={(e) => setSiteContent((p: any) => ({ ...p, statsCustomers: e.target.value }))}
+                data-testid="input-stats-customers" />
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Footer Tagline</Label>
+            <Textarea rows={2} value={siteContent.footerTagline || ""} placeholder="India's marketplace connecting investors with SEBI-registered advisors."
+              onChange={(e) => setSiteContent((p: any) => ({ ...p, footerTagline: e.target.value }))}
+              data-testid="input-footer-tagline" />
+          </div>
+          <Button
+            disabled={saveContentMutation.isPending}
+            onClick={() => saveContentMutation.mutate(siteContent)}
+            data-testid="button-save-site-content"
+          >
+            {saveContentMutation.isPending ? "Saving..." : "Save Content"}
           </Button>
         </CardContent>
       </Card>

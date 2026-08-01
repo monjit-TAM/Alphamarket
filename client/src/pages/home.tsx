@@ -46,6 +46,10 @@ export default function Home() {
     queryKey: ["/api/live-call-counts"],
   });
 
+  const { data: siteContent } = useQuery<any>({
+    queryKey: ["/api/site-content"],
+  });
+
   const filtered = (strategies || []).filter((s) => {
     if (search) {
       const q = search.toLowerCase();
@@ -72,9 +76,9 @@ export default function Home() {
   });
 
   const stats = [
-    { value: "40+", label: "Advisors", icon: Users },
-    { value: "80+", label: "Strategies", icon: BarChart3 },
-    { value: "3M+", label: "Customers Reached", icon: TrendingUp },
+    { value: siteContent?.statsAdvisors || "60+", label: "Advisors", icon: Users },
+    { value: siteContent?.statsStrategies || "100+", label: "Strategies", icon: BarChart3 },
+    { value: siteContent?.statsCustomers || "3M+", label: "Customers Reached", icon: TrendingUp },
   ];
 
   return (
@@ -113,7 +117,7 @@ export default function Home() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
             {[
-              { step: "1", title: "Browse Strategies", desc: "Explore 80+ strategies across Equity, F&O, Swing, Intraday, and Baskets. Filter by risk, horizon, and theme." },
+              { step: "1", title: "Browse Strategies", desc: `Explore ${siteContent?.statsStrategies || "100+"} strategies across Equity, F&O, Swing, Intraday, and Baskets. Filter by risk, horizon, and theme.` },
               { step: "2", title: "Choose Your Advisor", desc: "Each strategy is managed by a SEBI-registered advisor. Review track record and win rate before subscribing." },
               { step: "3", title: "Subscribe & Get Alerts", desc: "Pick a plan that fits your budget. Get real-time alerts via Telegram, Email, and Push Notifications for every Buy, Sell, or Exit call." },
               { step: "4", title: "Execute & Track", desc: "Execute trades at your own broker. Track performance and P&L from your dashboard." },
