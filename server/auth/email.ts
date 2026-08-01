@@ -169,7 +169,7 @@ export async function sendAdvisorAgreementEmail(userData: {
           <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Email</td><td style="padding: 8px; border: 1px solid #ddd;">${userData.email}</td></tr>
           <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Consent Date</td><td style="padding: 8px; border: 1px solid #ddd;">${consentDate}</td></tr>
         </table>
-        <p style="color: #666; font-size: 12px;">This is an automated confirmation from AlphaMarket by Edhaz Financial Services Private Limited.</p>
+        <p style="color: #666; font-size: 12px;">This is an automated confirmation from AlphaMarket by Edhaz Markets Private Limited.</p>
       </div>
     `;
 
@@ -222,7 +222,7 @@ export async function sendEsignAgreementEmail(data: {
         <div style="margin: 20px 0; padding: 16px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
           <p style="margin: 0; font-size: 13px; color: #856404;">This agreement was electronically signed using Aadhaar OTP verification in compliance with the Information Technology Act, 2000.</p>
         </div>
-        <p style="color: #666; font-size: 12px;">This is an automated notification from AlphaMarket by Edhaz Financial Services Private Limited.</p>
+        <p style="color: #666; font-size: 12px;">This is an automated notification from AlphaMarket by Edhaz Markets Private Limited.</p>
       </div>
     `;
 
@@ -263,7 +263,7 @@ export async function sendStrategyAlertEmail(
         <a href="${appUrl}/strategies/${strategyId}" style="background-color: #c53030; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">View Strategy</a>
       </p>
       <p style="color: #999; font-size: 11px; margin-top: 20px;">Disclaimer: Investment in securities market are subject to market risks. Read all the related documents carefully before investing.</p>
-      <p style="color: #999; font-size: 11px;">AlphaMarket by Edhaz Financial Services Private Limited</p>
+      <p style="color: #999; font-size: 11px;">AlphaMarket by Edhaz Markets Private Limited</p>
     </div>
   `;
 

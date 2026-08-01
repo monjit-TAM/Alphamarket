@@ -29,10 +29,10 @@ export function TermsAndConditions() {
         <meta name="description" content="AlphaMarket Terms and Conditions - Read the terms governing use of our SaaS marketplace platform connecting SEBI-registered advisors with investors." />
       </Helmet>
 
-      <p>Welcome to AlphaMarket, a product of Edhaz Financial Services Private Limited (hereinafter referred to as "AlphaMarket," "we," "our," or "us"). By accessing and using AlphaMarket, you agree to comply with these Terms and Conditions ("Terms"), as well as any policies, guidelines, or amendments set forth by AlphaMarket. Please read this document carefully before accessing or using our Platform.</p>
+      <p>Welcome to AlphaMarket, a product of Edhaz Markets Private Limited (hereinafter referred to as "AlphaMarket," "we," "our," or "us"). By accessing and using AlphaMarket, you agree to comply with these Terms and Conditions ("Terms"), as well as any policies, guidelines, or amendments set forth by AlphaMarket. Please read this document carefully before accessing or using our Platform.</p>
 
       <h4>1. Introduction</h4>
-      <p>AlphaMarket, a product of Edhaz Financial Services Private Limited, offers a marketplace platform where SEBI-registered Investment Advisors (RIAs) and Research Analysts (RAs) publish model portfolios, strategies, and related financial content. As a Software as a Service (SaaS) platform, AlphaMarket provides tools like EKYC, risk profiling, strategy tracking, compliance management, and distribution of advisory services via various channels. AlphaMarket is not a SEBI-registered Investment Advisor and does not offer personalized investment advice. Your use of AlphaMarket is subject to these Terms.</p>
+      <p>AlphaMarket, a product of Edhaz Markets Private Limited, offers a marketplace platform where SEBI-registered Investment Advisors (RIAs) and Research Analysts (RAs) publish model portfolios, strategies, and related financial content. As a Software as a Service (SaaS) platform, AlphaMarket provides tools like EKYC, risk profiling, strategy tracking, compliance management, and distribution of advisory services via various channels. AlphaMarket is not a SEBI-registered Investment Advisor and does not offer personalized investment advice. Your use of AlphaMarket is subject to these Terms.</p>
 
       <h4>What We Do</h4>
       <p>Edhaz is a financial technology company, not an investment advisor. We build the tools and infrastructure to create a marketplace platform connecting you with qualified SEBI Registered Investment Advisors (RIAs) and Research Analysts (RAs). These advisors curate and publish investment strategies, and Alphamarket ensures that their recommendations are disseminated to the subscribers of these strategies in a timely manner using various mediums like WhatsApp, SMS, email, and notifications.</p>
@@ -116,7 +116,7 @@ export function TermsAndConditions() {
       <ol>
         <li><strong>Subscription Pricing</strong>: AlphaMarket allows advisors to offer subscription plans for their financial strategies. All payments are made directly between the User and the respective advisor, as authorized during the subscription process.</li>
         <li><strong>Auto-Renewal and Cancellation</strong>: Certain subscription plans may automatically renew, subject to advisor policies. Cancellations and refunds are governed by the advisor's terms and must be addressed with the respective advisor directly. Please refer to AlphaMarket's Cancellation and Refund Policies mentioned in the footer section of the website for a more detailed cancellation and refund process.</li>
-        <li><strong>Failure to Complete Registration</strong>: Users who fail to complete account setup or complete their EKYC and Risk Profiling on the Platform may be contacted by AlphaMarket to assist in the process and might also lead to temporary suspension of their access to the respective strategies that they might have subscribed to. Once users complete the EKYC and Risk Profiling their access will be restarted within 24 hours. It is the responsibility of the Users to complete the EKYC and Risk Profiling on their own and if they are having any issue they can write and raise a support ticket at hello@thealphamarket.com to get the issue resolved.</li>
+        <li><strong>Failure to Complete Registration</strong>: Users who fail to complete account setup or complete their EKYC and Risk Profiling on the Platform may be contacted by AlphaMarket to assist in the process and might also lead to temporary suspension of their access to the respective strategies that they might have subscribed to. Once users complete the EKYC and Risk Profiling their access will be restarted within 24 hours. It is the responsibility of the Users to complete the EKYC and Risk Profiling on their own and if they are having any issue they can write and raise a support ticket at hello@alphamarket.co.in to get the issue resolved.</li>
       </ol>
 
       <h4>5. Prohibited Activities</h4>
@@ -140,7 +140,7 @@ export function TermsAndConditions() {
       <p>Users agree to indemnify and hold harmless AlphaMarket, its affiliates, officers, and employees against any claims or damages arising from User activities on the Platform, including violations of these Terms or applicable laws.</p>
 
       <h4>8. Governing Law and Jurisdiction</h4>
-      <p>This Agreement is governed by Indian law, and any disputes shall be subject to the jurisdiction of the courts in Bengaluru, India.</p>
+      <p>This Agreement is governed by Indian law, and any disputes shall be subject to the jurisdiction of the courts in Mumbai, India.</p>
 
       <h4>9. Privacy and Data Collection</h4>
       <ol>
@@ -155,7 +155,7 @@ export function TermsAndConditions() {
       <p>By accessing AlphaMarket, you acknowledge that you have read, understood, and agree to the Terms of this Agreement, including all related policies.</p>
 
       <h4>Contact Us</h4>
-      <p>If you have any questions about these Terms and Conditions, please contact us at <a href="mailto:hello@thealphamarket.com">hello@thealphamarket.com</a></p>
+      <p>If you have any questions about these Terms and Conditions, please contact us at <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a></p>
     </LegalPageLayout>
   );
 }
@@ -186,10 +186,10 @@ export function CancellationPolicy() {
 
       <h4>4. Contact Us</h4>
       <ul>
-        <li>If you have questions or concerns about our Cancellation and Refund Policy, please contact our customer support team at <a href="mailto:hello@thealphamarket.com">hello@thealphamarket.com</a></li>
+        <li>If you have questions or concerns about our Cancellation and Refund Policy, please contact our customer support team at <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a></li>
       </ul>
 
-      <p>Please note that Edhaz Financial Services Private Limited is not responsible for refunds or cancellations directly but may assist in facilitating communication between users and SEBI Registered Investment Advisors. Users are encouraged to carefully review the policies of the specific advisors they engage with through the marketplace.</p>
+      <p>Please note that Edhaz Markets Private Limited is not responsible for refunds or cancellations directly but may assist in facilitating communication between users and SEBI Registered Investment Advisors. Users are encouraged to carefully review the policies of the specific advisors they engage with through the marketplace.</p>
     </LegalPageLayout>
   );
 }
@@ -202,7 +202,7 @@ export function PrivacyPolicy() {
         <meta name="description" content="AlphaMarket Privacy Policy - Learn how we collect, use, and protect your personal information when using our platform." />
       </Helmet>
 
-      <p>Welcome to AlphaMarket, a product of Edhaz Financial Services Private Limited ("we," "us," or "our"). We are committed to protecting and respecting your privacy. This Privacy Policy outlines how we collect, use, and protect the information you provide to us when using our website (the "Site"), as well as services and features offered through the Site (collectively, the "Services").</p>
+      <p>Welcome to AlphaMarket, a product of Edhaz Markets Private Limited ("we," "us," or "our"). We are committed to protecting and respecting your privacy. This Privacy Policy outlines how we collect, use, and protect the information you provide to us when using our website (the "Site"), as well as services and features offered through the Site (collectively, the "Services").</p>
       <p>By accessing or using our Services, you agree to the collection, use, and disclosure of information in accordance with this Privacy Policy. If you do not agree with this Privacy Policy, please do not use our Services.</p>
 
       <h4>1. Information We Collect</h4>
@@ -280,21 +280,21 @@ export function PrivacyPolicy() {
 
       <h4>12. Contact Us</h4>
       <p>If you have any questions, concerns, or requests regarding this Privacy Policy or your personal information, please contact us at:</p>
-      <p><strong>AlphaMarket</strong><br />Edhaz Financial Services Private Limited<br /><a href="mailto:hello@thealphamarket.com">hello@thealphamarket.com</a></p>
+      <p><strong>AlphaMarket</strong><br />Edhaz Markets Private Limited<br /><a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a></p>
     </LegalPageLayout>
   );
 }
 
 export function LegalAgreement() {
   return (
-    <LegalPageLayout title="Disclosures - Edhaz Financial Services Private Limited" lastUpdated="Oct 15, 2024">
+    <LegalPageLayout title="Disclosures - Edhaz Markets Private Limited" lastUpdated="Oct 15, 2024">
       <Helmet>
         <title>Legal Disclosures | AlphaMarket</title>
-        <meta name="description" content="AlphaMarket legal disclosures by Edhaz Financial Services Private Limited - transparency about our role as a technology platform." />
+        <meta name="description" content="AlphaMarket legal disclosures by Edhaz Markets Private Limited - transparency about our role as a technology platform." />
       </Helmet>
 
       <h4>About Us</h4>
-      <p>Edhaz Financial Services Private Limited (referred to as "the Company") is a financial technology provider based in Bangalore, dedicated to supporting investors and advisors by providing cutting-edge technology platforms. The Company is committed to enhancing transparency and accessibility in investment advisory services across India.</p>
+      <p>Edhaz Markets Private Limited (referred to as "the Company") is a financial technology provider based in Mumbai, dedicated to supporting investors and advisors by providing cutting-edge technology platforms. The Company is committed to enhancing transparency and accessibility in investment advisory services across India.</p>
 
       <h4>What is an AlphaMarket?</h4>
       <p>AlphaMarket offers a range of carefully structured strategies created by SEBI-registered Investment Advisors and Research Analysts. These strategies, published on AlphaMarket, cover various investment approaches -- including long-term, intraday, and F&O (Futures & Options) -- and are grounded in the advisors' unique research methodologies, catering to diverse financial goals and risk profiles.</p>
@@ -318,7 +318,7 @@ export function LegalAgreement() {
       <p>All content, data, and visual information (e.g., AlphaMarket return figures, index values) provided on AlphaMarket, including blog posts and any percentage returns, are for illustrative purposes only. No information on our platform should be considered an advertisement, solicitation, endorsement, financial advice, or an offer for the Company's or third-party products or services.</p>
 
       <h4>Performance and Analytics</h4>
-      <p>Performance charts and metrics on the platform apply only to AlphaMarkets created by SEBI-registered intermediaries. Edhaz Financial Services does not guarantee or assert the performance or returns of any AlphaMarket, as we only offer tools for SEBI-registered entities to perform performance calculations based on our Returns Calculation Methodology. All investment recommendations and services are provided by the respective SEBI-registered entities.</p>
+      <p>Performance charts and metrics on the platform apply only to AlphaMarkets created by SEBI-registered intermediaries. Edhaz Markets does not guarantee or assert the performance or returns of any AlphaMarket, as we only offer tools for SEBI-registered entities to perform performance calculations based on our Returns Calculation Methodology. All investment recommendations and services are provided by the respective SEBI-registered entities.</p>
 
       <h4>Independent Nature of AlphaMarkets</h4>
       <p>AlphaMarkets are not index-linked products, and the Company does not engage in index manufacturing. Consequently, AlphaMarkets should not be considered products tied to an NSE-based index. While AlphaMarkets may reference external index performance for comparison purposes, such comparisons are illustrative and not indicative of guaranteed results.</p>
@@ -333,10 +333,10 @@ export function LegalAgreement() {
       <p>All information provided on AlphaMarket is to assist investors in making informed decisions and does not constitute an endorsement of any specific investment strategy. Investors must independently validate all information before making investment decisions. Investment choices should consider individual financial needs and risk tolerance, as performance data on AlphaMarket represents only one factor among many. Past performance does not assure future outcomes, and investing in the securities market entails inherent risks. Investors are encouraged to read all relevant documents thoroughly before investing.</p>
 
       <h4>Company's Role as Technology Provider</h4>
-      <p>Edhaz Financial Services is solely a technology provider, not an intermediary as per applicable SEBI regulations. Any information, content, or posts on our platform -- whether accessed freely or through subscription -- should not be seen as investment advice or research analysis as defined by the SEBI (Investment Advisers) Regulations, 2013, or the SEBI (Research Analyst) Regulations, 2014. The Company assumes no liability for any loss caused, directly or indirectly, by actions taken based on content created and/or published on the platform. We do not endorse, sponsor, or verify the content published by users and are not accountable for the accuracy or validity of user-generated posts or information on the platform.</p>
+      <p>Edhaz Markets is solely a technology provider, not an intermediary as per applicable SEBI regulations. Any information, content, or posts on our platform -- whether accessed freely or through subscription -- should not be seen as investment advice or research analysis as defined by the SEBI (Investment Advisers) Regulations, 2013, or the SEBI (Research Analyst) Regulations, 2014. The Company assumes no liability for any loss caused, directly or indirectly, by actions taken based on content created and/or published on the platform. We do not endorse, sponsor, or verify the content published by users and are not accountable for the accuracy or validity of user-generated posts or information on the platform.</p>
 
       <h4>Disclaimer on Information Accuracy</h4>
-      <p>The data and views presented herein are gathered in good faith from sources considered reliable but have not undergone independent verification. No explicit or implied warranty regarding the accuracy, completeness, or correctness of such information is provided. All information and opinions are subject to change without notice, and Edhaz Financial Services reserves the right to update this document as needed. This document is intended for informational purposes only and should not be construed as investment advice or an endorsement of any entity, security, or strategy.</p>
+      <p>The data and views presented herein are gathered in good faith from sources considered reliable but have not undergone independent verification. No explicit or implied warranty regarding the accuracy, completeness, or correctness of such information is provided. All information and opinions are subject to change without notice, and Edhaz Markets reserves the right to update this document as needed. This document is intended for informational purposes only and should not be construed as investment advice or an endorsement of any entity, security, or strategy.</p>
     </LegalPageLayout>
   );
 }
@@ -392,7 +392,7 @@ export function ShippingAndReturns() {
       <p>Please note that AlphaMarket does not involve the physical delivery of any products or materials. All services and communication are provided in digital format through the channels mentioned above.</p>
 
       <h4>Contact Us</h4>
-      <p>If you have any questions or concerns regarding our Shipping and Delivery Policy or any other aspect of our services, please do not hesitate to contact our customer support team at <a href="mailto:hello@thealphamarket.com">hello@thealphamarket.com</a></p>
+      <p>If you have any questions or concerns regarding our Shipping and Delivery Policy or any other aspect of our services, please do not hesitate to contact our customer support team at <a href="mailto:hello@alphamarket.co.in">hello@alphamarket.co.in</a></p>
     </LegalPageLayout>
   );
 }
@@ -402,7 +402,7 @@ export function ContactUs() {
     <LegalPageLayout title="Contact Us" lastUpdated="">
       <Helmet>
         <title>Contact Us | AlphaMarket</title>
-        <meta name="description" content="Get in touch with AlphaMarket - Contact us via phone, email, or visit our office in Bangalore, Karnataka, India." />
+        <meta name="description" content="Get in touch with AlphaMarket - Contact us via phone, email, or visit our office in Andheri West, Mumbai, India." />
       </Helmet>
 
       <p className="text-base text-foreground">We would love to hear from you</p>
@@ -410,15 +410,16 @@ export function ContactUs() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 not-prose">
         <div className="rounded-md border p-5">
           <h4 className="font-semibold text-foreground mb-2">Call</h4>
-          <a href="tel:+919108967788" className="text-primary underline text-sm">+91 9108967788</a>
+          <a href="tel:+919108967788" className="text-primary underline text-sm block">+91 9108967788</a>
+          <a href="tel:+919029129102" className="text-primary underline text-sm block mt-1">+91 9029129102</a>
         </div>
         <div className="rounded-md border p-5">
           <h4 className="font-semibold text-foreground mb-2">Mail</h4>
-          <a href="mailto:hello@thealphamarket.com" className="text-primary underline text-sm">hello@thealphamarket.com</a>
+          <a href="mailto:hello@alphamarket.co.in" className="text-primary underline text-sm">hello@alphamarket.co.in</a>
         </div>
         <div className="rounded-md border p-5">
           <h4 className="font-semibold text-foreground mb-2">Location</h4>
-          <p className="text-sm text-muted-foreground">Doddanekkundi, Bangalore, Karnataka, India, 560037</p>
+          <p className="text-sm text-muted-foreground">Bakersfield, Shastri Nagar, Andheri West, Mumbai 400053</p>
         </div>
       </div>
     </LegalPageLayout>

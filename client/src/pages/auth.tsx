@@ -439,7 +439,7 @@ export function RegisterPage() {
                       <div className="px-3 pb-3 max-h-60 overflow-y-auto text-xs text-muted-foreground leading-relaxed space-y-2 border-t" data-testid="content-agreement-1">
                         <p className="pt-2 font-medium text-foreground">AlphaMarket - Digital Advisor Participation Agreement & Risk Disclaimer</p>
                         <p>Effective Date: Upon acceptance by Advisor during digital onboarding.</p>
-                        <p>By clicking "I Agree" or by proceeding with Advisor registration on AlphaMarket, You ("Advisor") acknowledge that You have read, understood, and agreed to be bound by this Digital Advisor Participation Agreement ("Agreement") with Edhaz Financial Services Private Limited, operating the AlphaMarket platform.</p>
+                        <p>By clicking "I Agree" or by proceeding with Advisor registration on AlphaMarket, You ("Advisor") acknowledge that You have read, understood, and agreed to be bound by this Digital Advisor Participation Agreement ("Agreement") with Edhaz Markets Private Limited, operating the AlphaMarket platform.</p>
                         <p className="font-medium text-foreground">1. Scope & Applicability</p>
                         <p>1.1. This Agreement governs Your participation on AlphaMarket solely in respect of clients acquired through the AlphaMarket platform ("Platform Clients"). 1.2. Nothing in this Agreement applies to clients acquired independently outside the platform. 1.3. By registering on AlphaMarket, You consent that Your relationship with Platform Clients shall also be subject to this Agreement.</p>
                         <p className="font-medium text-foreground">2. Independent Relationship</p>
@@ -455,7 +455,7 @@ export function RegisterPage() {
                         <p className="font-medium text-foreground">7. Indemnity</p>
                         <p>You agree to indemnify and hold harmless AlphaMarket against any claims, penalties, damages, or liabilities arising from breach of regulations, misrepresentation, negligence, client disputes, or data privacy breaches caused by You.</p>
                         <p className="font-medium text-foreground">8. Jurisdiction & Dispute Resolution</p>
-                        <p>8.1. This Agreement is governed by Indian law. 8.2. Disputes shall be subject to the exclusive jurisdiction of the courts of Bangalore, Karnataka.</p>
+                        <p>8.1. This Agreement is governed by Indian law. 8.2. Disputes shall be subject to the exclusive jurisdiction of the courts of Mumbai, Maharashtra.</p>
                         <p className="font-medium text-foreground">9. Termination</p>
                         <p>9.1. AlphaMarket may suspend or terminate Your participation if Your SEBI registration is cancelled, You violate SEBI rules, or Your conduct harms AlphaMarket's reputation. 9.2. Upon termination, You must immediately cease using AlphaMarket's name, logo, or brand.</p>
                         <p className="font-medium text-foreground">10. Binding Effect</p>
@@ -488,9 +488,9 @@ export function RegisterPage() {
                     {agreement2Open && (
                       <div className="px-3 pb-3 max-h-60 overflow-y-auto text-xs text-muted-foreground leading-relaxed space-y-2 border-t" data-testid="content-agreement-2">
                         <p className="pt-2 font-medium text-foreground text-base">Investment Advisor and Research Analyst Services Agreement</p>
-                        <p className="font-medium">Agreement Between Edhaz Financial Services Pvt. Ltd. and Advisors</p>
-                        <p>This Agreement ("Agreement") is made and entered into as of the date of electronic acceptance by and between Edhaz Financial Services Pvt. Ltd., a company incorporated under the laws of India with its registered office at H 101, Alpine Echo, Doddanekunddi, K R Puram Hobli, Outer Ring Road, Bangalore 560048 ("Edhaz", "AlphaMarket", "we", "us", or "our"), and You, the Advisor ("Advisor", "you", or "your").</p>
-                        <p>WHEREAS, Edhaz owns and operates a web-based platform located at www.thealphamarket.com ("Platform") that connects Investors with SEBI Registered Investment Advisors; and</p>
+                        <p className="font-medium">Agreement Between Edhaz Markets Pvt. Ltd. and Advisors</p>
+                        <p>This Agreement ("Agreement") is made and entered into as of the date of electronic acceptance by and between Edhaz Markets Pvt. Ltd., a company incorporated under the laws of India with its registered office at Bakersfield, Shastri Nagar, Andheri West, Mumbai 400053 ("Edhaz", "AlphaMarket", "we", "us", or "our"), and You, the Advisor ("Advisor", "you", or "your").</p>
+                        <p>WHEREAS, Edhaz owns and operates a web-based platform located at www.alphamarket.co.in ("Platform") that connects Investors with SEBI Registered Investment Advisors; and</p>
                         <p>WHEREAS, Advisor is a SEBI Registered Investment Advisor in good standing and desires to utilize the Platform to offer Investment Advisory Services to Investors;</p>
                         <p>NOW, THEREFORE, in consideration of the foregoing premises and the mutual covenants contained herein, the parties agree as follows:</p>
 
@@ -499,7 +499,7 @@ export function RegisterPage() {
                         <p><strong>Advisor:</strong> An individual or entity registered or qualified to provide investment advice or manage investment portfolios in accordance with applicable laws and regulations.</p>
                         <p><strong>Investor:</strong> An individual or entity that seeks to invest in financial instruments or strategies offered on the AlphaMarket platform.</p>
                         <p><strong>Investment Strategy:</strong> A predefined plan or approach to investing in financial instruments, including but not limited to equities, fixed income securities, derivatives, and other asset classes.</p>
-                        <p><strong>AlphaMarket Platform:</strong> The online platform provided by Edhaz Financial Services Private Limited that connects Advisors with Investors for the purpose of creating, sharing, and executing investment strategies.</p>
+                        <p><strong>AlphaMarket Platform:</strong> The online platform provided by Edhaz Markets Private Limited that connects Advisors with Investors for the purpose of creating, sharing, and executing investment strategies.</p>
                         <p><strong>Confidential Information:</strong> Any information concerning the organization, business, proprietary information, technology, trade secrets, platform processes, algorithms, designs, specifications, systems and procedures, computer programs, software developments, source codes, and know-how, whether conveyed in written, oral, or any other form.</p>
                         <p><strong>Intellectual Property Rights:</strong> All worldwide rights relating to intangible property, including patents, copyrights, trade secrets, domain names, mask work rights, database rights, inventions, algorithms, and business methods.</p>
 
@@ -556,7 +556,7 @@ export function RegisterPage() {
                         <p>16. Entire Agreement — supersedes all prior communications. 17. Amendment — only by written instrument signed by both parties. 18. Notices — in writing to registered addresses. 19. Severability. 20. Waiver. 21. Force Majeure. 22. Assignment restrictions. 23. Headings for convenience only. 24. Counterparts.</p>
 
                         <p className="font-medium text-foreground">Agreement Acceptance</p>
-                        <p>This Agreement constitutes a digital and electronic agreement between Edhaz Financial Services Private Limited ("AlphaMarket") and you, the Advisor. By clicking the "I Agree" button upon registration on the AlphaMarket platform, you acknowledge that you have read, understood, and agree to be bound by the terms and conditions set forth in this Agreement, and all other terms and conditions, disclosures, disclaimers, cancellation & refund policies, privacy policies, and legal agreements mentioned on the www.thealphamarket.com website. A copy of this Agreement will be sent to the email address provided during registration. This Agreement is binding on both AlphaMarket and you and becomes effective upon your electronic acceptance.</p>
+                        <p>This Agreement constitutes a digital and electronic agreement between Edhaz Markets Private Limited ("AlphaMarket") and you, the Advisor. By clicking the "I Agree" button upon registration on the AlphaMarket platform, you acknowledge that you have read, understood, and agree to be bound by the terms and conditions set forth in this Agreement, and all other terms and conditions, disclosures, disclaimers, cancellation & refund policies, privacy policies, and legal agreements mentioned on the www.alphamarket.co.in website. A copy of this Agreement will be sent to the email address provided during registration. This Agreement is binding on both AlphaMarket and you and becomes effective upon your electronic acceptance.</p>
                       </div>
                     )}
                     <div className="flex items-center gap-2 px-3 py-2 border-t bg-muted/30">

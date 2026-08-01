@@ -10,7 +10,7 @@ function AdvisorParticipationAgreement() {
     <div className="space-y-4 text-sm leading-relaxed">
       <h2 className="text-lg font-semibold" data-testid="text-agreement-title">AlphaMarket - Digital Advisor Participation Agreement & Risk Disclaimer</h2>
       <p>Effective Date: Upon acceptance by Advisor during digital onboarding.</p>
-      <p>By clicking "I Agree" or by proceeding with Advisor registration on AlphaMarket, You ("Advisor") acknowledge that You have read, understood, and agreed to be bound by this Digital Advisor Participation Agreement ("Agreement") with Edhaz Financial Services Private Limited, operating the AlphaMarket platform.</p>
+      <p>By clicking "I Agree" or by proceeding with Advisor registration on AlphaMarket, You ("Advisor") acknowledge that You have read, understood, and agreed to be bound by this Digital Advisor Participation Agreement ("Agreement") with Edhaz Markets Private Limited, operating the AlphaMarket platform.</p>
       <h3 className="font-semibold mt-4">1. Scope & Applicability</h3>
       <p>1.1. This Agreement governs Your participation on AlphaMarket solely in respect of clients acquired through the AlphaMarket platform ("Platform Clients"). 1.2. Nothing in this Agreement applies to clients acquired independently outside the platform. 1.3. By registering on AlphaMarket, You consent that Your relationship with Platform Clients shall also be subject to this Agreement.</p>
       <h3 className="font-semibold mt-4">2. Independent Relationship</h3>
@@ -26,7 +26,7 @@ function AdvisorParticipationAgreement() {
       <h3 className="font-semibold mt-4">7. Indemnity</h3>
       <p>You agree to indemnify and hold harmless AlphaMarket against any claims, penalties, damages, or liabilities arising from breach of regulations, misrepresentation, negligence, client disputes, or data privacy breaches caused by You.</p>
       <h3 className="font-semibold mt-4">8. Jurisdiction & Dispute Resolution</h3>
-      <p>8.1. This Agreement is governed by Indian law. 8.2. Disputes shall be subject to the exclusive jurisdiction of the courts of Bangalore, Karnataka.</p>
+      <p>8.1. This Agreement is governed by Indian law. 8.2. Disputes shall be subject to the exclusive jurisdiction of the courts of Mumbai, Maharashtra.</p>
       <h3 className="font-semibold mt-4">9. Termination</h3>
       <p>9.1. AlphaMarket may suspend or terminate Your participation if Your SEBI registration is cancelled, You violate SEBI rules, or Your conduct harms AlphaMarket's reputation. 9.2. Upon termination, You must immediately cease using AlphaMarket's name, logo, or brand.</p>
       <h3 className="font-semibold mt-4">10. Binding Effect</h3>
@@ -39,9 +39,9 @@ function IARAServicesAgreement() {
   return (
     <div className="space-y-4 text-sm leading-relaxed">
       <h2 className="text-lg font-semibold" data-testid="text-agreement-title">Investment Advisor and Research Analyst Services Agreement</h2>
-      <p>This document is an electronic record in terms of the Information Technology Act, 2000. The online platform www.thealphamarket.com is owned and operated by Edhaz Financial Services Private Limited.</p>
+      <p>This document is an electronic record in terms of the Information Technology Act, 2000. The online platform www.alphamarket.co.in is owned and operated by Edhaz Markets Private Limited.</p>
       <h3 className="font-semibold mt-4">Part A: Client Consent</h3>
-      <p>The Client has read and understood the terms and conditions of this Agreement facilitated by Edhaz Financial Services Private Limited through The AlphaMarket. The fee structure and charging mechanism are standardized between the Client and the SEBI Registered Investment Advisor/Research Analyst.</p>
+      <p>The Client has read and understood the terms and conditions of this Agreement facilitated by Edhaz Markets Private Limited through The AlphaMarket. The fee structure and charging mechanism are standardized between the Client and the SEBI Registered Investment Advisor/Research Analyst.</p>
       <h3 className="font-semibold mt-4">Part B: Declaration</h3>
       <p>The advisory relationship commences after successful payment and completion of eKYC and Risk Profiling. The Advisor will not manage funds or securities on behalf of the Client and will only receive payments to cover the fees owed under this Agreement.</p>
       <h3 className="font-semibold mt-4">Part C: Fees per SEBI Regulations</h3>
