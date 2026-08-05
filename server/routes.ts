@@ -5106,8 +5106,8 @@ export async function registerRoutes(
       }
 
       // Cap to protect against accidental massive sends; adjust as needed
-      if (finalRecipients.length > 5000) {
-        return res.status(400).json({ error: "Recipient list exceeds 5000 — please narrow the list" });
+      if (finalRecipients.length > 50000) {
+        return res.status(400).json({ error: "Recipient list exceeds 50000 — please split into batches" });
       }
 
       const result = await sendNewsletterEmail(finalRecipients, subject, html);

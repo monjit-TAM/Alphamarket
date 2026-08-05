@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CheckCircle, XCircle, Clock, Key, RefreshCw, Bell, Send } from "lucide-react";
+import { CheckCircle, XCircle, Clock, Key, RefreshCw, Bell, Send, Upload } from "lucide-react";
+import * as XLSX from "xlsx";
 
 interface TokenStatus {
   hasToken: boolean;
@@ -238,6 +239,50 @@ export default function AdminSettings() {
     } catch (err: any) {
       toast({ title: "Save failed", description: err.message, variant: "destructive" });
     }
+  };
+
+  // Upload a CSV/XLS(X) file of email addresses
+  const [nlUploadedCount, setNlUploadedCount] = useState<number | null>(null);
+  const handleEmailListUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer);
+        const wb = XLSX.read(data, { type: "array" });
+        const emailRe = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+        const found = new Set<string>();
+        // Scan every sheet and every cell for anything that looks like an email
+        for (const sheetName of wb.SheetNames) {
+          const sheet = wb.Sheets[sheetName];
+          const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
+          for (const row of rows) {
+            for (const cell of row) {
+              if (cell == null) continue;
+              const matches = String(cell).match(emailRe);
+              if (matches) matches.forEach((m) => found.add(m.trim().toLowerCase()));
+            }
+          }
+        }
+        if (found.size === 0) {
+          toast({ title: "No emails found", description: "The file didn't contain any valid email addresses.", variant: "destructive" });
+          setNlUploadedCount(0);
+          return;
+        }
+        // Merge with whatever is already in the extra-emails box (dedup)
+        const existing = nlExtraEmails.split(/[\n,;]+/).map((x) => x.trim().toLowerCase()).filter((x) => x.includes("@"));
+        const merged = Array.from(new Set([...existing, ...Array.from(found)]));
+        setNlExtraEmails(merged.join("\n"));
+        setNlUploadedCount(found.size);
+        toast({ title: "Emails imported", description: `${found.size} email(s) found in ${file.name} and added to the recipient list.` });
+      } catch (err: any) {
+        toast({ title: "Parse failed", description: "Could not read the file. Ensure it's a valid .csv or .xlsx.", variant: "destructive" });
+      }
+    };
+    reader.onerror = () => toast({ title: "Read failed", description: "Could not read the file.", variant: "destructive" });
+    reader.readAsArrayBuffer(file);
+    e.target.value = "";
   };
 
 
@@ -697,11 +742,23 @@ export default function AdminSettings() {
               ))}
             </div>
             <div>
-              <Label className="text-xs">Additional Email IDs (optional)</Label>
-              <Textarea rows={3} value={nlExtraEmails}
-                placeholder="Add extra recipients — one per line, or comma-separated. e.g. partner@example.com"
+              <div className="flex items-center justify-between mb-1">
+                <Label className="text-xs">Additional Email IDs (optional)</Label>
+                <label className="text-xs text-primary hover:underline cursor-pointer flex items-center gap-1" data-testid="label-upload-emaillist">
+                  <Upload className="w-3 h-3" /> Upload CSV / Excel
+                  <input type="file" accept=".csv,.xls,.xlsx" className="hidden" onChange={handleEmailListUpload} data-testid="input-nl-emaillist" />
+                </label>
+              </div>
+              <Textarea rows={4} value={nlExtraEmails}
+                placeholder="Add extra recipients — one per line, or comma-separated. e.g. partner@example.com — or upload a CSV/Excel file above."
                 onChange={(e) => setNlExtraEmails(e.target.value)} data-testid="input-nl-extra" />
-              <p className="text-xs text-muted-foreground mt-1">These are added on top of any selected segments. Duplicates are removed automatically.</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Added on top of any selected segments; duplicates removed automatically.
+                {nlUploadedCount != null && nlUploadedCount > 0 && (
+                  <span className="text-green-600 font-medium"> {nlUploadedCount} email(s) imported from file.</span>
+                )}
+              </p>
+              <p className="text-xs text-muted-foreground">Upload accepts .csv, .xls, .xlsx — it scans every column and pulls out anything that looks like an email address. No limit on list size.</p>
             </div>
           </div>
 
