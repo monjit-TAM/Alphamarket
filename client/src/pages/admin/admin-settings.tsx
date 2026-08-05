@@ -101,7 +101,9 @@ export default function AdminSettings() {
   // ─── Newsletter state ───
   const [nlSubject, setNlSubject] = useState("The Alpha Edge — Issue #01");
   const [nlHtml, setNlHtml] = useState("");
-  const [nlIncludeAllAdvisors, setNlIncludeAllAdvisors] = useState(true);
+  const [nlSegments, setNlSegments] = useState<Record<string, boolean>>({});
+  const { data: audienceSegments } = useQuery<any>({ queryKey: ["/api/admin/audience-segments"] });
+  const toggleSegment = (key: string) => setNlSegments((p) => ({ ...p, [key]: !p[key] }));
   const [nlExtraEmails, setNlExtraEmails] = useState("");
   const [nlSending, setNlSending] = useState(false);
   const [nlResult, setNlResult] = useState<any>(null);
@@ -114,17 +116,23 @@ export default function AdminSettings() {
       toast({ title: "Missing fields", description: "Subject and HTML content are required.", variant: "destructive" });
       return;
     }
-    const advisorCount = advisorEmailData?.count || 0;
     const extras = nlExtraEmails.split(/[\n,;]+/).map((e) => e.trim()).filter((e) => e.includes("@"));
-    const totalEst = (nlIncludeAllAdvisors ? advisorCount : 0) + extras.length;
-    if (!confirm(`Send "${nlSubject}" to approximately ${totalEst} recipient(s)?${nlIncludeAllAdvisors ? " This includes ALL registered advisors." : ""}`)) return;
+    const selectedSegs = Object.keys(nlSegments).filter((k) => nlSegments[k]);
+    if (selectedSegs.length === 0 && extras.length === 0) {
+      toast({ title: "No recipients", description: "Select at least one audience segment or add email addresses.", variant: "destructive" });
+      return;
+    }
+    // Estimate total from segment counts (note: real total dedupes overlaps)
+    const segCount = (audienceSegments || []).filter((s: any) => nlSegments[s.key]).reduce((sum: number, s: any) => sum + s.count, 0);
+    const segNames = (audienceSegments || []).filter((s: any) => nlSegments[s.key]).map((s: any) => s.label).join(", ");
+    if (!confirm(`Send "${nlSubject}" to: ${segNames || "(manual list only)"}${extras.length ? ` + ${extras.length} extra` : ""}?\n\nApprox ${segCount + extras.length} recipients (duplicates removed automatically).`)) return;
     setNlSending(true);
     setNlResult(null);
     try {
       const res = await apiRequest("POST", "/api/admin/send-newsletter", {
         subject: nlSubject.trim(),
         html: nlHtml,
-        includeAllAdvisors: nlIncludeAllAdvisors,
+        segments: selectedSegs,
         extraEmails: extras,
       });
       const data = await res.json();
@@ -675,23 +683,25 @@ export default function AdminSettings() {
           </div>
 
           <div className="border rounded-md p-3 space-y-3 bg-slate-50">
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="nl-all-advisors" checked={nlIncludeAllAdvisors}
-                onChange={(e) => setNlIncludeAllAdvisors(e.target.checked)}
-                className="rounded border-slate-300" data-testid="checkbox-nl-all" />
-              <Label htmlFor="nl-all-advisors" className="text-sm cursor-pointer">
-                Send to all registered advisors
-                {advisorEmailData?.count != null && (
-                  <span className="text-muted-foreground"> ({advisorEmailData.count} on file)</span>
-                )}
-              </Label>
+            <Label className="text-sm font-semibold">Choose Your Audience</Label>
+            <p className="text-xs text-muted-foreground">Select one or more segments. Overlapping recipients (e.g. someone in two lists) are only emailed once.</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(audienceSegments || []).map((seg: any) => (
+                <label key={seg.key} className="flex items-center gap-2 text-sm py-1.5 px-2 rounded-lg hover:bg-white cursor-pointer border border-transparent hover:border-slate-200">
+                  <input type="checkbox" checked={!!nlSegments[seg.key]}
+                    onChange={() => toggleSegment(seg.key)}
+                    className="rounded border-slate-300" data-testid={`checkbox-seg-${seg.key}`} />
+                  <span className="flex-1">{seg.label}</span>
+                  <span className="text-xs font-semibold text-muted-foreground bg-white px-1.5 py-0.5 rounded border">{seg.count}</span>
+                </label>
+              ))}
             </div>
             <div>
               <Label className="text-xs">Additional Email IDs (optional)</Label>
               <Textarea rows={3} value={nlExtraEmails}
                 placeholder="Add extra recipients — one per line, or comma-separated. e.g. partner@example.com"
                 onChange={(e) => setNlExtraEmails(e.target.value)} data-testid="input-nl-extra" />
-              <p className="text-xs text-muted-foreground mt-1">These are added on top of the advisor list. Duplicates are removed automatically.</p>
+              <p className="text-xs text-muted-foreground mt-1">These are added on top of any selected segments. Duplicates are removed automatically.</p>
             </div>
           </div>
 

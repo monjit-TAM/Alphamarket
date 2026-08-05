@@ -5016,20 +5016,46 @@ export async function registerRoutes(
   });
 
   // ─── Newsletter Broadcast ───
-  // Fetch all registered advisor emails (for the admin send list)
+  // Segment SQL definitions — each returns a set of emails
+  const SEGMENT_QUERIES: Record<string, any> = {
+    all_advisors: sql`SELECT email FROM users WHERE role='advisor' AND email IS NOT NULL AND email <> ''`,
+    active_advisors: sql`SELECT DISTINCT u.email FROM users u JOIN strategies s ON s.advisor_id = u.id JOIN calls c ON c.strategy_id = s.id WHERE u.role='advisor' AND u.email IS NOT NULL AND u.email <> ''`,
+    inactive_advisors: sql`SELECT email FROM users WHERE role='advisor' AND email IS NOT NULL AND email <> '' AND id NOT IN (SELECT DISTINCT s.advisor_id FROM strategies s JOIN calls c ON c.strategy_id = s.id)`,
+    all_investors: sql`SELECT email FROM users WHERE role='investor' AND email IS NOT NULL AND email <> ''`,
+    subscribers: sql`SELECT DISTINCT u.email FROM users u JOIN subscriptions sub ON sub.user_id = u.id WHERE u.email IS NOT NULL AND u.email <> ''`,
+    non_subscriber_investors: sql`SELECT email FROM users WHERE role='investor' AND email IS NOT NULL AND email <> '' AND id NOT IN (SELECT DISTINCT user_id FROM subscriptions)`,
+  };
+
+  const SEGMENT_LABELS: Record<string, string> = {
+    all_advisors: "All Advisors",
+    active_advisors: "Active Advisors (published calls)",
+    inactive_advisors: "Inactive Advisors (no calls yet)",
+    all_investors: "All Investors",
+    subscribers: "Subscribers (active subscription)",
+    non_subscriber_investors: "Investors — not yet subscribed",
+  };
+
+  // Return counts for every segment (for the admin UI)
+  app.get("/api/admin/audience-segments", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const segments = [];
+      for (const key of Object.keys(SEGMENT_QUERIES)) {
+        const result = await db.execute(SEGMENT_QUERIES[key]);
+        const rows = (result as any).rows || [];
+        segments.push({ key, label: SEGMENT_LABELS[key], count: rows.length });
+      }
+      res.json(segments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Legacy endpoint kept for backward compatibility
   app.get("/api/admin/advisor-emails", requireAdmin, async (_req: any, res: any) => {
     try {
-      const result = await db.execute(sql`
-        SELECT email, username, company_name
-        FROM users
-        WHERE role = 'advisor' AND email IS NOT NULL AND email <> ''
-        ORDER BY company_name NULLS LAST, username`);
+      const result = await db.execute(SEGMENT_QUERIES.all_advisors);
       const rows = (result as any).rows || [];
-      const advisors = rows.map((r: any) => ({
-        email: r.email,
-        name: r.company_name || r.username || r.email,
-      }));
-      res.json({ count: advisors.length, advisors });
+      res.json({ count: rows.length, advisors: rows.map((r: any) => ({ email: r.email, name: r.email })) });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -5043,15 +5069,26 @@ export async function registerRoutes(
 
       // Build recipient set
       const emailSet = new Set<string>();
+      const { segments } = req.body;
 
       if (Array.isArray(recipients)) {
         for (const e of recipients) if (typeof e === "string" && e.includes("@")) emailSet.add(e.trim().toLowerCase());
       }
 
+      // Resolve any selected audience segments
+      if (Array.isArray(segments)) {
+        for (const seg of segments) {
+          if (SEGMENT_QUERIES[seg]) {
+            const result = await db.execute(SEGMENT_QUERIES[seg]);
+            const rows = (result as any).rows || [];
+            for (const r of rows) if (r.email) emailSet.add(String(r.email).trim().toLowerCase());
+          }
+        }
+      }
+
+      // Backward-compat: includeAllAdvisors flag
       if (includeAllAdvisors) {
-        const result = await db.execute(sql`
-          SELECT email FROM users
-          WHERE role = 'advisor' AND email IS NOT NULL AND email <> ''`);
+        const result = await db.execute(SEGMENT_QUERIES.all_advisors);
         const rows = (result as any).rows || [];
         for (const r of rows) if (r.email) emailSet.add(String(r.email).trim().toLowerCase());
       }
