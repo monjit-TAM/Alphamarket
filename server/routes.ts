@@ -8,7 +8,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
 import { promisify } from "util";
-import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail } from "./auth";
+import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail, sendNewsletterEmail } from "./auth";
 import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, getOptionChainExpiries, getOptionChain } from "./groww";
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements, appSettings, calls, positions, strategies } from "@shared/schema";
@@ -5009,6 +5009,161 @@ export async function registerRoutes(
       const slug = req.params.slug;
       if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(400).json({ error: "Unknown page" });
       await db.execute(sql`DELETE FROM app_settings WHERE key = ${'page:' + slug}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Newsletter Broadcast ───
+  // Fetch all registered advisor emails (for the admin send list)
+  app.get("/api/admin/advisor-emails", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT email, username, company_name
+        FROM users
+        WHERE role = 'advisor' AND email IS NOT NULL AND email <> ''
+        ORDER BY company_name NULLS LAST, username`);
+      const rows = (result as any).rows || [];
+      const advisors = rows.map((r: any) => ({
+        email: r.email,
+        name: r.company_name || r.username || r.email,
+      }));
+      res.json({ count: advisors.length, advisors });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Send a newsletter to a provided recipient list (advisor emails + any extras)
+  app.post("/api/admin/send-newsletter", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { subject, html, recipients, includeAllAdvisors, extraEmails } = req.body;
+      if (!subject || !html) return res.status(400).json({ error: "subject and html are required" });
+
+      // Build recipient set
+      const emailSet = new Set<string>();
+
+      if (Array.isArray(recipients)) {
+        for (const e of recipients) if (typeof e === "string" && e.includes("@")) emailSet.add(e.trim().toLowerCase());
+      }
+
+      if (includeAllAdvisors) {
+        const result = await db.execute(sql`
+          SELECT email FROM users
+          WHERE role = 'advisor' AND email IS NOT NULL AND email <> ''`);
+        const rows = (result as any).rows || [];
+        for (const r of rows) if (r.email) emailSet.add(String(r.email).trim().toLowerCase());
+      }
+
+      if (Array.isArray(extraEmails)) {
+        for (const e of extraEmails) {
+          const trimmed = String(e || "").trim().toLowerCase();
+          if (trimmed.includes("@") && trimmed.length > 3) emailSet.add(trimmed);
+        }
+      }
+
+      const finalRecipients = Array.from(emailSet);
+      if (finalRecipients.length === 0) {
+        return res.status(400).json({ error: "No valid recipients" });
+      }
+
+      // Cap to protect against accidental massive sends; adjust as needed
+      if (finalRecipients.length > 5000) {
+        return res.status(400).json({ error: "Recipient list exceeds 5000 — please narrow the list" });
+      }
+
+      const result = await sendNewsletterEmail(finalRecipients, subject, html);
+
+      // Log the send in app_settings for a simple audit trail
+      try {
+        const logKey = 'newsletter_log';
+        const existing = await db.execute(sql`SELECT value FROM app_settings WHERE key = ${logKey}`);
+        const prev = (existing as any).rows?.[0]?.value ? JSON.parse((existing as any).rows[0].value) : [];
+        prev.unshift({ subject, at: new Date().toISOString(), sent: result.sent, failed: result.failed, total: finalRecipients.length });
+        const trimmed = prev.slice(0, 50);
+        const jsonStr = JSON.stringify(trimmed);
+        await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+          VALUES (${logKey}, ${jsonStr}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      } catch (logErr) { /* non-fatal */ }
+
+      res.json({ success: true, sent: result.sent, failed: result.failed, total: finalRecipients.length, errors: result.errors });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Recent newsletter send history
+  app.get("/api/admin/newsletter-log", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_log'`);
+      const row = (result as any).rows?.[0];
+      res.json(row?.value ? JSON.parse(row.value) : []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Newsletter Library (saved templates) ───
+  app.get("/api/admin/newsletter-library", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      // Return metadata only (not full HTML) for the list
+      const list = lib.map((n: any, i: number) => ({ id: i, name: n.name, subject: n.subject, savedAt: n.savedAt, size: (n.html || "").length }));
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/newsletter-library/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id) || id < 0 || id >= lib.length) return res.status(404).json({ error: "Not found" });
+      res.json(lib[id]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/newsletter-library", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { name, subject, html } = req.body;
+      if (!name || !html) return res.status(400).json({ error: "name and html are required" });
+      if (html.length > 500000) return res.status(400).json({ error: "HTML too large (max 500KB)" });
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      lib.unshift({ name, subject: subject || name, html, savedAt: new Date().toISOString() });
+      const trimmed = lib.slice(0, 30); // keep last 30 templates
+      const jsonStr = JSON.stringify(trimmed);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('newsletter_library', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      res.json({ success: true, count: trimmed.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/newsletter-library/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id) || id < 0 || id >= lib.length) return res.status(404).json({ error: "Not found" });
+      lib.splice(id, 1);
+      const jsonStr = JSON.stringify(lib);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('newsletter_library', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

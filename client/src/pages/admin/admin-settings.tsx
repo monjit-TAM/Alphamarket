@@ -98,6 +98,140 @@ export default function AdminSettings() {
     },
   });
 
+  // ─── Newsletter state ───
+  const [nlSubject, setNlSubject] = useState("The Alpha Edge — Issue #01");
+  const [nlHtml, setNlHtml] = useState("");
+  const [nlIncludeAllAdvisors, setNlIncludeAllAdvisors] = useState(true);
+  const [nlExtraEmails, setNlExtraEmails] = useState("");
+  const [nlSending, setNlSending] = useState(false);
+  const [nlResult, setNlResult] = useState<any>(null);
+
+  const { data: advisorEmailData } = useQuery<any>({ queryKey: ["/api/admin/advisor-emails"] });
+  const { data: newsletterLog } = useQuery<any>({ queryKey: ["/api/admin/newsletter-log"] });
+
+  const sendNewsletter = async () => {
+    if (!nlSubject.trim() || !nlHtml.trim()) {
+      toast({ title: "Missing fields", description: "Subject and HTML content are required.", variant: "destructive" });
+      return;
+    }
+    const advisorCount = advisorEmailData?.count || 0;
+    const extras = nlExtraEmails.split(/[\n,;]+/).map((e) => e.trim()).filter((e) => e.includes("@"));
+    const totalEst = (nlIncludeAllAdvisors ? advisorCount : 0) + extras.length;
+    if (!confirm(`Send "${nlSubject}" to approximately ${totalEst} recipient(s)?${nlIncludeAllAdvisors ? " This includes ALL registered advisors." : ""}`)) return;
+    setNlSending(true);
+    setNlResult(null);
+    try {
+      const res = await apiRequest("POST", "/api/admin/send-newsletter", {
+        subject: nlSubject.trim(),
+        html: nlHtml,
+        includeAllAdvisors: nlIncludeAllAdvisors,
+        extraEmails: extras,
+      });
+      const data = await res.json();
+      setNlResult(data);
+      toast({ title: "Newsletter sent", description: `${data.sent} sent, ${data.failed} failed (of ${data.total}).` });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/newsletter-log"] });
+    } catch (err: any) {
+      toast({ title: "Send failed", description: err.message || "Could not send newsletter", variant: "destructive" });
+    } finally {
+      setNlSending(false);
+    }
+  };
+
+  const previewNewsletter = () => {
+    if (!nlHtml.trim()) {
+      toast({ title: "Nothing to preview", description: "Paste the newsletter HTML first.", variant: "destructive" });
+      return;
+    }
+    const previewHtml = nlHtml.replace(/\{\{unsubscribe\}\}/g, '<span style="color:#94a3b8;">Unsubscribe</span>');
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.open();
+      win.document.write(previewHtml);
+      win.document.close();
+    } else {
+      toast({ title: "Popup blocked", description: "Allow popups for this site to preview, or use Send Test.", variant: "destructive" });
+    }
+  };
+
+  const [nlTestEmail, setNlTestEmail] = useState("");
+  const [nlTesting, setNlTesting] = useState(false);
+  const sendTestNewsletter = async () => {
+    const target = nlTestEmail.trim();
+    if (!target.includes("@")) {
+      toast({ title: "Enter a valid email", description: "Add an email address to send the test to.", variant: "destructive" });
+      return;
+    }
+    if (!nlSubject.trim() || !nlHtml.trim()) {
+      toast({ title: "Missing fields", description: "Subject and HTML content are required.", variant: "destructive" });
+      return;
+    }
+    setNlTesting(true);
+    try {
+      const res = await apiRequest("POST", "/api/admin/send-newsletter", {
+        subject: "[TEST] " + nlSubject.trim(),
+        html: nlHtml,
+        includeAllAdvisors: false,
+        extraEmails: [target],
+      });
+      const data = await res.json();
+      toast({ title: "Test sent", description: `Test email sent to ${target} (${data.sent} sent, ${data.failed} failed).` });
+    } catch (err: any) {
+      toast({ title: "Test failed", description: err.message || "Could not send test", variant: "destructive" });
+    } finally {
+      setNlTesting(false);
+    }
+  };
+
+  // Newsletter library + upload
+  const { data: nlLibrary } = useQuery<any>({ queryKey: ["/api/admin/newsletter-library"] });
+  const [nlSaveName, setNlSaveName] = useState("");
+
+  const handleHtmlUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".html") && !file.name.toLowerCase().endsWith(".htm")) {
+      toast({ title: "Wrong file type", description: "Please upload an .html file.", variant: "destructive" });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = String(reader.result || "");
+      setNlHtml(text);
+      toast({ title: "File loaded", description: `${file.name} loaded into the editor (${(text.length/1024).toFixed(0)} KB).` });
+    };
+    reader.onerror = () => toast({ title: "Read failed", description: "Could not read the file.", variant: "destructive" });
+    reader.readAsText(file);
+    e.target.value = ""; // reset so same file can be re-picked
+  };
+
+  const loadFromLibrary = async (id: string) => {
+    if (!id) return;
+    try {
+      const res = await apiRequest("GET", `/api/admin/newsletter-library/${id}`, undefined);
+      const data = await res.json();
+      setNlHtml(data.html || "");
+      if (data.subject) setNlSubject(data.subject);
+      toast({ title: "Loaded", description: `"${data.name}" loaded into the editor.` });
+    } catch (err: any) {
+      toast({ title: "Load failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const saveToLibrary = async () => {
+    const name = nlSaveName.trim();
+    if (!name) { toast({ title: "Name required", description: "Give this newsletter a name to save it.", variant: "destructive" }); return; }
+    if (!nlHtml.trim()) { toast({ title: "Nothing to save", description: "Load or paste HTML first.", variant: "destructive" }); return; }
+    try {
+      await apiRequest("POST", "/api/admin/newsletter-library", { name, subject: nlSubject, html: nlHtml });
+      toast({ title: "Saved to library", description: `"${name}" is now available to reuse.` });
+      setNlSaveName("");
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/newsletter-library"] });
+    } catch (err: any) {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    }
+  };
+
 
   const { data: tokenStatus, isLoading } = useQuery<TokenStatus>({
     queryKey: ["/api/admin/groww-token-status"],
@@ -485,6 +619,124 @@ export default function AdminSettings() {
               Reset to Default
             </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Send className="w-5 h-5 text-muted-foreground" />
+            <CardTitle>Advisor Newsletter</CardTitle>
+          </div>
+          <CardDescription>
+            Send an HTML newsletter to your registered advisors via SendGrid. Paste the HTML, choose recipients, and send.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div>
+            <Label className="text-xs">Subject Line</Label>
+            <Input value={nlSubject} onChange={(e) => setNlSubject(e.target.value)} data-testid="input-nl-subject" />
+          </div>
+
+          <div className="border rounded-md p-3 space-y-3 bg-slate-50">
+            <Label className="text-xs font-semibold">Load Newsletter Content</Label>
+            <div className="flex flex-wrap gap-3 items-end">
+              <div>
+                <Label className="text-xs text-muted-foreground">Upload .html file</Label>
+                <Input type="file" accept=".html,.htm" onChange={handleHtmlUpload} data-testid="input-nl-upload" className="text-xs" />
+              </div>
+              {Array.isArray(nlLibrary) && nlLibrary.length > 0 && (
+                <div>
+                  <Label className="text-xs text-muted-foreground">Or load a saved one</Label>
+                  <Select onValueChange={loadFromLibrary}>
+                    <SelectTrigger className="min-w-[200px]" data-testid="select-nl-library"><SelectValue placeholder="Choose saved newsletter" /></SelectTrigger>
+                    <SelectContent>
+                      {nlLibrary.map((n: any) => (
+                        <SelectItem key={n.id} value={String(n.id)}>{n.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">Upload the exported .html file directly — no copy-paste needed. Or pick a newsletter you've saved before.</p>
+          </div>
+
+          <div>
+            <Label className="text-xs">Newsletter HTML {nlHtml && <span className="text-green-600">({(nlHtml.length/1024).toFixed(0)} KB loaded)</span>}</Label>
+            <Textarea rows={8} className="font-mono text-xs" value={nlHtml}
+              placeholder="Upload a file above, load a saved newsletter, or paste HTML here."
+              onChange={(e) => setNlHtml(e.target.value)} data-testid="input-nl-html" />
+            <div className="flex gap-2 items-center mt-2">
+              <Input className="max-w-[240px] text-xs" placeholder="Name to save as (e.g. Issue #01)" value={nlSaveName}
+                onChange={(e) => setNlSaveName(e.target.value)} data-testid="input-nl-savename" />
+              <Button variant="outline" size="sm" onClick={saveToLibrary} data-testid="button-nl-save">Save to Library</Button>
+            </div>
+          </div>
+
+          <div className="border rounded-md p-3 space-y-3 bg-slate-50">
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="nl-all-advisors" checked={nlIncludeAllAdvisors}
+                onChange={(e) => setNlIncludeAllAdvisors(e.target.checked)}
+                className="rounded border-slate-300" data-testid="checkbox-nl-all" />
+              <Label htmlFor="nl-all-advisors" className="text-sm cursor-pointer">
+                Send to all registered advisors
+                {advisorEmailData?.count != null && (
+                  <span className="text-muted-foreground"> ({advisorEmailData.count} on file)</span>
+                )}
+              </Label>
+            </div>
+            <div>
+              <Label className="text-xs">Additional Email IDs (optional)</Label>
+              <Textarea rows={3} value={nlExtraEmails}
+                placeholder="Add extra recipients — one per line, or comma-separated. e.g. partner@example.com"
+                onChange={(e) => setNlExtraEmails(e.target.value)} data-testid="input-nl-extra" />
+              <p className="text-xs text-muted-foreground mt-1">These are added on top of the advisor list. Duplicates are removed automatically.</p>
+            </div>
+          </div>
+
+          <div className="border rounded-md p-3 space-y-2 bg-blue-50/50">
+            <Label className="text-xs font-semibold">Preview & Test First</Label>
+            <div className="flex gap-2 flex-wrap items-center">
+              <Button variant="outline" size="sm" onClick={previewNewsletter} data-testid="button-preview-newsletter">
+                Preview in New Tab
+              </Button>
+              <Input className="max-w-[240px]" placeholder="your@email.com" value={nlTestEmail}
+                onChange={(e) => setNlTestEmail(e.target.value)} data-testid="input-nl-test" />
+              <Button variant="outline" size="sm" disabled={nlTesting} onClick={sendTestNewsletter} data-testid="button-test-newsletter">
+                {nlTesting ? "Sending…" : "Send Test"}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">Preview opens the newsletter in a new tab. Send Test emails just the one address so you can check it in a real inbox before the full send.</p>
+          </div>
+
+          <Button disabled={nlSending} onClick={sendNewsletter} data-testid="button-send-newsletter">
+            <Send className="w-4 h-4 mr-1" />
+            {nlSending ? "Sending…" : "Send Newsletter to All"}
+          </Button>
+
+          {nlResult && (
+            <div className="text-sm border rounded-md p-3 bg-green-50 text-green-900">
+              Sent: <strong>{nlResult.sent}</strong> · Failed: <strong>{nlResult.failed}</strong> · Total: <strong>{nlResult.total}</strong>
+              {nlResult.errors && nlResult.errors.length > 0 && (
+                <div className="mt-2 text-xs text-red-700">
+                  <div className="font-semibold">First errors:</div>
+                  {nlResult.errors.map((er: string, i: number) => <div key={i}>{er}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+
+          {Array.isArray(newsletterLog) && newsletterLog.length > 0 && (
+            <div className="text-xs text-muted-foreground border-t pt-3">
+              <div className="font-semibold mb-1">Recent sends</div>
+              {newsletterLog.slice(0, 5).map((log: any, i: number) => (
+                <div key={i}>
+                  {new Date(log.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })} — "{log.subject}" · {log.sent}/{log.total} sent
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
