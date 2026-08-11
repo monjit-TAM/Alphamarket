@@ -1790,7 +1790,22 @@ export async function registerRoutes(
           // Validate expiry for each leg
           const vExpiry = vleg.expiry || "";
           if ((vSegment === "Option" || vSegment === "Index" || vSegment === "Future") && !vExpiry && isPublished) {
-            return res.status(400).send("
+            return res.status(400).send("Leg " + (v + 1) + ": Expiry date is required for " + vSegment + " positions.");
+          }
+          if (vExpiry && !vExpiry.match(/^\d{4}-\d{2}-\d{2}$/)) {
+            // Try to normalize
+            let vNorm = vExpiry;
+            const vDDMM = vExpiry.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+            if (vDDMM) vNorm = vDDMM[3] + "-" + vDDMM[2].padStart(2, "0") + "-" + vDDMM[1].padStart(2, "0");
+            const vComp = vExpiry.match(/^(\d{4})(\d{2})(\d{2})$/);
+            if (vComp) vNorm = vComp[1] + "-" + vComp[2] + "-" + vComp[3];
+            if (vNorm.match(/^\d{4}-\d{2}-\d{2}$/)) {
+              legs[v].expiry = vNorm;
+              console.log("[routes] Multi-leg: Auto-corrected expiry from '" + vExpiry + "' to '" + vNorm + "'");
+            } else {
+              return res.status(400).send("Leg " + (v + 1) + ": Invalid expiry format '" + vExpiry + "'. Expected YYYY-MM-DD.");
+            }
+          }
           // SL direction validation for each leg
           const vSl = Number(vleg.stopLoss || 0);
           if (vSl > 0 && vEntry > 0 && vSegment !== "Option" && vSegment !== "Index") {
@@ -1806,22 +1821,6 @@ export async function registerRoutes(
             const vSlDist = Math.abs(vSl - vEntry) / vEntry;
             if (vSlDist > 0.8) {
               return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is " + Math.round(vSlDist * 100) + "% away from entry (" + vEntry + "). Likely a typo.");
-            }
-          }
-          Leg " + (v + 1) + ": Expiry date is required for " + vSegment + " positions.");
-          }
-          if (vExpiry && !vExpiry.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            // Try to normalize
-            let vNorm = vExpiry;
-            const vDDMM = vExpiry.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
-            if (vDDMM) vNorm = vDDMM[3] + "-" + vDDMM[2].padStart(2, "0") + "-" + vDDMM[1].padStart(2, "0");
-            const vComp = vExpiry.match(/^(\d{4})(\d{2})(\d{2})$/);
-            if (vComp) vNorm = vComp[1] + "-" + vComp[2] + "-" + vComp[3];
-            if (vNorm.match(/^\d{4}-\d{2}-\d{2}$/)) {
-              legs[v].expiry = vNorm;
-              console.log("[routes] Multi-leg: Auto-corrected expiry from '" + vExpiry + "' to '" + vNorm + "'");
-            } else {
-              return res.status(400).send("Leg " + (v + 1) + ": Invalid expiry format '" + vExpiry + "'. Expected YYYY-MM-DD.");
             }
           }
           if ((vSegment === "Option" || vSegment === "Index") && !vleg.strikePrice && isPublished) {
