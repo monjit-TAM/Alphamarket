@@ -281,3 +281,45 @@ export async function sendStrategyAlertEmail(
     console.log(`[Email] Strategy alert: ${sent} sent, ${failed} failed — "${subject}"`);
   }
 }
+
+// ─── Newsletter Broadcast to Advisors ───
+export async function sendNewsletterEmail(
+  recipients: string[],
+  subject: string,
+  htmlContent: string
+): Promise<{ sent: number; failed: number; errors: string[] }> {
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) {
+    return { sent: 0, failed: recipients.length, errors: ["SENDGRID_API_KEY not set"] };
+  }
+  const sgMailLib = require("@sendgrid/mail");
+  sgMailLib.setApiKey(apiKey);
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || "hello@alphamarket.co.in";
+
+  let sent = 0, failed = 0;
+  const errors: string[] = [];
+  for (const email of recipients) {
+    try {
+      // Replace unsubscribe placeholder with a simple mailto (SendGrid also supports its own)
+      const personalizedHtml = htmlContent.replace(
+        /\{\{unsubscribe\}\}/g,
+        '<a href="mailto:hello@alphamarket.co.in?subject=Unsubscribe" style="color:#64748b;">Unsubscribe</a>'
+      );
+      await sgMailLib.send({
+        to: email,
+        from: { email: fromEmail, name: "AlphaMarket" },
+        subject,
+        html: personalizedHtml,
+      });
+      sent++;
+      // Gentle pacing to stay within SendGrid rate limits on large sends
+      await new Promise((r) => setTimeout(r, 60));
+    } catch (err: any) {
+      failed++;
+      const msg = err?.response?.body?.errors?.[0]?.message || err.message;
+      if (errors.length < 10) errors.push(`${email}: ${msg}`);
+    }
+  }
+  console.log(`[Newsletter] Broadcast: ${sent} sent, ${failed} failed — "${subject}"`);
+  return { sent, failed, errors };
+}

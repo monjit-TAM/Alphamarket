@@ -2,8 +2,41 @@ import { Link } from "wouter";
 import { TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 
+interface FooterLink { label: string; url: string; }
+interface FooterColumn { heading: string; links: FooterLink[]; }
+
+const DEFAULT_COLUMNS: FooterColumn[] = [
+  { heading: "Advisors", links: [
+    { label: "Browse Advisors", url: "/advisors" },
+    { label: "Partnerships", url: "" },
+    { label: "Data Partners", url: "" },
+  ]},
+  { heading: "Company", links: [
+    { label: "Careers", url: "" },
+    { label: "Press", url: "" },
+  ]},
+  { heading: "Disclosures", links: [
+    { label: "Privacy Policy", url: "/privacy-policy" },
+    { label: "Terms and Conditions", url: "/terms-and-conditions" },
+    { label: "Legal Disclosures", url: "/legal-agreement" },
+    { label: "Cancellation & Refund", url: "/cancellation-policy" },
+    { label: "Shipping & Delivery", url: "/shipping-and-delivery" },
+  ]},
+  { heading: "About us", links: [
+    { label: "Contact Us", url: "/contact-us" },
+    { label: "Site Map", url: "/sitemap.xml" },
+  ]},
+];
+
+const DEFAULT_TAGLINE = "India's premier SaaS platform connecting SEBI-registered advisors with investors and brokers.";
+const DEFAULT_DISCLAIMER = "AlphaMarket connects investors with advisors to receive advice on investing or trading in stock market, commodity, and F&O segments. Investment in securities market is subject to market risk. Read all related documents carefully before investing.";
+
 export function Footer() {
   const { data: siteContent } = useQuery<any>({ queryKey: ["/api/site-content"] });
+  const columns: FooterColumn[] = siteContent?.footerColumns?.length ? siteContent.footerColumns : DEFAULT_COLUMNS;
+  const tagline = siteContent?.footerTagline || DEFAULT_TAGLINE;
+  const disclaimer = siteContent?.footerDisclaimer || DEFAULT_DISCLAIMER;
+
   return (
     <footer className="border-t bg-muted/30">
       <div className="max-w-7xl mx-auto px-4 md:px-6 py-10">
@@ -19,47 +52,31 @@ export function Footer() {
                 </span>
               </div>
             </Link>
-            <p className="text-xs text-muted-foreground leading-relaxed">
-              {siteContent?.footerTagline || "India's premier SaaS platform connecting SEBI-registered advisors with investors and brokers."}
-            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{tagline}</p>
           </div>
-          <div>
-            <h4 className="font-semibold text-sm mb-3">Advisors</h4>
-            <ul className="space-y-1.5 text-sm text-muted-foreground">
-              <li><Link href="/advisors" className="hover:text-foreground transition-colors" data-testid="footer-link-advisors">Browse Advisors</Link></li>
-              <li className="cursor-default">Partnerships</li>
-              <li className="cursor-default">Data Partners</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-sm mb-3">Company</h4>
-            <ul className="space-y-1.5 text-sm text-muted-foreground">
-              <li className="cursor-default">Careers</li>
-              <li className="cursor-default">Press</li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-sm mb-3">Disclosures</h4>
-            <ul className="space-y-1.5 text-sm text-muted-foreground">
-              <li><Link href="/privacy-policy" className="hover:text-foreground transition-colors" data-testid="footer-link-privacy">Privacy Policy</Link></li>
-              <li><Link href="/terms-and-conditions" className="hover:text-foreground transition-colors" data-testid="footer-link-terms">Terms and Conditions</Link></li>
-              <li><Link href="/legal-agreement" className="hover:text-foreground transition-colors" data-testid="footer-link-legal">Legal Disclosures</Link></li>
-              <li><Link href="/cancellation-policy" className="hover:text-foreground transition-colors" data-testid="footer-link-cancellation">Cancellation & Refund</Link></li>
-              <li><Link href="/shipping-and-delivery" className="hover:text-foreground transition-colors" data-testid="footer-link-shipping">Shipping & Delivery</Link></li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="font-semibold text-sm mb-3">About us</h4>
-            <ul className="space-y-1.5 text-sm text-muted-foreground">
-              <li><Link href="/contact-us" className="hover:text-foreground transition-colors" data-testid="footer-link-contact">Contact Us</Link></li>
-              <li><Link href="/sitemap.xml" className="hover:text-foreground transition-colors" data-testid="footer-link-sitemap">Site Map</Link></li>
-            </ul>
-          </div>
+          {columns.map((col, ci) => (
+            <div key={ci}>
+              <h4 className="font-semibold text-sm mb-3">{col.heading}</h4>
+              <ul className="space-y-1.5 text-sm text-muted-foreground">
+                {col.links.map((link, li) => (
+                  <li key={li}>
+                    {link.url ? (
+                      link.url.startsWith("http") ? (
+                        <a href={link.url} target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">{link.label}</a>
+                      ) : (
+                        <Link href={link.url} className="hover:text-foreground transition-colors">{link.label}</Link>
+                      )
+                    ) : (
+                      <span className="cursor-default">{link.label}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
         <div className="mt-8 pt-6 border-t text-center text-xs text-muted-foreground">
-          AlphaMarket connects investors with advisors to receive advice on investing or
-          trading in stock market, commodity, and F&O segments. Investment in securities market
-          is subject to market risk. Read all related documents carefully before investing.
+          {disclaimer}
         </div>
       </div>
     </footer>

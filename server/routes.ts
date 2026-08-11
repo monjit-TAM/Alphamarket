@@ -1607,7 +1607,7 @@ export async function registerRoutes(
         const strikePx = Number(body.strikePrice || 0);
 
         // Option premiums are almost always < strike price (except deep ITM)
-        if (segment === "Option" && strikePx > 0 && entryPx > strikePx) {
+        if (segment === "Option" && strikePx > 0 && entryPx >= strikePx) {
           return res.status(400).send(
             `Entry price (₹${entryPx}) is higher than strike price (₹${strikePx}). ` +
             `For options, entry price should be the premium amount (typically ₹1-₹2000), not the stock price. ` +
@@ -1790,7 +1790,25 @@ export async function registerRoutes(
           // Validate expiry for each leg
           const vExpiry = vleg.expiry || "";
           if ((vSegment === "Option" || vSegment === "Index" || vSegment === "Future") && !vExpiry && isPublished) {
-            return res.status(400).send("Leg " + (v + 1) + ": Expiry date is required for " + vSegment + " positions.");
+            return res.status(400).send("
+          // SL direction validation for each leg
+          const vSl = Number(vleg.stopLoss || 0);
+          if (vSl > 0 && vEntry > 0 && vSegment !== "Option" && vSegment !== "Index") {
+            const vAction = (vleg.buySell || vleg.buy_sell || "Buy").toLowerCase();
+            if (vAction === "buy" && vSl > vEntry) {
+              return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is above entry (" + vEntry + ") for a BUY position.");
+            }
+            if (vAction === "sell" && vSl < vEntry) {
+              return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is below entry (" + vEntry + ") for a SELL position.");
+            }
+          }
+          if (vSl > 0 && vEntry > 0) {
+            const vSlDist = Math.abs(vSl - vEntry) / vEntry;
+            if (vSlDist > 0.8) {
+              return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is " + Math.round(vSlDist * 100) + "% away from entry (" + vEntry + "). Likely a typo.");
+            }
+          }
+          Leg " + (v + 1) + ": Expiry date is required for " + vSegment + " positions.");
           }
           if (vExpiry && !vExpiry.match(/^\d{4}-\d{2}-\d{2}$/)) {
             // Try to normalize
@@ -1809,9 +1827,15 @@ export async function registerRoutes(
           if ((vSegment === "Option" || vSegment === "Index") && !vleg.strikePrice && isPublished) {
             return res.status(400).send("Leg " + (v + 1) + ": Strike price is required for " + vSegment + " positions.");
           }
-          if (vSegment === "Option" && vStrike > 0 && vEntry > vStrike) {
+          if (vSegment === "Option" && vStrike > 0 && vEntry >= vStrike) {
             return res.status(400).send(
-              `Leg ${v + 1}: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
+              `Leg ${v + 1}
+          // Option premiums rarely exceed 5000
+          if ((vSegment === "Option" || vSegment === "Index") && vEntry > 5000 && vStrike > 0) {
+            return res.status(400).send(
+              "Leg " + (v + 1) + ": Entry price (" + vEntry + ") seems too high for an option premium. Did you enter the stock/index price instead of the option premium?"
+            );
+          }: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
               `For options, entry price should be the premium, not the stock price.`
             );
           }
