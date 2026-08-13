@@ -187,7 +187,8 @@ export default function AdvisorDetail() {
                       <span className="truncate">{c.title}</span>
                     </a>
                   ))
-                )}
+                  );
+                })()}
               </CardContent>
             </Card>
 
