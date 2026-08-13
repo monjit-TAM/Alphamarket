@@ -171,26 +171,26 @@ export default function AdvisorDetail() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Content Portfolio</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {(() => {
-                  const nonRiskContent = (advisor.contents || []).filter((c) => !["RiskAdvisory", "Disclaimer", "TermsConditions", "Terms"].includes(c.type));
-                  return nonRiskContent.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-2">No content published</p>
-                  ) : (
-                    nonRiskContent.slice(0, 5).map((c) => (
-                    <a key={c.id} href={`/content/${c.id}`} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50 hover:bg-muted cursor-pointer no-underline text-inherit" data-testid={`content-item-${c.id}`}>
-                      <BarChart3 className="w-3 h-3 text-primary flex-shrink-0" />
-                      <span className="truncate">{c.title}</span>
-                    </a>
-                  ))
-                  );
-                })()}
-              </CardContent>
-            </Card>
+            {/* Research & Market Content */}
+            {(() => {
+              const researchContent = (advisor.contents || []).filter((c) => ["MarketUpdate", "Learn", "Research"].includes(c.type));
+              return researchContent.length > 0 ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Research & Market Insights</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {researchContent.slice(0, 5).map((c) => (
+                      <a key={c.id} href={`/content/${c.id}`} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50 hover:bg-muted cursor-pointer no-underline text-inherit">
+                        <BarChart3 className="w-3 h-3 text-primary flex-shrink-0" />
+                        <span className="truncate">{c.title}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{c.type === "MarketUpdate" ? "Market Update" : c.type === "Learn" ? "Education" : c.type}</span>
+                      </a>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null;
+            })()}
 
             {(
               <Card>
