@@ -216,6 +216,47 @@ export default function AdvisorDetail() {
                 </CardContent>
               </Card>
             )}
+
+            {/* Risk Disclosure */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Risk Disclosure</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {advisor.risk_disclosure || "Investment in securities market is subject to market risks. Read all the related documents carefully before investing. Registration granted by SEBI and certification from NISM in no way guarantee performance of the intermediary or provide any assurance of returns to investors. The securities quoted are exemplary and are not recommendatory. Past performance is not indicative of future results. Please note that equity investments are subject to market risks and there is no guarantee of returns. The value of investments may fluctuate and investors may receive back less than the amount invested. It is recommended that investors seek independent financial advice before making any investment decisions."}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Disclaimer */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Disclaimer</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {advisor.disclaimer || ("The information and recommendations provided herein are for general informational and educational purposes only. This does not constitute an offer to buy or sell securities. The research analyst/investment adviser" + (advisor.sebi_reg_number ? " (SEBI Reg: " + advisor.sebi_reg_number + ")" : "") + " and its associates are not responsible for any losses incurred from acting on the recommendations. Clients are advised to independently verify the information and consult their financial advisors before making any investment decisions. The advisor may or may not hold positions in the securities recommended. Any dispute arising out of the advisory services shall be subject to the jurisdiction of the courts in India.")}
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Terms & Conditions */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Terms & Conditions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-sm text-muted-foreground leading-relaxed space-y-2">
+                  <p>1. The advisory services provided are based on the research and analysis of the advisor. The advisor does not guarantee any specific returns.</p>
+                  <p>2. All recommendations are time-bound. Clients should exit positions at the recommended stop-loss or target levels.</p>
+                  <p>3. The advisor may modify or close recommendations at any time based on market conditions.</p>
+                  <p>4. Clients must perform their own due diligence before acting on any recommendation.</p>
+                  <p>5. The advisor is SEBI-registered{advisor.sebi_reg_number ? " (Reg: " + advisor.sebi_reg_number + ")" : ""} and complies with all applicable SEBI regulations.</p>
+                  <p className="text-xs mt-3">For grievances, visit <a href="https://scores.sebi.gov.in" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">SEBI SCORES Portal</a></p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
