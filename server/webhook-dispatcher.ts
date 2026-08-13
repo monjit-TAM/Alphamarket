@@ -229,6 +229,26 @@ export async function fireWebhookEvent(
       }
 
       // Sign
+      // Append SEBI disclosure link for Dreamstreet payloads
+      if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
+        const eqCall = payloadBody?.data?.equityCall;
+        if (eqCall && eqCall.rational && data.advisorId) {
+          try {
+            const sebiLookup = await db.execute(
+              sql`SELECT sebi_reg_number FROM users WHERE id = ${data.advisorId} LIMIT 1`
+            );
+            const sebiReg = (sebiLookup.rows[0] as any)?.sebi_reg_number || "";
+            const profileUrl = "https://alphamarket.co.in/advisors/" + data.advisorId;
+            eqCall.rational = eqCall.rational +
+              "\n\n---\nRisk Disclosure & Disclaimer: " + profileUrl +
+              "\nSCORES: https://scores.sebi.gov.in" +
+              (sebiReg ? " | SEBI Reg: " + sebiReg : "");
+          } catch (e) {
+            console.error("[webhook] Failed to append disclosure:", e);
+          }
+        }
+      }
+
       const payloadStr = JSON.stringify(payloadBody);
       const signature = createHmac("sha256", target.api_secret)
         .update(payloadStr)
