@@ -179,11 +179,11 @@ export default function AdvisorDetail() {
                 {(advisor.contents || []).length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-2">No content published</p>
                 ) : (
-                  (advisor.contents || []).slice(0, 5).map((c) => (
-                    <div key={c.id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50" data-testid={`content-item-${c.id}`}>
+                  (advisor.contents || []).filter((c) => !["RiskAdvisory", "Disclaimer", "TermsConditions"].includes(c.type)).slice(0, 5).map((c) => (
+                    <a key={c.id} href={`/content/${c.id}`} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50 hover:bg-muted cursor-pointer no-underline text-inherit" data-testid={`content-item-${c.id}`}>
                       <BarChart3 className="w-3 h-3 text-primary flex-shrink-0" />
                       <span className="truncate">{c.title}</span>
-                    </div>
+                    </a>
                   ))
                 )}
               </CardContent>
@@ -222,7 +222,12 @@ export default function AdvisorDetail() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Risk Disclosure</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                {(advisor.contents || []).filter((c) => c.type === "RiskAdvisory").map((c) => (
+                  <a key={c.id} href={`/content/${c.id}`} className="block text-sm p-3 rounded-md bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer no-underline">
+                    <span className="font-semibold text-blue-700 dark:text-blue-300">{c.title}</span>
+                  </a>
+                ))}
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {advisor.risk_disclosure || "Investment in securities market is subject to market risks. Read all the related documents carefully before investing. Registration granted by SEBI and certification from NISM in no way guarantee performance of the intermediary or provide any assurance of returns to investors. The securities quoted are exemplary and are not recommendatory. Past performance is not indicative of future results. Please note that equity investments are subject to market risks and there is no guarantee of returns. The value of investments may fluctuate and investors may receive back less than the amount invested. It is recommended that investors seek independent financial advice before making any investment decisions."}
                 </p>
@@ -234,7 +239,12 @@ export default function AdvisorDetail() {
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">Disclaimer</CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
+                {(advisor.contents || []).filter((c) => ["Disclaimer", "TermsConditions"].includes(c.type)).map((c) => (
+                  <a key={c.id} href={`/content/${c.id}`} className="block text-sm p-3 rounded-md bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer no-underline">
+                    <span className="font-semibold text-blue-700 dark:text-blue-300">{c.title}</span>
+                  </a>
+                ))}
                 <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
                   {advisor.disclaimer || ("The information and recommendations provided herein are for general informational and educational purposes only. This does not constitute an offer to buy or sell securities. The research analyst/investment adviser" + (advisor.sebi_reg_number ? " (SEBI Reg: " + advisor.sebi_reg_number + ")" : "") + " and its associates are not responsible for any losses incurred from acting on the recommendations. Clients are advised to independently verify the information and consult their financial advisors before making any investment decisions. The advisor may or may not hold positions in the securities recommended. Any dispute arising out of the advisory services shall be subject to the jurisdiction of the courts in India.")}
                 </p>
