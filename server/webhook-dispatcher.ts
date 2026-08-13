@@ -229,20 +229,24 @@ export async function fireWebhookEvent(
       }
 
       // Sign
-      // Append SEBI disclosure link for Dreamstreet payloads
+      // Append SEBI disclosure + inline disclaimer for Dreamstreet payloads
       if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
         const eqCall = payloadBody?.data?.equityCall;
         if (eqCall && eqCall.rational && data.advisorId) {
           try {
             const sebiLookup = await db.execute(
-              sql`SELECT sebi_reg_number FROM users WHERE id = ${data.advisorId} LIMIT 1`
+              sql`SELECT sebi_reg_number, company_name FROM users WHERE id = ${data.advisorId} LIMIT 1`
             );
             const sebiReg = (sebiLookup.rows[0] as any)?.sebi_reg_number || "";
+            const firmName = (sebiLookup.rows[0] as any)?.company_name || "";
             const profileUrl = "https://alphamarket.co.in/advisors/" + data.advisorId;
-            eqCall.rational = eqCall.rational +
-              "\n\n---\nRisk Disclosure & Disclaimer: " + profileUrl +
-              "\nSCORES: https://scores.sebi.gov.in" +
-              (sebiReg ? " | SEBI Reg: " + sebiReg : "");
+            const inlineDisclaimer = "\n\n---\nDisclosure & Disclaimer: " +
+              "Investment in securities market is subject to market risks. This report is for informational purposes only and should not be construed as investment advice. " +
+              (firmName ? firmName : "The advisor") + (sebiReg ? " (SEBI Reg: " + sebiReg + ")" : "") +
+              " and its associates are not responsible for any losses incurred. Past performance is not indicative of future results. " +
+              "Full disclosure: " + profileUrl +
+              " | SCORES: https://scores.sebi.gov.in";
+            eqCall.rational = eqCall.rational + inlineDisclaimer;
           } catch (e) {
             console.error("[webhook] Failed to append disclosure:", e);
           }
