@@ -189,28 +189,28 @@ export default function AdvisorDetail() {
               </CardContent>
             </Card>
 
-            {advisor.scores && advisor.scores.length > 0 && (
+            {(
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Customer Complaints as per SCORES</CardTitle>
+                  <CardTitle className="text-base">Customer Complaints as per <a href="https://scores.sebi.gov.in" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">SCORES</a></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="p-2 rounded-md bg-primary/10 text-center space-y-1">
                       <p className="text-muted-foreground">At beginning</p>
-                      <p className="font-semibold">{advisor.scores[0].beginningOfMonth || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.beginningOfMonth || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-primary/10 text-center space-y-1">
                       <p className="text-muted-foreground">Received</p>
-                      <p className="font-semibold">{advisor.scores[0].receivedDuring || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.receivedDuring || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-accent/10 text-center space-y-1">
                       <p className="text-muted-foreground">Resolved</p>
-                      <p className="font-semibold">{advisor.scores[0].resolvedDuring || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.resolvedDuring || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-primary/10 text-center space-y-1">
                       <p className="text-muted-foreground">Pending</p>
-                      <p className="font-semibold">{advisor.scores[0].pendingAtEnd || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.pendingAtEnd || 0}</p>
                     </div>
                   </div>
                 </CardContent>
