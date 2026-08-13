@@ -233,6 +233,11 @@ export async function fireWebhookEvent(
       if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
         const eqCall = payloadBody?.data?.equityCall;
         if (eqCall && eqCall.rational && data.advisorId) {
+          // Truncate rationale to 1500 chars to leave room for ~440 char disclaimer (total < 2000)
+          if (eqCall.rational.length > 1500) {
+            eqCall.rational = eqCall.rational.substring(0, 1497) + "...";
+            console.log("[webhook] Dreamstreet: truncated rationale from " + eqCall.rational.length + " to 1500 chars for " + (eqCall.symbol || ""));
+          }
           try {
             const sebiLookup = await db.execute(
               sql`SELECT sebi_reg_number, company_name FROM users WHERE id = ${data.advisorId} LIMIT 1`
