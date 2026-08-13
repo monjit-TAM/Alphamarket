@@ -226,12 +226,11 @@ export default function AdvisorDetail() {
                 <CardTitle className="text-base">Compliance & Disclosures</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Uploaded compliance documents */}
+                                {/* Compliance documents uploaded by advisor */}
                 {(() => {
                   const compDocs = (advisor.contents || []).filter((c) => ["RiskAdvisory", "Disclaimer", "TermsConditions", "Terms"].includes(c.type));
                   return compDocs.length > 0 ? (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Uploaded Documents</p>
                       {compDocs.map((c) => (
                         <a key={c.id} href={`/content/${c.id}`} className="flex items-center gap-2 text-sm p-3 rounded-md bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer no-underline">
                           <BarChart3 className="w-3 h-3 text-blue-600 flex-shrink-0" />
@@ -240,33 +239,10 @@ export default function AdvisorDetail() {
                         </a>
                       ))}
                     </div>
-                  ) : null;
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-2">No disclosures uploaded yet</p>
+                  );
                 })()}
-
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Risk Disclosure</p>
-                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                    {advisor.risk_disclosure || "Investment in securities market is subject to market risks. Read all the related documents carefully before investing. Registration granted by SEBI and certification from NISM in no way guarantee performance of the intermediary or provide any assurance of returns to investors. The securities quoted are exemplary and are not recommendatory. Past performance is not indicative of future results. The value of investments may fluctuate and investors may receive back less than the amount invested. It is recommended that investors seek independent financial advice before making any investment decisions."}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Disclaimer</p>
-                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                    {advisor.disclaimer || ("The information and recommendations provided herein are for general informational and educational purposes only. This does not constitute an offer to buy or sell securities. The research analyst/investment adviser" + (advisor.sebi_reg_number ? " (SEBI Reg: " + advisor.sebi_reg_number + ")" : "") + " and its associates are not responsible for any losses incurred from acting on the recommendations. Clients are advised to independently verify the information and consult their financial advisors before making any investment decisions.")}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">SEBI Registration</p>
-                  <div className="text-sm space-y-1">
-                    <p><span className="text-muted-foreground">Registration Number:</span> <span className="font-semibold">{advisor.sebi_reg_number || advisor.sebiRegNumber || "Not provided"}</span></p>
-                    {advisor.sebi_cert_url && (
-                      <p><a href={advisor.sebi_cert_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">View SEBI Certificate</a></p>
-                    )}
-                    <p className="text-muted-foreground text-xs mt-2">For grievances, visit <a href="https://scores.sebi.gov.in" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">SEBI SCORES Portal</a></p>
-                  </div>
-                </div>
               </CardContent>
             </Card>
           </div>
