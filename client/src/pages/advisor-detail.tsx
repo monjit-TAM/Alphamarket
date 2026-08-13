@@ -177,7 +177,7 @@ export default function AdvisorDetail() {
               </CardHeader>
               <CardContent className="space-y-2">
                 {(() => {
-                  const nonRiskContent = (advisor.contents || []).filter((c) => !["RiskAdvisory", "Disclaimer", "TermsConditions"].includes(c.type));
+                  const nonRiskContent = (advisor.contents || []).filter((c) => !["RiskAdvisory", "Disclaimer", "TermsConditions", "Terms"].includes(c.type));
                   return nonRiskContent.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-2">No content published</p>
                   ) : (
@@ -243,7 +243,7 @@ export default function AdvisorDetail() {
                 <CardTitle className="text-base">Disclaimer</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {(advisor.contents || []).filter((c) => ["Disclaimer", "TermsConditions"].includes(c.type)).map((c) => (
+                {(advisor.contents || []).filter((c) => ["Disclaimer", "TermsConditions", "Terms"].includes(c.type)).map((c) => (
                   <a key={c.id} href={`/content/${c.id}`} className="block text-sm p-3 rounded-md bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer no-underline">
                     <span className="font-semibold text-blue-700 dark:text-blue-300">{c.title}</span>
                   </a>
