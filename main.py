@@ -65,6 +65,49 @@ API_TAGS = [
 
 # ══ Alpha Data Service (centralized data layer on port 5004) ══
 DATA_SERVICE_URL = "http://127.0.0.1:5004"
+
+
+# ══ CAS + options analytics: thin proxies to the Data Service ══
+async def _ds_get(path: str):
+    import httpx as _hx
+    async with _hx.AsyncClient(timeout=20) as c:
+        r = await c.get(f"{DATA_SERVICE_URL}{path}",
+                        headers={"X-API-Key": "alpha_data_internal_2026"})
+        return r.json()
+
+
+@app.get("/api/market/cas-status", tags=["CAS"], summary="Closing Auction Session phase and what is permitted now")
+async def dyor_cas_status():
+    return await _ds_get("/data/market/cas-status")
+
+
+@app.get("/api/market/cas-eligible/{symbol}", tags=["CAS"], summary="Is this symbol Category I (closes via auction)?")
+async def dyor_cas_eligible(symbol: str):
+    return await _ds_get(f"/data/market/cas-eligible/{symbol}")
+
+
+@app.post("/api/market/cas-risk-check", tags=["CAS"], summary="Which positions and orders the auction affects")
+async def dyor_cas_risk_check(payload: dict):
+    import httpx as _hx
+    async with _hx.AsyncClient(timeout=25) as c:
+        r = await c.post(f"{DATA_SERVICE_URL}/data/market/cas-risk-check",
+                         headers={"X-API-Key": "alpha_data_internal_2026"}, json=payload)
+        return r.json()
+
+
+@app.get("/api/options/stats/{underlying}", tags=["Options"], summary="ATM IV, PCR, Max Pain and straddle price")
+async def dyor_option_stats(underlying: str, expiry: str = None):
+    return await _ds_get(f"/data/options/stats/{underlying}" + (f"?expiry={expiry}" if expiry else ""))
+
+
+@app.get("/api/options/oi-chain/{underlying}", tags=["Options"], summary="OI by strike with build-up and peak-OI levels")
+async def dyor_option_oi(underlying: str, expiry: str = None):
+    return await _ds_get(f"/data/options/oi-chain/{underlying}" + (f"?expiry={expiry}" if expiry else ""))
+
+
+@app.get("/api/options/iv-history/{underlying}", tags=["Options"], summary="ATM IV history with percentile and rank")
+async def dyor_iv_history(underlying: str, days: int = 90):
+    return await _ds_get(f"/data/options/iv-history/{underlying}?days={days}")
 import httpx as _httpx
 
 async def ds_quote(symbol: str) -> dict:
