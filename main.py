@@ -226,6 +226,18 @@ async def _ds_get(path: str):
         return r.json()
 
 
+@app.get("/api/market/cas-auction/{symbol}", tags=["CAS"], summary="Auction replay: indicative price path and imbalance for one symbol")
+async def dyor_cas_auction(symbol: str, session_date: str = None):
+    q = f"?session_date={session_date}" if session_date else ""
+    return await _ds_get(f"/data/market/cas-auction/{symbol}{q}")
+
+
+@app.get("/api/market/cas-session", tags=["CAS"], summary="Whole-session auction summary and largest drifts")
+async def dyor_cas_session(session_date: str = None, limit: int = 20):
+    q = f"?limit={limit}" + (f"&session_date={session_date}" if session_date else "")
+    return await _ds_get(f"/data/market/cas-session{q}")
+
+
 @app.get("/api/market/cas-status", tags=["CAS"], summary="Closing Auction Session phase and what is permitted now")
 async def dyor_cas_status():
     return await _ds_get("/data/market/cas-status")
