@@ -32,13 +32,13 @@ def _get_vix_data():
         vix = yf.Ticker("^INDIAVIX")
         h = vix.history(period="1mo")
         if h.empty:
-            return {"vix": 15, "vix_sma20": 15}
+            return {"vix": None, "vix_sma20": None, "unavailable": True, "reason": "empty history"}
         current = float(h["Close"].iloc[-1])
         sma20 = float(h["Close"].rolling(20).mean().iloc[-1]) if len(h) >= 20 else current
         return {"vix": round(current, 2), "vix_sma20": round(sma20, 2)}
     except Exception as e:
         logger.error(f"VIX fetch failed: {e}")
-        return {"vix": 15, "vix_sma20": 15}
+        return {"vix": None, "vix_sma20": None, "unavailable": True, "reason": str(e)[:120]}
 
 def _get_nifty_technicals():
     """Fetch Nifty technicals for regime classification."""
@@ -48,7 +48,7 @@ def _get_nifty_technicals():
         nifty = yf.Ticker("^NSEI")
         h = nifty.history(period="3mo")
         if h.empty:
-            return {"price": 24000, "bb_width": 5, "atr_pct": 1, "trend": "NEUTRAL", "pcr": 1}
+            return {"price": None, "bb_width": None, "atr_pct": None, "trend": None, "pcr": None, "unavailable": True}
         c = h["Close"]
         price = float(c.iloc[-1])
         bb = ta.volatility.BollingerBands(c)
@@ -62,17 +62,17 @@ def _get_nifty_technicals():
         if price > sma20 and sma20 > sma50: trend = "BULLISH"
         elif price < sma20 and sma20 < sma50: trend = "BEARISH"
         else: trend = "NEUTRAL"
-        return {"price": round(price, 1), "bb_width": bb_width, "atr_pct": atr_pct, "trend": trend, "pcr": 1.0}
+        return {"price": round(price, 1), "bb_width": bb_width, "atr_pct": atr_pct, "trend": trend, "pcr": None, "pcr_measured": False}
     except Exception as e:
         logger.error(f"Nifty technicals failed: {e}")
-        return {"price": 24000, "bb_width": 5, "atr_pct": 1, "trend": "NEUTRAL", "pcr": 1}
+        return {"price": None, "bb_width": None, "atr_pct": None, "trend": None, "pcr": None, "unavailable": True}
 
 def _get_banknifty_price():
     try:
         import yfinance as yf
         h = yf.Ticker("^NSEBANK").history(period="5d")
-        return round(float(h["Close"].iloc[-1]), 1) if not h.empty else 51000
-    except: return 51000
+        return round(float(h["Close"].iloc[-1]), 1) if not h.empty else None
+    except: return None
 
 def _load_alpha_universe():
     """Load F&O stocks from DYOR screener caches with enrichment."""
@@ -151,10 +151,15 @@ async def get_regime():
     from alpha_options_engine import classify_regime
     vix_data = _get_vix_data()
     nifty = _get_nifty_technicals()
+    if vix_data.get("unavailable") or nifty.get("unavailable"):
+        return {"data_available": False, "label": "Regime unavailable",
+                "description": ("Inputs behind this classification could not be retrieved. A label built "
+                                "from placeholder values would be worse than none."),
+                "recommended_strategies": [], "metrics": {}}
     regime = classify_regime(
         vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
         bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+        trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
     regime["nifty_price"] = nifty["price"]
     return regime
@@ -173,7 +178,7 @@ async def get_signals(
     regime = classify_regime(
         vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
         bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+        trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
 
     if not _is_market_open():
@@ -396,7 +401,7 @@ async def generate_and_save(
     regime = classify_regime(
         vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
         bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+        trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
 
     if risk_level == "LOW": max_positions = min(max_positions, 3)
