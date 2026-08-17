@@ -25,6 +25,33 @@ def _is_market_open():
 def _get_redis():
     return sync_redis.Redis(host="127.0.0.1", port=6379, db=3, decode_responses=True)
 
+def _own_regime_inputs():
+    """Regime inputs measured by us rather than fetched from Yahoo.
+
+    ATM implied volatility from our own option chain is a better volatility
+    input than a scraped VIX: it is current, it is ours, and it is the number
+    the rest of the platform already displays. PCR comes from the same archive
+    and was previously a hardcoded literal.
+    """
+    import httpx
+    out = {}
+    try:
+        with httpx.Client(timeout=8) as c:
+            d = c.get("http://127.0.0.1:5004/data/options/stats/NIFTY",
+                      headers={"X-API-Key": "alpha_data_internal_2026"}).json()
+            if d.get("available") and d.get("expiries"):
+                e = d["expiries"][0]
+                out["atm_iv"] = e.get("atm_iv"); out["pcr"] = e.get("pcr_oi"); out["spot"] = e.get("spot")
+            g = c.get("http://127.0.0.1:5004/data/options/regime/NIFTY",
+                      headers={"X-API-Key": "alpha_data_internal_2026"}).json()
+            for drv in (g.get("drivers") or []):
+                if drv["driver"] == "Volatility":
+                    out["realised_vol"] = drv.get("realised_vol")
+    except Exception as e:
+        out["error"] = str(e)[:120]
+    return out
+
+
 def _get_vix_data():
     """Fetch India VIX from Yahoo."""
     try:
@@ -151,6 +178,13 @@ async def get_regime():
     from alpha_options_engine import classify_regime
     vix_data = _get_vix_data()
     nifty = _get_nifty_technicals()
+    own = _own_regime_inputs()
+    if own.get("atm_iv"):
+        vix_data = {"vix": own["atm_iv"], "vix_sma20": own.get("realised_vol") or own["atm_iv"]}
+    if own.get("pcr") is not None and isinstance(nifty, dict):
+        nifty["pcr"] = own["pcr"]; nifty["pcr_measured"] = True
+    if own.get("spot") and isinstance(nifty, dict) and not nifty.get("price"):
+        nifty["price"] = own["spot"]
     if vix_data.get("unavailable") or nifty.get("unavailable"):
         return {"data_available": False, "label": "Regime unavailable",
                 "description": ("Inputs behind this classification could not be retrieved. A label built "
@@ -162,6 +196,9 @@ async def get_regime():
         trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
     regime["nifty_price"] = nifty["price"]
+    regime["inputs"] = {"volatility": "our own chain ATM IV" if own.get("atm_iv") else "external",
+                        "atm_iv": own.get("atm_iv"), "realised_vol": own.get("realised_vol"),
+                        "pcr": own.get("pcr"), "pcr_source": "our own OI archive" if own.get("pcr") is not None else "not measured"}
     return regime
 
 @router.get("/signals", summary="Generate trade signals")
