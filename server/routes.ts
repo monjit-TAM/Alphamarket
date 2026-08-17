@@ -1294,7 +1294,7 @@ export async function registerRoutes(
         const entryPx = Number(call.entryPrice || call.buyRangeStart || 0);
         const exitPx = Number(exitPrice || entryPx);
         const gainPercent = entryPx > 0 && exitPx > 0
-          ? (((exitPx - entryPx) / entryPx) * 100).toFixed(2) : null;
+          ? (() => { const _isSell = (pos?.buySell || pos?.buy_sell || "Buy").toLowerCase() === "sell"; return (_isSell ? ((entryPx - exitPx) / entryPx) * 100 : ((exitPx - entryPx) / entryPx) * 100).toFixed(2); })() : null;
         await storage.updateCall(call.id, {
           status: "Closed", sellPrice: String(exitPx), exitDate: now, gainPercent: gainPercent || "0",
         });
