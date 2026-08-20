@@ -229,6 +229,40 @@ export async function fireWebhookEvent(
       }
 
       // Sign
+      // Dreamstreet: adjust buyPrice to LTP when within buy zone
+      if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
+        const eqCallLtp = payloadBody?.data?.equityCall;
+        if (eqCallLtp && eqCallLtp.callType === "Buy" && eqCallLtp.symbol) {
+          try {
+            const ltpRes = await fetch(
+              "http://localhost:8001/api/shared/kite-quotes?symbols=" + encodeURIComponent(eqCallLtp.symbol),
+              { headers: { "x-shared-secret": "alphamarket-shared-2026" }, signal: AbortSignal.timeout(3000) }
+            );
+            if (ltpRes.ok) {
+              const ltpData = await ltpRes.json();
+              const ltp = ltpData.quotes?.[eqCallLtp.symbol]?.price || 0;
+              if (ltp > 0) {
+                const rangeStart = Number(eqCallLtp.buyPriceRangeStart || eqCallLtp.buyPrice || 0);
+                const rangeEnd = Number(eqCallLtp.buyPriceRangeEnd || eqCallLtp.buyPrice || 0);
+                if (ltp >= rangeStart && ltp <= rangeEnd) {
+                  // LTP within buy zone — use LTP as entry
+                  console.log("[webhook] Dreamstreet: adjusting buyPrice from " + eqCallLtp.buyPrice + " to LTP " + ltp + " for " + eqCallLtp.symbol);
+                  eqCallLtp.buyPrice = String(ltp);
+                } else if (ltp > rangeEnd) {
+                  // LTP above buy zone — use actual market price
+                  console.log("[webhook] Dreamstreet: LTP " + ltp + " above buy zone " + rangeStart + "-" + rangeEnd + " for " + eqCallLtp.symbol + ", using LTP");
+                  eqCallLtp.buyPrice = String(ltp);
+                }
+                // If LTP below zone, keep buyPrice as-is (rangeStart)
+              }
+            }
+          } catch (e) {
+            console.error("[webhook] Dreamstreet LTP fetch failed:", e);
+            // Fail silently — keep original buyPrice
+          }
+        }
+      }
+
       // Append SEBI disclosure + inline disclaimer for Dreamstreet payloads
       if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
         const eqCall = payloadBody?.data?.equityCall;
