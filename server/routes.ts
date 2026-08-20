@@ -2100,6 +2100,56 @@ export async function registerRoutes(
       if (!call.rationale || !call.rationale.trim()) {
         return res.status(400).send("Rationale is required to publish a call");
       }
+
+      // ── SEBI Compliance Validations (Reg 18(7), 20(1)) ──
+
+      // 1. Rationale must be stock-specific, not generic/templated (min 50 chars)
+      if (call.rationale.trim().length < 50) {
+        return res.status(400).send("Rationale is too short. Please provide a detailed, stock-specific analysis (minimum 50 characters).");
+      }
+
+      // 2. Check for duplicate/generic rationale used across multiple stocks
+      try {
+        const dupCheck = await db.execute(
+          sql`SELECT COUNT(DISTINCT stock_name) as stock_count
+            FROM calls
+            WHERE strategy_id = ${call.strategyId}
+              AND rationale = ${call.rationale.trim()}
+              AND stock_name != ${call.stockName}
+              AND is_published = true
+              AND created_at >= NOW() - INTERVAL '30 days'`
+        );
+        const dupCount = Number((dupCheck.rows[0] as any)?.stock_count || 0);
+        if (dupCount >= 3) {
+          return res.status(400).send(
+            "This rationale has been used for " + (dupCount + 1) + " different stocks in the last 30 days. " +
+            "SEBI Regulation 18(7) requires stock-specific analysis. Please provide a unique rationale for " + call.stockName + "."
+          );
+        }
+      } catch (e) { /* fail open */ }
+
+      // 3. Validate target return % is realistic for the stated duration
+      if (call.buyRangeStart && call.targetPrice && call.duration) {
+        const _entryPx = Number(call.buyRangeStart);
+        const _targetPx = Number(call.targetPrice);
+        const _durationDays = Number(call.duration);
+        if (_entryPx > 0 && _targetPx > 0 && _durationDays > 0) {
+          const _targetReturnPct = Math.abs((_targetPx - _entryPx) / _entryPx * 100);
+          if (_durationDays <= 30 && _targetReturnPct > 50) {
+            return res.status(400).send(
+              "Target return of " + _targetReturnPct.toFixed(1) + "% in " + _durationDays + " days appears unrealistic. " +
+              "Per SEBI guidelines, recommendations should have a documented basis. Please review your target price."
+            );
+          }
+          if (_durationDays <= 90 && _targetReturnPct > 100) {
+            return res.status(400).send(
+              "Target return of " + _targetReturnPct.toFixed(1) + "% in " + _durationDays + " days appears unrealistic. " +
+              "Please review your target price or adjust the duration."
+            );
+          }
+        }
+      }
+
       const updated = await storage.updateCall(call.id, {
         publishMode: "live",
         isPublished: true,
