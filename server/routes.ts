@@ -8426,7 +8426,7 @@ export async function registerRoutes(
         const pos = await db.execute(sql`SELECT * FROM positions WHERE id = ${id}`);
         const p = (pos.rows[0] as any);
         if (!p) return res.status(404).send("Position not found");
-        await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${exitPrice || p.entry_price}, exit_date = NOW() WHERE id = ${id}`);
+        await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${exitPrice || p.entry_price}, exit_date = NOW(), gain_percent = CASE WHEN LOWER(COALESCE(buy_sell, 'Buy')) = 'sell' THEN ROUND(((entry_price::numeric - exit_price::numeric) / NULLIF(entry_price::numeric, 0) * 100)::numeric, 2) ELSE ROUND(((exit_price::numeric - entry_price::numeric) / NULLIF(entry_price::numeric, 0) * 100)::numeric, 2) END WHERE id = ${id}`);
         // Fire webhook
         const strategy = await storage.getStrategy(p.strategy_id);
         if (strategy && p.webhook_rec_id) {
@@ -8438,7 +8438,7 @@ export async function registerRoutes(
         const call = await db.execute(sql`SELECT * FROM calls WHERE id = ${id}`);
         const c = (call.rows[0] as any);
         if (!c) return res.status(404).send("Call not found");
-        await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${exitPrice || c.buy_range_start}, exit_date = NOW() WHERE id = ${id}`);
+        await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${exitPrice || c.buy_range_start}, exit_date = NOW(), gain_percent = CASE WHEN LOWER(COALESCE(action, 'Buy')) = 'sell' THEN ROUND(((buy_range_start::numeric - sell_price::numeric) / NULLIF(buy_range_start::numeric, 0) * 100)::numeric, 2) ELSE ROUND(((sell_price::numeric - buy_range_start::numeric) / NULLIF(buy_range_start::numeric, 0) * 100)::numeric, 2) END WHERE id = ${id}`);
         // Fire webhook
         const strategy = await storage.getStrategy(c.strategy_id);
         if (strategy && c.webhook_rec_id) {
