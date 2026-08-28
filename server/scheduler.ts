@@ -296,8 +296,14 @@ async function checkStopLossAndTargets() {
       if (entryPx === 0 || (sl === 0 && tgt === 0)) continue;
       const isFutureSegment = pos.segment === "Future" || pos.segment === "Commodity" || pos.segment === "CommodityFuture";
       const hasValidStrike = pos.strikePrice && pos.strikePrice !== "" && pos.strikePrice !== "0" && Number(pos.strikePrice) > 0;
-      if (!isFutureSegment && hasValidStrike && pos.expiry && pos.callPut) {
-        optionPositions.push(pos);
+      const isOptionSegment = pos.segment === "Option" || pos.segment === "Index";
+      if (!isFutureSegment && (isOptionSegment || (hasValidStrike && pos.expiry && pos.callPut))) {
+        // Option/Index positions: use option premium LTP, not stock LTP
+        if (hasValidStrike && pos.expiry && pos.callPut) {
+          optionPositions.push(pos); // Can fetch premium via NFO
+        }
+        // If Option segment but missing strike/expiry, skip entirely (can't monitor)
+        // Do NOT put in equityPositions — that would compare stock price vs option SL
       } else {
         equityPositions.push(pos);
         const sym = pos.symbol || "";
