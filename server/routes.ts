@@ -8314,11 +8314,23 @@ export async function registerRoutes(
   app.post("/api/admin/calls/:id/close", requireAdmin, async (req, res) => {
     try {
       const cid = req.params.id;
-      const { sellPrice, gainPercent, exitDate } = req.body;
+      const { sellPrice, exitPrice, gainPercent, exitDate } = req.body;
+      const finalSellPrice = sellPrice || exitPrice || null;
+      // Auto-calculate gainPercent if not provided
+      let finalGainPercent = gainPercent || null;
+      if (!finalGainPercent && finalSellPrice) {
+        const callForCalc = await storage.getCall(cid);
+        if (callForCalc && callForCalc.buyRangeStart && Number(callForCalc.buyRangeStart) > 0) {
+          const ep = Number(callForCalc.buyRangeStart);
+          const xp = Number(finalSellPrice);
+          const isSell = (callForCalc.action || "Buy").toLowerCase() === "sell";
+          finalGainPercent = (isSell ? ((ep - xp) / ep * 100) : ((xp - ep) / ep * 100)).toFixed(2);
+        }
+      }
       await db.update(calls).set({
         status: "Closed",
-        sellPrice: sellPrice || null,
-        gainPercent: gainPercent || null,
+        sellPrice: finalSellPrice,
+        gainPercent: finalGainPercent,
         exitDate: exitDate ? new Date(exitDate) : new Date(),
       }).where(eq(calls.id, cid));
 

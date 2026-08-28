@@ -1572,7 +1572,7 @@
     "name": "ATHERENERG",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ATL",
@@ -3826,7 +3826,7 @@
     "name": "DALBHARAT",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "DALMIASUG",
@@ -10686,7 +10686,7 @@
     "name": "MAHABANK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "MAHAPEXLTD",
@@ -15271,7 +15271,7 @@
     "name": "SAGILITY",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SAHYADRI",
