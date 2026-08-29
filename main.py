@@ -226,6 +226,30 @@ async def _ds_get(path: str):
         return r.json()
 
 
+@app.get("/api/emerging-leaders/live", tags=["Emerging Leaders"],
+         summary="The live Emerging Leaders list with entry, return and next target")
+async def dyor_el_live():
+    return await _ds_get("/data/conviction/live")
+
+
+@app.get("/api/emerging-leaders/past", tags=["Emerging Leaders"],
+         summary="Closed positions with realised outcomes and the track record")
+async def dyor_el_past(limit: int = 100):
+    return await _ds_get(f"/data/conviction/past?limit={limit}")
+
+
+@app.get("/api/emerging-leaders/idea/{symbol}", tags=["Emerging Leaders"],
+         summary="One idea in full, with pillar evidence and levels")
+async def dyor_el_idea(symbol: str):
+    return await _ds_get(f"/data/conviction/idea/{symbol}")
+
+
+@app.get("/api/emerging-leaders/methodology", tags=["Emerging Leaders"],
+         summary="How names are selected and what the model does not measure")
+async def dyor_el_method():
+    return await _ds_get("/data/conviction/methodology")
+
+
 @app.get("/api/market/cas-auction/{symbol}", tags=["CAS"], summary="Auction replay: indicative price path and imbalance for one symbol")
 async def dyor_cas_auction(symbol: str, session_date: str = None):
     q = f"?session_date={session_date}" if session_date else ""
