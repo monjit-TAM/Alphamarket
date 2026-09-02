@@ -39,7 +39,7 @@ export function Navbar() {
   return (
     <>
       {/* ── Top Bar (dark, Amazon-style) ───────────────────────────────── */}
-      <header className="sticky top-0 z-50 bg-slate-900 text-white shadow-md">
+      <header className="sticky top-0 z-50 bg-white text-slate-800 shadow-md border-b border-slate-200">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex h-14 items-center gap-4">
             {/* Logo */}
@@ -50,7 +50,7 @@ export function Navbar() {
             {/* Search Bar (desktop) */}
             <div className="hidden md:flex flex-1 max-w-xl mx-4">
               <div className="flex w-full">
-                <select className="h-9 px-2 text-xs bg-slate-700 border-0 rounded-l-md text-slate-300 focus:outline-none focus:ring-1 focus:ring-red-500">
+                <select className="h-9 px-2 text-xs bg-slate-100 border border-slate-300 rounded-l-md text-slate-700 focus:outline-none focus:ring-1 focus:ring-red-500">
                   <option>All</option>
                   <option>Strategies</option>
                   <option>Advisors</option>
@@ -74,7 +74,7 @@ export function Navbar() {
             <div className="flex items-center gap-1 ml-auto">
               {/* Mobile search toggle */}
               <button
-                className="md:hidden p-2 hover:bg-slate-800 rounded"
+                className="md:hidden p-2 hover:bg-slate-100 rounded"
                 onClick={() => setSearchOpen(!searchOpen)}
               >
                 <Search className="h-5 w-5" />
@@ -87,8 +87,8 @@ export function Navbar() {
                   {/* Hello, Username (Amazon style) */}
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="hidden md:flex flex-col items-start px-2 py-1 hover:bg-slate-800 rounded text-left">
-                        <span className="text-xs text-slate-400">Hello, {user.username.split(" ")[0]}</span>
+                      <button className="hidden md:flex flex-col items-start px-2 py-1 hover:bg-slate-100 rounded text-left">
+                        <span className="text-xs text-slate-500">Hello, {user.username.split(" ")[0]}</span>
                         <span className="text-sm font-semibold flex items-center gap-1">
                           Account <ChevronDown className="h-3 w-3" />
                         </span>
@@ -143,8 +143,8 @@ export function Navbar() {
               ) : (
                 <div className="flex items-center gap-2">
                   <Link href="/login">
-                    <button className="hidden md:flex flex-col items-start px-2 py-1 hover:bg-slate-800 rounded text-left">
-                      <span className="text-xs text-slate-400">Hello, Sign in</span>
+                    <button className="hidden md:flex flex-col items-start px-2 py-1 hover:bg-slate-100 rounded text-left">
+                      <span className="text-xs text-slate-500">Hello, Sign in</span>
                       <span className="text-sm font-semibold flex items-center gap-1">Account <ChevronDown className="h-3 w-3" /></span>
                     </button>
                   </Link>
@@ -158,7 +158,7 @@ export function Navbar() {
 
               {/* Mobile menu toggle */}
               <button
-                className="md:hidden p-2 hover:bg-slate-800 rounded"
+                className="md:hidden p-2 hover:bg-slate-100 rounded"
                 onClick={() => setMobileOpen(!mobileOpen)}
               >
                 {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -168,7 +168,7 @@ export function Navbar() {
         </div>
 
         {/* ── Navigation Bar (secondary, lighter) ──────────────────────── */}
-        <nav className="bg-slate-800 border-t border-slate-700">
+        <nav className="bg-slate-50 border-t border-slate-200">
           <div className="max-w-7xl mx-auto px-4">
             <div className="hidden md:flex items-center gap-1 h-10 text-sm overflow-x-auto">
               {[
@@ -179,8 +179,8 @@ export function Navbar() {
               ].map((item) => (
                 <Link key={item.href} href={item.href}>
                   <button
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-slate-700 transition-colors whitespace-nowrap ${
-                      isActive(item.href) ? "bg-slate-700 text-red-500" : "text-slate-300"
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded hover:bg-slate-200 transition-colors whitespace-nowrap ${
+                      isActive(item.href) ? "bg-slate-200 text-red-600" : "text-slate-600"
                     }`}
                   >
                     <item.icon className="h-3.5 w-3.5" />
@@ -196,8 +196,8 @@ export function Navbar() {
                 <button
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded transition-colors whitespace-nowrap ${
                     isActive("/dyor/app")
-                      ? "bg-red-700 text-white"
-                      : "text-red-500 hover:bg-slate-700 font-medium"
+                      ? "bg-red-600 text-white"
+                      : "text-red-600 hover:bg-red-50 font-medium"
                   }`}
                 >
                   <Activity className="h-3.5 w-3.5" />
@@ -208,10 +208,10 @@ export function Navbar() {
               <div className="w-px h-5 bg-slate-600 mx-1" />
 
               {/* External tools */}
-              <a href="https://mf.alphamarket.co.in" className="flex items-center gap-1.5 px-3 py-1.5 rounded text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors whitespace-nowrap">
+              <a href="https://mf.alphamarket.co.in" className="flex items-center gap-1.5 px-3 py-1.5 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors whitespace-nowrap">
                 <Briefcase className="h-3.5 w-3.5" /> MF Analyzer
               </a>
-              <a href="https://stocks.alphamarket.co.in/upload" className="flex items-center gap-1.5 px-3 py-1.5 rounded text-slate-400 hover:bg-slate-700 hover:text-slate-300 transition-colors whitespace-nowrap">
+              <a href="https://stocks.alphamarket.co.in/upload" className="flex items-center gap-1.5 px-3 py-1.5 rounded text-slate-500 hover:bg-slate-200 hover:text-slate-700 transition-colors whitespace-nowrap">
                 <LineChart className="h-3.5 w-3.5" /> Stock Analyzer
               </a>
             </div>
@@ -220,7 +220,7 @@ export function Navbar() {
 
         {/* ── Mobile Search ────────────────────────────────────────────── */}
         {searchOpen && (
-          <div className="md:hidden px-4 py-2 bg-slate-800 border-t border-slate-700">
+          <div className="md:hidden px-4 py-2 bg-slate-50 border-t border-slate-200">
             <div className="flex">
               <input
                 type="text"
@@ -237,7 +237,7 @@ export function Navbar() {
 
         {/* ── Mobile Menu ──────────────────────────────────────────────── */}
         {mobileOpen && (
-          <div className="md:hidden bg-slate-800 border-t border-slate-700 pb-3">
+          <div className="md:hidden bg-slate-50 border-t border-slate-200 pb-3">
             {[
               { label: "Strategies", href: "/strategies", icon: BarChart3 },
               { label: "Advisors", href: "/advisors", icon: Users },
@@ -253,7 +253,7 @@ export function Navbar() {
               <Link key={item.href} href={item.href}>
                 <button
                   className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm ${
-                    isActive(item.href) ? "text-red-500 bg-slate-700" : "text-slate-300 hover:bg-slate-700"
+                    isActive(item.href) ? "text-red-600 bg-slate-200" : "text-slate-600 hover:bg-slate-200"
                   }`}
                   onClick={() => setMobileOpen(false)}
                 >
