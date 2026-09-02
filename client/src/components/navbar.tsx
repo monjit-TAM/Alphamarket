@@ -44,7 +44,7 @@ export function Navbar() {
           <div className="flex h-14 items-center gap-4">
             {/* Logo */}
             <Link href="/" className="flex-shrink-0">
-              <img src={logoImg} alt="AlphaMarket" className="h-8 object-contain" />
+              <img src={logoImg} alt="AlphaMarket" className="h-10 object-contain" />
             </Link>
 
             {/* Search Bar (desktop) */}
@@ -59,7 +59,7 @@ export function Navbar() {
                 <input
                   type="text"
                   placeholder="Search strategies, advisors, stocks..."
-                  className="flex-1 h-9 px-3 text-sm bg-white text-gray-900 border-0 focus:outline-none focus:ring-2 focus:ring-red-500"
+                  className="flex-1 h-9 px-3 text-sm bg-white text-gray-900 border border-slate-300 focus:outline-none focus:ring-2 focus:ring-red-500"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") handleSearch(); }}
