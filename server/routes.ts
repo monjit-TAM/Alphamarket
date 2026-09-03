@@ -2150,6 +2150,16 @@ export async function registerRoutes(
         }
       }
 
+      // 4. Duration vs strategy horizon mismatch
+      if (call.duration) {
+        const _durDays = Number(call.duration);
+        if (_durDays <= 1 && strategy.horizon !== "Intraday") {
+          return res.status(400).send(
+            "Duration of " + _durDays + " day(s) is an intraday call. Please publish under an Intraday strategy, not " + strategy.horizon + "."
+          );
+        }
+      }
+
       const updated = await storage.updateCall(call.id, {
         publishMode: "live",
         isPublished: true,
