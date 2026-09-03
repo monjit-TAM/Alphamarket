@@ -255,6 +255,7 @@ export default function Home() {
                 <p className="text-xs font-medium text-muted-foreground mb-2">Media</p>
                 <div className="space-y-2">
                   {[
+                    { name: "VCCircle", url: "https://www.vccircle.com/insidealphaverse-building-the-intelligence-layer-for-india-s-next-phase-of-investing", logo: "https://www.google.com/s2/favicons?domain=vccircle.com&sz=64", bg: "#fff" },
                     { name: "Business India", url: "https://businessindia.co/magazine/market-news/blending-analysis-with-action", logo: "https://www.google.com/s2/favicons?domain=businessindia.co&sz=64", bg: "#D32F2F" },
                     { name: "Wealth & Finance", url: "https://wealthandfinance.digital/winners/edhaz-financial-services-private-limited/", logo: "https://www.google.com/s2/favicons?domain=wealthandfinance.digital&sz=64", bg: "#1a1a2e" },
                     { name: "Business Connect", url: "https://businessconnectindia.in/alphamarket/", logo: "https://www.google.com/s2/favicons?domain=businessconnectindia.in&sz=64", bg: "#fff" },
