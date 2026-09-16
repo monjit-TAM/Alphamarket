@@ -21,6 +21,7 @@ import AdminHome from "./admin-home";
 import AdminMonetization from "./admin-monetization";
 import AdminAdvisorBreakup from "./admin-advisor-breakup";
 import BrokerAdmin from "./BrokerAdmin";
+import Licenses from "./Licenses";
 import AdminCalls from "./admin-calls";
 import AdminBrokerCalls from "./admin-broker-calls";
 import AdminBrokerReports from "./admin-broker-reports";
@@ -38,6 +39,7 @@ const sidebarItems = [
   { title: "Closed Calls", icon: BarChart3, path: "/admin/calls" },
   { title: "Broker Calls", icon: Link2, path: "/admin/broker-calls" },
   { title: "Broker Reports", icon: BarChart3, path: "/admin/broker-reports" },
+  { title: "Engine Licences", icon: Link2, path: "/admin/licenses" },
   { title: "Basket Publishing", icon: Package, path: "/admin/baskets" },
   { title: "Tool Pricing", icon: IndianRupee, path: "/admin/tool-pricing" },
 ];
@@ -78,6 +80,7 @@ export default function AdminDashboard() {
     if (location === "/admin/broker-calls") return <AdminBrokerCalls />;
     if (location === "/admin/baskets") return <AdminBaskets />;
     if (location === "/admin/broker-reports") return <AdminBrokerReports />;
+    if (location === "/admin/licenses") return <Licenses />;
     if (location === "/admin/tool-pricing") return <AdminToolPricing />;
     return <AdminHome />;
   };

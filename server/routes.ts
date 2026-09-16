@@ -13,6 +13,7 @@ import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, 
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements, appSettings, calls, positions, strategies } from "@shared/schema";
 import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { handleXTSEvent, buildCallEventData, buildPositionEventData, fireWebhookEvent } from "./webhook-dispatcher";
 import { handleXTSEvent as xtsHandleEvent } from "./xts-bridge";
 import { and, eq, desc, sql } from "drizzle-orm";
@@ -9131,6 +9132,41 @@ export async function registerRoutes(
 
       res.json({ period: { from, to }, advisors: advisors.rows });
     } catch (err) { res.status(500).send((err as any).message); }
+  });
+
+  // ==================== License Management ====================
+  app.get("/api/admin/licenses", requireAdmin, async (_req, res) => {
+    try {
+      const r: any = await db.execute(sql`
+        SELECT DISTINCT ON (broker_slug) broker_slug, license_key, valid_from, valid_until, status,
+               GREATEST(0, EXTRACT(DAY FROM (valid_until - now())))::int AS days_left
+        FROM license_keys ORDER BY broker_slug, valid_until DESC`);
+      res.json(r.rows || r);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/licenses/grant", requireAdmin, async (req, res) => {
+    try {
+      const { broker_slug, days } = req.body;
+      if (!broker_slug) return res.status(400).json({ error: "broker_slug required" });
+      const validDays = Number(days) > 0 ? Number(days) : 90;
+      const r: any = await db.execute(sql`
+        INSERT INTO license_keys (broker_slug, license_key, valid_until, status, created_by)
+        VALUES (${broker_slug}, encode(gen_random_bytes(24),'hex'),
+                now() + (${validDays} || ' days')::interval, 'active', 'admin-ui')
+        RETURNING broker_slug, LEFT(license_key,12)||'...' AS key, valid_until`);
+      res.json({ success: true, issued: (r.rows || r)[0] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/licenses/revoke", requireAdmin, async (req, res) => {
+    try {
+      const { broker_slug } = req.body;
+      if (!broker_slug) return res.status(400).json({ error: "broker_slug required" });
+      await db.execute(sql`UPDATE license_keys SET status='revoked'
+        WHERE broker_slug=${broker_slug} AND status='active'`);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {

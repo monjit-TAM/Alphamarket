@@ -125,10 +125,27 @@ export async function fireWebhookEvent(
           const segment = (data as any).segment || (data as any).type || "";
           const isFnO = segment === "Option" || segment === "Future" || segment === "Index" || segment === "Commodity" || segment === "CommodityFuture";
 
+          // Resolve advisor name once so dedup can be scoped per advisor.
+          // If lookup fails, advisorCond stays empty and we fall back to broker-wide dedup.
+          let advisorCond = "";
+          if (advisorId) {
+            try {
+              const aRes = await db.execute(
+                sql`SELECT company_name FROM users WHERE id = ${String(advisorId)} LIMIT 1`
+              );
+              const advisorName = (aRes.rows[0] as any)?.company_name || "";
+              if (advisorName) {
+                advisorCond = `AND bwl.payload->'data'->>'advisorName' = '${advisorName.replace(/'/g, "''")}'`;
+              }
+            } catch (aErr: any) {
+              console.warn("[Webhook] Advisor lookup for dedup failed (broker-wide dedup):", aErr?.message);
+            }
+          }
+
           if (sym) {
             // Check if this symbol (+strike for F&O) already has an active CREATE without a CLOSE on this broker
             let dupQuery;
-            if (isFnO && strike) {
+            if (isFnO) {
               dupQuery = await db.execute(sql.raw(
                 `SELECT bwl.payload->'data'->>'recommendationId' as rec_id
                  FROM broker_webhook_logs bwl
@@ -136,9 +153,10 @@ export async function fireWebhookEvent(
                    AND bwl.event = 'POSITION_CREATED'
                    AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
-                   AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${String(strike).replace(/'/g, "''")}'
+                   ${strike ? `AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${String(strike).replace(/'/g, "''")}'` : ""}
                    AND bwl.status_code BETWEEN 200 AND 299
                    AND bwl.created_at > '2026-06-12'
+                   ${advisorCond}
                    AND NOT EXISTS (
                      SELECT 1 FROM broker_webhook_logs cl
                      WHERE cl.api_key_id = bwl.api_key_id
@@ -158,6 +176,7 @@ export async function fireWebhookEvent(
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
                    AND bwl.status_code BETWEEN 200 AND 299
                    AND bwl.created_at > '2026-06-12'
+                   ${advisorCond}
                    AND NOT EXISTS (
                      SELECT 1 FROM broker_webhook_logs cl
                      WHERE cl.api_key_id = bwl.api_key_id
@@ -171,7 +190,7 @@ export async function fireWebhookEvent(
 
             if (dupQuery.rows.length > 0) {
               const existingRecId = (dupQuery.rows[0] as any).rec_id;
-              console.log(`[Webhook] DUPLICATE BLOCKED: ${sym}${strike ? ' ' + strike : ''} already active on ${target.broker_name} (existing rec_id: ${existingRecId}). Skipping.`);
+              console.log(`[Webhook] DUPLICATE BLOCKED: ${sym}${strike ? ' ' + strike : ''} [seg=${segment || 'n/a'}] already active on ${target.broker_name} (existing rec_id: ${existingRecId}, advisor: ${advisorId}). Skipping ${event}.`);
               continue;
             }
           }

@@ -37,6 +37,7 @@ import DyorPage from "@/pages/dyor/index";
 import ToolPricingPage from "@/pages/tool-pricing";
 import { TermsAndConditions, CancellationPolicy, PrivacyPolicy, LegalAgreement, ShippingAndReturns, ContactUs } from "@/pages/legal";
 import BrokerAdmin from "@/pages/admin/BrokerAdmin";
+import Licenses from "@/pages/admin/Licenses";
 
 function Router() {
   return (
@@ -78,6 +79,7 @@ function Router() {
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/:rest*" component={AdminDashboard} />
           <Route path="/admin/brokers" component={BrokerAdmin} />
+          <Route path="/admin/licenses" component={Licenses} />
       <Route path="/pricing" component={ToolPricingPage} />
       <Route path="/dyor" component={DyorPage} />
       <Route path="/dyor/:rest*" component={DyorPage} />
