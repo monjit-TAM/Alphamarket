@@ -153,7 +153,7 @@ export async function fireWebhookEvent(
                    AND bwl.event = 'POSITION_CREATED'
                    AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
-                   ${strike ? `AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${String(strike).replace(/'/g, "''")}'` : ""}
+                   AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${strike ? String(strike).replace(/'/g, "''") : ""}'
                    AND bwl.status_code BETWEEN 200 AND 299
                    AND bwl.created_at > '2026-06-12'
                    ${advisorCond}
