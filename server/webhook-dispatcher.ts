@@ -235,7 +235,8 @@ export async function fireWebhookEvent(
             continue;
           }
           // Warn on suspicious SL/TP (BUY: target should be > entry, SL < entry)
-          const isSell = callData.action === "Sell" || callData.buySell === "Sell";
+          const isSell = callData.action === "Sell" || callData.buySell === "Sell"
+            || String(callData.callType || "").toUpperCase() === "SELL";
           if (!isSell && tp > 0 && sl > 0) {
             if (tp < bp && sl > bp) {
               console.error(`[Webhook] BLOCKED: ${callData.symbol} BUY has target(${tp}) < entry(${bp}) AND SL(${sl}) > entry. Likely swapped. Not sending to ${target.broker_name}.`);
