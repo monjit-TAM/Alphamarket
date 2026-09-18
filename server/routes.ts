@@ -2281,12 +2281,18 @@ export async function registerRoutes(
         return res.json({ partial: true, closedLots: lotsToClose, remainingLots: totalLots - lotsToClose });
       }
 
+      console.log(`[GP-TRACE] close ${pos.symbol} seg=${pos.segment} entry=${entryPx} exit=${exitPx} computed=${gainPercent}`);
       const updated = await storage.updatePosition(pos.id, {
         status: "Closed",
         exitPrice: String(exitPx),
         exitDate: new Date(),
         gainPercent: gainPercent,
       });
+      console.log(`[GP-TRACE] returned ${pos.symbol} gainPercent=${(updated as any)?.gainPercent}`);
+      try {
+        const verify = await db.execute(sql`SELECT gain_percent FROM positions WHERE id = ${pos.id}`);
+        console.log(`[GP-TRACE] in-db ${pos.symbol} gain_percent=${(verify.rows[0] as any)?.gain_percent}`);
+      } catch (e: any) { console.warn("[GP-TRACE] verify failed:", e?.message); }
       if (pos.isPublished) {
         const subPayload = buildPositionClosedSubscriberNotification(pos, exitPx, gainPercent || "0", strategy.name);
         notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);

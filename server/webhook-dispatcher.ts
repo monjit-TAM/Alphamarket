@@ -191,6 +191,12 @@ export async function fireWebhookEvent(
             if (dupQuery.rows.length > 0) {
               const existingRecId = (dupQuery.rows[0] as any).rec_id;
               console.log(`[Webhook] DUPLICATE BLOCKED: ${sym}${strike ? ' ' + strike : ''} [seg=${segment || 'n/a'}] already active on ${target.broker_name} (existing rec_id: ${existingRecId}, advisor: ${advisorId}). Skipping ${event}.`);
+              try {
+                await db.execute(sql`INSERT INTO broker_webhook_logs
+                  (api_key_id, event, payload, status_code, response_body, created_at)
+                  VALUES (${target.api_key_id}, ${event}, ${JSON.stringify({ symbol: sym, strike, segment, advisorId })}::jsonb, -1,
+                    ${"BLOCKED: duplicate of rec_id " + existingRecId}, NOW())`);
+              } catch {}
               continue;
             }
           }
@@ -227,11 +233,23 @@ export async function fireWebhookEvent(
         const fno = payloadBody?.data?.fnoCall?.[0];
         const callData = eq || fno;
         if (callData && (event === "CALL_CREATED" || event === "POSITION_CREATED")) {
+          // Record a blocked dispatch so silent drops are queryable
+          const logBlock = async (reason: string) => {
+            try {
+              await db.execute(sql`INSERT INTO broker_webhook_logs
+                (api_key_id, event, payload, status_code, response_body, created_at)
+                VALUES (${target.api_key_id}, ${event}, ${JSON.stringify(payloadBody)}::jsonb, -1, ${"BLOCKED: " + reason}, NOW())`);
+            } catch (e: any) {
+              console.warn("[Webhook] Failed to log block:", e?.message);
+            }
+          };
+
           const bp = Number(callData.buyPrice || 0);
           const tp = Number(callData.targetPriceRange || callData.target || 0);
           const sl = Number(callData.stopLossRange || callData.stopLoss || 0);
           if (bp <= 0) {
             console.error(`[Webhook] BLOCKED: ${callData.symbol || "?"} has zero entry price. Not sending to ${target.broker_name}.`);
+            await logBlock("zero entry price");
             continue;
           }
           // Warn on suspicious SL/TP (BUY: target should be > entry, SL < entry)
@@ -240,6 +258,7 @@ export async function fireWebhookEvent(
           if (!isSell && tp > 0 && sl > 0) {
             if (tp < bp && sl > bp) {
               console.error(`[Webhook] BLOCKED: ${callData.symbol} BUY has target(${tp}) < entry(${bp}) AND SL(${sl}) > entry. Likely swapped. Not sending to ${target.broker_name}.`);
+              await logBlock(`swapped values: target=${tp} sl=${sl} entry=${bp}`);
               continue;
             }
           }
