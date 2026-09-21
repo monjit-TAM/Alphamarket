@@ -27,6 +27,7 @@ import AdminBrokerCalls from "./admin-broker-calls";
 import AdminBrokerReports from "./admin-broker-reports";
 import AdminBaskets from "./admin-baskets";
 import AdminToolPricing from "./admin-tool-pricing";
+import AdminResellers from "./admin-resellers";
 
 const sidebarItems = [
   { title: "Dashboard", icon: LayoutDashboard, path: "/admin" },
@@ -42,6 +43,7 @@ const sidebarItems = [
   { title: "Engine Licences", icon: Link2, path: "/admin/licenses" },
   { title: "Basket Publishing", icon: Package, path: "/admin/baskets" },
   { title: "Tool Pricing", icon: IndianRupee, path: "/admin/tool-pricing" },
+  { title: "Resellers", icon: Users, path: "/admin/resellers" },
 ];
 
 export default function AdminDashboard() {
@@ -81,6 +83,7 @@ export default function AdminDashboard() {
     if (location === "/admin/baskets") return <AdminBaskets />;
     if (location === "/admin/broker-reports") return <AdminBrokerReports />;
     if (location === "/admin/licenses") return <Licenses />;
+    if (location === "/admin/resellers") return <AdminResellers />;
     if (location === "/admin/tool-pricing") return <AdminToolPricing />;
     return <AdminHome />;
   };

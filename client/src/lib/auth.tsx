@@ -65,6 +65,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const userData = await res.json();
     setUser(userData);
+    // Reseller attribution: signup via ?ref=CODE links this customer to the reseller
+    try {
+      const refCode = new URLSearchParams(window.location.search).get("ref");
+      if (refCode) {
+        fetch("/api/reseller/attach", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ referralCode: refCode }),
+        }).catch(() => {});
+      }
+    } catch {}
     return userData;
   };
 

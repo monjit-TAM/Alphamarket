@@ -8,7 +8,7 @@ interface FooterColumn { heading: string; links: FooterLink[]; }
 const DEFAULT_COLUMNS: FooterColumn[] = [
   { heading: "Advisors", links: [
     { label: "Browse Advisors", url: "/advisors" },
-    { label: "Partnerships", url: "" },
+    { label: "Become a Reseller", url: "/reseller" },
     { label: "Data Partners", url: "" },
   ]},
   { heading: "Company", links: [

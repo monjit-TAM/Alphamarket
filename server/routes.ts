@@ -9,6 +9,9 @@ import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
 import { promisify } from "util";
 import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail, sendNewsletterEmail } from "./auth";
+import { registerResellerRoutes } from "./reseller/routes";
+import { registerResellerAdminRoutes } from "./reseller/admin-routes";
+import { registerResellerMeRoutes } from "./reseller/me-routes";
 import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, getOptionChainExpiries, getOptionChain } from "./groww";
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements, appSettings, calls, positions, strategies } from "@shared/schema";
@@ -86,6 +89,9 @@ export async function registerRoutes(
   }
   setupSession(app);
   registerAuthRoutes(app, storage);
+  registerResellerRoutes(app, storage);
+  registerResellerAdminRoutes(app, requireAdmin);
+  registerResellerMeRoutes(app);
   setupGoogleAuth(app, storage);
   setupGithubAuth(app, storage);
 
@@ -5021,7 +5027,7 @@ export async function registerRoutes(
         footerColumns: [
           { heading: "Advisors", links: [
             { label: "Browse Advisors", url: "/advisors" },
-            { label: "Partnerships", url: "" },
+            { label: "Become a Reseller", url: "/reseller" },
             { label: "Data Partners", url: "" },
           ]},
           { heading: "Company", links: [
