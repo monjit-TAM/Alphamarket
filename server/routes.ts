@@ -61,6 +61,7 @@ import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 import { registerBasketAdminRoutes } from "./routes-basket-admin";
 import { registerBasketValidateRoutes } from "./routes-basket-validate";
 import { autoDispatchOnRebalance } from "./basket-auto-dispatch";
+import { unpricedSquareOffs } from "./scheduler";
 import { registerNextraSSO } from "./nextra-sso";
 import { registerNextraAdmin } from "./nextra-admin";
 import { registerNextraTrade } from "./nextra-trade";
@@ -8453,36 +8454,67 @@ export async function registerRoutes(
 
   // ── Close a broker call from admin ──
   app.post("/api/admin/broker-calls/:id/close", requireAdmin, async (req, res) => {
+    // Phase A (22 Sep 2026): P&L is computed from the NEW exit price (the old SQL read the old, empty
+    // column), an already-closed row is never closed or re-sent twice, and a close that hit the
+    // stop-loss or target is reported to brokers as STOPLOSS_TRIGGERED / TARGET_ACHIEVED.
     try {
       const { id } = req.params;
-      const { source, exitPrice } = req.body; // source: 'calls' or 'positions'
+      const { source, exitPrice, trigger } = req.body || {}; // source: 'calls' or 'positions'; trigger: 'SL' | 'TARGET' (optional)
+      const pct = (entry: number, exit: number, isSell: boolean) =>
+        entry > 0 && exit > 0 ? (isSell ? ((entry - exit) / entry) * 100 : ((exit - entry) / entry) * 100).toFixed(2) : null;
+      const inferTrigger = (isSell: boolean, exit: number, sl: number, tgt: number): "SL" | "TARGET" | null => {
+        if (trigger === "SL" || trigger === "TARGET") return trigger;
+        if (!(exit > 0)) return null;
+        if (isSell) { if (sl > 0 && exit >= sl) return "SL"; if (tgt > 0 && exit <= tgt) return "TARGET"; }
+        else { if (sl > 0 && exit <= sl) return "SL"; if (tgt > 0 && exit >= tgt) return "TARGET"; }
+        return null;
+      };
 
       if (source === 'positions') {
         const pos = await db.execute(sql`SELECT * FROM positions WHERE id = ${id}`);
         const p = (pos.rows[0] as any);
         if (!p) return res.status(404).send("Position not found");
-        await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${exitPrice || p.entry_price}, exit_date = NOW(), gain_percent = CASE WHEN LOWER(COALESCE(buy_sell, 'Buy')) = 'sell' THEN ROUND(((entry_price::numeric - exit_price::numeric) / NULLIF(entry_price::numeric, 0) * 100)::numeric, 2) ELSE ROUND(((exit_price::numeric - entry_price::numeric) / NULLIF(entry_price::numeric, 0) * 100)::numeric, 2) END WHERE id = ${id}`);
-        // Fire webhook
+        const entry = Number(p.entry_price || 0);
+        const exit = Number(exitPrice || p.entry_price || 0);
+        const isSell = String(p.buy_sell || "Buy").toLowerCase() === "sell";
+        const gainPercent = pct(entry, exit, isSell);
+        const upd = await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${String(exit)}, exit_date = NOW(), gain_percent = ${gainPercent}
+                                         WHERE id = ${id} AND status = 'Active' RETURNING id`);
+        if (upd.rows.length === 0) return res.status(409).json({ success: false, error: "Position is not active (already closed)", symbol: p.symbol });
         const strategy = await storage.getStrategy(p.strategy_id);
         if (strategy && p.webhook_rec_id) {
-          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData({ ...p, status: 'Closed', exitPrice: exitPrice || p.entry_price, exit_date: new Date() }, strategy), strategy.advisorId)
+          const t = inferTrigger(isSell, exit, Number(p.stop_loss || 0), Number(p.target || 0));
+          const evt = t === "SL" ? "STOPLOSS_TRIGGERED" : t === "TARGET" ? "TARGET_ACHIEVED" : "POSITION_CLOSED";
+          fireWebhookEvent(evt, buildPositionEventData({ ...p, status: 'Closed', exitPrice: String(exit), gainPercent, exit_date: new Date() }, strategy), strategy.advisorId)
             .catch((err: any) => console.error("[admin broker-calls close position]", err));
         }
-        return res.json({ success: true, type: 'position', symbol: p.symbol });
+        return res.json({ success: true, type: 'position', symbol: p.symbol, gainPercent });
       } else {
         const call = await db.execute(sql`SELECT * FROM calls WHERE id = ${id}`);
         const c = (call.rows[0] as any);
         if (!c) return res.status(404).send("Call not found");
-        await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${exitPrice || c.buy_range_start}, exit_date = NOW(), gain_percent = CASE WHEN LOWER(COALESCE(action, 'Buy')) = 'sell' THEN ROUND(((buy_range_start::numeric - sell_price::numeric) / NULLIF(buy_range_start::numeric, 0) * 100)::numeric, 2) ELSE ROUND(((sell_price::numeric - buy_range_start::numeric) / NULLIF(buy_range_start::numeric, 0) * 100)::numeric, 2) END WHERE id = ${id}`);
-        // Fire webhook
+        const entry = Number(c.entry_price || c.buy_range_start || 0);
+        const exit = Number(exitPrice || c.buy_range_start || 0);
+        const isSell = String(c.action || "Buy").toLowerCase() === "sell";
+        const gainPercent = pct(entry, exit, isSell);
+        const upd = await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${String(exit)}, exit_date = NOW(), gain_percent = ${gainPercent}
+                                         WHERE id = ${id} AND status = 'Active' RETURNING id`);
+        if (upd.rows.length === 0) return res.status(409).json({ success: false, error: "Call is not active (already closed)", symbol: c.stock_name });
         const strategy = await storage.getStrategy(c.strategy_id);
         if (strategy && c.webhook_rec_id) {
-          fireWebhookEvent("CALL_CLOSED", buildCallEventData({ ...c, status: 'Closed', sellPrice: exitPrice || c.buy_range_start, exit_date: new Date() }, strategy), strategy.advisorId)
+          const t = inferTrigger(isSell, exit, Number(c.stop_loss || 0), Number(c.target_price || 0));
+          const evt = t === "SL" ? "STOPLOSS_TRIGGERED" : t === "TARGET" ? "TARGET_ACHIEVED" : "CALL_CLOSED";
+          fireWebhookEvent(evt, buildCallEventData({ ...c, status: 'Closed', sellPrice: String(exit), gainPercent, exit_date: new Date() }, strategy), strategy.advisorId)
             .catch((err: any) => console.error("[admin broker-calls close call]", err));
         }
-        return res.json({ success: true, type: 'call', symbol: c.stock_name });
+        return res.json({ success: true, type: 'call', symbol: c.stock_name, gainPercent });
       }
     } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Intraday items the square-off could not price (left open on purpose) ──
+  app.get("/api/admin/unpriced-squareoffs", requireAdmin, async (_req, res) => {
+    res.json({ items: Array.from(unpricedSquareOffs.values()) });
   });
 
   // ── Modify a broker call (target/SL) from admin ──

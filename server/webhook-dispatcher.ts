@@ -117,6 +117,31 @@ export async function fireWebhookEvent(
         }
       }
 
+      // ── Never send a close/modify to a broker that never received this recommendation (Phase A) ──
+      if (event !== "CALL_CREATED" && event !== "POSITION_CREATED") {
+        const itemId = (data as any).id || (data as any).uid;
+        if (itemId) {
+          try {
+            const r = await db.execute(sql`SELECT COALESCE(
+                (SELECT webhook_rec_id::text FROM positions WHERE id = ${String(itemId)} LIMIT 1),
+                (SELECT webhook_rec_id::text FROM calls WHERE id = ${String(itemId)} LIMIT 1)) AS rec`);
+            const rec = (r.rows[0] as any)?.rec;
+            if (rec) {
+              const seen = await db.execute(sql`SELECT 1 FROM broker_webhook_logs
+                WHERE api_key_id = ${target.api_key_id} AND status_code BETWEEN 200 AND 299
+                  AND event IN ('CALL_CREATED', 'POSITION_CREATED')
+                  AND payload->'data'->>'recommendationId' = ${rec} LIMIT 1`);
+              if (seen.rows.length === 0) {
+                console.log(`[Webhook] SKIPPED ${event} to ${target.broker_name}: rec ${rec} was never created there`);
+                continue;
+              }
+            }
+          } catch (phErr: any) {
+            console.warn("[Webhook] Create-exists check failed (sending anyway):", phErr?.message);
+          }
+        }
+      }
+
       // ── Duplicate check: prevent same symbol (equity) or symbol+strike (F&O) going to same broker twice ──
       if (event === "CALL_CREATED" || event === "POSITION_CREATED") {
         try {
@@ -124,6 +149,18 @@ export async function fireWebhookEvent(
           const strike = (data as any).strike_price || (data as any).strikePrice || "";
           const segment = (data as any).segment || (data as any).type || "";
           const isFnO = segment === "Option" || segment === "Future" || segment === "Index" || segment === "Commodity" || segment === "CommodityFuture";
+          // Phase A: F&O dedup also matches series (CE/PE/XX) and expiry, and ignores contracts that have expired
+          const cpRaw = String((data as any).callPut || (data as any).call_put || "").toUpperCase();
+          const dedupSeries = segment === "Future" ? "XX" : cpRaw.startsWith("P") ? "PE" : cpRaw.startsWith("C") ? "CE" : "";
+          const dedupExpiry = (() => {
+            const raw = (data as any).expiry;
+            if (!raw) return "";
+            const s = String(raw).trim();
+            let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+            m = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/); if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+            if (/^\d{10,13}$/.test(s)) return new Date(Number(s.length === 10 ? Number(s) * 1000 : s)).toISOString().slice(0, 10);
+            return "";
+          })();
 
           // Resolve advisor name once so dedup can be scoped per advisor.
           // If lookup fails, advisorCond stays empty and we fall back to broker-wide dedup.
@@ -154,6 +191,9 @@ export async function fireWebhookEvent(
                    AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
                    AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${strike ? String(strike).replace(/'/g, "''") : ""}'
+                   ${dedupSeries ? `AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'series', '') = '${dedupSeries}'` : ""}
+                   ${dedupExpiry ? `AND to_timestamp(COALESCE(NULLIF(bwl.payload->'data'->'fnoCall'->0->>'expiryDate', ''), '0')::bigint / 1000)::date = '${dedupExpiry}'::date` : ""}
+                   AND to_timestamp(COALESCE(NULLIF(bwl.payload->'data'->'fnoCall'->0->>'expiryDate', ''), '0')::bigint / 1000)::date >= CURRENT_DATE
                    AND bwl.status_code BETWEEN 200 AND 299
                    AND bwl.created_at > '2026-06-12'
                    ${advisorCond}

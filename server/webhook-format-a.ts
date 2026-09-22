@@ -263,7 +263,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
 
   if (isClosed) {
     let pnlPct = toNum(c.gain_percent);
-    if ((pnlPct === null || pnlPct === 0) && bp > 0 && toNum(c.sell_price) && toNum(c.sell_price) !== bp) {
+    if ((pnlPct === null || pnlPct === 0) && bp > 0 && toNum(c.sell_price)) {
       const sp = toNum(c.sell_price)!;
       const act = String(c.action || "BUY").toUpperCase();
       pnlPct = act === "SELL" ? Number(((bp - sp) / bp * 100).toFixed(2)) : Number(((sp - bp) / bp * 100).toFixed(2));
@@ -424,10 +424,10 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     expiryDate: epochMs(p.expiry),
     lotSize: toNum(p.lots) || 1,
     strike: strike,
-    profitLossPercent: isClosed ? (toNum(p.gain_percent) || (() => {
+    profitLossPercent: isClosed ? (toNum(p.gain_percent) ?? (() => {
       const ep = toNum(p.entry_price) ?? 0;
       const xp = toNum(p.exit_price) ?? 0;
-      if (ep > 0 && xp > 0 && ep !== xp) {
+      if (ep > 0 && xp > 0) {
         const act = String(p.buy_sell || "Buy");
         return act === "Sell" ? Number(((ep - xp) / ep * 100).toFixed(2)) : Number(((xp - ep) / ep * 100).toFixed(2));
       }

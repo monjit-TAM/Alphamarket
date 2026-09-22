@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { db } from "./db";
 import { appSettings } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
 const GROWW_API_BASE = "https://api.groww.in/v1";
 
@@ -194,10 +194,18 @@ export function getGrowwTokenStatus(): {
 }
 
 let tokenAcquireInProgress: Promise<string> | null = null;
+// Phase A: after a failed token request, stop asking Groww for 10 minutes. Without this every
+// price call re-requested a token (3 tries each), which kept the account rate-limited all day.
+let growwCooldownUntil = 0;
+const GROWW_COOLDOWN_MS = 10 * 60 * 1000;
 
 async function getAccessToken(): Promise<string> {
   if (cachedAccessToken && Date.now() < tokenExpiry) {
     return cachedAccessToken;
+  }
+
+  if (Date.now() < growwCooldownUntil) {
+    throw new Error(`Groww paused after a failed token request (${Math.ceil((growwCooldownUntil - Date.now()) / 1000)}s left)`);
   }
 
   if (tokenAcquireInProgress) {
@@ -207,6 +215,10 @@ async function getAccessToken(): Promise<string> {
   tokenAcquireInProgress = acquireAccessToken();
   try {
     return await tokenAcquireInProgress;
+  } catch (err) {
+    growwCooldownUntil = Date.now() + GROWW_COOLDOWN_MS;
+    console.error(`[Groww] Token request failed; Groww paused for ${GROWW_COOLDOWN_MS / 60000} min:`, (err as any)?.message);
+    throw err;
   } finally {
     tokenAcquireInProgress = null;
   }
@@ -578,7 +590,9 @@ export async function getBulkLTP(
   // ── Try Kite first (no rate limits, faster) ──
   const stillUncached: Array<{ symbol: string; strategyType?: string }> = [];
   try {
-    const symbolList = uncached.map(i => i.symbol).join(",");
+    const IDX: Record<string, string> = { NIFTY: "NIFTY 50", BANKNIFTY: "NIFTY BANK", FINNIFTY: "NIFTY FIN SERVICE", MIDCPNIFTY: "NIFTY MID SELECT" };
+    const reqName = (s: string) => IDX[s.toUpperCase()] || s;
+    const symbolList = uncached.map(i => reqName(i.symbol)).join(",");
     const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbolList)}`, {
       headers: { "x-shared-secret": KITE_SHARED_SECRET },
       signal: AbortSignal.timeout(8000)
@@ -587,7 +601,7 @@ export async function getBulkLTP(
       const kd = await kiteRes.json();
       const quotes = kd.quotes || kd;
       for (const item of uncached) {
-        const q = quotes[item.symbol] || quotes[item.symbol.toUpperCase()];
+        const q = quotes[reqName(item.symbol)] || quotes[item.symbol] || quotes[item.symbol.toUpperCase()];
         if (q && (q.price > 0 || q.ltp > 0)) {
           const lp: LivePrice = {
             symbol: item.symbol, exchange: "NSE", ltp: q.price || q.ltp, change: q.change || 0,
@@ -966,6 +980,38 @@ export async function getOptionPremiumLTP(
   strikePrice: number,
   callPut: string
 ): Promise<number | null> {
+  // Phase A: first ask Kite for the exact contract (NFO/BFO:TRADINGSYMBOL from instrument_master).
+  // One light request, instead of pulling the whole option chain (which timed out under load).
+  try {
+    const underlying = symbol.toUpperCase().replace(/\s+/g, "");
+    const cpU = String(callPut || "").toUpperCase();
+    const itype = cpU.startsWith("P") ? "PE" : cpU.startsWith("C") ? "CE" : "";
+    const e = String(expiry || "").trim();
+    const m1 = e.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    const m2 = e.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+    const expIso = m1 ? `${m1[1]}-${m1[2]}-${m1[3]}` : m2 ? `${m2[3]}-${m2[2]}-${m2[1]}` : "";
+    const exch = underlying === "SENSEX" || underlying === "BANKEX" ? "BFO" : "NFO";
+    if (itype && expIso && strikePrice > 0) {
+      const r = await db.execute(sql`SELECT tradingsymbol FROM instrument_master
+        WHERE name = ${underlying} AND strike = ${strikePrice} AND instrument_type = ${itype}
+          AND expiry::date = ${expIso}::date AND exchange = ${exch} LIMIT 1`);
+      const ts = (r.rows[0] as any)?.tradingsymbol;
+      if (ts) {
+        const key = `${exch}:${ts}`;
+        const kr = await fetch(`http://localhost:8001/api/shared/kite-quotes-raw?symbols=${encodeURIComponent(key)}`, {
+          headers: { "x-shared-secret": KITE_SHARED_SECRET }, signal: AbortSignal.timeout(5000),
+        });
+        if (kr.ok) {
+          const kd = await kr.json();
+          const px = Number(kd?.quotes?.[key]?.price || kd?.quotes?.[key]?.ltp || 0);
+          if (px > 0) return px;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[Kite] Exact-contract option quote failed for ${symbol} ${strikePrice} ${callPut}:`, (err as any)?.message);
+  }
+
   try {
     const exchange = symbol.toUpperCase().includes("BANKNIFTY") ? "NSE" :
                      symbol.toUpperCase().includes("NIFTY") ? "NSE" : "NSE";

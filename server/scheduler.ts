@@ -20,223 +20,166 @@ function getISTTime(): Date {
   return new Date(now.getTime() + istOffset + now.getTimezoneOffset() * 60 * 1000);
 }
 
+// ── Square-off price safety (Phase A, 22 Sep 2026) ──
+// An intraday item is closed ONLY at a real traded price of that exact instrument.
+// Options: the option's own premium, never the underlying and never an estimate.
+// Equity/futures: live quote, or a last-known price of the same symbol no older than 2 minutes.
+// No price -> the item stays Active, is flagged for admin, and retried in the next run.
+const SQUAREOFF_LAST_KNOWN_MAX_AGE_MS = 2 * 60 * 1000;
+
+export const unpricedSquareOffs: Map<string, {
+  kind: string; id: string; symbol: string; strategy: string; reason: string; firstSeen: string; lastTry: string;
+}> = new Map();
+
+function flagUnpriced(kind: string, id: string, symbol: string, strategyName: string, reason: string) {
+  const now = new Date().toISOString();
+  const prev = unpricedSquareOffs.get(id);
+  unpricedSquareOffs.set(id, { kind, id, symbol, strategy: strategyName, reason, firstSeen: prev?.firstSeen || now, lastTry: now });
+  console.error(`[PRICE-ALERT] Square-off skipped: ${kind} ${symbol} (${id}) in "${strategyName}" - ${reason}. Left ACTIVE; admin must close it at the real price.`);
+}
+
+async function realExitPrice(opts: {
+  symbol: string; strategyType?: string;
+  option?: { expiry: string; strike: number; callPut: string };
+}): Promise<{ price: number; source: string } | null> {
+  if (opts.option) {
+    const p = await getOptionPremiumLTP(opts.symbol, opts.option.expiry, opts.option.strike, opts.option.callPut);
+    return p != null && p > 0 ? { price: p, source: "option_premium" } : null;
+  }
+  const q = await getLiveQuote(opts.symbol, opts.strategyType);
+  if (q && q.ltp > 0) return { price: q.ltp, source: "live_quote" };
+  const lk = getLastKnownPrice(opts.symbol);
+  if (lk && lk.ltp > 0 && Date.now() - lk.timestamp <= SQUAREOFF_LAST_KNOWN_MAX_AGE_MS) {
+    return { price: lk.ltp, source: "last_known_" + lk.source };
+  }
+  return null;
+}
+
+async function squareOffIntradayOnce(label: "squareoff" | "recovery") {
+  const intradayStrategies = await db.select().from(strategies).where(eq(strategies.horizon, "Intraday"));
+  let closed = 0, skipped = 0;
+
+  for (const strategy of intradayStrategies) {
+    const activeCalls = await db.select().from(calls)
+      .where(and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active")));
+
+    for (const call of activeCalls) {
+      const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
+      let px: { price: number; source: string } | null = null;
+      try {
+        const isFnOType = ["Option", "Future", "Index", "CommodityFuture"].includes(strategy.type as any);
+        const parts = call.stockName?.match(/^(\S+)\s+\d{4}-\d{2}-\d{2}\s+(\d+(?:\.\d+)?)\s+(Call|Put|CE|PE)$/i);
+        if (isFnOType && parts) {
+          const [, underlying, strikeStr, optionType] = parts;
+          const expiry = (call.stockName?.match(/(\d{4}-\d{2}-\d{2})/) || [])[1] || "";
+          const strike = Number(strikeStr);
+          const cp = /^(call|ce)$/i.test(optionType) ? "CE" : "PE";
+          if (expiry && strike > 0) px = await realExitPrice({ symbol: underlying, strategyType: strategy.type as any, option: { expiry, strike, callPut: cp } });
+        } else if (isFnOType && /\b(CE|PE|CALL|PUT)\b/i.test(call.stockName || "")) {
+          px = null; // looks like an option we cannot parse: never price it with the underlying
+        } else {
+          px = await realExitPrice({ symbol: call.stockName || "", strategyType: strategy.type as any });
+        }
+      } catch (e) {
+        console.error(`[Scheduler] ${label}: price fetch failed for ${call.stockName}:`, (e as any)?.message);
+      }
+      if (!px) { flagUnpriced("call", call.id, call.stockName || "", strategy.name, `no real price at ${label}`); skipped++; continue; }
+
+      const isSellAction = call.action === "Sell";
+      const gain = entryPrice > 0
+        ? (isSellAction ? ((entryPrice - px.price) / entryPrice) * 100 : ((px.price - entryPrice) / entryPrice) * 100)
+        : 0;
+      const sellPrice = String(px.price.toFixed(2));
+      const gainPercent = String(gain.toFixed(2));
+      await storage.updateCall(call.id, { status: "Closed", sellPrice, gainPercent, exitDate: new Date() });
+      unpricedSquareOffs.delete(call.id);
+      console.log(`[Scheduler] ${label}: intraday call ${call.id} (${call.stockName}) closed at ₹${sellPrice}, P&L: ${gainPercent}% [source: ${px.source}]`);
+      if (call.isPublished) {
+        const closedCall = { ...call, sellPrice, gainPercent, status: "Closed", exitDate: new Date() };
+        fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
+      }
+      closed++;
+    }
+
+    const activePositions = await db.select().from(positions)
+      .where(and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active")));
+
+    for (const pos of activePositions) {
+      const entryPx = Number(pos.entryPrice || 0);
+      let px: { price: number; source: string } | null = null;
+      const isOption = !!pos.callPut || pos.segment === "Option" || pos.segment === "Index";
+      try {
+        if (isOption) {
+          if (pos.strikePrice && Number(pos.strikePrice) > 0 && pos.expiry && pos.callPut) {
+            px = await realExitPrice({ symbol: pos.symbol || "", strategyType: strategy.type as any,
+              option: { expiry: pos.expiry, strike: Number(pos.strikePrice), callPut: pos.callPut } });
+          }
+        } else {
+          px = await realExitPrice({ symbol: pos.symbol || "", strategyType: strategy.type as any });
+        }
+      } catch (e) {
+        console.error(`[Scheduler] ${label}: price fetch failed for position ${pos.symbol}:`, (e as any)?.message);
+      }
+      if (!px) {
+        const what = isOption ? `${pos.symbol} ${pos.strikePrice || "?"} ${pos.callPut || "?"} ${pos.expiry || "?"}` : (pos.symbol || "");
+        flagUnpriced("position", pos.id, what, strategy.name, `no real ${isOption ? "option premium" : "price"} at ${label}`);
+        skipped++; continue;
+      }
+
+      const isSell = pos.buySell === "Sell";
+      const gain = entryPx > 0 ? (isSell ? ((entryPx - px.price) / entryPx) * 100 : ((px.price - entryPx) / entryPx) * 100) : 0;
+      const exitPrice = String(px.price.toFixed(2));
+      const gainPercent = String(gain.toFixed(2));
+      await storage.updatePosition(pos.id, { status: "Closed", exitPrice, gainPercent, exitDate: new Date() });
+      unpricedSquareOffs.delete(pos.id);
+      console.log(`[Scheduler] ${label}: intraday position ${pos.id} (${pos.symbol}) closed at ₹${exitPrice}, P&L: ${gainPercent}% [source: ${px.source}]`);
+      if (pos.isPublished) {
+        const closedPos = { ...pos, exitPrice, gainPercent, status: "Closed", exitDate: new Date() };
+        fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
+      }
+      closed++;
+    }
+  }
+  if (closed || skipped) console.log(`[Scheduler] ${label} run: closed ${closed}, left open (no real price) ${skipped}`);
+}
+
 async function autoSquareOffIntraday() {
   try {
     const ist = getISTTime();
-    const hours = ist.getHours();
-    const minutes = ist.getMinutes();
-
-    if (hours !== 15 || minutes < 20 || minutes > 25) return;
-
-    const intradayStrategies = await db
-      .select()
-      .from(strategies)
-      .where(eq(strategies.horizon, "Intraday"));
-
-    for (const strategy of intradayStrategies) {
-      const activeCalls = await db
-        .select()
-        .from(calls)
-        .where(and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active")));
-
-      for (const call of activeCalls) {
-        const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
-        let sellPrice = 0;
-        let gainPercent = 0;
-        let callPriceSource = "pending";
-
-        try {
-          const isFnOType = ["Option", "Future", "Index", "CommodityFuture"].includes(strategy.type);
-          const callNameParts = call.stockName?.match(/^(\S+)\s+\d{4}-\d{2}-\d{2}\s+(\d+(?:\.\d+)?)\s+(Call|Put|CE|PE)$/i);
-          
-          if (isFnOType && callNameParts) {
-            const [, underlying, strikeStr, optionType] = callNameParts;
-            const expiryMatch = call.stockName?.match(/(\d{4}-\d{2}-\d{2})/);
-            const expiry = expiryMatch ? expiryMatch[1] : "";
-            const strikePrice = Number(strikeStr);
-            const callPutType = optionType.toLowerCase() === "call" || optionType.toLowerCase() === "ce" ? "CE" : "PE";
-
-            if (expiry && strikePrice > 0) {
-              const premiumLTP = await getOptionPremiumLTP(underlying, expiry, strikePrice, callPutType);
-              if (premiumLTP != null && premiumLTP > 0) {
-                sellPrice = premiumLTP;
-                callPriceSource = "option_chain";
-              } else {
-                console.warn(`[Scheduler] Option premium unavailable for call ${call.stockName}, using entry price fallback. Advisor should update exit price manually.`);
-              }
-            }
-          } else {
-            const liveQuote = await getLiveQuote(call.stockName, strategy.type);
-            if (liveQuote && liveQuote.ltp > 0) {
-              sellPrice = liveQuote.ltp;
-              callPriceSource = "live_quote";
-            }
-          }
-
-          if (entryPrice > 0 && sellPrice > 0) {
-            const isSellAction = call.action === "Sell";
-            gainPercent = isSellAction
-              ? ((entryPrice - sellPrice) / entryPrice) * 100
-              : ((sellPrice - entryPrice) / entryPrice) * 100;
-          }
-        } catch (e) {
-          console.error(`[Scheduler] Could not fetch live price for ${call.stockName}:`, (e as any)?.message);
-        }
-
-        // Smart fallback chain if live price fetch failed
-        if (sellPrice <= 0) {
-          // Fallback 1: Last known price from any source
-          const lastKnown = getLastKnownPrice(call.stockName || "");
-          if (lastKnown && lastKnown.ltp > 0) {
-            sellPrice = lastKnown.ltp;
-            callPriceSource = "last_known_" + lastKnown.source;
-            console.log(`[Scheduler] Using last known price for ${call.stockName}: ${sellPrice} (from ${lastKnown.source}, ${Math.round((Date.now() - lastKnown.timestamp) / 1000)}s ago)`);
-          }
-        }
-        if (sellPrice <= 0) {
-          // Fallback 2: Smart estimate — if price was trending toward SL/target
-          const sl = Number(call.stopLoss || 0);
-          const tp = Number(call.targetPrice || 0);
-          const isSellAction = call.action === "Sell";
-          // At 3:20 PM close, if no price available, estimate based on SL/target proximity
-          // Conservative: use the price closer to entry (minimize assumed P&L)
-          if (sl > 0 && tp > 0) {
-            // Use midpoint between entry and SL (conservative — assumes partial move)
-            sellPrice = isSellAction ? (entryPrice + sl) / 2 : (entryPrice + sl) / 2;
-            callPriceSource = "smart_estimate_sl_mid";
-            console.warn(`[Scheduler] No price for ${call.stockName}, using conservative estimate: ${sellPrice.toFixed(2)}`);
-          } else if (sl > 0) {
-            sellPrice = (entryPrice + sl) / 2;
-            callPriceSource = "smart_estimate_sl";
-          } else if (tp > 0) {
-            sellPrice = (entryPrice + tp) / 2;
-            callPriceSource = "smart_estimate_tp";
-          }
-        }
-        if (sellPrice <= 0) {
-          // Absolute last resort — skip this call, try again next cycle
-          console.error(`[Scheduler] CRITICAL: Cannot determine exit price for ${call.stockName} (${call.id}). Skipping close — will retry.`);
-          continue;
-        }
-
-        if (entryPrice > 0 && sellPrice > 0) {
-          const isSellAction = call.action === "Sell";
-          gainPercent = isSellAction
-            ? ((entryPrice - sellPrice) / entryPrice) * 100
-            : ((sellPrice - entryPrice) / entryPrice) * 100;
-        }
-
-        await storage.updateCall(call.id, {
-          status: "Closed",
-          sellPrice: String(sellPrice.toFixed(2)),
-          gainPercent: String(gainPercent.toFixed(2)),
-          exitDate: new Date(),
-        });
-        console.log(`[Scheduler] Auto-squared off intraday call ${call.id} (${call.stockName}) at ${"\u20B9"}${sellPrice.toFixed(2)}, P&L: ${gainPercent.toFixed(2)}% [source: ${callPriceSource}]`);
-        if (call.isPublished) {
-          const closedCall = { ...call, sellPrice: String(sellPrice.toFixed(2)), gainPercent: String(gainPercent.toFixed(2)), status: "Closed" };
-          fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
-        }
-      }
-
-      const activePositions = await db
-        .select()
-        .from(positions)
-        .where(and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active")));
-
-      for (const pos of activePositions) {
-        const entryPx = Number(pos.entryPrice || 0);
-        let exitPx = 0;
-        let posGainPercent = 0;
-        let priceSource = "pending";
-
-        try {
-          const isFnOOption = pos.strikePrice && pos.expiry && pos.callPut;
-          if (isFnOOption) {
-            const premiumLTP = await getOptionPremiumLTP(
-              pos.symbol || "",
-              pos.expiry!,
-              Number(pos.strikePrice),
-              pos.callPut!
-            );
-            if (premiumLTP != null && premiumLTP > 0) {
-              exitPx = premiumLTP;
-              priceSource = "option_chain";
-            } else {
-              console.warn(`[Scheduler] Option premium unavailable for ${pos.symbol} ${pos.strikePrice} ${pos.callPut}, using entry price fallback. Advisor should update exit price manually.`);
-              priceSource = "entry_fallback";
-            }
-          } else {
-            const posQuote = await getLiveQuote(pos.symbol || "", strategy.type);
-            if (posQuote && posQuote.ltp > 0) {
-              exitPx = posQuote.ltp;
-              priceSource = "live_quote";
-            }
-          }
-
-          if (entryPx > 0 && exitPx > 0) {
-            const isSell = pos.buySell === "Sell";
-            posGainPercent = isSell
-              ? ((entryPx - exitPx) / entryPx) * 100
-              : ((exitPx - entryPx) / entryPx) * 100;
-          }
-        } catch (e) {
-          console.error(`[Scheduler] Could not fetch live price for position ${pos.symbol}:`, (e as any)?.message);
-        }
-
-        // Smart fallback chain if live price fetch failed
-        if (exitPx <= 0) {
-          const lastKnown = getLastKnownPrice(pos.symbol || "");
-          if (lastKnown && lastKnown.ltp > 0) {
-            exitPx = lastKnown.ltp;
-            priceSource = "last_known_" + lastKnown.source;
-            console.log(`[Scheduler] Using last known price for ${pos.symbol}: ${exitPx} (from ${lastKnown.source}, ${Math.round((Date.now() - lastKnown.timestamp) / 1000)}s ago)`);
-          }
-        }
-        if (exitPx <= 0) {
-          const sl = Number(pos.stopLoss || 0);
-          const tgt = Number(pos.target || 0);
-          const isSell = pos.buySell === "Sell";
-          if (sl > 0 && tgt > 0) {
-            exitPx = isSell ? (entryPx + sl) / 2 : (entryPx + sl) / 2;
-            priceSource = "smart_estimate_sl_mid";
-            console.warn(`[Scheduler] No price for ${pos.symbol}, using conservative estimate: ${exitPx.toFixed(2)}`);
-          } else if (sl > 0) {
-            exitPx = (entryPx + sl) / 2;
-            priceSource = "smart_estimate_sl";
-          } else if (tgt > 0) {
-            exitPx = (entryPx + tgt) / 2;
-            priceSource = "smart_estimate_tp";
-          }
-        }
-        if (exitPx <= 0) {
-          console.error(`[Scheduler] CRITICAL: Cannot determine exit price for ${pos.symbol} (${pos.id}). Skipping close — will retry.`);
-          continue;
-        }
-
-        if (entryPx > 0 && exitPx > 0) {
-          const isSell = pos.buySell === "Sell";
-          posGainPercent = isSell
-            ? ((entryPx - exitPx) / entryPx) * 100
-            : ((exitPx - entryPx) / entryPx) * 100;
-        }
-
-        await storage.updatePosition(pos.id, {
-          status: "Closed",
-          exitPrice: String(exitPx.toFixed(2)),
-          gainPercent: String(posGainPercent.toFixed(2)),
-          exitDate: new Date(),
-        });
-        console.log(`[Scheduler] Auto-squared off intraday position ${pos.id} (${pos.symbol}) at \u20B9${exitPx.toFixed(2)}, P&L: ${posGainPercent.toFixed(2)}% [source: ${priceSource}]`);
-        if (pos.isPublished) {
-          const closedPos = { ...pos, exitPrice: String(exitPx.toFixed(2)), gainPercent: String(posGainPercent.toFixed(2)), status: "Closed" };
-          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
-        }
-      }
-    }
+    if (ist.getHours() !== 15 || ist.getMinutes() < 20 || ist.getMinutes() > 25) return;
+    await squareOffIntradayOnce("squareoff");
   } catch (err) {
     console.error("[Scheduler] Error in auto square-off:", err);
   }
+}
+
+// Before the open: anything intraday still Active from an earlier day is reported, never auto-closed
+// at today's price (that would not be the price at which it should have been squared off).
+async function staleIntradayMorningCheck() {
+  try {
+    const ist = getISTTime();
+    if (ist.getHours() !== 9 || ist.getMinutes() < 5 || ist.getMinutes() > 6) return;
+    const intradayStrategies = await db.select().from(strategies).where(eq(strategies.horizon, "Intraday"));
+    const todayStartUtc = new Date(Date.UTC(ist.getFullYear(), ist.getMonth(), ist.getDate()) - 5.5 * 3600 * 1000);
+    for (const strategy of intradayStrategies) {
+      const ps = await db.select().from(positions).where(and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active")));
+      for (const p of ps) if (p.createdAt && new Date(p.createdAt) < todayStartUtc)
+        flagUnpriced("position", p.id, `${p.symbol} ${p.strikePrice || ""} ${p.callPut || ""}`.trim(), strategy.name, "intraday item left open overnight");
+      const cs = await db.select().from(calls).where(and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active")));
+      for (const c of cs) if (c.createdAt && new Date(c.createdAt) < todayStartUtc)
+        flagUnpriced("call", c.id, c.stockName || "", strategy.name, "intraday item left open overnight");
+    }
+  } catch (err) {
+    console.error("[Scheduler] Morning stale-intraday check error:", err);
+  }
+}
+
+
+// Futures are priced on the continuous futures contract (TrueData "SYMBOL-I"), not the spot/index.
+function priceKeyFor(pos: any): string {
+  const sym = pos.symbol || "";
+  if (pos.segment === "Future" && sym && !/\d/.test(sym) && !sym.endsWith("-I")) return sym + "-I";
+  return sym;
 }
 
 
@@ -306,7 +249,7 @@ async function checkStopLossAndTargets() {
         // Do NOT put in equityPositions — that would compare stock price vs option SL
       } else {
         equityPositions.push(pos);
-        const sym = pos.symbol || "";
+        const sym = priceKeyFor(pos);
         const strat = strategyMap.get(pos.strategyId);
         const key = `${sym}_${strat?.type || ""}`;
         if (!seenSymbols.has(key) && sym) {
@@ -446,7 +389,7 @@ async function checkStopLossAndTargets() {
       const entryPx = Number(pos.entryPrice || 0);
       const sl = Number(pos.stopLoss || 0);
       const tgt = Number(pos.target || 0);
-      const sym = pos.symbol || "";
+      const sym = priceKeyFor(pos);
       const quote = bulkPrices[sym];
       if (!quote || !quote.ltp || quote.ltp <= 0) continue;
       const ltp = quote.ltp;
@@ -526,85 +469,11 @@ async function checkStopLossAndTargets() {
 }
 
 async function recoverySquareOff() {
-  // Runs at 3:30 PM IST — closes any Intraday positions/calls missed by the 3:20 run
+  // 3:30 PM IST retry for anything the 3:20 run could not price. Same rules: real prices only.
   try {
     const ist = getISTTime();
-    const hours = ist.getHours();
-    const minutes = ist.getMinutes();
-    if (hours !== 15 || minutes < 30 || minutes > 35) return;
-
-    const intradayStrategies = await db.select().from(strategies).where(eq(strategies.horizon, "Intraday"));
-    let recovered = 0;
-
-    for (const strategy of intradayStrategies) {
-      const staleCalls = await db.select().from(calls)
-        .where(and(eq(calls.strategyId, strategy.id), eq(calls.status, "Active")));
-      for (const call of staleCalls) {
-        const entryPrice = Number(call.entryPrice || call.buyRangeStart || 0);
-        let recoveryPrice = 0;
-        // Try to get a real price even for recovery
-        try {
-          const liveQ = await getLiveQuote(call.stockName || "", strategy.type);
-          if (liveQ && liveQ.ltp > 0) recoveryPrice = liveQ.ltp;
-        } catch {}
-        if (recoveryPrice <= 0) {
-          const lastKnown = getLastKnownPrice(call.stockName || "");
-          if (lastKnown && lastKnown.ltp > 0) recoveryPrice = lastKnown.ltp;
-        }
-        if (recoveryPrice <= 0) {
-          const sl = Number(call.stopLoss || 0);
-          if (sl > 0) recoveryPrice = (entryPrice + sl) / 2;
-          else recoveryPrice = entryPrice; // absolute last resort for recovery only
-        }
-        const recGain = call.action === "Sell" ? ((entryPrice - recoveryPrice) / entryPrice) * 100 : ((recoveryPrice - entryPrice) / entryPrice) * 100;
-        await storage.updateCall(call.id, {
-          status: "Closed",
-          sellPrice: String(recoveryPrice.toFixed(2)),
-          gainPercent: String(recGain.toFixed(2)),
-          exitDate: new Date(),
-        });
-        console.warn(`[Scheduler] Recovery close: call ${call.id} (${call.stockName}) closed at entry price fallback`);
-        if (call.isPublished) {
-          const closedCall = { ...call, sellPrice: String(entryPrice.toFixed(2)), gainPercent: "0.00", status: "Closed" };
-          fireWebhookEvent("CALL_CLOSED", buildCallEventData(closedCall, strategy), strategy.advisorId).catch(() => {});
-        }
-        recovered++;
-      }
-
-      const stalePositions = await db.select().from(positions)
-        .where(and(eq(positions.strategyId, strategy.id), eq(positions.status, "Active")));
-      for (const pos of stalePositions) {
-        const entryPx = Number(pos.entryPrice || 0);
-        let recoveryPx = 0;
-        try {
-          const liveQ = await getLiveQuote(pos.symbol || "", strategy.type);
-          if (liveQ && liveQ.ltp > 0) recoveryPx = liveQ.ltp;
-        } catch {}
-        if (recoveryPx <= 0) {
-          const lastKnown = getLastKnownPrice(pos.symbol || "");
-          if (lastKnown && lastKnown.ltp > 0) recoveryPx = lastKnown.ltp;
-        }
-        if (recoveryPx <= 0) {
-          const sl = Number(pos.stopLoss || 0);
-          if (sl > 0) recoveryPx = (entryPx + sl) / 2;
-          else recoveryPx = entryPx; // absolute last resort for recovery only
-        }
-        const recGainPct = pos.buySell === "Sell" ? ((entryPx - recoveryPx) / entryPx) * 100 : ((recoveryPx - entryPx) / entryPx) * 100;
-        await storage.updatePosition(pos.id, {
-          status: "Closed",
-          exitPrice: String(recoveryPx.toFixed(2)),
-          gainPercent: String(recGainPct.toFixed(2)),
-          exitDate: new Date(),
-        });
-        console.warn(`[Scheduler] Recovery close: position ${pos.id} (${pos.symbol}) closed at entry price fallback`);
-        if (pos.isPublished) {
-          const closedPos = { ...pos, exitPrice: String(entryPx.toFixed(2)), gainPercent: "0.00", status: "Closed" };
-          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData(closedPos, strategy), strategy.advisorId).catch(() => {});
-        }
-        recovered++;
-      }
-    }
-    if (recovered > 0) console.log(`[Scheduler] Recovery run: closed ${recovered} stale intraday position(s)`);
+    if (ist.getHours() !== 15 || ist.getMinutes() < 30 || ist.getMinutes() > 35) return;
+    await squareOffIntradayOnce("recovery");
   } catch (err) {
     console.error("[Scheduler] Recovery square-off error:", err);
   }
@@ -647,6 +516,7 @@ export function startScheduler() {
   setInterval(() => {
     autoSquareOffIntraday();
     recoverySquareOff();
+    staleIntradayMorningCheck();
   }, 60 * 1000);
 
   console.log("[Scheduler] Started: SL/Target monitoring (every 15s) + Intraday auto-square-off (every 60s)");
