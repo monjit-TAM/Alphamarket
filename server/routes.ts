@@ -587,8 +587,8 @@ export async function registerRoutes(
       const allCalls = await storage.getCalls(req.params.id);
       const allPositions = await storage.getPositions(req.params.id);
 
-      const closedCalls = allCalls.filter((c: any) => c.status === "Closed");
-      const closedPositions = allPositions.filter((p: any) => p.status === "Closed");
+      const closedCalls = allCalls.filter((c: any) => c.status === "Closed" && c.gainPercent !== null && c.gainPercent !== undefined && c.gainPercent !== "");
+      const closedPositions = allPositions.filter((p: any) => p.status === "Closed" && p.gainPercent !== null && p.gainPercent !== undefined && p.gainPercent !== "");
 
       interface ClosedEntry {
         type: "call" | "position";
@@ -8464,6 +8464,7 @@ export async function registerRoutes(
         entry > 0 && exit > 0 ? (isSell ? ((entry - exit) / entry) * 100 : ((exit - entry) / entry) * 100).toFixed(2) : null;
       const inferTrigger = (isSell: boolean, exit: number, sl: number, tgt: number): "SL" | "TARGET" | null => {
         if (trigger === "SL" || trigger === "TARGET") return trigger;
+        if (trigger === "EXPIRED") return null;
         if (!(exit > 0)) return null;
         if (isSell) { if (sl > 0 && exit >= sl) return "SL"; if (tgt > 0 && exit <= tgt) return "TARGET"; }
         else { if (sl > 0 && exit <= sl) return "SL"; if (tgt > 0 && exit >= tgt) return "TARGET"; }
@@ -8475,9 +8476,10 @@ export async function registerRoutes(
         const p = (pos.rows[0] as any);
         if (!p) return res.status(404).send("Position not found");
         const entry = Number(p.entry_price || 0);
-        const exit = Number(exitPrice || p.entry_price || 0);
+        const isExpiry = trigger === "EXPIRED" && exitPrice !== undefined && exitPrice !== null && exitPrice !== "" && Number(exitPrice) >= 0;
+        const exit = isExpiry ? Number(exitPrice) : Number(exitPrice || p.entry_price || 0);
         const isSell = String(p.buy_sell || "Buy").toLowerCase() === "sell";
-        const gainPercent = pct(entry, exit, isSell);
+        const gainPercent = isExpiry && exit === 0 && entry > 0 ? (isSell ? "100.00" : "-100.00") : pct(entry, exit, isSell);
         const upd = await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${String(exit)}, exit_date = NOW(), gain_percent = ${gainPercent}
                                          WHERE id = ${id} AND status = 'Active' RETURNING id`);
         if (upd.rows.length === 0) return res.status(409).json({ success: false, error: "Position is not active (already closed)", symbol: p.symbol });

@@ -426,8 +426,9 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     strike: strike,
     profitLossPercent: isClosed ? (toNum(p.gain_percent) ?? (() => {
       const ep = toNum(p.entry_price) ?? 0;
-      const xp = toNum(p.exit_price) ?? 0;
-      if (ep > 0 && xp > 0) {
+      const xpRaw = toNum(p.exit_price);
+      const xp = xpRaw ?? 0;
+      if (ep > 0 && xpRaw !== null && xp >= 0) {
         const act = String(p.buy_sell || "Buy");
         return act === "Sell" ? Number(((ep - xp) / ep * 100).toFixed(2)) : Number(((xp - ep) / ep * 100).toFixed(2));
       }

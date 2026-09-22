@@ -657,6 +657,58 @@ async def shared_quotes(request: Request, items: str = "", order: str = "truedat
         todo = left
     missing = [td for td, _ in todo]
     return {"quotes": quotes, "missing": missing or None, "order": order, "market_open": open_now}
+# ── Expiry settlement (Phase C, 22 Sep 2026) ──
+# An expired F&O position closes at its settlement value, never at its entry price:
+#   option CE = max(0, underlying close - strike), PE = max(0, strike - underlying close); future = underlying close.
+# The underlying close on expiry day comes from the live TrueData feed (a tick on expiry day at/after 15:25 IST)
+# or TrueData 1-minute history. No close found -> the position is left Active and flagged.
+_td_hist_obj = None
+_exp_flagged = set()
+
+def _underlying_close_on(u, expiry_date):
+    import datetime as _d, time as _t
+    name = _TD_INDEX_NAMES.get(u.upper(), u.upper())
+    with _td_lock:
+        live = dict(_td_prices.get(name) or {})
+    if live.get("ltp", 0) > 0 and live.get("timestamp"):
+        ist = _d.datetime.utcfromtimestamp(live["timestamp"]) + _d.timedelta(hours=5, minutes=30)
+        if ist.date() == expiry_date and ist.time() >= _d.time(15, 25):
+            return float(live["ltp"]), "live tick " + ist.strftime("%H:%M:%S")
+    global _td_hist_obj
+    try:
+        if _td_hist_obj is None:
+            from truedata import TD_hist
+            import logging as _lg
+            _td_hist_obj = TD_hist(_TD_USERNAME, _TD_PASSWORD, log_level=_lg.WARNING)
+        df = _td_hist_obj.get_historic_data(name, start_time=_d.datetime.combine(expiry_date, _d.time(15, 20)),
+                                            end_time=_d.datetime.combine(expiry_date, _d.time(15, 31)), bar_size="1 min")
+        if df is not None and len(df):
+            return float(df.iloc[-1]["close"]), "history " + str(df.iloc[-1]["timestamp"])
+    except Exception as e:
+        print(f"[SL Engine] Expiry history lookup failed for {name} {expiry_date}: {e}")
+    return None, None
+
+def _expiry_settlement(sym, strike, call_put, expiry, segment):
+    if not sym or segment in ('Commodity', 'CommodityFuture'):
+        return None, "commodity: not in the TrueData plan"
+    d = _td_parse_expiry(expiry)
+    if not d:
+        return None, "unreadable expiry"
+    close, how = _underlying_close_on(sym, d)
+    if close is None:
+        return None, "no expiry-day close"
+    cp = str(call_put or '').upper()
+    try:
+        k = float(strike or 0)
+    except Exception:
+        k = 0
+    if cp and k > 0:
+        v = max(0.0, close - k) if cp.startswith('C') else max(0.0, k - close)
+        return round(v, 2), f"{how}, underlying {close}"
+    if segment == 'Future' or not cp:
+        return round(close, 2), f"{how} (future settles at underlying close)"
+    return None, "cannot tell option from future"
+
 # ═══ End slot manager ═══
 
 
@@ -782,16 +834,22 @@ def _sl_refresh_watchlist():
                 rec_id = row[7]
                 if pos_id in _sl_triggered_ids:
                     continue
+                settle, how = _expiry_settlement(sym, row[2], row[3], row[4], row[8] or '')
+                if settle is None:
+                    if pos_id not in _exp_flagged:
+                        _exp_flagged.add(pos_id)
+                        print(f"[PRICE-ALERT] EXPIRED {sym} {row[2]} {row[3]} expiry={row[4]} (ID: {pos_id}): {how}. Left ACTIVE; close manually at settlement.")
+                    continue
                 _sl_triggered_ids.add(pos_id)
-                print(f"[SL Engine] EXPIRED: {sym} {row[2]} {row[3]} expiry={row[4]} (ID: {pos_id})")
+                print(f"[SL Engine] EXPIRED: {sym} {row[2]} {row[3]} expiry={row[4]} settles at {settle} [{how}] (ID: {pos_id})")
                 entry = {
                     'id': pos_id, 'source': 'positions', 'symbol': sym,
                     'action': row[5] or 'Buy', 'entry': float(row[6] or 0),
                     'sl': 0, 'tp': 0, 'strategy_id': None, 'rec_id': rec_id,
                     'segment': row[8] or ''
                 }
-                # Close at 0 (expired worthless for buyers, full profit for sellers)
-                _td_threading.Thread(target=_fire_sl_close, args=(entry, 0, 'EXPIRED'), daemon=True).start()
+                # Close at the settlement value (0 only if it really expired out of the money)
+                _td_threading.Thread(target=_fire_sl_close, args=(entry, settle, 'EXPIRED'), daemon=True).start()
         except Exception as exp_err:
             print(f"[SL Engine] Expiry check error: {exp_err}")
 
