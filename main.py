@@ -666,26 +666,32 @@ _td_hist_obj = None
 _exp_flagged = set()
 
 def _underlying_close_on(u, expiry_date):
-    import datetime as _d, time as _t
+    """Official closing price of the underlying on expiry day, which is what NSE settles on.
+    1) TrueData daily (EOD) bar, 2) last 1-minute bar of the day, 3) live tick seen on expiry day after 15:25."""
+    import datetime as _d
     name = _TD_INDEX_NAMES.get(u.upper(), u.upper())
-    with _td_lock:
-        live = dict(_td_prices.get(name) or {})
-    if live.get("ltp", 0) > 0 and live.get("timestamp"):
-        ist = _d.datetime.utcfromtimestamp(live["timestamp"]) + _d.timedelta(hours=5, minutes=30)
-        if ist.date() == expiry_date and ist.time() >= _d.time(15, 25):
-            return float(live["ltp"]), "live tick " + ist.strftime("%H:%M:%S")
     global _td_hist_obj
     try:
         if _td_hist_obj is None:
             from truedata import TD_hist
             import logging as _lg
             _td_hist_obj = TD_hist(_TD_USERNAME, _TD_PASSWORD, log_level=_lg.WARNING)
-        df = _td_hist_obj.get_historic_data(name, start_time=_d.datetime.combine(expiry_date, _d.time(15, 20)),
+        df = _td_hist_obj.get_historic_data(name, start_time=_d.datetime.combine(expiry_date, _d.time(9, 15)),
+                                            end_time=_d.datetime.combine(expiry_date, _d.time(15, 31)), bar_size="EOD")
+        if df is not None and len(df) and float(df.iloc[-1]["close"]) > 0:
+            return float(df.iloc[-1]["close"]), "EOD close " + str(df.iloc[-1]["timestamp"])[:10]
+        df = _td_hist_obj.get_historic_data(name, start_time=_d.datetime.combine(expiry_date, _d.time(9, 15)),
                                             end_time=_d.datetime.combine(expiry_date, _d.time(15, 31)), bar_size="1 min")
         if df is not None and len(df):
-            return float(df.iloc[-1]["close"]), "history " + str(df.iloc[-1]["timestamp"])
+            return float(df.iloc[-1]["close"]), "last 1-min bar " + str(df.iloc[-1]["timestamp"])
     except Exception as e:
         print(f"[SL Engine] Expiry history lookup failed for {name} {expiry_date}: {e}")
+    with _td_lock:
+        live = dict(_td_prices.get(name) or {})
+    if live.get("ltp", 0) > 0 and live.get("timestamp"):
+        ist = _d.datetime.utcfromtimestamp(live["timestamp"]) + _d.timedelta(hours=5, minutes=30)
+        if ist.date() == expiry_date and ist.time() >= _d.time(15, 25):
+            return float(live["ltp"]), "live tick " + ist.strftime("%H:%M:%S")
     return None, None
 
 def _expiry_settlement(sym, strike, call_put, expiry, segment):
