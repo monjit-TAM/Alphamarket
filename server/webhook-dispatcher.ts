@@ -244,7 +244,10 @@ export async function fireWebhookEvent(
             }
           };
 
-          const bp = Number(callData.buyPrice || 0);
+          // SELL creates carry entry in sellPrice (buyPrice is intentionally null)
+          const isSell = callData.action === "Sell" || callData.buySell === "Sell"
+            || String(callData.callType || "").toUpperCase() === "SELL";
+          const bp = Number(isSell ? (callData.sellPrice || callData.buyPrice || 0) : (callData.buyPrice || 0));
           const tp = Number(callData.targetPriceRange || callData.target || 0);
           const sl = Number(callData.stopLossRange || callData.stopLoss || 0);
           if (bp <= 0) {
@@ -253,8 +256,6 @@ export async function fireWebhookEvent(
             continue;
           }
           // Warn on suspicious SL/TP (BUY: target should be > entry, SL < entry)
-          const isSell = callData.action === "Sell" || callData.buySell === "Sell"
-            || String(callData.callType || "").toUpperCase() === "SELL";
           if (!isSell && tp > 0 && sl > 0) {
             if (tp < bp && sl > bp) {
               console.error(`[Webhook] BLOCKED: ${callData.symbol} BUY has target(${tp}) < entry(${bp}) AND SL(${sl}) > entry. Likely swapped. Not sending to ${target.broker_name}.`);
