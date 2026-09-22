@@ -349,7 +349,31 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
       legId = String(await nextRecId());
     }
   } else {
-    legId = String(await nextRecId());
+    // Cache ensures same recId + legId for all brokers in one event cycle (mirrors buildEquity).
+    // Without this, each broker allocated fresh ids and only the first was stored.
+    const fnoKey = "fno_" + (posId || "") + "_" + event;
+    const cachedIds = posId ? eventRecIdCache.get(fnoKey) : undefined;
+    if (cachedIds) {
+      const [cr, cl] = String(cachedIds).split("|");
+      recId = cr;
+      legId = cl;
+    } else {
+      // Cache miss: reuse the rec_id an earlier broker in this cycle already stored (survives cache clears)
+      let storedRec: string | null = null;
+      if (posId) {
+        try {
+          const ex = await db.execute(sql`SELECT webhook_rec_id FROM positions WHERE id = ${posId}`);
+          storedRec = (ex.rows[0] as any)?.webhook_rec_id || null;
+        } catch {}
+      }
+      if (storedRec) {
+        recId = String(storedRec);
+        legId = String(Number(recId) + 1);
+      } else {
+        legId = String(await nextRecId());
+      }
+      if (posId) eventRecIdCache.set(fnoKey, recId + "|" + legId);
+    }
     // Store rec_id on CREATE for future CLOSE events
     if (posId && !isClosed) {
       try { await db.execute(sql`UPDATE positions SET webhook_rec_id = ${recId} WHERE id = ${posId} AND webhook_rec_id IS NULL`); } catch {}
