@@ -488,6 +488,22 @@ export async function getLiveQuote(
     } catch {}
   }
 
+  // Phase B: TrueData first (then Kite) for plain symbols and SYMBOL-I futures
+  if (!symbol.match(/\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i)) {
+    const s = symbol.toUpperCase().trim();
+    const td = TD_INDEX[s] || s;
+    const kite = s.endsWith("-I") ? await kiteFutKey(s.slice(0, -2)) : plainKiteKey(s);
+    const q = (await getQuotesFirst([{ td, kite }]))[td];
+    if (q && q.price > 0) {
+      const lp: LivePrice = {
+        symbol, exchange: "NSE", ltp: q.price, change: 0, changePercent: 0,
+        high: 0, low: 0, open: 0, close: 0, timestamp: Date.now(),
+      };
+      priceCache.set(cacheKey, { data: lp, expiry: Date.now() + CACHE_TTL });
+      return lp;
+    }
+  }
+
   // Try Alpha Data Service first — works for plain symbols even in F&O strategies
   const isPlainSymbol = !symbol.match(/\d{2}(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)/i);
   if (isPlainSymbol) {
@@ -523,6 +539,7 @@ export async function getLiveQuote(
     }
   } catch { /* Kite unavailable, try Groww */ }
 
+  if (!(await growwAllowed())) return null;
   try {
     const accessToken = await getAccessToken();
     const { exchange, segment, tradingSymbol } = resolveExchangeAndSegment(symbol, strategyType);
@@ -569,6 +586,70 @@ export async function getLiveQuote(
 const KITE_SHARED_SECRET = "alphamarket-shared-2026";
 const KITE_QUOTES_URL = "http://localhost:8001/api/shared/kite-quotes";
 
+// ══ Phase B (22 Sep 2026): one price order for the whole app ══
+// Order comes from app_settings key 'price_order' (default "truedata,kite,groww"), read every 60 s,
+// so it can be changed without a restart. TrueData and Kite are asked in one call to
+// Python /api/shared/quotes; Groww (if in the order) stays the last resort here in Node.
+const TD_INDEX: Record<string, string> = { NIFTY: "NIFTY 50", BANKNIFTY: "NIFTY BANK", FINNIFTY: "NIFTY FIN SERVICE", MIDCPNIFTY: "NIFTY MID SELECT" };
+const DEFAULT_PRICE_ORDER = ["truedata", "kite", "groww"];
+let priceOrderCache: { value: string[]; at: number } = { value: DEFAULT_PRICE_ORDER, at: 0 };
+
+async function getPriceOrder(): Promise<string[]> {
+  if (Date.now() - priceOrderCache.at < 60000) return priceOrderCache.value;
+  try {
+    const row = await db.select().from(appSettings).where(eq(appSettings.key, "price_order")).limit(1);
+    const v = row[0]?.value
+      ? String(row[0].value).split(",").map(s => s.trim().toLowerCase()).filter(s => ["truedata", "kite", "groww"].includes(s))
+      : [];
+    priceOrderCache = { value: v.length ? v : DEFAULT_PRICE_ORDER, at: Date.now() };
+  } catch {
+    priceOrderCache = { value: priceOrderCache.value, at: Date.now() };
+  }
+  return priceOrderCache.value;
+}
+
+async function growwAllowed(): Promise<boolean> {
+  return (await getPriceOrder()).includes("groww");
+}
+
+const futKeyCache: Map<string, { key: string; day: string }> = new Map();
+async function kiteFutKey(underlying: string): Promise<string> {
+  const day = new Date().toISOString().slice(0, 10);
+  const hit = futKeyCache.get(underlying);
+  if (hit && hit.day === day) return hit.key;
+  let key = "";
+  try {
+    const r = await db.execute(sql`SELECT tradingsymbol FROM instrument_master
+      WHERE name = ${underlying} AND instrument_type = 'FUT' AND exchange = 'NFO' AND expiry::date >= CURRENT_DATE
+      ORDER BY expiry LIMIT 1`);
+    const ts = (r.rows[0] as any)?.tradingsymbol;
+    if (ts) key = `NFO:${ts}`;
+  } catch {}
+  futKeyCache.set(underlying, { key, day });
+  return key;
+}
+
+function plainKiteKey(sym: string): string {
+  const s = sym.toUpperCase().trim();
+  return !TD_INDEX[s] && /^[A-Z0-9&\-]+$/.test(s) && !s.endsWith("-I") ? "NSE:" + s : "";
+}
+
+export async function getQuotesFirst(items: Array<{ td: string; kite?: string }>): Promise<Record<string, { price: number; source: string; age_s?: number }>> {
+  const order = (await getPriceOrder()).filter(s => s !== "groww");
+  if (!order.length || !items.length) return {};
+  const q = items.map(i => (i.kite ? `${i.td}|${i.kite}` : i.td)).join(",");
+  try {
+    const r = await fetch(`http://localhost:8001/api/shared/quotes?items=${encodeURIComponent(q)}&order=${order.join(",")}`, {
+      headers: { "x-shared-secret": "alphamarket-shared-2026" }, signal: AbortSignal.timeout(6000),
+    });
+    if (!r.ok) return {};
+    const d = await r.json();
+    return d.quotes || {};
+  } catch {
+    return {};
+  }
+}
+
 export async function getBulkLTP(
   symbols: Array<{ symbol: string; strategyType?: string }>
 ): Promise<Record<string, LivePrice>> {
@@ -587,46 +668,41 @@ export async function getBulkLTP(
 
   if (uncached.length === 0) return results;
 
-  // ── Try Kite first (no rate limits, faster) ──
+  // ── Phase B: TrueData first, then Kite (one call to /api/shared/quotes), then Groww ──
   const stillUncached: Array<{ symbol: string; strategyType?: string }> = [];
   try {
-    const IDX: Record<string, string> = { NIFTY: "NIFTY 50", BANKNIFTY: "NIFTY BANK", FINNIFTY: "NIFTY FIN SERVICE", MIDCPNIFTY: "NIFTY MID SELECT" };
-    const reqName = (s: string) => IDX[s.toUpperCase()] || s;
-    const symbolList = uncached.map(i => reqName(i.symbol)).join(",");
-    const kiteRes = await fetch(`http://localhost:8001/api/shared/kite-quotes?symbols=${encodeURIComponent(symbolList)}`, {
-      headers: { "x-shared-secret": KITE_SHARED_SECRET },
-      signal: AbortSignal.timeout(8000)
-    });
-    if (kiteRes.ok) {
-      const kd = await kiteRes.json();
-      const quotes = kd.quotes || kd;
-      for (const item of uncached) {
-        const q = quotes[reqName(item.symbol)] || quotes[item.symbol] || quotes[item.symbol.toUpperCase()];
-        if (q && (q.price > 0 || q.ltp > 0)) {
-          const lp: LivePrice = {
-            symbol: item.symbol, exchange: "NSE", ltp: q.price || q.ltp, change: q.change || 0,
-            changePercent: q.change_percent || 0, high: q.high || 0, low: q.low || 0,
-            open: q.open || 0, close: q.close || 0, timestamp: Date.now(),
-          };
-          const cacheKey = `${item.symbol}_${item.strategyType || ""}`;
-          priceCache.set(cacheKey, { data: lp, expiry: Date.now() + CACHE_TTL });
-          results[item.symbol] = lp;
-        } else {
-          stillUncached.push(item);
-        }
+    const items = await Promise.all(uncached.map(async it => {
+      const s = it.symbol.toUpperCase().trim();
+      const td = TD_INDEX[s] || s;
+      const kite = s.endsWith("-I") ? await kiteFutKey(s.slice(0, -2)) : plainKiteKey(s);
+      return { td, kite, item: it };
+    }));
+    const quotes = await getQuotesFirst(items.map(i => ({ td: i.td, kite: i.kite })));
+    const bySrc: Record<string, number> = {};
+    for (const i of items) {
+      const q = quotes[i.td];
+      if (q && q.price > 0) {
+        const lp: LivePrice = {
+          symbol: i.item.symbol, exchange: "NSE", ltp: q.price, change: 0, changePercent: 0,
+          high: 0, low: 0, open: 0, close: 0, timestamp: Date.now(),
+        };
+        priceCache.set(`${i.item.symbol}_${i.item.strategyType || ""}`, { data: lp, expiry: Date.now() + CACHE_TTL });
+        results[i.item.symbol] = lp;
+        bySrc[q.source] = (bySrc[q.source] || 0) + 1;
+      } else {
+        stillUncached.push(i.item);
       }
-      if (stillUncached.length === 0) {
-        console.log(`[Kite] Bulk LTP OK: ${uncached.length} symbols from Kite`);
-        return results;
-      }
-      console.log(`[Kite] Bulk LTP partial: ${uncached.length - stillUncached.length} from Kite, ${stillUncached.length} remaining for Groww`);
-    } else {
-      stillUncached.push(...uncached);
     }
-  } catch (kiteErr) {
-    console.warn("[Kite] Bulk LTP unavailable, falling back to Groww:", (kiteErr as any)?.message);
+    if (stillUncached.length > 0) {
+      console.log(`[Prices] Bulk: ${uncached.length - stillUncached.length} priced (TrueData ${bySrc.truedata || 0}, Kite ${bySrc.kite || 0}), ${stillUncached.length} not priced: ${stillUncached.slice(0, 8).map(x => x.symbol).join(",")}`);
+    }
+  } catch (err) {
+    console.warn("[Prices] TrueData/Kite bulk lookup failed:", (err as any)?.message);
+    stillUncached.length = 0;
     stillUncached.push(...uncached);
   }
+  if (stillUncached.length === 0) return results;
+  if (!(await growwAllowed())) return results;
 
   // ── Fallback to Groww for any symbols Kite couldn't resolve ──
   if (stillUncached.length === 0) return results;
@@ -980,8 +1056,8 @@ export async function getOptionPremiumLTP(
   strikePrice: number,
   callPut: string
 ): Promise<number | null> {
-  // Phase A: first ask Kite for the exact contract (NFO/BFO:TRADINGSYMBOL from instrument_master).
-  // One light request, instead of pulling the whole option chain (which timed out under load).
+  // Phase B: the contract's own TrueData feed first (e.g. NIFTY26092923800PE), then Kite's exact
+  // contract (NFO:TRADINGSYMBOL), and only then the option chain further below.
   try {
     const underlying = symbol.toUpperCase().replace(/\s+/g, "");
     const cpU = String(callPut || "").toUpperCase();
@@ -992,21 +1068,13 @@ export async function getOptionPremiumLTP(
     const expIso = m1 ? `${m1[1]}-${m1[2]}-${m1[3]}` : m2 ? `${m2[3]}-${m2[2]}-${m2[1]}` : "";
     const exch = underlying === "SENSEX" || underlying === "BANKEX" ? "BFO" : "NFO";
     if (itype && expIso && strikePrice > 0) {
+      const tdSym = `${underlying}${expIso.slice(2, 4)}${expIso.slice(5, 7)}${expIso.slice(8, 10)}${String(Number(strikePrice))}${itype}`;
       const r = await db.execute(sql`SELECT tradingsymbol FROM instrument_master
         WHERE name = ${underlying} AND strike = ${strikePrice} AND instrument_type = ${itype}
           AND expiry::date = ${expIso}::date AND exchange = ${exch} LIMIT 1`);
       const ts = (r.rows[0] as any)?.tradingsymbol;
-      if (ts) {
-        const key = `${exch}:${ts}`;
-        const kr = await fetch(`http://localhost:8001/api/shared/kite-quotes-raw?symbols=${encodeURIComponent(key)}`, {
-          headers: { "x-shared-secret": KITE_SHARED_SECRET }, signal: AbortSignal.timeout(5000),
-        });
-        if (kr.ok) {
-          const kd = await kr.json();
-          const px = Number(kd?.quotes?.[key]?.price || kd?.quotes?.[key]?.ltp || 0);
-          if (px > 0) return px;
-        }
-      }
+      const q = (await getQuotesFirst([{ td: tdSym, kite: ts ? `${exch}:${ts}` : "" }]))[tdSym];
+      if (q && q.price > 0) return q.price;
     }
   } catch (err) {
     console.warn(`[Kite] Exact-contract option quote failed for ${symbol} ${strikePrice} ${callPut}:`, (err as any)?.message);

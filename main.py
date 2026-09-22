@@ -397,12 +397,25 @@ def _td_subscribe_new(symbols):
     new_syms = [s for s in symbols if s not in _td_subscribed_symbols]
     if not new_syms:
         return True
-    if len(_td_subscribed_symbols) + len(new_syms) > 590:
+    if len(_td_subscribed_symbols) + len(new_syms) > _TD_CAP:
+        _td_evict(len(_td_subscribed_symbols) + len(new_syms) - _TD_CAP)
+        _t1_new = [x for x in new_syms if x in _td_tier1]
+        _short = len(_td_subscribed_symbols) + len(new_syms) - _TD_CAP
+        if _t1_new and _short > 0:
+            _td_evict(min(_short, len(_t1_new)), force=True)
+    room = _TD_CAP - len(_td_subscribed_symbols)
+    if room <= 0:
+        print(f"[TrueData] Slots full ({len(_td_subscribed_symbols)}); could not add {len(new_syms)} symbols")
         return False
+    if len(new_syms) > room:
+        new_syms = sorted(new_syms, key=lambda x: 0 if x in _td_tier1 else 1)[:room]
     try:
         import time as _sub_time
         _td_obj.start_live_data(new_syms)
         _td_subscribed_symbols.update(new_syms)
+        _now_sub = __import__('time').time()
+        for _s in new_syms:
+            _td_last_access[_s] = _now_sub
         _sub_time.sleep(1)  # Wait for touchline
         # Read touchline/live_data for newly subscribed symbols
         populated = 0
@@ -436,9 +449,216 @@ def _td_get_quotes(symbols):
     with _td_lock:
         for sym in symbols:
             data = _td_prices.get(sym) or _td_prices.get(sym.upper())
+            _td_last_access[sym] = __import__('time').time()
             if data and data.get('ltp', 0) > 0:
                 result[sym] = data
     return result
+
+
+# ═══ TrueData slot manager + TrueData-first quotes (Phase B, 22 Sep 2026) ═══
+# Tier 1 = every live call/position (plus its exact option contract or SYMBOL-I future) and the
+# main indices. Tier 1 symbols are never evicted. Everything else is tier 2 and is evicted
+# least-recently-used when room is needed. Plan limit is 600 symbols; we stop at _TD_CAP.
+_TD_CAP = 590
+_TD_TIER2_IDLE_S = 15 * 60          # a tier-2 symbol asked for within 15 min is not evicted
+_TD_STALE_S = 60                    # during market hours an older TrueData tick counts as missing
+_TD_ALWAYS = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "NIFTY MID SELECT"]
+_td_tier1 = set()
+_td_last_access = {}
+_td_pending = set()
+_td_pending_lock = _td_threading.Lock()
+_td_tier1_last = 0
+
+def _td_strike_str(strike):
+    f = float(strike)
+    return str(int(f)) if f.is_integer() else ("%s" % f)
+
+def _td_parse_expiry(expiry):
+    """Returns a date from 'YYYY-MM-DD[...]', 'DD-MM-YYYY', 'DD/MM/YYYY' or epoch ms; else None."""
+    from datetime import datetime as _dt, date as _date
+    if expiry is None:
+        return None
+    if isinstance(expiry, _date):
+        return expiry if not isinstance(expiry, _dt) else expiry.date()
+    s = str(expiry).strip()
+    try:
+        if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+            return _dt.strptime(s[:10], "%Y-%m-%d").date()
+        if len(s) == 10 and s[2] in '-/' and s[5] in '-/':
+            return _dt.strptime(s.replace('/', '-'), "%d-%m-%Y").date()
+        if s.isdigit() and len(s) >= 10:
+            v = int(s)
+            return _dt.utcfromtimestamp(v / 1000 if len(s) > 10 else v).date()
+    except Exception:
+        return None
+    return None
+
+def _td_option_symbol(underlying, expiry, strike, call_put):
+    """TrueData option symbol: UNDERLYING + YYMMDD + STRIKE + CE/PE, e.g. NIFTY26091523800PE."""
+    d = _td_parse_expiry(expiry)
+    cp = str(call_put or '').strip().upper()
+    t = 'PE' if cp.startswith('P') else ('CE' if cp.startswith('C') else '')
+    try:
+        k = float(strike)
+    except Exception:
+        return None
+    if not d or not t or not underlying or k <= 0:
+        return None
+    return f"{str(underlying).strip().upper()}{d.strftime('%y%m%d')}{_td_strike_str(k)}{t}"
+
+def _td_market_open():
+    import datetime as _d
+    now = _d.datetime.utcnow() + _d.timedelta(hours=5, minutes=30)
+    if now.weekday() >= 5:
+        return False
+    return _d.time(9, 15) <= now.time() <= _d.time(15, 30)
+
+def _td_evict(n, force=False):
+    """Unsubscribe up to n tier-2 symbols, least recently asked-for first. Never tier 1.
+    force=True (only used to make room for tier 1) also takes tier-2 symbols used recently."""
+    import time as _t
+    global _td_subscribed_symbols
+    if n <= 0 or not _td_obj:
+        return 0
+    now = _t.time()
+    protected = _td_tier1 | set(_TD_ALWAYS)
+    candidates = [s for s in _td_subscribed_symbols
+                  if s not in protected and (force or now - _td_last_access.get(s, 0) > _TD_TIER2_IDLE_S)]
+    candidates.sort(key=lambda s: _td_last_access.get(s, 0))
+    victims = candidates[:n]
+    if not victims:
+        return 0
+    try:
+        _td_obj.stop_live_data(victims)
+    except Exception as e:
+        print(f"[TrueData] Evict error ({len(victims)} symbols): {e}")
+        return 0
+    _td_subscribed_symbols.difference_update(victims)
+    with _td_lock:
+        for s in victims:
+            _td_prices.pop(s, None)
+    print(f"[TrueData] Evicted {len(victims)} idle tier-2 symbols (now {len(_td_subscribed_symbols)})")
+    return len(victims)
+
+def _td_request(symbols):
+    """Non-blocking: remember symbols a caller wanted but TrueData does not carry yet."""
+    with _td_pending_lock:
+        for s in symbols:
+            if s and s not in _td_subscribed_symbols:
+                _td_pending.add(s)
+
+def _td_refresh_tier1():
+    """Rebuild tier 1 from live calls/positions and make sure every one of them is subscribed."""
+    global _td_tier1
+    import psycopg2
+    wanted = set(_TD_ALWAYS)
+    conn = psycopg2.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT c.stock_name FROM calls c JOIN strategies s ON s.id = c.strategy_id
+            WHERE c.status = 'Active' AND (c.is_published = true OR s.horizon = 'Intraday')""")
+        for (sym,) in cur.fetchall():
+            if sym and ' ' not in sym.strip():
+                wanted.add(sym.strip().upper())
+        cur.execute("""
+            SELECT p.symbol, COALESCE(p.segment,''), p.strike_price, COALESCE(p.call_put,''), p.expiry
+            FROM positions p JOIN strategies s ON s.id = p.strategy_id
+            WHERE p.status = 'Active' AND (p.is_published = true OR s.horizon = 'Intraday')""")
+        for sym, seg, strike, cp, expiry in cur.fetchall():
+            if not sym:
+                continue
+            u = sym.strip().upper()
+            wanted.add(_TD_INDEX_NAMES.get(u, u))                 # the underlying
+            if seg in ('Commodity', 'CommodityFuture'):
+                continue                                          # MCX is not in the TrueData plan
+            if seg == 'Future':
+                wanted.add(u + '-I')
+            elif cp and strike:
+                o = _td_option_symbol(u, expiry, strike, cp)
+                if o:
+                    wanted.add(o)
+    finally:
+        conn.close()
+    _td_tier1 = wanted
+    missing = [s for s in wanted if s not in _td_subscribed_symbols]
+    if missing:
+        _td_subscribe_new(missing)
+    return len(wanted), len(missing)
+
+def _td_background_tick():
+    """Called from the SL refresh thread every 5 s: tier 1 every 60 s, pending tier-2 requests in small batches."""
+    import time as _t
+    global _td_tier1_last
+    if not _td_connected:
+        return
+    if _t.time() - _td_tier1_last >= 60:
+        _td_tier1_last = _t.time()
+        try:
+            n, added = _td_refresh_tier1()
+            if added:
+                print(f"[TrueData] Tier 1: {n} symbols, {added} newly subscribed (total {len(_td_subscribed_symbols)})")
+        except Exception as e:
+            print(f"[TrueData] Tier 1 refresh error: {e}")
+    with _td_pending_lock:
+        batch = [s for s in list(_td_pending) if s not in _td_subscribed_symbols][:40]
+        _td_pending.clear()
+    if batch:
+        _td_subscribe_new(batch)
+
+
+@app.get("/api/shared/quotes", include_in_schema=False)
+async def shared_quotes(request: Request, items: str = "", order: str = "truedata,kite"):
+    """TrueData-first quotes. items = comma-separated 'TDSYMBOL' or 'TDSYMBOL|KITEKEY'
+    (KITEKEY like NSE:SBIN or NFO:KEI26SEPFUT). Returns quotes keyed by the TDSYMBOL asked for."""
+    import time as _t
+    if request.headers.get("x-shared-secret", "") != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    pairs = []
+    for raw in [x.strip() for x in items.split(",") if x.strip()]:
+        td, _, kk = raw.partition("|")
+        pairs.append((td.strip(), kk.strip()))
+    quotes, missing = {}, []
+    open_now = _td_market_open()
+    now = _t.time()
+    todo = list(pairs)
+    for src in [s.strip().lower() for s in order.split(",") if s.strip()]:
+        if not todo:
+            break
+        left = []
+        if src == "truedata" and _td_connected:
+            for td, kk in todo:
+                name = _TD_INDEX_NAMES.get(td.upper(), td)
+                d = _td_get_quotes([name]).get(name)
+                if d and d.get("ltp", 0) > 0 and (not open_now or now - d.get("timestamp", 0) <= _TD_STALE_S):
+                    quotes[td] = {"price": d["ltp"], "source": "truedata", "age_s": round(now - d.get("timestamp", now), 1)}
+                else:
+                    left.append((td, kk))
+                    if not d:
+                        _td_request([name])
+        elif src == "kite":
+            keys = [kk for _, kk in todo if kk and " " not in kk and "&" not in kk]
+            got = {}
+            if keys:
+                try:
+                    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+                    if _is_kite_connected():
+                        got = await _fetch_kite_quotes(keys)
+                except Exception:
+                    got = {}
+            for td, kk in todo:
+                v = got.get(kk) if kk else None
+                if v and v.get("last_price", 0) > 0:
+                    quotes[td] = {"price": v["last_price"], "source": "kite"}
+                else:
+                    left.append((td, kk))
+        else:
+            left = todo
+        todo = left
+    missing = [td for td, _ in todo]
+    return {"quotes": quotes, "missing": missing or None, "order": order, "market_open": open_now}
+# ═══ End slot manager ═══
+
 
 
 # ═══ Tick-by-Tick SL/TP Monitoring Engine ═══
@@ -507,14 +727,20 @@ def _sl_refresh_watchlist():
             call_put = row[10] or ''
             is_option_by_data = has_strike and bool(call_put)
             # Exclude ALL Option/Index segment positions (even without strike — e.g. INDUSINDBK with strike=NULL)
-            if segment in ('Option', 'Index'):
-                continue
-            if is_option_by_data and segment not in ('Future', 'CommodityFuture', 'Commodity'):
-                continue  # Has strike+callPut = option, regardless of segment label
             if not sym:
                 continue
+            opt_sym = None
+            if is_option_by_data and segment not in ('Future', 'CommodityFuture', 'Commodity'):
+                # Phase B: options are watched on their own contract (premium ticks), e.g. NIFTY26092923800PE
+                opt_sym = _td_option_symbol(sym, row[11], strike, call_put)
+                if not opt_sym:
+                    continue
+            elif segment in ('Option', 'Index'):
+                continue  # option without usable strike/expiry: cannot be priced safely
             td_sym = sym
-            if segment in ('Future', 'CommodityFuture', 'Commodity'):
+            if opt_sym:
+                td_sym = opt_sym
+            elif segment in ('Future', 'CommodityFuture', 'Commodity'):
                 td_sym = sym + '-I'  # TrueData futures format
             entry = {
                 'id': row[0], 'source': 'positions', 'symbol': sym, 'td_symbol': td_sym,
@@ -629,10 +855,10 @@ def _fire_sl_close(entry, ltp, trigger_type):
         
         if source == 'calls':
             url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
-            body = {"source": "calls", "exitPrice": ltp}
+            body = {"source": "calls", "exitPrice": ltp, "trigger": trigger_type}
         else:
             url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
-            body = {"source": "positions", "exitPrice": ltp}
+            body = {"source": "positions", "exitPrice": ltp, "trigger": trigger_type}
         
         # Get admin session cookie
         import psycopg2, hashlib, hmac, base64, urllib.parse
@@ -674,6 +900,10 @@ def _sl_watchlist_refresh_loop():
             _sl_refresh_watchlist()
         except Exception:
             pass
+        try:
+            _td_background_tick()
+        except Exception as _bt:
+            print(f"[TrueData] background tick error: {_bt}")
         _sl_time.sleep(_SL_REFRESH_INTERVAL)
 
 # ═══ End SL/TP Engine ═══
@@ -848,7 +1078,7 @@ async def shared_kite_quotes(request: Request, symbols: str = ""):
                 missing_syms.remove(sym)
         # Auto-subscribe any symbols not yet in TrueData
         if missing_syms:
-            _td_subscribe_new(missing_syms)
+            _td_request(missing_syms)
     return {"quotes": quotes, "source": "kite+truedata", "connected": True, "count": len(quotes), "sources": source_stats, "missing": missing_syms if missing_syms else None}
 
 @app.get("/api/shared/kite-quotes-raw", include_in_schema=False)
@@ -926,7 +1156,7 @@ async def shared_truedata_quotes(request: Request, symbols: str = ""):
     raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
     # Auto-subscribe if needed
     if _td_connected:
-        _td_subscribe_new(raw_syms)
+        _td_request(raw_syms)
     quotes = _td_get_quotes(raw_syms)
     return {"quotes": quotes, "source": "truedata", "connected": _td_connected, "count": len(quotes)}
 
