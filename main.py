@@ -217,6 +217,86 @@ app = FastAPI(
 )
 
 
+# ══ CAS + options analytics: thin proxies to the Data Service ══
+async def _ds_get(path: str):
+    import httpx as _hx
+    async with _hx.AsyncClient(timeout=20) as c:
+        r = await c.get(f"{DATA_SERVICE_URL}{path}",
+                        headers={"X-API-Key": "alpha_data_internal_2026"})
+        return r.json()
+
+
+@app.get("/api/emerging-leaders/live", tags=["Emerging Leaders"],
+         summary="The live Emerging Leaders list with entry, return and next target")
+async def dyor_el_live():
+    return await _ds_get("/data/conviction/live")
+
+
+@app.get("/api/emerging-leaders/past", tags=["Emerging Leaders"],
+         summary="Closed positions with realised outcomes and the track record")
+async def dyor_el_past(limit: int = 100):
+    return await _ds_get(f"/data/conviction/past?limit={limit}")
+
+
+@app.get("/api/emerging-leaders/idea/{symbol}", tags=["Emerging Leaders"],
+         summary="One idea in full, with pillar evidence and levels")
+async def dyor_el_idea(symbol: str):
+    return await _ds_get(f"/data/conviction/idea/{symbol}")
+
+
+@app.get("/api/emerging-leaders/methodology", tags=["Emerging Leaders"],
+         summary="How names are selected and what the model does not measure")
+async def dyor_el_method():
+    return await _ds_get("/data/conviction/methodology")
+
+
+@app.get("/api/market/cas-auction/{symbol}", tags=["CAS"], summary="Auction replay: indicative price path and imbalance for one symbol")
+async def dyor_cas_auction(symbol: str, session_date: str = None):
+    q = f"?session_date={session_date}" if session_date else ""
+    return await _ds_get(f"/data/market/cas-auction/{symbol}{q}")
+
+
+@app.get("/api/market/cas-session", tags=["CAS"], summary="Whole-session auction summary and largest drifts")
+async def dyor_cas_session(session_date: str = None, limit: int = 20):
+    q = f"?limit={limit}" + (f"&session_date={session_date}" if session_date else "")
+    return await _ds_get(f"/data/market/cas-session{q}")
+
+
+@app.get("/api/market/cas-status", tags=["CAS"], summary="Closing Auction Session phase and what is permitted now")
+async def dyor_cas_status():
+    return await _ds_get("/data/market/cas-status")
+
+
+@app.get("/api/market/cas-eligible/{symbol}", tags=["CAS"], summary="Is this symbol Category I (closes via auction)?")
+async def dyor_cas_eligible(symbol: str):
+    return await _ds_get(f"/data/market/cas-eligible/{symbol}")
+
+
+@app.post("/api/market/cas-risk-check", tags=["CAS"], summary="Which positions and orders the auction affects")
+async def dyor_cas_risk_check(payload: dict):
+    import httpx as _hx
+    async with _hx.AsyncClient(timeout=25) as c:
+        r = await c.post(f"{DATA_SERVICE_URL}/data/market/cas-risk-check",
+                         headers={"X-API-Key": "alpha_data_internal_2026"}, json=payload)
+        return r.json()
+
+
+@app.get("/api/options/stats/{underlying}", tags=["Options"], summary="ATM IV, PCR, Max Pain and straddle price")
+async def dyor_option_stats(underlying: str, expiry: str = None):
+    return await _ds_get(f"/data/options/stats/{underlying}" + (f"?expiry={expiry}" if expiry else ""))
+
+
+@app.get("/api/options/oi-chain/{underlying}", tags=["Options"], summary="OI by strike with build-up and peak-OI levels")
+async def dyor_option_oi(underlying: str, expiry: str = None):
+    return await _ds_get(f"/data/options/oi-chain/{underlying}" + (f"?expiry={expiry}" if expiry else ""))
+
+
+@app.get("/api/options/iv-history/{underlying}", tags=["Options"], summary="ATM IV history with percentile and rank")
+async def dyor_iv_history(underlying: str, days: int = 90):
+    return await _ds_get(f"/data/options/iv-history/{underlying}?days={days}")
+
+
+
 # ═══ TrueData WebSocket Market Data Integration ═══
 import threading as _td_threading
 
@@ -298,7 +378,19 @@ def _start_truedata_feed(symbols_list=None):
         _td_connected = False
         print(f"[TrueData] Connection failed: {e}")
 
+# TrueData names the indices differently from Kite. Passing Kite's form
+# straight through produced 22 "symbols not added" errors a day on NIFTY and
+# BANKNIFTY alone, and left the index unpriced whenever Kite was rate limited.
+_TD_INDEX_NAMES = {
+    "NIFTY": "NIFTY 50",
+    "BANKNIFTY": "NIFTY BANK",
+    "FINNIFTY": "NIFTY FIN SERVICE",
+    "MIDCPNIFTY": "NIFTY MID SELECT",
+    "SENSEX": "SENSEX",
+}
+
 def _td_subscribe_new(symbols):
+    symbols = [_TD_INDEX_NAMES.get(s, s) for s in symbols]
     global _td_obj, _td_subscribed_symbols
     if not _td_obj or not _td_connected:
         return False
@@ -776,8 +868,20 @@ async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
         quotes = {}
         for key, val in data.items():
             ltp = val.get("last_price", 0)
+            # mode="full" already asks Kite for the book; passing it through
+            # costs nothing and is what jobbing needs — a bid-ask screen built
+            # on the cash-futures basis shows opportunities that do not exist.
+            _d = val.get("depth") or {}
+            _b = (_d.get("buy") or [{}])
+            _s = (_d.get("sell") or [{}])
             quotes[key] = {"price": ltp, "ltp": ltp, "ohlc": val.get("ohlc"),
                            "volume": val.get("volume") or val.get("volume_traded") or 0,
+                           "oi": val.get("oi"),
+                           "bid": _b[0].get("price") if _b else None,
+                           "bid_qty": _b[0].get("quantity") if _b else None,
+                           "ask": _s[0].get("price") if _s else None,
+                           "ask_qty": _s[0].get("quantity") if _s else None,
+                           "depth": val.get("depth"),
                            "source": "kite"}
         # ── TrueData fallback (15 Jul): when Kite is rate-limited/down, raw callers
         # (Data Services, scanner overlay) got {} — same Kite->TrueData ladder as
