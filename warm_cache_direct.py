@@ -21,13 +21,37 @@ async def main():
     universe = udata.get('universe', [])[:923]
     print(f"[{time.strftime('%H:%M:%S')}] Universe: {len(universe)} stocks")
 
+    # Extend with every Alpha Fundamentals company >= Rs 1,000 Cr. The static list had gone
+    # stale (68 of the top 250 by market cap were absent, incl. TVSMOTOR, PFC, SWIGGY).
+    try:
+        import urllib.request
+        _af = json.load(urllib.request.urlopen(
+            "http://127.0.0.1:5015/api/fundamentals/screen?limit=5000", timeout=90)).get("data", [])
+        _seen, _added = set(universe), 0
+        for _r in _af:
+            _s = (_r.get("symbol") or "").upper()
+            try:
+                _mc = float(_r.get("market_cap") or 0)
+            except (TypeError, ValueError):
+                _mc = 0
+            if _s and _s not in _seen and _mc >= 1000:
+                universe.append(_s)
+                _seen.add(_s)
+                _added += 1
+        print(f"[{time.strftime('%H:%M:%S')}] Universe extended with {_added} Alpha Fundamentals companies >= Rs 1,000 Cr: {len(universe)} total")
+    except Exception as _e:
+        print(f"[{time.strftime('%H:%M:%S')}] Universe extension skipped: {_e}")
+
     # Fetch all OHLCV from Alpha Fundamentals (localhost:5015) in bulk batches of 50
     all_data = {}
     t0 = time.time()
     async with aiohttp.ClientSession() as session:
         for i in range(0, len(universe), 50):
             batch = universe[i:i+50]
-            syms_param = ",".join(batch)
+            # URL-encode each symbol: a raw '&' (M&M, GVT&D) ended the query parameter and
+            # silently dropped the rest of the batch, incl. RELIANCE, HDFCBANK, SBIN.
+            import urllib.parse
+            syms_param = ",".join(urllib.parse.quote(s, safe="") for s in batch)
             try:
                 resp = await session.get(
                     f'http://localhost:5015/api/fundamentals/prices/bulk?symbols={syms_param}&days=400',
@@ -191,6 +215,170 @@ async def main():
 
     print(f"[{time.strftime('%H:%M:%S')}] Computed {len(stocks)} stocks")
 
+    # ── Step 2b: Enrich from Alpha Fundamentals (real fundamentals + market-wide cap rank) ──
+    # Previously every fundamental was written as a literal 0 and cap_segment came from a
+    # hand-typed list. Alpha Fundamentals (port 5015) has nightly TrueData ratios for ~2,300 cos.
+    def _num(v):
+        try:
+            x = float(v)
+            return None if (np.isnan(x) or np.isinf(x)) else x
+        except (TypeError, ValueError):
+            return None
+
+    def _bounded(v, lo, hi):
+        x = _num(v)
+        return x if (x is not None and lo <= x <= hi) else None
+
+    fund_rows = {}
+    try:
+        async with aiohttp.ClientSession() as fsess:
+            async with fsess.get("http://127.0.0.1:5015/api/fundamentals/screen?limit=5000",
+                                 timeout=aiohttp.ClientTimeout(total=90)) as resp:
+                payload = await resp.json()
+        rows = payload.get("data", []) if isinstance(payload, dict) else []
+        # Exclude implausible market caps from ranking. Shares and market cap can be wrong
+        # together (ASTRON: 4.65 trillion shares), so test turnover against market cap instead.
+        def _mcap_ok(r):
+            mc = _num(r.get("market_cap")) or 0
+            if mc <= 0:
+                return False
+            hi, lo = _num(r.get("high_52w")), _num(r.get("low_52w"))
+            if not hi or not lo:
+                return True
+            px = (hi + lo) / 2
+            turnover_ratio = (_num(r.get("avg_volume")) or 0) * px / (mc * 1e7)
+            # A sub-Rs 50 price with a lakh-crore cap is only plausible if it trades like one (IDEA does)
+            if px < 50 and mc > 100000 and turnover_ratio < 1e-3:
+                return False
+            return turnover_ratio >= 2e-5
+
+        ranked = sorted((r for r in rows if _mcap_ok(r)),
+                        key=lambda r: _num(r.get("market_cap")), reverse=True)
+        _suspect = sum(1 for r in rows if (_num(r.get("market_cap")) or 0) > 0 and not _mcap_ok(r))
+        print(f"[{time.strftime('%H:%M:%S')}] Market caps excluded from ranking as implausible: {_suspect}")
+        for rank, r in enumerate(ranked, 1):
+            r["_mcap_rank"] = rank
+        fund_rows = {(r.get("symbol") or "").upper(): r for r in rows}
+        print(f"[{time.strftime('%H:%M:%S')}] Alpha Fundamentals: {len(fund_rows)} companies, {len(ranked)} ranked by market cap")
+    except Exception as e:
+        print(f"[{time.strftime('%H:%M:%S')}] Alpha Fundamentals fetch failed, keeping legacy fields: {e}")
+
+    enriched_count = 0
+    for s in stocks:
+        r = fund_rows.get(s["symbol"].upper())
+        if not r:
+            s["fundamentals_source"] = "none"
+            continue
+        pe = _bounded(r.get("pe_ttm"), 0.01, 300)
+        roe = _bounded(r.get("roe"), -100, 100)
+        de = _bounded(r.get("debt_to_equity"), 0, 20)
+        dy = _bounded(r.get("dividend_yield"), 0, 25)
+        pb = _bounded(r.get("pb_ratio"), 0.01, 100)
+        mcap = _num(r.get("market_cap")) or 0
+        avg_vol = _num(r.get("avg_volume")) or 0
+        rank = r.get("_mcap_rank")
+        s["mcap_suspect"] = rank is None and (_num(r.get("market_cap")) or 0) > 0
+        s["pe_ratio"] = round(pe, 2) if pe is not None else 0
+        s["pe_valid"] = pe is not None
+        s["roe"] = round(roe, 2) if roe is not None else 0
+        s["debt_equity"] = round(de, 2) if de is not None else 0
+        s["de_available"] = de is not None
+        s["dividend_yield"] = round(dy, 2) if dy is not None else 0
+        s["pb"] = round(pb, 2) if pb is not None else 0
+        s["market_cap"] = round(mcap, 2)
+        s["mcap_rank"] = rank
+        s["avg_volume"] = round(avg_vol)
+        s["avg_turnover_cr"] = round(avg_vol * s["price"] / 1e7, 2)
+        for out_key, src_key in (("roce", "roce"), ("net_margin", "net_margin"), ("ebitda_margin", "ebitda_margin"),
+                                 ("earnings_yield", "earnings_yield"), ("beta", "beta"),
+                                 ("promoter_holding", "promoter_holding"), ("revenue_growth_yoy", "revenue_growth_yoy"),
+                                 ("eps_growth_yoy", "eps_growth_yoy"), ("pat_growth_yoy", "pat_growth_yoy")):
+            v = _num(r.get(src_key))
+            s[out_key] = round(v, 2) if v is not None else None
+        if r.get("company_name"):
+            s["name"] = r["company_name"]
+        s["fund_sector"] = r.get("sector")
+        s["fund_industry"] = r.get("industry")
+        if s.get("sector") in (None, "", "Other") and r.get("sector"):
+            s["sector"] = r["sector"]
+        if s.get("industry") in (None, "", "Other") and r.get("industry"):
+            s["industry"] = r["industry"]
+        # AMFI convention: top 100 by market cap = large, 101-250 = mid, rest = small
+        if rank:
+            s["cap_segment"] = "large" if rank <= 100 else "mid" if rank <= 250 else "small"
+        s["fundamentals_source"] = "alpha_fundamentals"
+        enriched_count += 1
+    print(f"[{time.strftime('%H:%M:%S')}] Enriched {enriched_count}/{len(stocks)} stocks from Alpha Fundamentals")
+
+    # ── Step 2c: Sector rotation (RRG) and benchmark sector weights, on our own data ──
+    # Benchmark = top 500 by market cap, cap-weighted (Nifty 500 proxy). Sectors = NSE macro-
+    # sectors from Alpha Fundamentals, the same taxonomy the portfolio-gap layer uses.
+    # Approximation: historical levels use today's cap weights, not point-in-time weights.
+    try:
+        members = [s for s in stocks if s.get("mcap_rank") and s["mcap_rank"] <= 500
+                   and s.get("fund_sector") and s["symbol"] in all_data]
+        total_mcap = sum(s["market_cap"] for s in members) or 1
+        sector_weights = {}
+        for s in members:
+            sector_weights[s["fund_sector"]] = sector_weights.get(s["fund_sector"], 0) + s["market_cap"] / total_mcap * 100
+
+        closes = {}
+        for s in members:
+            ser = pd.Series({r["date"]: r["close"] for r in all_data[s["symbol"]] if r.get("date")})
+            ser.index = pd.to_datetime(ser.index)
+            closes[s["symbol"]] = ser.sort_index()
+        px_df = pd.DataFrame(closes).sort_index().ffill(limit=3)
+        rets = px_df.pct_change()
+        caps = pd.Series({s["symbol"]: s["market_cap"] for s in members})
+
+        def _cap_weighted_index(cols):
+            r = rets[cols]
+            w = caps[cols]
+            weighted = r.mul(w, axis=1).sum(axis=1)
+            available = r.notna().mul(w, axis=1).sum(axis=1).replace(0, np.nan)
+            return (1 + (weighted / available).fillna(0)).cumprod()
+
+        bench_wk = _cap_weighted_index(list(px_df.columns)).resample("W-FRI").last()
+        WINDOW, TRAIL = 10, 12
+        by_sector = {}
+        for s in members:
+            by_sector.setdefault(s["fund_sector"], []).append(s["symbol"])
+
+        rrg_rows = []
+        for sector, cols in by_sector.items():
+            if len(cols) < 5:
+                continue
+            raw = 100 * _cap_weighted_index(cols).resample("W-FRI").last() / bench_wk
+            ratio = 100 + (raw - raw.rolling(WINDOW).mean()) / raw.rolling(WINDOW).std().replace(0, np.nan) * 2
+            mom_raw = ratio.diff(1)
+            momentum = 100 + (mom_raw - mom_raw.rolling(WINDOW).mean()) / mom_raw.rolling(WINDOW).std().replace(0, np.nan) * 2
+            both = pd.concat([ratio, momentum], axis=1, keys=["r", "m"]).replace([np.inf, -np.inf], np.nan).dropna().tail(TRAIL)
+            if both.empty:
+                continue
+            r_now, m_now = float(both["r"].iloc[-1]), float(both["m"].iloc[-1])
+            quadrant = ("Leading" if r_now >= 100 and m_now >= 100 else
+                        "Weakening" if r_now >= 100 else
+                        "Lagging" if m_now < 100 else "Improving")
+            rrg_rows.append({
+                "sector": sector, "quadrant": quadrant, "members": len(cols),
+                "rs_ratio": round(r_now, 2), "rs_momentum": round(m_now, 2),
+                "benchmark_weight": round(sector_weights.get(sector, 0), 2),
+                "trail": [{"week": d.strftime("%Y-%m-%d"), "rs_ratio": round(float(v["r"]), 2),
+                           "rs_momentum": round(float(v["m"]), 2)} for d, v in both.iterrows()],
+            })
+
+        asof = time.strftime("%Y-%m-%d")
+        await redis_client.set("af_sector_rrg", json.dumps({
+            "asof": asof, "benchmark": "Top-500 by market cap, cap-weighted (Nifty 500 proxy)",
+            "window_weeks": WINDOW, "trail_weeks": TRAIL, "sectors": rrg_rows}), ex=259200)
+        await redis_client.set("af_benchmark_sector_weights", json.dumps({
+            "asof": asof, "members": len(members),
+            "weights": {k: round(v, 2) for k, v in sorted(sector_weights.items(), key=lambda kv: -kv[1])}}), ex=259200)
+        print(f"[{time.strftime('%H:%M:%S')}] Sector RRG cached: " + ", ".join(
+            f"{x['sector']}={x['quadrant']}" for x in sorted(rrg_rows, key=lambda x: x["quadrant"])))
+    except Exception as e:
+        print(f"[{time.strftime('%H:%M:%S')}] Sector RRG failed: {e}")
+
     # Save sb_universe
     # Enrich with F&O flag
     try:
@@ -200,6 +388,8 @@ async def main():
                 s["is_fno"] = True
     except: pass
     await redis_client.set("sb_universe", json.dumps(stocks), ex=43200)
+    await redis_client.set("sb_universe_enriched", json.dumps(stocks), ex=43200)
+    print(f"[{time.strftime('%H:%M:%S')}] sb_universe_enriched cached ({len(stocks)} stocks)")
     print(f"[{time.strftime('%H:%M:%S')}] sb_universe cached ({len(stocks)} stocks)")
 
     # ── Step 3: Cache all 34 screener strategies ──
