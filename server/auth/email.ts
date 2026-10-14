@@ -28,6 +28,10 @@ export async function sendPasswordResetEmail(
       to: email,
       from: fromEmail,
       subject: "AlphaMarket - Password Reset",
+      trackingSettings: {
+        clickTracking: { enable: false, enableText: false },
+        openTracking: { enable: false },
+      },
       html: `
         <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
           <h2 style="color: #333;">Password Reset Request</h2>

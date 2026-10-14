@@ -537,11 +537,17 @@ export async function registerRoutes(
         "Commodities": 0,
         "Basket": 0,
       };
+      const legGroups = new Set<string>();
       for (const s of strats) {
         const activeCalls = await storage.getCalls(s.id);
         const activePositions = await storage.getPositions(s.id);
         const activeCallCount = activeCalls.filter((c: any) => c.status === "Active").length;
         const activePosCount = activePositions.filter((p: any) => p.status === "Active").length;
+        for (const p of activePositions as any[]) {
+          if (p.status !== "Active") continue;
+          const g = p.legGroupId ?? p.leg_group_id;
+          if (g) legGroups.add(String(g));
+        }
         const activeCount = activeCallCount + activePosCount;
         const horizon = (s.horizon || "").toLowerCase();
         const type = s.type;
@@ -551,8 +557,9 @@ export async function registerRoutes(
         if (horizon.includes("swing")) counts["Swing"] += activeCount;
         if (horizon.includes("positional") || horizon.includes("long term") || horizon.includes("short term")) counts["Positional"] += activeCount;
         if (type === "Commodity" || type === "CommodityFuture") counts["Commodities"] += activeCount;
-        if (type === "Basket") counts["Basket"] += activeCount;
+        if (type === "Basket") counts["Basket"] += 1;
       }
+      counts["Multi Leg"] = legGroups.size;
       res.json(counts);
     } catch (err: any) {
       res.status(500).send(err.message);
