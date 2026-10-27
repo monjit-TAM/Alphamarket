@@ -187,6 +187,8 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     openapi_tags=[
+        {"name": "AlphaLab in DYOR", "description": "AlphaLab pages shown inside DYOR: Proof, Stock 360, Charts, Bases, Pattern Gallery, Screens, Alpha Signal, Options Lab, CAS Check, Planning, Portfolio Guide, Telegram alerts and advisor reports. DYOR signs each user in to their own AlphaLab account."},
+        {"name": "Research", "description": "AlphaLab research served to DYOR users from the same data service: selection models, base rates, company research and risk, mutual funds, ETFs, bonds and insurance protection."},
         {"name": "Health & Status", "description": "System health checks and API status"},
         {"name": "Authentication", "description": "User registration, login, and session management"},
         {"name": "Stock Screener", "description": "Screen 843 NSE stocks across 34+ strategies with buy zones and signal status"},

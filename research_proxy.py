@@ -90,27 +90,32 @@ async def _family(fam, sub, request):
     return await _get(f"/data/{fam}/" + "/".join(parts), params, ttl=TTL.get(parts[0], 300), timeout=60)
 
 
-@router.get("/mf/{sub:path}", summary="Mutual fund research (screener, X-ray, probability, what-if and more)")
+@router.get("/mf/{sub:path}", summary="Mutual fund research (screener, X-ray, probability, what-if and more)",
+            description="Path after `/mf/` is one of: screener, search, xray, dna-board, dna, behaviour, probability, horizon, stayed, whatif, holdings-xray, forward-outlook (plus one id segment). Query string passed through.")
 async def mf(sub: str, request: Request):
     return await _family("mf", sub, request)
 
 
-@router.get("/etf/{sub:path}", summary="ETF research (premium to NAV, chooser, detail)")
+@router.get("/etf/{sub:path}", summary="ETF research (premium to NAV, chooser, detail)",
+            description="Path after `/etf/` is one of: screener, chooser, detail (plus one id segment).")
 async def etf(sub: str, request: Request):
     return await _family("etf", sub, request)
 
 
-@router.get("/debt/{sub:path}", summary="Bonds research (SGBs, G-secs, corporate bonds, T-bill yields)")
+@router.get("/debt/{sub:path}", summary="Bonds research (SGBs, G-secs, corporate bonds, T-bill yields)",
+            description="Path after `/debt/` is one of: board, yields, curve-shift.")
 async def debt(sub: str, request: Request):
     return await _family("debt", sub, request)
 
 
-@router.get("/insurance/questions", summary="The protection interview questions")
+@router.get("/insurance/questions", summary="The protection interview questions",
+            description="Questions for the insurance protection interview; `employment` tailors them.")
 async def ins_questions(employment: str = None):
     return await _get("/data/insurance/questions", {"employment": employment}, ttl=3600)
 
 
-@router.post("/insurance/protection-map", summary="The risk map for one set of interview answers")
+@router.post("/insurance/protection-map", summary="The risk map for one set of interview answers",
+            description="POST the interview answers as JSON; returns the protection risk map. Advice-free: shows gaps, not products.")
 async def ins_map(request: Request):
     try:
         body = await request.json()
@@ -124,41 +129,49 @@ async def ins_map(request: Request):
     return Response(content=r.content, status_code=r.status_code, media_type="application/json")
 
 
-@router.get("/models/list", summary="The ten rules-based stock selection models")
+@router.get("/models/list", summary="The ten rules-based stock selection models",
+            description="Name, thesis and current state of each model. Needs signal access (advisors, admins, approved investors).")
 async def models_list():
     return await _get("/data/models/list", ttl=120)
 
 
-@router.get("/models/report/{symbol}", summary="Research note (PDF) for one model holding")
+@router.get("/models/report/{symbol}", summary="Research note (PDF) for one model holding",
+            description="PDF note for `symbol`; `model` picks which model's view. Needs signal access.")
 async def models_report(symbol: str, model: str = None):
     return await _get(f"/data/conviction/report/{_sym(symbol)}", {"model": model}, timeout=90)
 
 
-@router.get("/models/{model_key}", summary="One model: thesis, method, holdings and closed positions")
+@router.get("/models/{model_key}", summary="One model: thesis, method, holdings and closed positions",
+            description="`model_key` from `/api/research/models/list`. Needs signal access.")
 async def models_detail(model_key: str):
     return await _get(f"/data/models/{''.join(c for c in model_key if c.isalnum() or c == '_')[:40]}", ttl=60)
 
 
-@router.get("/base-rates", summary="How every pattern, candlestick and scan has played out")
+@router.get("/base-rates", summary="How every pattern, candlestick and scan has played out",
+            description="Hit rate and average forward return of every chart pattern, candlestick and scan across NSE history. `horizon` in sessions: 5, 10, 20 (default) or 60.")
 async def base_rates(horizon: int = Query(20)):
     return await _get("/data/base-rates", {"horizon": horizon if horizon in (5, 10, 20, 60) else 20}, ttl=600)
 
 
-@router.get("/base-rates/signal", summary="One signal split by market regime, liquidity, trend and volume")
+@router.get("/base-rates/signal", summary="One signal split by market regime, liquidity, trend and volume",
+            description="`name` is a signal from `/api/research/base-rates`; `direction` optional (bullish or bearish).")
 async def base_rates_signal(name: str, direction: str = None):
     return await _get("/data/base-rates/signal", {"name": name[:80], "direction": direction}, ttl=600)
 
 
-@router.get("/base-rates/live/{symbol}", summary="Signals on a stock's latest session, with their track records")
+@router.get("/base-rates/live/{symbol}", summary="Signals on a stock's latest session, with their track records",
+            description="Every pattern and scan firing on `symbol` in its latest session, each with its historical base rate.")
 async def base_rates_live(symbol: str):
     return await _get(f"/data/base-rates/live/{_sym(symbol)}", ttl=300)
 
 
-@router.get("/stock/{symbol}", summary="Deep research for one company")
+@router.get("/stock/{symbol}", summary="Deep research for one company",
+            description="Flags, valuation range, peer standing and peers, ranks, pillars, deltas, price band, movers, alternates, ownership and coverage for `symbol`.")
 async def stock_research(symbol: str):
     return await _get(f"/data/stock/deep-research/{_sym(symbol)}", ttl=900, timeout=60)
 
 
-@router.get("/stock-risk/{symbol}", summary="Pledge, promoter behaviour, exit liquidity and surveillance status")
+@router.get("/stock-risk/{symbol}", summary="Pledge, promoter behaviour, exit liquidity and surveillance status",
+            description="Risk checks for `symbol`. Pass `position_value` (rupees) to size exit liquidity for that holding.")
 async def stock_risk(symbol: str, position_value: float = None):
     return await _get(f"/data/stock/risk/{_sym(symbol)}", {"position_value": position_value}, ttl=900, timeout=40)

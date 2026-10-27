@@ -75,7 +75,8 @@ async def ui_js():
         return Response("", media_type="application/javascript")
 
 
-@router.get("/access", summary="Which AlphaLab pages this person can open")
+@router.get("/access", summary="Which AlphaLab pages this person can open",
+            description="For the signed-in AlphaMarket user, `{page_key: true|false}` for every AlphaLab page DYOR can show. Signal pages (`alphasignal`, `optionslab`) need signal access; advisor pages (`proof`, `rep_sebi`, `rep_client`, `rep_dossier`) need an AlphaMarket admin or approved advisor; the rest are open to any signed-in user. 401 when not signed in.")
 async def access(request: Request):
     user = _session_user(request)
     if not user:
@@ -84,7 +85,8 @@ async def access(request: Request):
     return {k: (who == "all" or (who == "sig" and sig) or (who == "adv" and adv)) for k, (_, who) in PAGES.items()}
 
 
-@router.get("/open", summary="A signed-in AlphaLab address for one page")
+@router.get("/open", summary="A signed-in AlphaLab address for one page",
+            description="`page` is one of: proof, stock360, charts, bases, gallery, screens, alphasignal, optionslab, cascheck, planning, portfolioguide, telegram, rep_sebi, rep_client, rep_dossier.\n\nDYOR signs the user in to AlphaLab server to server (HMAC-signed `POST https://testalpha.in/api/sso/dyor`) and returns `{\"url\"}` for the frame. Each AlphaMarket user has their own AlphaLab account. The address carries a short-lived token in its fragment: load it in the frame, never log or share it. Stock pages take a symbol after sign-in: `/new/dashboard/equities?embed=1&sym=TCS`, `/new/dashboard/charts?embed=1&sym=TCS`.\n\nErrors: 401 not signed in; 403 `{\"locked\": true, \"kind\": \"sig\"|\"adv\", \"detail\"}` when the page needs access the user lacks (`sig` can be requested at `POST /api/signals-access/request`); 404 unknown page; 502 AlphaLab did not answer; 503 sign-in not configured. Broker push, data push, admin and US markets are never reachable this way.")
 async def open_page(page: str, request: Request):
     user = _session_user(request)
     if not user:
