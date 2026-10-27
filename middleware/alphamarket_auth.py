@@ -23,6 +23,9 @@ from starlette.responses import JSONResponse
 
 logger = logging.getLogger("dyor.auth_bridge")
 
+# the internal service key (as checked in dispatch below); signal_gate.py reads it from here
+_INTERNAL_KEY = "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"
+
 ALPHAMARKET_DB_URL = "postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db"
 
 # Connection pool
@@ -188,6 +191,13 @@ class AlphaMarketAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
 
+        # Advisor-only signals and the access-request endpoints (middleware/signal_gate.py).
+        # Runs before the public-path list below, which used to let these through unauthenticated.
+        from middleware.signal_gate import handle as _signal_gate
+        _sg = await _signal_gate(request, path)
+        if _sg is not None:
+            return _sg
+
         # Skip auth for public routes
         if path in PUBLIC_PATHS or path.startswith("/api/docs") or path.startswith("/api/trading/") or path.startswith("/api/arbitrage/") or path.startswith("/api/alphabot/") or path.startswith("/api/alpha-ideas") or path.startswith("/api/alpha-conviction") or path.startswith("/api/alpha-options/") or path.startswith("/api/intraday") or path.startswith("/api/morning-brief") or path.startswith("/api/alpha-intel/") or path.startswith("/api/shared/") or path.startswith("/api/algos/") or path.startswith("/api/commodity/") or path.startswith("/api/bse/") or path.startswith("/api/nfo/") or path.startswith("/api/market/cas-status") or path.startswith("/api/market/cas-eligible") or path.startswith("/api/market/cas-auction") or path.startswith("/api/market/cas-session") or path.startswith("/api/emerging-leaders/"):
             return await call_next(request)
@@ -204,7 +214,6 @@ class AlphaMarketAuthMiddleware(BaseHTTPMiddleware):
 
         # Read connect.sid cookie
         raw_sid = request.cookies.get("connect.sid")
-        logger.warning(f"AUTH DEBUG: path={path}, cookies={list(request.cookies.keys())}, raw_sid={'yes' if raw_sid else 'no'}, cookie_header={request.headers.get('cookie','NONE')[:80]}")
         if not raw_sid:
             return JSONResponse(
                 status_code=401,
