@@ -13,6 +13,9 @@
     ['ng-alrep', 'ADVISOR REPORTS', [['rep_sebi', 'SEBI Research Report'], ['rep_client', 'Client Report'], ['rep_dossier', 'Dossier']]]
   ];
   var access = null, loaded = {};
+  /* stock pages that take a symbol (?sym=) and where they live on AlphaLab */
+  var AL = 'https://testalpha.in', SYM_PAGES = { stock360: '/new/dashboard/equities', charts: '/new/dashboard/charts' };
+  var signedIn = 0, pending = {};
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 
   var st = document.createElement('style');
@@ -66,6 +69,13 @@
     }).then(function (x) {
       if (x.r.ok && x.d.url) {
         panel.innerHTML = '<iframe class="al-frame" src="' + esc(x.d.url) + '" allow="clipboard-write" referrerpolicy="no-referrer"></iframe>';
+        var fr = panel.querySelector('iframe'), loads = 0;
+        /* first load is the sign-in hand-off page, the second the AlphaLab page itself */
+        fr.addEventListener('load', function () {
+          if (++loads < 2) return;
+          signedIn = Date.now();
+          if (pending[key]) { var s = pending[key]; delete pending[key]; fr.src = symUrl(key, s); }
+        });
         return;
       }
       loaded[key] = false;
@@ -76,6 +86,26 @@
       }
       msg(panel, 'Could not open this page: ' + esc(x.d.detail || ('HTTP ' + x.r.status)) + '<br><br><button class="btn btn-s" onclick="window.__alRetry(\'' + key + '\')">Try again</button>');
     }).catch(function () { loaded[key] = false; msg(panel, 'Could not reach DYOR. <button class="btn btn-s" onclick="window.__alRetry(\'' + key + '\')">Try again</button>'); });
+  }
+  function symUrl(key, sym) { return AL + SYM_PAGES[key] + '?embed=1&sym=' + encodeURIComponent(sym); }
+  /* open an AlphaLab stock page in DYOR on one symbol: __alGo('stock360', 'TCS') or __alGo('charts', 'TCS') */
+  window.__alGo = function (key, sym) {
+    sym = String(sym || '').trim().toUpperCase().replace(/[^A-Z0-9&_-]/g, '');
+    var btn = document.querySelector('[data-al="' + key + '"]');
+    if (!SYM_PAGES[key] || !btn || !document.getElementById('p-al_' + key)) return false;
+    var fr = document.querySelector('#p-al_' + key + ' iframe');
+    if (sym && fr && signedIn && Date.now() - signedIn < 7 * 3600 * 1000) fr.src = symUrl(key, sym);
+    else if (sym) { pending[key] = sym; if (fr && signedIn) { loaded[key] = false; } }
+    window.nav('al_' + key, btn);
+    return true;
+  };
+  window.open360 = function (sym) { return window.__alGo('stock360', sym); };
+  function wrapOpenChart() {
+    var orig = window.openChart;
+    if (typeof orig !== 'function' || orig.__al) return;
+    var w = function (sym) { if (!window.__alGo('charts', sym)) return orig.apply(this, arguments); };
+    w.__al = true;
+    window.openChart = w;
   }
   window.__alRetry = function (k) { loaded[k] = true; open(k); };
   window.__alReq = function (b) {
@@ -103,6 +133,7 @@
     takeOver('stock360', 'stock360', 'Stock 360');
     takeOver('charts', 'charts', 'Charts');
     wrapNav(); setTimeout(wrapNav, 1500);
+    wrapOpenChart(); setTimeout(wrapOpenChart, 1500);
     fetch(API + 'access', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { access = d; markLocks(); }).catch(function () {});
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
