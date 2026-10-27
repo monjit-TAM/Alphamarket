@@ -2,7 +2,7 @@
    The backend refuses these features to anyone not allowed; this script only shows a lock
    and the request button instead of an empty panel, and adds the review list for admins. */
 (function () {
-  var LOCKED = { alphaoptions: 'Options Alpha', alphabot: 'AlphaBot', emerging: 'Emerging Leaders', alphaideas: 'Alpha Ideas' };
+  var LOCKED = { alphaoptions: 'Options Alpha', alphabot: 'AlphaBot', emerging: 'Emerging Leaders', alphaideas: 'Alpha Ideas', rmodels: 'Models' };
   var API = '/dyor/api/signals-access/';
   var st = null;
 
@@ -19,6 +19,8 @@
       });
     });
   }
+
+  window.__sigMarkMenu = function () { if (st && st.logged_in && !st.allowed) markMenu(); };
 
   function card(key) {
     var r = st && st.request, name = LOCKED[key];

@@ -1,8 +1,8 @@
 """
 Advisor-only signals for DYOR.
 
-Options Alpha, AlphaBot, Alpha Ideas (with Conviction and Intraday levels) and Emerging
-Leaders are open only to:
+Options Alpha, AlphaBot, Alpha Ideas (with Conviction and Intraday levels), Emerging Leaders
+and Models are open only to:
   - AlphaMarket admins,
   - advisors whose registration AlphaMarket has approved (users.role='advisor', is_approved),
   - investors an admin has approved (an active user_access_grants row, tool 'dyor_signals').
@@ -39,10 +39,12 @@ LOCKED_PREFIXES = (
     "/api/alpha-conviction",    # Alpha Ideas: Conviction tab
     "/api/intraday-levels",     # Alpha Ideas: Intraday tab
     "/api/emerging-leaders/",   # Emerging Leaders
+    "/api/research/models",     # Models (research note PDFs included)
 )
 FEATURES = {"/api/alpha-options/": "Options Alpha", "/api/alphabot/": "AlphaBot",
             "/api/alpha-ideas": "Alpha Ideas", "/api/alpha-conviction": "Alpha Ideas",
-            "/api/intraday-levels": "Alpha Ideas", "/api/emerging-leaders/": "Emerging Leaders"}
+            "/api/intraday-levels": "Alpha Ideas", "/api/emerging-leaders/": "Emerging Leaders",
+            "/api/research/models": "Models"}
 LOCK_JS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "signal_lock.js")
 LOCKED_MSG = ("This feature is for SEBI-registered advisors on AlphaMarket. "
               "You can request access and our team will review it.")
