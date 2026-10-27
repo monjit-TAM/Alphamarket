@@ -163,6 +163,22 @@ async def _option_quote(index, expiry, strike, opt_type, expiry_label=None, sinc
         return None
 
 
+async def _future_quote(index, expiry_label, since):
+    """Live price of the index future a stored signal refers to (label like 26NOV), or None."""
+    try:
+        rows = await _fno_rows(
+            "SELECT tradingsymbol FROM instrument_master WHERE exchange='NFO' AND name=$1 AND instrument_type='FUT' "
+            "AND upper(to_char(expiry::date,'YYMON'))=$2 AND expiry::date >= $3 ORDER BY expiry::date LIMIT 1",
+            index, str(expiry_label or "").upper(), since)
+        if not rows:
+            return None
+        p = await _kite_ltp("NFO:" + rows[0]["tradingsymbol"])
+        return p if p > 0 else None
+    except Exception as e:
+        logger.warning(f"Future quote failed for {index} {expiry_label}: {e}")
+        return None
+
+
 async def fetch_index_data(symbol: str) -> dict:
     """Index spot and the day's change: Kite quote first, then the older sources."""
     ks = _KITE_INDEX.get(symbol)
@@ -771,8 +787,13 @@ async def fetch_current_price_for_signal(sig):
             logger.warning(f"Options price fetch failed for {symbol} {strike} {instrument_type}: {e}")
         # Fallback: return entry price (no P&L change)
         return float(sig["entry_price"])
+    elif instrument_type == "FUT":
+        # dyorfix3: a futures signal's entry, stop and target are futures prices, so it is watched on the
+        # same contract. The index sits about a basis below and made every futures short hit its target at once.
+        p = await _future_quote(symbol, sig["expiry"], sig["created_at"].date())
+        return float(p) if p else None
     else:
-        # FUT or spot — use index spot price
+        # index arbitrage: spot leg
         spot_data = await fetch_index_data(symbol)
         if spot_data and spot_data.get("price"):
             return float(spot_data["price"])
