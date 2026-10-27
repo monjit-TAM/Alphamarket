@@ -1,4 +1,4 @@
-/* DYOR: AlphaLab pages (Proof, Bases, Pattern gallery, Screens, Alpha Signal, Options Lab, CAS check, Planning,
+/* DYOR: AlphaLab pages (Stock 360, Charts, Proof, Bases, Pattern gallery, Screens, Alpha Signal, Options Lab, CAS check, Planning,
    Portfolio Guide, Telegram alerts, Reports) shown inside DYOR. Loaded by /var/www/dyor.html from
    /dyor/api/alphalab/ui.js. The backend signs the person in to AlphaLab and returns the address to frame. */
 (function () {
@@ -36,6 +36,20 @@
       });
     });
     return true;
+  }
+  /* DYOR's own STOCK 360 and Charts buttons now open AlphaLab's richer pages; the old ones stay as "classic" */
+  function takeOver(oldKey, newKey, label) {
+    var b = document.querySelector('[onclick^="nav(\'' + oldKey + '\'"]');
+    var host = document.getElementById('p-emerging');
+    if (!b || !host || document.getElementById('p-al_' + newKey)) return;
+    var classic = b.cloneNode(true);
+    classic.textContent = label + ' (classic)';
+    classic.style.fontSize = '11px'; classic.style.opacity = '0.75';
+    b.setAttribute('onclick', "nav('al_" + newKey + "',this)");
+    b.setAttribute('data-al', newKey);
+    b.parentNode.insertBefore(classic, b.nextSibling);
+    var pn = document.createElement('div'); pn.id = 'p-al_' + newKey; pn.className = 'panel al-panel';
+    host.parentNode.appendChild(pn);
   }
   function markLocks() {
     if (!access) return;
@@ -86,6 +100,8 @@
   }
   function start() {
     if (!install()) { setTimeout(start, 300); return; }
+    takeOver('stock360', 'stock360', 'Stock 360');
+    takeOver('charts', 'charts', 'Charts');
     wrapNav(); setTimeout(wrapNav, 1500);
     fetch(API + 'access', { credentials: 'include' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (d) { access = d; markLocks(); }).catch(function () {});
   }

@@ -34,6 +34,8 @@ AL = "https://testalpha.in"
 
 PAGES = {   # key: (AlphaLab path, who)
     "proof": ("/dashboard/proof", "adv"),
+    "stock360": ("/dashboard/equities", "all"),
+    "charts": ("/dashboard/charts", "all"),
     "bases": ("/dashboard/bases", "all"),
     "gallery": ("/dashboard/patterns/gallery", "all"),
     "screens": ("/dashboard/screens", "all"),
