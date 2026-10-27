@@ -229,7 +229,8 @@ async def _ds_get(path: str):
 @app.get("/api/emerging-leaders/live", tags=["Emerging Leaders"],
          summary="The live Emerging Leaders list with entry, return and next target")
 async def dyor_el_live():
-    return await _ds_get("/data/conviction/live")
+    from live_overlay import emerging as _el_live  # current prices on the list
+    return await _el_live(await _ds_get("/data/conviction/live"))
 
 
 @app.get("/api/emerging-leaders/past", tags=["Emerging Leaders"],
@@ -378,19 +379,44 @@ def _start_truedata_feed(symbols_list=None):
         _td_connected = False
         print(f"[TrueData] Connection failed: {e}")
 
+# TrueData names the indices differently from Kite. Passing Kite's form
+# straight through produced 22 "symbols not added" errors a day on NIFTY and
+# BANKNIFTY alone, and left the index unpriced whenever Kite was rate limited.
+_TD_INDEX_NAMES = {
+    "NIFTY": "NIFTY 50",
+    "BANKNIFTY": "NIFTY BANK",
+    "FINNIFTY": "NIFTY FIN SERVICE",
+    "MIDCPNIFTY": "NIFTY MID SELECT",
+    "SENSEX": "SENSEX",
+}
+
 def _td_subscribe_new(symbols):
+    symbols = [_TD_INDEX_NAMES.get(s, s) for s in symbols]
     global _td_obj, _td_subscribed_symbols
     if not _td_obj or not _td_connected:
         return False
     new_syms = [s for s in symbols if s not in _td_subscribed_symbols]
     if not new_syms:
         return True
-    if len(_td_subscribed_symbols) + len(new_syms) > 590:
+    if len(_td_subscribed_symbols) + len(new_syms) > _TD_CAP:
+        _td_evict(len(_td_subscribed_symbols) + len(new_syms) - _TD_CAP)
+        _t1_new = [x for x in new_syms if x in _td_tier1]
+        _short = len(_td_subscribed_symbols) + len(new_syms) - _TD_CAP
+        if _t1_new and _short > 0:
+            _td_evict(min(_short, len(_t1_new)), force=True)
+    room = _TD_CAP - len(_td_subscribed_symbols)
+    if room <= 0:
+        print(f"[TrueData] Slots full ({len(_td_subscribed_symbols)}); could not add {len(new_syms)} symbols")
         return False
+    if len(new_syms) > room:
+        new_syms = sorted(new_syms, key=lambda x: 0 if x in _td_tier1 else 1)[:room]
     try:
         import time as _sub_time
         _td_obj.start_live_data(new_syms)
         _td_subscribed_symbols.update(new_syms)
+        _now_sub = __import__('time').time()
+        for _s in new_syms:
+            _td_last_access[_s] = _now_sub
         _sub_time.sleep(1)  # Wait for touchline
         # Read touchline/live_data for newly subscribed symbols
         populated = 0
@@ -420,13 +446,400 @@ def _td_subscribe_new(symbols):
         return False
 
 def _td_get_quotes(symbols):
+    """Prices from the AlphaFeed store first, falling back to this process's own socket.
+    Store-first lets the socket move to the feed worker without changing anything for
+    callers; the fallback keeps this working while this process still holds the socket,
+    and if the feed worker ever stops. Any store failure falls through silently."""
     result = {}
+    now = __import__('time').time()
+    try:
+        import json as _afj, redis as _afr
+        _cl = getattr(_td_get_quotes, "_redis", None)
+        if _cl is None:
+            _cl = _afr.from_url("redis://localhost:6379/3", decode_responses=True,
+                                socket_timeout=0.25, socket_connect_timeout=0.25)
+            _td_get_quotes._redis = _cl
+        # calls.stock_name is instrument_master.name; the feed writes the
+        # vendor tradingsymbol. Translate on the way in. Mirrors
+        # registry.RENAMED in /opt/alphafeed/registry.py -- an entry added
+        # there needs the same entry here until stock_name is resolved
+        # through instrument_master properly.
+        _db2v = {"MANKIND PHARMA": "MANKIND", "TATAMOTORS": "TMPV"}
+        keys = ["q:" + _db2v.get(s.upper(), s.upper()) for s in symbols]
+        for sym, raw in zip(symbols, _cl.mget(keys)):
+            _td_last_access[sym] = now
+            if not raw:
+                continue
+            d = _afj.loads(raw)
+            if float(d.get("p", 0)) > 0:
+                result[sym] = {"ltp": float(d["p"]), "timestamp": float(d.get("t", now)),
+                               "source": "truedata", "high": 0, "low": 0, "open": 0,
+                               "close": 0, "volume": 0, "oi": 0}
+    except Exception:
+        pass
     with _td_lock:
         for sym in symbols:
+            if sym in result:
+                continue
             data = _td_prices.get(sym) or _td_prices.get(sym.upper())
+            _td_last_access[sym] = now
             if data and data.get('ltp', 0) > 0:
                 result[sym] = data
     return result
+
+
+# ═══ TrueData slot manager + TrueData-first quotes (Phase B, 22 Sep 2026) ═══
+# Tier 1 = every live call/position (plus its exact option contract or SYMBOL-I future) and the
+# main indices. Tier 1 symbols are never evicted. Everything else is tier 2 and is evicted
+# least-recently-used when room is needed. Plan limit is 600 symbols; we stop at _TD_CAP.
+_TD_CAP = 590
+_TD_TIER2_IDLE_S = 15 * 60          # a tier-2 symbol asked for within 15 min is not evicted
+_TD_STALE_S = 60                    # during market hours an older TrueData tick counts as missing
+_TD_ALWAYS = ["NIFTY 50", "NIFTY BANK", "NIFTY FIN SERVICE", "NIFTY MID SELECT"]
+_td_tier1 = set()
+_td_last_access = {}
+_td_pending = set()
+_td_pending_lock = _td_threading.Lock()
+_td_tier1_last = 0
+
+def _td_strike_str(strike):
+    f = float(strike)
+    return str(int(f)) if f.is_integer() else ("%s" % f)
+
+def _td_parse_expiry(expiry):
+    """Returns a date from 'YYYY-MM-DD[...]', 'DD-MM-YYYY', 'DD/MM/YYYY' or epoch ms; else None."""
+    from datetime import datetime as _dt, date as _date
+    if expiry is None:
+        return None
+    if isinstance(expiry, _date):
+        return expiry if not isinstance(expiry, _dt) else expiry.date()
+    s = str(expiry).strip()
+    try:
+        if len(s) >= 10 and s[4] == '-' and s[7] == '-':
+            return _dt.strptime(s[:10], "%Y-%m-%d").date()
+        if len(s) == 10 and s[2] in '-/' and s[5] in '-/':
+            return _dt.strptime(s.replace('/', '-'), "%d-%m-%Y").date()
+        if s.isdigit() and len(s) >= 10:
+            v = int(s)
+            return _dt.utcfromtimestamp(v / 1000 if len(s) > 10 else v).date()
+    except Exception:
+        return None
+    return None
+
+def _td_option_symbol(underlying, expiry, strike, call_put):
+    """TrueData option symbol: UNDERLYING + YYMMDD + STRIKE + CE/PE, e.g. NIFTY26091523800PE."""
+    d = _td_parse_expiry(expiry)
+    cp = str(call_put or '').strip().upper()
+    t = 'PE' if cp.startswith('P') else ('CE' if cp.startswith('C') else '')
+    try:
+        k = float(strike)
+    except Exception:
+        return None
+    if not d or not t or not underlying or k <= 0:
+        return None
+    return f"{str(underlying).strip().upper()}{d.strftime('%y%m%d')}{_td_strike_str(k)}{t}"
+
+def _td_market_open():
+    import datetime as _d
+    now = _d.datetime.utcnow() + _d.timedelta(hours=5, minutes=30)
+    if now.weekday() >= 5:
+        return False
+    return _d.time(9, 15) <= now.time() <= _d.time(15, 30)
+
+def _td_evict(n, force=False):
+    """Unsubscribe up to n tier-2 symbols, least recently asked-for first. Never tier 1.
+    force=True (only used to make room for tier 1) also takes tier-2 symbols used recently."""
+    import time as _t
+    global _td_subscribed_symbols
+    if n <= 0 or not _td_obj:
+        return 0
+    now = _t.time()
+    protected = _td_tier1 | set(_TD_ALWAYS)
+    candidates = [s for s in _td_subscribed_symbols
+                  if s not in protected and (force or now - _td_last_access.get(s, 0) > _TD_TIER2_IDLE_S)]
+    candidates.sort(key=lambda s: _td_last_access.get(s, 0))
+    victims = candidates[:n]
+    if not victims:
+        return 0
+    try:
+        _td_obj.stop_live_data(victims)
+    except Exception as e:
+        print(f"[TrueData] Evict error ({len(victims)} symbols): {e}")
+        return 0
+    _td_subscribed_symbols.difference_update(victims)
+    with _td_lock:
+        for s in victims:
+            _td_prices.pop(s, None)
+    print(f"[TrueData] Evicted {len(victims)} idle tier-2 symbols (now {len(_td_subscribed_symbols)})")
+    return len(victims)
+
+def _td_request(symbols):
+    """Non-blocking: remember symbols a caller wanted but TrueData does not carry yet."""
+    with _td_pending_lock:
+        for s in symbols:
+            if s and s not in _td_subscribed_symbols:
+                _td_pending.add(s)
+
+def _td_refresh_tier1():
+    """Rebuild tier 1 from live calls/positions and make sure every one of them is subscribed."""
+    global _td_tier1
+    import psycopg2
+    wanted = set(_TD_ALWAYS)
+    conn = psycopg2.connect("postgresql://alphamarket_user:AlphaMkt2026@localhost:5432/alphamarket_db")
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT DISTINCT c.stock_name FROM calls c JOIN strategies s ON s.id = c.strategy_id
+            WHERE c.status = 'Active' AND (c.is_published = true OR s.horizon = 'Intraday')""")
+        for (sym,) in cur.fetchall():
+            if sym and ' ' not in sym.strip():
+                wanted.add(sym.strip().upper())
+        cur.execute("""
+            SELECT p.symbol, COALESCE(p.segment,''), p.strike_price, COALESCE(p.call_put,''), p.expiry
+            FROM positions p JOIN strategies s ON s.id = p.strategy_id
+            WHERE p.status = 'Active' AND (p.is_published = true OR s.horizon = 'Intraday')""")
+        for sym, seg, strike, cp, expiry in cur.fetchall():
+            if not sym:
+                continue
+            u = sym.strip().upper()
+            wanted.add(_TD_INDEX_NAMES.get(u, u))                 # the underlying
+            if seg in ('Commodity', 'CommodityFuture'):
+                continue                                          # MCX is not in the TrueData plan
+            if seg == 'Future':
+                wanted.add(u + '-I')
+            elif cp and strike:
+                o = _td_option_symbol(u, expiry, strike, cp)
+                if o:
+                    wanted.add(o)
+    finally:
+        conn.close()
+    _td_tier1 = wanted
+    missing = [s for s in wanted if s not in _td_subscribed_symbols]
+    if missing:
+        _td_subscribe_new(missing)
+    return len(wanted), len(missing)
+
+def _td_background_tick():
+    """Called from the SL refresh thread every 5 s: tier 1 every 60 s, pending tier-2 requests in small batches."""
+    import time as _t
+    global _td_tier1_last
+    if not _td_connected:
+        return
+    if _t.time() - _td_tier1_last >= 60:
+        _td_tier1_last = _t.time()
+        try:
+            n, added = _td_refresh_tier1()
+            if added:
+                print(f"[TrueData] Tier 1: {n} symbols, {added} newly subscribed (total {len(_td_subscribed_symbols)})")
+        except Exception as e:
+            print(f"[TrueData] Tier 1 refresh error: {e}")
+    with _td_pending_lock:
+        batch = [s for s in list(_td_pending) if s not in _td_subscribed_symbols][:40]
+        _td_pending.clear()
+    if batch:
+        _td_subscribe_new(batch)
+
+
+@app.get("/api/shared/quotes", include_in_schema=False)
+async def shared_quotes(request: Request, items: str = "", order: str = "truedata,kite"):
+    """TrueData-first quotes. items = comma-separated 'TDSYMBOL' or 'TDSYMBOL|KITEKEY'
+    (KITEKEY like NSE:SBIN or NFO:KEI26SEPFUT). Returns quotes keyed by the TDSYMBOL asked for."""
+    import time as _t
+    if request.headers.get("x-shared-secret", "") != "alphamarket-shared-2026":
+        raise HTTPException(403, "Unauthorized")
+    pairs = []
+    for raw in [x.strip() for x in items.split(",") if x.strip()]:
+        td, _, kk = raw.partition("|")
+        pairs.append((td.strip(), kk.strip()))
+    quotes, missing = {}, []
+    open_now = _td_market_open()
+    now = _t.time()
+    todo = list(pairs)
+    for src in [s.strip().lower() for s in order.split(",") if s.strip()]:
+        if not todo:
+            break
+        left = []
+        # No _td_connected gate: after the AlphaFeed cutover this process owns no
+        # socket, and prices come from the store. _td_get_quotes returns {} when the
+        # store is empty and the loop falls through to the next rung.
+        if src == "truedata":
+            # one mget for every symbol, off the event loop.
+            # Was: one store call per symbol, so N blocking Redis round trips
+            # inside async def on a single-worker service — a stall there
+            # blocked /api/health and the watchdog restarted us. The store
+            # helper already batches whatever list it is handed; the caller
+            # just never used that. Per-symbol behaviour below is unchanged.
+            import asyncio as _asyncio
+            _names = [_TD_INDEX_NAMES.get(_t0.upper(), _t0) for _t0, _ in todo]
+            try:
+                _batch = await _asyncio.get_running_loop().run_in_executor(
+                    None, _td_get_quotes, _names)
+            except Exception:
+                _batch = {}
+            for (td, kk), name in zip(todo, _names):
+                d = _batch.get(name)
+                if d and d.get("ltp", 0) > 0 and (not open_now or now - d.get("timestamp", 0) <= _TD_STALE_S):
+                    # widened 29 Sep: pass through the fields we already hold, so a caller
+                    # does not have to show a live price against a zero change and zero volume.
+                    _q = {"price": d["ltp"], "source": "truedata",
+                          "age_s": round(now - d.get("timestamp", now), 1)}
+                    for _k in ("open", "high", "low", "close", "volume", "prev_close"):
+                        _v = d.get(_k)
+                        if _v:
+                            _q["close" if _k == "prev_close" else _k] = _v
+                    quotes[td] = _q
+                else:
+                    left.append((td, kk))
+                    if not d:
+                        _td_request([name])
+        elif src == "kite":
+            keys = [kk for _, kk in todo if kk and " " not in kk and "&" not in kk]
+            got = {}
+            if keys:
+                try:
+                    from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
+                    if _is_kite_connected():
+                        got = await _fetch_kite_quotes(keys)
+                except Exception:
+                    got = {}
+            for td, kk in todo:
+                v = got.get(kk) if kk else None
+                if v and v.get("last_price", 0) > 0:
+                    _q = {"price": v["last_price"], "source": "kite"}
+                    _o = v.get("ohlc") or {}
+                    for _k in ("open", "high", "low", "close"):
+                        if _o.get(_k):
+                            _q[_k] = _o[_k]
+                    for _vk in ("volume", "volume_traded", "last_quantity"):
+                        if v.get(_vk):
+                            _q.setdefault("volume", v[_vk])
+                            break
+                    quotes[td] = _q
+                else:
+                    left.append((td, kk))
+        else:
+            left = todo
+        todo = left
+    missing = [td for td, _ in todo]
+    return {"quotes": quotes, "missing": missing or None, "order": order, "market_open": open_now}
+# ── Expiry settlement (Phase C, 22 Sep 2026) ──
+# An expired F&O position closes at its settlement value, never at its entry price:
+#   option CE = max(0, underlying close - strike), PE = max(0, strike - underlying close); future = underlying close.
+# The underlying close on expiry day comes from the live TrueData feed (a tick on expiry day at/after 15:25 IST)
+# or TrueData 1-minute history. No close found -> the position is left Active and flagged.
+_td_hist_obj = None
+_exp_flagged = set()
+
+_KITE_UNDERLYING_KEY = {
+    "NIFTY": "NSE:NIFTY 50", "BANKNIFTY": "NSE:NIFTY BANK",
+    "FINNIFTY": "NSE:NIFTY FIN SERVICE", "MIDCPNIFTY": "NSE:NIFTY MID SELECT",
+    "SENSEX": "BSE:SENSEX", "BANKEX": "BSE:BANKEX",
+}
+
+def _kite_underlying_ltp(underlying):
+    """Last traded price of an underlying from Kite, for expiry-day settlement only.
+    Once the session has closed, last_price IS the closing price. Returns None on any
+    failure so the caller falls through to the history lookup."""
+    import json as _j, urllib.request as _r, urllib.parse as _up, psycopg2 as _p
+    s = str(underlying or "").strip().upper()
+    if not s:
+        return None
+    key = _KITE_UNDERLYING_KEY.get(s, "NSE:" + s)
+    try:
+        cn = _p.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost:5432/dyor_db")
+        cr = cn.cursor()
+        cr.execute("SELECT value FROM api_settings WHERE key='kite_token'")
+        row = cr.fetchone()
+        cr.close()
+        cn.close()
+        if not row:
+            return None
+        tok = _j.loads(row[0]).get("access_token")
+        if not tok:
+            return None
+        url = "https://api.kite.trade/quote?i=" + _up.quote(key, safe=":")
+        rq = _r.Request(url, headers={"Authorization": "token dr7ngktrvoiu1fms:" + tok})
+        d = _j.loads(_r.urlopen(rq, timeout=8).read().decode())
+        if d.get("status") != "success":
+            return None
+        q = (d.get("data") or {}).get(key) or {}
+        lp = q.get("last_price") or 0
+        return float(lp) if float(lp) > 0 else None
+    except Exception as _e:
+        print("[SL Engine] Kite underlying lookup failed for %s: %s" % (underlying, _e))
+        return None
+
+def _underlying_close_on(u, expiry_date):
+    """Official closing price of the underlying on expiry day, which is what NSE settles on.
+    Same-day expiry: 1) live TrueData tick at/after 15:25, 2) Kite last_price.
+    Any expiry date: 3) TrueData EOD bar, 4) last 1-minute bar of the day."""
+    import datetime as _d
+    name = _TD_INDEX_NAMES.get(u.upper(), u.upper())
+    global _td_hist_obj
+    # On the expiry day itself the live feed is the only authoritative source we
+    # actually have, and reading it is free. Check it before the history API, which
+    # is slow, blocking, and currently broken. Past dates fall through as before.
+    if expiry_date == (_d.datetime.utcnow() + _d.timedelta(hours=5, minutes=30)).date():
+        with _td_lock:
+            _live_now = dict(_td_prices.get(name) or {})
+        if _live_now.get("ltp", 0) > 0 and _live_now.get("timestamp"):
+            _ist_now = _d.datetime.utcfromtimestamp(_live_now["timestamp"]) + _d.timedelta(hours=5, minutes=30)
+            if _ist_now.date() == expiry_date and _ist_now.time() >= _d.time(15, 25):
+                return float(_live_now["ltp"]), "live tick " + _ist_now.strftime("%H:%M:%S")
+        # TrueData carries no BSE index -- SENSEX returns nothing even after an explicit
+        # auto-subscribe -- and the plan sits at its 590-symbol cap, so there is no slot
+        # to add one. Ask Kite instead. Deliberately inside the same-day branch: Kite's
+        # last_price is TODAY's price, and using it for a past expiry would settle at a
+        # confidently wrong number.
+        _kq = _kite_underlying_ltp(u)
+        if _kq and _kq > 0:
+            return float(_kq), "kite quote (expiry-day close)"
+    try:
+        if _td_hist_obj is None:
+            from truedata import TD_hist
+            import logging as _lg
+            _td_hist_obj = TD_hist(_TD_USERNAME, _TD_PASSWORD, log_level=_lg.WARNING)
+        df = _td_hist_obj.get_historic_data(name, start_time=_d.datetime.combine(expiry_date, _d.time(9, 15)),
+                                            end_time=_d.datetime.combine(expiry_date, _d.time(15, 31)), bar_size="EOD")
+        if df is not None and len(df) and float(df.iloc[-1]["close"]) > 0:
+            return float(df.iloc[-1]["close"]), "EOD close " + str(df.iloc[-1]["timestamp"])[:10]
+        df = _td_hist_obj.get_historic_data(name, start_time=_d.datetime.combine(expiry_date, _d.time(9, 15)),
+                                            end_time=_d.datetime.combine(expiry_date, _d.time(15, 31)), bar_size="1 min")
+        if df is not None and len(df):
+            return float(df.iloc[-1]["close"]), "last 1-min bar " + str(df.iloc[-1]["timestamp"])
+    except Exception as e:
+        print(f"[SL Engine] Expiry history lookup failed for {name} {expiry_date}: {e}")
+    with _td_lock:
+        live = dict(_td_prices.get(name) or {})
+    if live.get("ltp", 0) > 0 and live.get("timestamp"):
+        ist = _d.datetime.utcfromtimestamp(live["timestamp"]) + _d.timedelta(hours=5, minutes=30)
+        if ist.date() == expiry_date and ist.time() >= _d.time(15, 25):
+            return float(live["ltp"]), "live tick " + ist.strftime("%H:%M:%S")
+    return None, None
+
+def _expiry_settlement(sym, strike, call_put, expiry, segment):
+    if not sym or segment in ('Commodity', 'CommodityFuture'):
+        return None, "commodity: not in the TrueData plan"
+    d = _td_parse_expiry(expiry)
+    if not d:
+        return None, "unreadable expiry"
+    close, how = _underlying_close_on(sym, d)
+    if close is None:
+        return None, "no expiry-day close"
+    cp = str(call_put or '').upper()
+    try:
+        k = float(strike or 0)
+    except Exception:
+        k = 0
+    if cp and k > 0:
+        v = max(0.0, close - k) if cp.startswith('C') else max(0.0, k - close)
+        return round(v, 2), f"{how}, underlying {close}"
+    if segment == 'Future' or not cp:
+        return round(close, 2), f"{how} (future settles at underlying close)"
+    return None, "cannot tell option from future"
+
+# ═══ End slot manager ═══
+
 
 
 # ═══ Tick-by-Tick SL/TP Monitoring Engine ═══
@@ -495,14 +908,20 @@ def _sl_refresh_watchlist():
             call_put = row[10] or ''
             is_option_by_data = has_strike and bool(call_put)
             # Exclude ALL Option/Index segment positions (even without strike — e.g. INDUSINDBK with strike=NULL)
-            if segment in ('Option', 'Index'):
-                continue
-            if is_option_by_data and segment not in ('Future', 'CommodityFuture', 'Commodity'):
-                continue  # Has strike+callPut = option, regardless of segment label
             if not sym:
                 continue
+            opt_sym = None
+            if is_option_by_data and segment not in ('Future', 'CommodityFuture', 'Commodity'):
+                # Phase B: options are watched on their own contract (premium ticks), e.g. NIFTY26092923800PE
+                opt_sym = _td_option_symbol(sym, row[11], strike, call_put)
+                if not opt_sym:
+                    continue
+            elif segment in ('Option', 'Index'):
+                continue  # option without usable strike/expiry: cannot be priced safely
             td_sym = sym
-            if segment in ('Future', 'CommodityFuture', 'Commodity'):
+            if opt_sym:
+                td_sym = opt_sym
+            elif segment in ('Future', 'CommodityFuture', 'Commodity'):
                 td_sym = sym + '-I'  # TrueData futures format
             entry = {
                 'id': row[0], 'source': 'positions', 'symbol': sym, 'td_symbol': td_sym,
@@ -534,7 +953,9 @@ def _sl_refresh_watchlist():
                 FROM positions p
                 WHERE p.status = 'Active' AND p.is_published = true
                   AND p.expiry IS NOT NULL AND p.expiry != ''
-                  AND p.expiry::date < CURRENT_DATE
+                  AND (p.expiry::date < CURRENT_DATE
+                       OR (p.expiry::date = CURRENT_DATE
+                           AND (now() AT TIME ZONE 'Asia/Kolkata')::time >= '15:31'))
             """)
             expired = _exp_cur.fetchall()
             _exp_conn.close()
@@ -544,16 +965,22 @@ def _sl_refresh_watchlist():
                 rec_id = row[7]
                 if pos_id in _sl_triggered_ids:
                     continue
+                settle, how = _expiry_settlement(sym, row[2], row[3], row[4], row[8] or '')
+                if settle is None:
+                    if pos_id not in _exp_flagged:
+                        _exp_flagged.add(pos_id)
+                        print(f"[PRICE-ALERT] EXPIRED {sym} {row[2]} {row[3]} expiry={row[4]} (ID: {pos_id}): {how}. Left ACTIVE; close manually at settlement.")
+                    continue
                 _sl_triggered_ids.add(pos_id)
-                print(f"[SL Engine] EXPIRED: {sym} {row[2]} {row[3]} expiry={row[4]} (ID: {pos_id})")
+                print(f"[SL Engine] EXPIRED: {sym} {row[2]} {row[3]} expiry={row[4]} settles at {settle} [{how}] (ID: {pos_id})")
                 entry = {
                     'id': pos_id, 'source': 'positions', 'symbol': sym,
                     'action': row[5] or 'Buy', 'entry': float(row[6] or 0),
                     'sl': 0, 'tp': 0, 'strategy_id': None, 'rec_id': rec_id,
                     'segment': row[8] or ''
                 }
-                # Close at 0 (expired worthless for buyers, full profit for sellers)
-                _td_threading.Thread(target=_fire_sl_close, args=(entry, 0, 'EXPIRED'), daemon=True).start()
+                # Close at the settlement value (0 only if it really expired out of the money)
+                _td_threading.Thread(target=_fire_sl_close, args=(entry, settle, 'EXPIRED'), daemon=True).start()
         except Exception as exp_err:
             print(f"[SL Engine] Expiry check error: {exp_err}")
 
@@ -617,10 +1044,10 @@ def _fire_sl_close(entry, ltp, trigger_type):
         
         if source == 'calls':
             url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
-            body = {"source": "calls", "exitPrice": ltp}
+            body = {"source": "calls", "exitPrice": ltp, "trigger": trigger_type}
         else:
             url = f"{_SL_NODE_URL}/api/admin/broker-calls/{call_id}/close"
-            body = {"source": "positions", "exitPrice": ltp}
+            body = {"source": "positions", "exitPrice": ltp, "trigger": trigger_type}
         
         # Get admin session cookie
         import psycopg2, hashlib, hmac, base64, urllib.parse
@@ -662,6 +1089,61 @@ def _sl_watchlist_refresh_loop():
             _sl_refresh_watchlist()
         except Exception:
             pass
+        # Post-cutover this process owns no socket, so trade_callback never fires and
+        # _check_sl_tp_on_tick (main.py:369) is never reached. Sweep the AlphaFeed store
+        # instead and evaluate exactly what a tick would have. One batched read; this
+        # thread is not the event loop, so a slow Redis cannot block the service.
+        try:
+            with _sl_watchlist_lock:
+                _sw_syms = list(_sl_watchlist.keys())
+            _sw_now = _sl_time.time()
+            _sw_priced = 0
+            _sw_fresh = 0
+            _sw_suppressed = 0
+            # Gate the trigger, not the sweep: the heartbeat must keep
+            # reporting so a gated engine never looks like a dead one.
+            # Fail OPEN -- an inert engine is the worse failure (01 Oct).
+            # LIMITATION: _td_market_open() has no holiday calendar, so
+            # this closes weekends and off-hours only, not holidays.
+            try:
+                import os as _sl_os
+                _sw_open = (_td_market_open()
+                            or _sl_os.getenv("SL_FORCE_EVAL") == "1")
+            except Exception as _sw_gate_err:
+                print("[SL Engine] market-hours check failed, "
+                      "evaluating anyway: %s" % (_sw_gate_err,))
+                _sw_open = True
+            if _sw_syms:
+                _sw_q = _td_get_quotes(_sw_syms + [_s + "-I" for _s in _sw_syms])
+                for _sk, _sd in _sw_q.items():
+                    try:
+                        _sp = float(_sd.get("ltp") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if _sp <= 0:
+                        continue
+                    _sw_priced += 1
+                    # Never trigger on a stale price: the store keeps 300s, we accept 30s.
+                    if _sw_now - float(_sd.get("timestamp") or 0) > 30:
+                        continue
+                    _sw_fresh += 1
+                    if _sw_open:
+                        _check_sl_tp_on_tick(_sk[:-2] if _sk.endswith("-I") else _sk, _sp)
+                    else:
+                        _sw_suppressed += 1
+            # Heartbeat. Without it, an inert engine looks exactly like a working one.
+            if _sw_now - getattr(_sl_watchlist_refresh_loop, "_last_hb", 0) >= 60:
+                _sl_watchlist_refresh_loop._last_hb = _sw_now
+                print(f"[SL Engine] store sweep: {len(_sw_syms)} watched, "
+                      f"{_sw_priced} priced, {_sw_fresh} fresh"
+                      + (f", {_sw_suppressed} suppressed (market closed)"
+                         if _sw_suppressed else ""))
+        except Exception as _sw_err:
+            print(f"[SL Engine] store sweep error: {_sw_err}")
+        try:
+            _td_background_tick()
+        except Exception as _bt:
+            print(f"[TrueData] background tick error: {_bt}")
         _sl_time.sleep(_SL_REFRESH_INTERVAL)
 
 # ═══ End SL/TP Engine ═══
@@ -710,6 +1192,9 @@ async def startup():
     global db_pool, redis_client
     try:
         db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        # Self-healing Groww token. See _groww_token_keeper.
+        import asyncio as _aio_groww
+        _aio_groww.create_task(_groww_token_keeper())
         redis_client = await aioredis.from_url(REDIS_URL, decode_responses=True)
         await init_db()
         await ensure_admin()
@@ -718,9 +1203,13 @@ async def startup():
         asyncio.create_task(_precompute_loop())
         # Start TrueData WebSocket feed in background thread
         try:
-            _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
-            _td_thread.start()
-            print("[TrueData] Background thread started")
+            import os as _tdos
+            if _tdos.getenv("DYOR_TRUEDATA_SOCKET", "1") != "1":
+                print("[TrueData] socket disabled by DYOR_TRUEDATA_SOCKET=0; prices come from the AlphaFeed store")
+            else:
+                _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
+                _td_thread.start()
+                print("[TrueData] Background thread started")
             # Start SL/TP watchlist refresh loop
             _sl_thread = _td_threading.Thread(target=_sl_watchlist_refresh_loop, daemon=True)
             _sl_thread.start()
@@ -836,7 +1325,7 @@ async def shared_kite_quotes(request: Request, symbols: str = ""):
                 missing_syms.remove(sym)
         # Auto-subscribe any symbols not yet in TrueData
         if missing_syms:
-            _td_subscribe_new(missing_syms)
+            _td_request(missing_syms)
     return {"quotes": quotes, "source": "kite+truedata", "connected": True, "count": len(quotes), "sources": source_stats, "missing": missing_syms if missing_syms else None}
 
 @app.get("/api/shared/kite-quotes-raw", include_in_schema=False)
@@ -856,8 +1345,20 @@ async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
         quotes = {}
         for key, val in data.items():
             ltp = val.get("last_price", 0)
+            # mode="full" already asks Kite for the book; passing it through
+            # costs nothing and is what jobbing needs — a bid-ask screen built
+            # on the cash-futures basis shows opportunities that do not exist.
+            _d = val.get("depth") or {}
+            _b = (_d.get("buy") or [{}])
+            _s = (_d.get("sell") or [{}])
             quotes[key] = {"price": ltp, "ltp": ltp, "ohlc": val.get("ohlc"),
                            "volume": val.get("volume") or val.get("volume_traded") or 0,
+                           "oi": val.get("oi"),
+                           "bid": _b[0].get("price") if _b else None,
+                           "bid_qty": _b[0].get("quantity") if _b else None,
+                           "ask": _s[0].get("price") if _s else None,
+                           "ask_qty": _s[0].get("quantity") if _s else None,
+                           "depth": val.get("depth"),
                            "source": "kite"}
         # ── TrueData fallback (15 Jul): when Kite is rate-limited/down, raw callers
         # (Data Services, scanner overlay) got {} — same Kite->TrueData ladder as
@@ -902,7 +1403,7 @@ async def shared_truedata_quotes(request: Request, symbols: str = ""):
     raw_syms = [s.strip() for s in symbols.split(",") if s.strip()]
     # Auto-subscribe if needed
     if _td_connected:
-        _td_subscribe_new(raw_syms)
+        _td_request(raw_syms)
     quotes = _td_get_quotes(raw_syms)
     return {"quotes": quotes, "source": "truedata", "connected": _td_connected, "count": len(quotes)}
 
@@ -935,7 +1436,7 @@ async def sl_engine_status(request: Request):
         "watchlist_entries": total_entries,
         "triggered_count": len(_sl_triggered_ids),
         "triggered_ids": list(_sl_triggered_ids)[:20],
-        "symbols": symbols[:50],
+        "symbols": symbols,  # never cap: the standby poller prices exactly this list
         "refresh_interval": _SL_REFRESH_INTERVAL,
         "td_connected": _td_connected,
         "td_cached_prices": len(_td_prices)
@@ -1663,33 +2164,125 @@ async def get_admin_user(user=Depends(get_current_user)):
     return user
 
 # ── Groww Token Management ────────────────────────────────────────────────────
-async def get_groww_token():
-    # 1. Check DYOR's own database first
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT value FROM api_settings WHERE key='groww_token'")
-        if row and row["value"]:
-            return row["value"]
-    # 2. Auto-sync from testalpha's alphaforge database
+GROWW_ENV_FILE = "/root/groww_totp.env"
+
+
+def _groww_env():
+    """api_key + totp_secret from one root-owned file. One copy, one place."""
+    env = {}
+    with open(GROWW_ENV_FILE) as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    return env
+
+
+def _groww_token_exp(tok):
+    """Epoch expiry from a Groww JWT, or 0 if unreadable."""
+    import base64 as _b64, json as _j
     try:
-        import asyncpg as _apg
-        _af_conn = await _apg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost:5432/alphaforge")
+        part = tok.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        return int(_j.loads(_b64.urlsafe_b64decode(part)).get("exp") or 0)
+    except Exception:
+        return 0
+
+
+def _groww_token_roles(tok):
+    """Roles from the nested sub claim. Groww buries them in a JSON string."""
+    import base64 as _b64, json as _j
+    try:
+        part = tok.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        claims = _j.loads(_b64.urlsafe_b64decode(part))
+        return _j.loads(claims.get("sub") or "{}").get("role", "")
+    except Exception:
+        return ""
+
+
+def _groww_mint_sync():
+    """Mint via TOTP. Blocking -- callers must use an executor. Raises on error."""
+    import pyotp
+    from growwapi import GrowwAPI
+    env = _groww_env()
+    return GrowwAPI.get_access_token(
+        api_key=env["GROWW_API_KEY"],
+        totp=pyotp.TOTP(env["GROWW_TOTP_SECRET"]).now(),
+    )
+
+
+_groww_mint_lock = None
+
+
+async def _groww_mint_and_store():
+    """Mint a fresh token, store it, return it. None on failure."""
+    import asyncio as _aio, time as _t
+    global _groww_mint_lock
+    if _groww_mint_lock is None:
+        _groww_mint_lock = _aio.Lock()
+    async with _groww_mint_lock:
+        # Someone may have minted while we waited for the lock.
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM api_settings WHERE key='groww_token'")
+        if row and row["value"] and _groww_token_exp(row["value"]) - 120 > _t.time():
+            return row["value"]
         try:
-            _af_row = await _af_conn.fetchrow("SELECT value FROM api_settings WHERE key='groww_token'")
-            if _af_row and _af_row["value"]:
-                # Cache it in DYOR's own DB for future use
-                async with db_pool.acquire() as conn:
-                    await conn.execute(
-                        "INSERT INTO api_settings (key, value, updated_at) VALUES ('groww_token', $1, NOW()) "
-                        "ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()",
-                        _af_row["value"]
-                    )
-                return _af_row["value"]
-        finally:
-            await _af_conn.close()
-    except Exception as _e:
-        print(f"Auto-sync groww token from alphaforge failed: {_e}")
-    # 3. Fallback to env var
-    return os.getenv("GROWW_API_KEY", "")
+            tok = await _aio.get_running_loop().run_in_executor(
+                None, _groww_mint_sync)
+        except ImportError as err:
+            print("[Groww] MINT FAILED: growwapi/pyotp not importable in this "
+                  "venv (%s)" % (err,), flush=True)
+            return None
+        except Exception as err:
+            print("[Groww] MINT FAILED: %s" % (err,), flush=True)
+            return None
+        if not tok:
+            print("[Groww] MINT FAILED: empty token returned", flush=True)
+            return None
+        await set_groww_token(tok)
+        print("[Groww] token minted via TOTP; exp=%s roles=%s"
+              % (_groww_token_exp(tok), _groww_token_roles(tok) or "NONE"),
+              flush=True)
+        if "live_data-basic" not in (_groww_token_roles(tok) or ""):
+            print("[Groww] WARNING: minted token lacks live_data-basic -- "
+                  "market data will fail. Check the key is TOTP type.",
+                  flush=True)
+        return tok
+
+
+async def get_groww_token():
+    """A valid Groww token, or None. Never an expired one, never an api_key."""
+    import time as _t
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value FROM api_settings WHERE key='groww_token'")
+    tok = row["value"] if row else None
+    if tok:
+        if _groww_token_exp(tok) - 120 > _t.time():
+            return tok
+        print("[Groww] stored token expired (exp=%s); re-minting"
+              % (_groww_token_exp(tok),), flush=True)
+    else:
+        print("[Groww] no stored token; minting", flush=True)
+    return await _groww_mint_and_store()
+
+
+async def _groww_token_keeper():
+    """Keep the stored token fresh. It expires 06:00 IST daily and nothing
+    used to re-mint it, so every consumer ran on a dead credential from 06:00
+    until a human noticed."""
+    import asyncio as _aio
+    await _aio.sleep(10)
+    while True:
+        try:
+            if not await get_groww_token():
+                print("[Groww] keeper: no usable token", flush=True)
+        except Exception as err:
+            print("[Groww] keeper error: %s" % (err,), flush=True)
+        await _aio.sleep(300)
 
 async def set_groww_token(token: str):
     async with db_pool.acquire() as conn:
@@ -8546,8 +9139,9 @@ async def _load_mcx_instruments():
     import urllib.request, csv, io
     try:
         url = "https://api.kite.trade/instruments"
-        resp = urllib.request.urlopen(url, timeout=30)
-        data = resp.read().decode()
+        import asyncio as _aio
+        data = await _aio.get_running_loop().run_in_executor(
+            None, lambda: urllib.request.urlopen(url, timeout=30).read().decode())
         reader = csv.DictReader(io.StringIO(data))
         _mcx_instruments = [r for r in reader if r.get("exchange") == "MCX"]
         _mcx_cache_time = _t.time()
@@ -8610,9 +9204,10 @@ async def bse_quote(symbol: str):
         if not row: raise HTTPException(503, "Kite token not available")
         tk = _json.loads(row[0]).get("access_token")
         url = f"https://api.kite.trade/quote?i=BSE:{sym}"
-        rq = _req.Request(url, headers={"Authorization": f"token wmwpq34kw5th0y2l:{tk}"})
-        rsp = _req.urlopen(rq, timeout=10)
-        data = _json.loads(rsp.read().decode())
+        rq = _req.Request(url, headers={"Authorization": f"token dr7ngktrvoiu1fms:{tk}"})
+        import asyncio as _aio
+        data = _json.loads(await _aio.get_running_loop().run_in_executor(
+            None, lambda: _req.urlopen(rq, timeout=10).read().decode()))
         if data.get("status") == "success":
             q = data["data"].get(f"BSE:{sym}", {})
             return {"symbol": sym, "exchange": "BSE", "ltp": q.get("last_price", 0),
@@ -8642,9 +9237,10 @@ async def bse_ltp(symbols: str = ""):
         tk = _json.loads(row[0]).get("access_token")
         params = "&".join([f"i=BSE:{s}" for s in symbol_list])
         url = f"https://api.kite.trade/quote/ltp?{params}"
-        rq = _req.Request(url, headers={"Authorization": f"token wmwpq34kw5th0y2l:{tk}"})
-        rsp = _req.urlopen(rq, timeout=10)
-        data = _json.loads(rsp.read().decode())
+        rq = _req.Request(url, headers={"Authorization": f"token dr7ngktrvoiu1fms:{tk}"})
+        import asyncio as _aio
+        data = _json.loads(await _aio.get_running_loop().run_in_executor(
+            None, lambda: _req.urlopen(rq, timeout=10).read().decode()))
         result = {}
         if data.get("status") == "success":
             for k, v in data["data"].items():

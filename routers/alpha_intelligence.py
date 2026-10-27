@@ -16,6 +16,7 @@ from confluence_engine import compute_confluence, compute_confluence_bulk, CONFL
 from flow_signals import compute_smart_money_score, compute_smart_money_bulk, FLOW_SIGNALS_INFO
 
 logger = logging.getLogger("alpha_intelligence")
+from live_overlay import live as _live  # current prices on served lists
 
 router = APIRouter(
     prefix="/api/alpha-intel",
@@ -72,7 +73,7 @@ async def alphascore_top(request: Request, n: int = Query(20, ge=1, le=100),
     if rc:
         cached = await rc.get(cache_key)
         if cached:
-            return json.loads(cached)
+            return await _live(json.loads(cached))
 
     universe = await _get_universe(request)
     results = compute_alphascore_bulk(universe)
@@ -85,7 +86,7 @@ async def alphascore_top(request: Request, n: int = Query(20, ge=1, le=100),
     response = {"count": min(n, len(results)), "stocks": results[:n]}
     if rc:
         await rc.setex(cache_key, CACHE_TTL, json.dumps(response))
-    return response
+    return await _live(response)
 
 
 @router.get("/alphascore/bulk")
@@ -128,13 +129,13 @@ async def confluence_top(request: Request, n: int = Query(20, ge=1, le=100)):
     if rc:
         cached = await rc.get(f"confluence_top_{n}")
         if cached:
-            return json.loads(cached)
+            return await _live(json.loads(cached))
     universe = await _get_universe(request)
     results = compute_confluence_bulk(universe)
     response = {"count": min(n, len(results)), "stocks": results[:n]}
     if rc:
         await rc.setex(f"confluence_top_{n}", CACHE_TTL, json.dumps(response))
-    return response
+    return await _live(response)
 
 
 @router.get("/confluence/bulk")
@@ -177,13 +178,13 @@ async def smart_money_top(request: Request, n: int = Query(20, ge=1, le=100)):
     if rc:
         cached = await rc.get(f"smart_money_top_{n}")
         if cached:
-            return json.loads(cached)
+            return await _live(json.loads(cached))
     universe = await _get_universe(request)
     results = compute_smart_money_bulk(universe)
     response = {"count": min(n, len(results)), "stocks": results[:n]}
     if rc:
         await rc.setex(f"smart_money_top_{n}", CACHE_TTL, json.dumps(response))
-    return response
+    return await _live(response)
 
 
 @router.get("/smart-money/bulk")
@@ -223,11 +224,11 @@ async def all_info():
 async def dashboard(request: Request, n: int = Query(10, ge=1, le=50)):
     """Alpha Intelligence Dashboard — top N stocks across all 3 engines in a single call. Ideal for overview screens and combined analysis."""
     universe = await _get_universe(request)
-    return {
+    return await _live({
         "alphascore_top": compute_alphascore_bulk(universe)[:n],
         "confluence_top": compute_confluence_bulk(universe)[:n],
         "smart_money_top": compute_smart_money_bulk(universe)[:n],
-    }
+    })
 
 
 @router.get("/{symbol}")

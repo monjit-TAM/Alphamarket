@@ -77,7 +77,110 @@ async def get_pool():
 # ═══════════════════════════════════════════════════════════════════════════════
 # HELPER: FETCH LIVE DATA (reuse existing Kite/Groww infrastructure)
 # ═══════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIVE DATA FOR THE STRATEGIES (Oct 2026)
+# The TrueData memory this file used to read first is empty since prices moved to
+# AlphaFeed, and the data-service fallback was a blocking call back into this same
+# single-worker server, so index prices never arrived and no strategy fired after
+# 12 Oct. Index spot and F&O prices now come from the Kite session this server
+# already holds; contracts and expiries come from instrument_master (NSE expiries
+# are on Tuesdays now, so the old last-Thursday arithmetic named a wrong contract).
+# ═══════════════════════════════════════════════════════════════════════════════
+_KITE_INDEX = {"NIFTY": "NSE:NIFTY 50", "BANKNIFTY": "NSE:NIFTY BANK", "FINNIFTY": "NSE:NIFTY FIN SERVICE"}
+_last_fetch = {}
+
+
+async def _fno_rows(sql, *args):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        return await conn.fetch(sql, *args)
+
+
+def _expiry_cutoff():
+    now = datetime.now(IST)
+    return now.date() if now.time() <= dtime(15, 30) else now.date() + timedelta(days=1)
+
+
+async def _monthly_future(index):
+    """(expiry date, Kite tradingsymbol) of the nearest live index future."""
+    try:
+        rows = await _fno_rows(
+            "SELECT tradingsymbol, expiry::date AS expiry FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+            "AND instrument_type='FUT' AND expiry::date >= $2 ORDER BY expiry::date LIMIT 1", index, _expiry_cutoff())
+        if rows:
+            return rows[0]["expiry"], rows[0]["tradingsymbol"]
+    except Exception as e:
+        logger.warning(f"Future lookup failed for {index}: {e}")
+    return get_current_monthly_expiry(), None
+
+
+async def _weekly_expiry(index):
+    """Nearest option expiry for this index (weekly for NIFTY, monthly where there is no weekly)."""
+    try:
+        rows = await _fno_rows(
+            "SELECT DISTINCT expiry::date AS expiry FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+            "AND instrument_type IN ('CE','PE') AND expiry::date >= $2 ORDER BY 1 LIMIT 1", index, _expiry_cutoff())
+        if rows:
+            return rows[0]["expiry"]
+    except Exception as e:
+        logger.warning(f"Option expiry lookup failed for {index}: {e}")
+    return get_current_weekly_expiry()
+
+
+async def _kite_ltp(key):
+    try:
+        from routers.arbitrage import _fetch_kite_quotes
+        return float(((await _fetch_kite_quotes([key])).get(key) or {}).get("last_price") or 0)
+    except Exception as e:
+        logger.warning(f"Kite LTP failed for {key}: {e}")
+        return 0.0
+
+
+async def _option_quote(index, expiry, strike, opt_type, expiry_label=None, since=None):
+    """Live premium of one index option, or None. Pass the expiry date, or the stored
+    label (26OCT) with the signal date to find the contract a stored signal refers to."""
+    try:
+        if expiry_label:
+            rows = await _fno_rows(
+                "SELECT tradingsymbol FROM instrument_master WHERE exchange='NFO' AND name=$1 AND instrument_type=$2 "
+                "AND strike::float8=$3 AND upper(to_char(expiry::date,'YYMON'))=$4 AND expiry::date >= $5 "
+                "ORDER BY expiry::date LIMIT 1", index, opt_type, float(strike), expiry_label.upper(), since)
+        else:
+            rows = await _fno_rows(
+                "SELECT tradingsymbol FROM instrument_master WHERE exchange='NFO' AND name=$1 AND instrument_type=$2 "
+                "AND strike::float8=$3 AND expiry::date=$4 LIMIT 1", index, opt_type, float(strike), expiry)
+        if not rows:
+            return None
+        p = await _kite_ltp("NFO:" + rows[0]["tradingsymbol"])
+        return p if p > 0 else None
+    except Exception as e:
+        logger.warning(f"Option quote failed for {index} {strike} {opt_type}: {e}")
+        return None
+
+
 async def fetch_index_data(symbol: str) -> dict:
+    """Index spot and the day's change: Kite quote first, then the older sources."""
+    ks = _KITE_INDEX.get(symbol)
+    if ks:
+        try:
+            from routers.arbitrage import _fetch_kite_quotes
+            q = (await _fetch_kite_quotes([ks], mode="quote")).get(ks) or {}
+            lp = float(q.get("last_price") or 0)
+            pc = float((q.get("ohlc") or {}).get("close") or 0)
+            if lp > 0:
+                ch = round(lp - pc, 2) if pc > 0 else 0
+                r = {"symbol": symbol, "price": lp, "change": ch,
+                     "change_pct": round(ch / pc * 100, 2) if pc > 0 else 0, "prev_close": pc, "source": "kite"}
+                _last_fetch[symbol] = r
+                return r
+        except Exception as e:
+            logger.warning(f"Kite index quote failed for {symbol}: {e}")
+    r = await _fetch_index_data_legacy(symbol)
+    _last_fetch[symbol] = r or {"error": "no price source answered"}
+    return r
+
+
+async def _fetch_index_data_legacy(symbol: str) -> dict:
     """Fetch live index data — TrueData (instant) → DS → Kite (last resort)"""
     import urllib.request, urllib.parse
     
@@ -105,7 +208,7 @@ async def fetch_index_data(symbol: str) -> dict:
         ds_sym = ds_map.get(symbol, symbol)
         url = f"http://127.0.0.1:5004/data/equity/quote/{ds_sym}"
         req = urllib.request.Request(url, headers={"X-API-Key": "alpha_data_internal_2026"})
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with await asyncio.to_thread(urllib.request.urlopen, req, timeout=5) as resp:
             data = json.loads(resp.read().decode())
         if data.get("price", 0) > 0:
             return {"symbol": symbol, "price": data["price"], "change_pct": data.get("change_pct", 0), "source": "data_service"}
@@ -165,7 +268,7 @@ def get_current_weekly_expiry():
             return row[0]
     except Exception as e:
         logger.warning(f"Expiry lookup failed: {e}")
-    days_to_thursday = (3 - today.weekday()) % 7
+    days_to_thursday = (1 - today.weekday()) % 7  # Tuesday
     if days_to_thursday == 0 and datetime.now(IST).time() > dtime(15, 30):
         days_to_thursday = 7
     return today + timedelta(days=days_to_thursday)
@@ -176,7 +279,7 @@ def get_last_thursday(year, month):
         month = 1
         year += 1
     last_day = date(year, month + 1, 1) - timedelta(days=1) if month < 12 else date(year, 12, 31)
-    offset = (last_day.weekday() - 3) % 7
+    offset = (last_day.weekday() - 1) % 7  # Tuesday
     return last_day - timedelta(days=offset)
 
 def get_current_monthly_expiry():
@@ -222,9 +325,9 @@ async def strategy_momentum_futures(index: str, config: dict) -> list:
     change_pct = spot_data.get("change_pct", 0)
     
     # Fetch futures data
-    expiry = get_current_monthly_expiry()
+    expiry, _fut_ts = await _monthly_future(index)
     expiry_str = format_expiry(expiry)
-    fut_symbol = f"{idx['fut_prefix']}{expiry_str}FUT"
+    fut_symbol = f"NFO:{_fut_ts}" if _fut_ts else f"{idx['fut_prefix']}{expiry_str}FUT"
     
     fut_data = await fetch_kite_ltp([fut_symbol.replace(" ", "%20")])
     fut_key = fut_symbol
@@ -310,7 +413,7 @@ async def strategy_options_directional(index: str, config: dict) -> list:
     lots = config.get("lots", 1)
 
     atm_strike = get_atm_strike(spot, idx["option_strike_gap"])
-    expiry = get_current_weekly_expiry()
+    expiry = await _weekly_expiry(index)
     expiry_str = format_expiry(expiry)
 
     if abs(change_pct) < min_move_pct:
@@ -322,6 +425,9 @@ async def strategy_options_directional(index: str, config: dict) -> list:
 
     # Estimate premium (rough: ~1.5% of spot for ATM weekly)
     est_premium = round(spot * 0.015, 1)
+    _live_prem = await _option_quote(index, expiry, atm_strike, opt_type)
+    if _live_prem:
+        est_premium = round(_live_prem, 2)
     sl_price = round(est_premium * (1 - sl_pct / 100), 2)
     target_price = round(est_premium * (1 + target_pct / 100), 2)
 
@@ -383,7 +489,7 @@ async def strategy_options_writing(index: str, config: dict) -> list:
 
     atm_strike = get_atm_strike(spot, idx["option_strike_gap"])
     gap = idx["option_strike_gap"]
-    expiry = get_current_weekly_expiry()
+    expiry = await _weekly_expiry(index)
     expiry_str = format_expiry(expiry)
 
     ce_strike = atm_strike + (otm_offset_strikes * gap)
@@ -395,7 +501,7 @@ async def strategy_options_writing(index: str, config: dict) -> list:
     try:
         import urllib.request as _ur
         chain_url = f"http://127.0.0.1:8001/api/nfo/option-chain/{index}?expiry={expiry.strftime('%Y-%m-%d')}"
-        _cr = _ur.urlopen(_ur.Request(chain_url, headers={"X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"}), timeout=3)
+        _cr = await asyncio.to_thread(_ur.urlopen, _ur.Request(chain_url, headers={"X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"}), timeout=3)
         _cd = json.loads(_cr.read().decode())
         for s in _cd.get("chain", []):
             if s.get("strike") == ce_strike and s.get("ce_ltp"):
@@ -404,6 +510,10 @@ async def strategy_options_writing(index: str, config: dict) -> list:
                 pe_premium = round(float(s["pe_ltp"]), 2)
     except:
         pass
+    if ce_premium <= 0:
+        ce_premium = await _option_quote(index, expiry, ce_strike, "CE") or 0
+    if pe_premium <= 0:
+        pe_premium = await _option_quote(index, expiry, pe_strike, "PE") or 0
     if ce_premium <= 0:
         ce_premium = round(spot * 0.004, 1)
     if pe_premium <= 0:
@@ -474,10 +584,10 @@ async def strategy_index_arbitrage(index: str, config: dict) -> list:
 
     spot = spot_data["price"]
     
-    expiry = get_current_monthly_expiry()
+    expiry, _fut_ts = await _monthly_future(index)
     expiry_str = format_expiry(expiry)
     days_to_expiry = max((expiry - date.today()).days, 1)
-    fut_symbol = f"{idx['fut_prefix']}{expiry_str}FUT"
+    fut_symbol = f"NFO:{_fut_ts}" if _fut_ts else f"{idx['fut_prefix']}{expiry_str}FUT"
 
     fut_data = await fetch_kite_ltp([fut_symbol.replace(" ", "%20")])
     fut_ltp = fut_data.get(fut_symbol, {}).get("last_price", 0)
@@ -632,6 +742,10 @@ async def fetch_current_price_for_signal(sig):
     symbol = sig["symbol"]
 
     if instrument_type in ("CE", "PE"):
+        _lp = await _option_quote(symbol, None, sig["strike"], instrument_type,
+                                  expiry_label=sig["expiry"], since=sig["created_at"].date())
+        if _lp:
+            return float(_lp)
         # Fetch option premium price from data service
         try:
             import urllib.request as urlreq
@@ -642,7 +756,7 @@ async def fetch_current_price_for_signal(sig):
                 f"http://127.0.0.1:5004/data/equity/quote/{opt_symbol}",
                 headers={"Content-Type": "application/json"}
             )
-            with urlreq.urlopen(req, timeout=5) as resp:
+            with await asyncio.to_thread(urlreq.urlopen, req, timeout=5) as resp:
                 data = json.loads(resp.read())
                 price = data.get("ltp") or data.get("price")
                 if price and price > 0:
@@ -984,3 +1098,21 @@ async def seed_strategies():
                 created.append({"id": existing, "name": d["name"], "exists": True})
 
     return {"strategies": created}
+
+
+@router.get("/health", summary="What the strategies see right now: spot, future, option expiry and an ATM premium")
+async def bot_health():
+    out = {"time": datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S IST"), "indices": {}}
+    for ix in ("NIFTY", "BANKNIFTY"):
+        spot = await fetch_index_data(ix) or {}
+        exp, ts = await _monthly_future(ix)
+        fut = f"NFO:{ts}" if ts else f"{INDEX_CONFIG[ix]['fut_prefix']}{format_expiry(exp)}FUT"
+        fut_ltp = (await fetch_kite_ltp([fut])).get(fut, {}).get("last_price", 0)
+        wk = await _weekly_expiry(ix)
+        atm = get_atm_strike(spot["price"], INDEX_CONFIG[ix]["option_strike_gap"]) if spot.get("price") else None
+        ce = await _option_quote(ix, wk, atm, "CE") if atm else None
+        out["indices"][ix] = {"spot": spot.get("price"), "change_pct": spot.get("change_pct"),
+                              "spot_source": spot.get("source"), "future": fut, "future_expiry": str(exp),
+                              "future_ltp": fut_ltp, "option_expiry": str(wk), "atm_strike": atm, "atm_ce": ce}
+    out["ok"] = all(v["spot"] and v["future_ltp"] for v in out["indices"].values())
+    return out

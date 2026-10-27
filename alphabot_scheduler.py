@@ -92,7 +92,8 @@ async def run_scheduler():
                 if not is_market_hours():
                     # Before market: wait
                     if now.time() < MARKET_OPEN:
-                        wait = (datetime.combine(date.today(), MARKET_OPEN) - datetime.combine(date.today(), now.time())).seconds
+                        wait = (datetime.combine(date.today(), MARKET_OPEN) - datetime.combine(date.today(), now.time())).total_seconds()
+                        wait = max(1, int(wait) + 1)
                         wait = min(wait, 300)
                         logger.info(f"Pre-market — {now.strftime('%H:%M:%S')} IST — next check in {wait}s")
                         await asyncio.sleep(wait)
