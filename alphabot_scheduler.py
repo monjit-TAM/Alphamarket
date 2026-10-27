@@ -89,6 +89,18 @@ async def run_scheduler():
                     await asyncio.sleep(60)
                     continue
 
+                # dyorfix2: 15:15 to 15:25 keep calling the AlphaBot monitor so the 15:20 square-off
+                # closes the day's signals (it never ran before). AlphaBot paper signals only; the
+                # basket auto-squareoff call further down is unchanged and still does not run.
+                if MARKET_CLOSE < now.time() <= dtime(15, 25):
+                    if now.time() >= SQUAREOFF_TIME and now_ts - last_monitor >= MONITOR_INTERVAL:
+                        result = await call_api(session, "monitor")
+                        for a in (result or {}).get("results", []):
+                            logger.info(f"[SQUAREOFF] Signal #{a.get('signal_id')}: {a.get('action')} P&L {a.get('pnl',0):.0f}")
+                        last_monitor = now_ts
+                    await asyncio.sleep(20)
+                    continue
+
                 if not is_market_hours():
                     # Before market: wait
                     if now.time() < MARKET_OPEN:

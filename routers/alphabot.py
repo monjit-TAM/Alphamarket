@@ -98,7 +98,7 @@ async def _fno_rows(sql, *args):
 
 def _expiry_cutoff():
     now = datetime.now(IST)
-    return now.date() if now.time() <= dtime(15, 30) else now.date() + timedelta(days=1)
+    return now.date() + timedelta(days=1)  # dyorfix2: never open in a contract expiring today
 
 
 async def _monthly_future(index):
@@ -130,7 +130,12 @@ async def _weekly_expiry(index):
 async def _kite_ltp(key):
     try:
         from routers.arbitrage import _fetch_kite_quotes
-        return float(((await _fetch_kite_quotes([key])).get(key) or {}).get("last_price") or 0)
+        for _try in range(3):
+            p = float(((await _fetch_kite_quotes([key])).get(key) or {}).get("last_price") or 0)
+            if p > 0:
+                return p
+            await asyncio.sleep(0.7)
+        return 0.0
     except Exception as e:
         logger.warning(f"Kite LTP failed for {key}: {e}")
         return 0.0
@@ -329,7 +334,7 @@ async def strategy_momentum_futures(index: str, config: dict) -> list:
     expiry_str = format_expiry(expiry)
     fut_symbol = f"NFO:{_fut_ts}" if _fut_ts else f"{idx['fut_prefix']}{expiry_str}FUT"
     
-    fut_data = await fetch_kite_ltp([fut_symbol.replace(" ", "%20")])
+    fut_data = {fut_symbol: {"last_price": await _kite_ltp(fut_symbol)}}
     fut_key = fut_symbol
     fut_ltp = fut_data.get(fut_key, {}).get("last_price", 0)
     if fut_ltp <= 0:
@@ -426,8 +431,10 @@ async def strategy_options_directional(index: str, config: dict) -> list:
     # Estimate premium (rough: ~1.5% of spot for ATM weekly)
     est_premium = round(spot * 0.015, 1)
     _live_prem = await _option_quote(index, expiry, atm_strike, opt_type)
-    if _live_prem:
-        est_premium = round(_live_prem, 2)
+    if not _live_prem:
+        logger.info(f"{index} {atm_strike} {opt_type}: no live premium, no signal")
+        return signals
+    est_premium = round(_live_prem, 2)
     sl_price = round(est_premium * (1 - sl_pct / 100), 2)
     target_price = round(est_premium * (1 + target_pct / 100), 2)
 
@@ -514,10 +521,9 @@ async def strategy_options_writing(index: str, config: dict) -> list:
         ce_premium = await _option_quote(index, expiry, ce_strike, "CE") or 0
     if pe_premium <= 0:
         pe_premium = await _option_quote(index, expiry, pe_strike, "PE") or 0
-    if ce_premium <= 0:
-        ce_premium = round(spot * 0.004, 1)
-    if pe_premium <= 0:
-        pe_premium = round(spot * 0.004, 1)
+    if ce_premium <= 0 or pe_premium <= 0:
+        logger.info(f"{index} strangle: no live premium, no signal")
+        return signals
     total_premium = ce_premium + pe_premium
 
     # SELL CE leg
@@ -589,7 +595,7 @@ async def strategy_index_arbitrage(index: str, config: dict) -> list:
     days_to_expiry = max((expiry - date.today()).days, 1)
     fut_symbol = f"NFO:{_fut_ts}" if _fut_ts else f"{idx['fut_prefix']}{expiry_str}FUT"
 
-    fut_data = await fetch_kite_ltp([fut_symbol.replace(" ", "%20")])
+    fut_data = {fut_symbol: {"last_price": await _kite_ltp(fut_symbol)}}
     fut_ltp = fut_data.get(fut_symbol, {}).get("last_price", 0)
     if fut_ltp <= 0:
         return signals
@@ -991,7 +997,7 @@ async def get_performance(days: int = 30, strategy_id: int = None):
                 ELSE 0 END as win_rate
             FROM bot_signals s
             LEFT JOIN bot_strategies st ON s.strategy_id=st.id
-            WHERE s.status != 'ACTIVE' AND s.created_at >= $1
+            WHERE s.status NOT IN ('ACTIVE', 'EXPIRED') AND s.created_at >= $1
         """
         params = [datetime.now(IST).replace(tzinfo=None) - timedelta(days=days)]
         if strategy_id:
@@ -1008,10 +1014,10 @@ async def dashboard():
         strategies = await conn.fetch("SELECT * FROM bot_strategies ORDER BY id")
         active_signals = await conn.fetchval("SELECT COUNT(*) FROM bot_signals WHERE status='ACTIVE'")
         today_signals = await conn.fetchval("SELECT COUNT(*) FROM bot_signals WHERE created_at::date = $1", date.today())
-        today_pnl = await conn.fetchval("SELECT COALESCE(SUM(pnl), 0) FROM bot_signals WHERE created_at::date = $1 AND status != 'ACTIVE'", date.today())
-        total_pnl = await conn.fetchval("SELECT COALESCE(SUM(pnl), 0) FROM bot_signals WHERE status != 'ACTIVE'")
-        total_trades = await conn.fetchval("SELECT COUNT(*) FROM bot_signals WHERE status != 'ACTIVE'")
-        winners = await conn.fetchval("SELECT COUNT(*) FROM bot_signals WHERE pnl > 0 AND status != 'ACTIVE'")
+        today_pnl = await conn.fetchval("SELECT COALESCE(SUM(pnl), 0) FROM bot_signals WHERE created_at::date = $1 AND status NOT IN ('ACTIVE', 'EXPIRED')", date.today())
+        total_pnl = await conn.fetchval("SELECT COALESCE(SUM(pnl), 0) FROM bot_signals WHERE status NOT IN ('ACTIVE', 'EXPIRED')")
+        total_trades = await conn.fetchval("SELECT COUNT(*) FROM bot_signals WHERE status NOT IN ('ACTIVE', 'EXPIRED')")
+        winners = await conn.fetchval("SELECT COUNT(*) FROM bot_signals WHERE pnl > 0 AND status NOT IN ('ACTIVE', 'EXPIRED')")
 
     return {
         "strategies": [dict(s) for s in strategies],
@@ -1107,7 +1113,7 @@ async def bot_health():
         spot = await fetch_index_data(ix) or {}
         exp, ts = await _monthly_future(ix)
         fut = f"NFO:{ts}" if ts else f"{INDEX_CONFIG[ix]['fut_prefix']}{format_expiry(exp)}FUT"
-        fut_ltp = (await fetch_kite_ltp([fut])).get(fut, {}).get("last_price", 0)
+        fut_ltp = await _kite_ltp(fut)
         wk = await _weekly_expiry(ix)
         atm = get_atm_strike(spot["price"], INDEX_CONFIG[ix]["option_strike_gap"]) if spot.get("price") else None
         ce = await _option_quote(ix, wk, atm, "CE") if atm else None
