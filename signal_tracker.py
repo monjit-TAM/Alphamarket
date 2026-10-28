@@ -111,7 +111,20 @@ async def close_signal(pool, signal_id: int, close_data: dict):
             close_data.get("days_held", 0),
         )
 
+_PRICE_MEMO = {}   # symbol -> (time, price dict); the open-signals view asks once per signal, not per symbol
+
+
 def _get_live_price(symbol):
+    import time as _t
+    hit = _PRICE_MEMO.get(symbol.upper())
+    if hit and _t.time() - hit[0] < 30:
+        return hit[1]
+    r = _get_live_price_ds(symbol)
+    _PRICE_MEMO[symbol.upper()] = (_t.time(), r)
+    return r
+
+
+def _get_live_price_ds(symbol):
     """Current price from the data service on this machine (Kite, TrueData, then the exchange close).
     It used Yahoo, one blocking download per signal; with 143 open signals that held DYOR for minutes."""
     import urllib.request, urllib.parse, json as _j
