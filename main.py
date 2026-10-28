@@ -1540,15 +1540,31 @@ async def _overlay_live_prices(stocks: list) -> list:
                                 live[k] = v
             except:
                 pass
+        # Symbols Kite did not answer (rate limit, cut-out): the data service's own quote ladder
+        missing = [x for x in clean_syms if x not in live]
+        if missing:
+            try:
+                async with _hx.AsyncClient(timeout=8) as cl:
+                    for i in range(0, len(missing), 100):
+                        r = await cl.post(f"{DATA_SERVICE_URL}/data/equity/quotes", json={"symbols": missing[i:i + 100]})
+                        if r.status_code == 200:
+                            for k, v in (r.json().get("quotes") or {}).items():
+                                if v.get("is_live") and (v.get("price") or 0) > 0:
+                                    live[k.upper()] = {"price": v["price"]}
+            except Exception:
+                pass
         # Overlay
         for s in stocks:
             sym = s.get("symbol", "")
             q = live.get(sym)
+            s["live"] = False
             if q:
                 ltp = q.get("price") or q.get("ltp") or 0
                 if ltp and ltp > 0:
                     s["price"] = round(ltp, 2)
                     s["live"] = True
+                    if q.get("change_pct") not in (None, 0, 0.0):
+                        s["change_pct"] = round(float(q["change_pct"]), 2)
     except Exception as e:
         pass  # Fail silently, keep cached prices
     return stocks
@@ -4257,7 +4273,7 @@ async def delete_forward_test(fwd_id: int, user=Depends(get_current_user)):
 NIFTY_UNIVERSE = [
     # Nifty 50
     "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","WIPRO","BAJFINANCE","SUNPHARMA",
-    "TATAMOTORS","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
+    "TMPV","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
     "POWERGRID","NTPC","COALINDIA","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","CIPLA",
     "DRREDDY","DIVISLAB","APOLLOHOSP","BAJAJFINSV","BRITANNIA","EICHERMOT","SBILIFE",
     "HDFCLIFE","INDUSINDBK","ULTRACEMCO","GRASIM","TECHM","ASIANPAINT","HEROMOTOCO",
@@ -4341,7 +4357,7 @@ NIFTY_UNIVERSE = _clean
 # Cap segment classification by index membership
 NIFTY50_SYMBOLS = {
     "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","WIPRO","BAJFINANCE","SUNPHARMA",
-    "TATAMOTORS","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
+    "TMPV","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
     "POWERGRID","NTPC","COALINDIA","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","CIPLA",
     "DRREDDY","DIVISLAB","APOLLOHOSP","BAJAJFINSV","BRITANNIA","EICHERMOT","SBILIFE",
     "HDFCLIFE","INDUSINDBK","ULTRACEMCO","GRASIM","TECHM","ASIANPAINT","HEROMOTOCO",
@@ -4480,7 +4496,7 @@ SECTOR_MAP = {
     "LALPATHLAB":"Healthcare","PGHH":"FMCG","MOREPENLAB":"Pharma","SUVENPHAR":"Pharma",
     "SOLARA":"Pharma","TARSONS":"Pharma",
     # Auto
-    "TATAMOTORS":"Auto","MARUTI":"Auto","EICHERMOT":"Auto","HEROMOTOCO":"Auto","M&M":"Auto",
+    "TMPV":"Auto","MARUTI":"Auto","EICHERMOT":"Auto","HEROMOTOCO":"Auto","M&M":"Auto",
     "BOSCHLTD":"Auto","MOTHERSON":"Auto","SONACOMS":"Auto","TVSMOTOR":"Auto",
     "ASHOKLEY":"Auto","BHARATFORG":"Auto","EXIDEIND":"Auto","BALKRISIND":"Auto",
     "CEATLTD":"Auto","ENDURANCE":"Auto","ESCORTS":"Auto","SUNDRMFAST":"Auto",
@@ -4713,7 +4729,7 @@ INDUSTRY_MAP = {
     "ASTERDM":"Healthcare Services",
     "LALPATHLAB":"Healthcare Services",
     "METROPOLIS":"Healthcare Services",
-    "TATAMOTORS":"Automobiles",
+    "TMPV":"Automobiles",
     "MARUTI":"Automobiles",
     "M&M":"Automobiles",
     "EICHERMOT":"Automobiles",
@@ -5173,7 +5189,7 @@ BASIC_INDUSTRY_MAP = {
     "ASTERDM":"Multi-Specialty Hospitals",
     "LALPATHLAB":"Pathology Diagnostics",
     "METROPOLIS":"Pathology Diagnostics",
-    "TATAMOTORS":"Passenger & Commercial Vehicles",
+    "TMPV":"Passenger & Commercial Vehicles",
     "MARUTI":"Passenger Cars",
     "M&M":"UV, Tractors & Farm Equipment",
     "EICHERMOT":"Premium Motorcycles",
@@ -6706,8 +6722,78 @@ STRATEGY_CATEGORIES = {
 }
 
 
+def _implied_vol(price, S, K, T, is_call, r=0.065):
+    """Volatility that reproduces this option price under Black-Scholes (bisection); 0 if none does."""
+    if price <= 0 or S <= 0 or K <= 0 or T <= 0:
+        return 0.0
+    intrinsic = max(0.0, S - K) if is_call else max(0.0, K - S)
+    if price <= intrinsic + 0.01:
+        return 0.0
+    lo, hi = 0.01, 3.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        p = black_scholes(S, K, T, r, mid, "call" if is_call else "put")["price"]
+        if p > price: hi = mid
+        else: lo = mid
+    return round((lo + hi) / 2, 4)
+
+
+async def _kite_option_chain(sym, expiries, spot=0):
+    """Option chain from Kite full quotes for the listed contracts (+/-20 strikes around the money):
+    real last price, OI, volume and best bid/ask; IV and Greeks worked out from the traded price."""
+    from routers.alphabot import _fno_rows, _KITE_INDEX
+    from routers.arbitrage import _fetch_kite_quotes
+    from datetime import date as _d, datetime as _dt, timedelta as _td
+    if not spot:
+        key = _KITE_INDEX.get(sym, f"NSE:{sym}")
+        q = await _fetch_kite_quotes([key])
+        spot = float((q.get(key) or {}).get("last_price") or 0)
+    if not spot:
+        return [], 0
+    chains = []
+    for exp in expiries:
+        rows = await _fno_rows(
+            "SELECT tradingsymbol, strike, instrument_type FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+            "AND instrument_type IN ('CE','PE') AND expiry::date=$2 ORDER BY strike", sym, _d.fromisoformat(exp))
+        strikes = sorted({float(r["strike"]) for r in rows})
+        if not strikes:
+            continue
+        ai = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
+        keep = set(strikes[max(0, ai - 20): ai + 21])
+        rows = [r for r in rows if float(r["strike"]) in keep]
+        keys = [f"NFO:{r['tradingsymbol']}" for r in rows]
+        quotes = {}
+        for i in range(0, len(keys), 200):
+            quotes.update(await _fetch_kite_quotes(keys[i:i + 200], mode="quote") or {})
+        if not quotes:
+            continue
+        # time to expiry in years, counting to 15:30 IST on the expiry day
+        now = _dt.utcnow() + _td(hours=5, minutes=30)
+        T = max((_dt.fromisoformat(exp + "T15:30:00") - now).total_seconds(), 1800) / (365 * 86400)
+        ed = {"expiry": exp, "calls": [], "puts": []}
+        for r in rows:
+            q = quotes.get(f"NFO:{r['tradingsymbol']}") or {}
+            ltp = float(q.get("last_price") or 0)
+            k = float(r["strike"]); call = r["instrument_type"] == "CE"
+            iv = _implied_vol(ltp, spot, k, T, call) if ltp > 0 else 0
+            g = black_scholes(spot, k, T, 0.065, iv, "call" if call else "put") if iv > 0 else {}
+            depth = q.get("depth") or {}
+            bid = float(((depth.get("buy") or [{}])[0] or {}).get("price") or 0)
+            ask = float(((depth.get("sell") or [{}])[0] or {}).get("price") or 0)
+            (ed["calls"] if call else ed["puts"]).append({
+                "strike": k, "ltp": round(ltp, 2), "bid": bid, "ask": ask, "iv": round(iv * 100, 1),
+                "oi": int(q.get("oi") or 0), "volume": int(q.get("volume") or 0),
+                "itm": (k < spot) if call else (k > spot),
+                "delta": round(float(g.get("delta", 0)), 4), "gamma": round(float(g.get("gamma", 0)), 6),
+                "theta": round(float(g.get("theta", 0)), 2), "vega": round(float(g.get("vega", 0)), 2),
+                "trading_symbol": r["tradingsymbol"]})
+        if ed["calls"] or ed["puts"]:
+            chains.append(ed)
+    return chains, spot
+
+
 @app.get("/api/options/chain/{symbol}", tags=["Options Lab"], summary="Get options chain",
-    description="Fetch the options chain for a stock or index. Returns all available strikes with call/put prices, OI, volume, IV, and Greeks (Delta, Gamma, Theta, Vega). Supports NIFTY, BANKNIFTY, FINNIFTY, and all F&O stocks. Falls back to Black-Scholes synthetic pricing when live data is unavailable.")
+    description="Fetch the options chain for a stock or index. Returns all available strikes with call/put prices, OI, volume, IV, and Greeks (Delta, Gamma, Theta, Vega). Supports NIFTY, BANKNIFTY, FINNIFTY, and all F&O stocks. Live only: Groww, then Kite for the listed contracts; 503 when neither answers (no theoretical chain is shown).")
 async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_user)):
     """Fetch options chain — tries Groww API first, falls back to Black-Scholes synthetic."""
     import yfinance as yf  # kept: Black-Scholes fallback needs index hist vol
@@ -6725,7 +6811,7 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
                  "MIDCPNIFTY": "^NSEI", "SENSEX": "^BSESN"}
     LOT_SIZES = {"NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25, "RELIANCE": 250,
                  "TCS": 150, "INFY": 300, "HDFCBANK": 550, "ICICIBANK": 700,
-                 "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600, "BAJFINANCE": 125,
+                 "SBIN": 750, "TMPV": 1750, "ITC": 1600, "BAJFINANCE": 125,
                  "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700, "TATASTEEL": 550,
                  "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475, "M&M": 350,
                  "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400, "TITAN": 375,
@@ -6735,31 +6821,18 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
     lot_size = LOT_SIZES.get(sym_upper, 50)
     today = date.today()
 
-    # ── Generate expiry dates ────────────────────────────────────────────────
-    def get_expiry_dates():
-        expiries = []
-        days_to_thu = (3 - today.weekday()) % 7
-        if days_to_thu == 0:
-            days_to_thu = 7
-        nxt = today + timedelta(days=days_to_thu)
-        if is_index:
-            for _ in range(6):
-                expiries.append(nxt.isoformat())
-                nxt += timedelta(days=7)
-        else:
-            for i in range(5):
-                month = today.month + i
-                year = today.year + (month - 1) // 12
-                month = ((month - 1) % 12) + 1
-                last_day = calendar.monthrange(year, month)[1]
-                ld = date(year, month, last_day)
-                while ld.weekday() != 3:
-                    ld -= timedelta(days=1)
-                if ld > today:
-                    expiries.append(ld.isoformat())
-        return expiries or [(today + timedelta(days=7*i+7)).isoformat() for i in range(4)]
-
-    expiry_dates = get_expiry_dates()
+    # Expiries and lot size from the exchange contract list (instrument_master). NSE options expire on
+    # Tuesdays now (holidays move them); the old Thursday arithmetic asked Groww for dates that do not
+    # exist, so every chain fell back to made-up prices.
+    from routers.alphabot import _fno_rows
+    _im = await _fno_rows(
+        "SELECT expiry::date AS expiry, max(lot_size) AS lot FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+        "AND instrument_type IN ('CE','PE') AND expiry::date >= $2 GROUP BY 1 ORDER BY 1 LIMIT 6", sym_upper, today)
+    expiry_dates = [r["expiry"].isoformat() for r in _im]
+    if _im and _im[0]["lot"]:
+        lot_size = int(_im[0]["lot"])
+    if not expiry_dates:
+        raise HTTPException(status_code=404, detail=f"{sym_upper} has no listed options")
 
     # ── Try Groww API first ──────────────────────────────────────────────────
     groww_token = await get_groww_token()
@@ -6873,66 +6946,17 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
             print(f"Groww API error: {groww_err}")
             groww_success = False
 
-    # ── Fallback: Synthetic Black-Scholes chain ──────────────────────────────
+    # ── Fallback: Kite quotes for the listed contracts. No made-up chain any more. ──
     if not groww_success:
         try:
-            loop = asyncio.get_event_loop()
-            yf_sym = INDEX_MAP.get(sym_upper, f"{sym_upper}.NS")
-            ticker = await loop.run_in_executor(None, lambda: yf.Ticker(yf_sym))
-            hist = await loop.run_in_executor(None, lambda: ticker.history(period="60d"))
-            if hist.empty:
-                raise HTTPException(status_code=404, detail=f"No data for {symbol}")
-
-            spot_price = round(float(hist["Close"].iloc[-1]), 2)
-            returns = hist["Close"].pct_change().dropna()
-            hist_vol = float(returns.std() * (252 ** 0.5)) if len(returns) > 10 else 0.20
-
-            # Strike step
-            if spot_price > 10000: step = 100
-            elif spot_price > 1000: step = 50 if is_index else 20
-            elif spot_price > 500: step = 10
-            else: step = 5
-
-            atm = round(spot_price / step) * step
-            num_strikes = 20
-            strikes = [atm + (i - num_strikes) * step for i in range(num_strikes * 2 + 1)]
-            strikes = [s for s in strikes if s > 0]
-            r = 0.07
-
-            target_expiries = [expiry] if expiry else expiry_dates[:4]
-            for exp_str in target_expiries:
-                days_to_exp = max(1, (datetime.strptime(exp_str, "%Y-%m-%d").date() - today).days)
-                T = days_to_exp / 365
-                exp_data = {"expiry": exp_str, "calls": [], "puts": []}
-
-                for strike in strikes:
-                    moneyness = abs(strike - spot_price) / spot_price
-                    iv_adj = hist_vol * (1 + 0.3 * moneyness + 0.1 * moneyness ** 2)
-                    iv_adj = max(0.08, min(iv_adj, 1.0))
-                    dist = abs(strike - atm) / step
-                    base_oi = max(100, int(50000 * math.exp(-0.08 * dist ** 1.3)))
-                    noise = random.uniform(0.7, 1.3)
-
-                    c_g = black_scholes(spot_price, strike, T, r, iv_adj, "call")
-                    exp_data["calls"].append({
-                        "strike": strike, "ltp": c_g["price"], "bid": round(c_g["price"]*0.99,2), "ask": round(c_g["price"]*1.01,2),
-                        "iv": round(iv_adj*100,1), "oi": int(base_oi*noise*(1.2 if strike>atm else 0.8)),
-                        "volume": int(base_oi*noise*random.uniform(0.05,0.25)), "itm": strike<spot_price,
-                        "delta": c_g["delta"], "gamma": c_g["gamma"], "theta": c_g["theta"], "vega": c_g["vega"],
-                    })
-                    p_g = black_scholes(spot_price, strike, T, r, iv_adj, "put")
-                    exp_data["puts"].append({
-                        "strike": strike, "ltp": p_g["price"], "bid": round(p_g["price"]*0.99,2), "ask": round(p_g["price"]*1.01,2),
-                        "iv": round(iv_adj*100,1), "oi": int(base_oi*noise*(0.8 if strike>atm else 1.2)),
-                        "volume": int(base_oi*noise*random.uniform(0.05,0.25)), "itm": strike>spot_price,
-                        "delta": p_g["delta"], "gamma": p_g["gamma"], "theta": p_g["theta"], "vega": p_g["vega"],
-                    })
-                chains.append(exp_data)
-            data_source = "synthetic"
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Options chain error: {str(e)}")
+            chains, spot_price = await _kite_option_chain(sym_upper, [expiry] if expiry else expiry_dates[:2], spot_price)
+        except Exception as _ke:
+            print(f"Kite chain error for {sym_upper}: {_ke}")
+            chains = []
+        if not chains:
+            raise HTTPException(status_code=503, detail=(f"The live option chain for {sym_upper} is unavailable right now "
+                                "(Groww and Kite did not answer). Please retry in a minute."))
+        data_source = "kite"
 
     # ── PCR & Max Pain ───────────────────────────────────────────────────────
     total_call_oi = sum(c["oi"] for ch in chains for c in ch["calls"])
@@ -6950,21 +6974,17 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
                 min_pain = pain
                 max_pain_strike = s
 
-    # Historical vol (for display)
+    # Historical vol (for display): 20-session realised volatility from the exchange daily file
     hist_vol_pct = 0
-    if data_source == "groww":
-        try:
-            loop = asyncio.get_event_loop()
-            yf_sym = INDEX_MAP.get(sym_upper, f"{sym_upper}.NS")
-            ticker = await loop.run_in_executor(None, lambda: yf.Ticker(yf_sym))
-            hist = await loop.run_in_executor(None, lambda: ticker.history(period="60d"))
-            if not hist.empty:
-                rets = hist["Close"].pct_change().dropna()
-                hist_vol_pct = round(float(rets.std() * (252**0.5)) * 100, 1)
-        except:
-            pass
-    elif data_source == "synthetic":
-        hist_vol_pct = round(hist_vol * 100, 1) if 'hist_vol' in locals() else 0
+    try:
+        _hv_sym = {"NIFTY": "NIFTYBEES", "BANKNIFTY": "BANKBEES"}.get(sym_upper, sym_upper)
+        _cl = [float(b["close"]) for b in (await ds_ohlcv(_hv_sym, "3mo")) if b.get("close")]
+        if len(_cl) >= 21:
+            _rets = [math.log(_cl[i] / _cl[i - 1]) for i in range(len(_cl) - 20, len(_cl))]
+            _m = sum(_rets) / len(_rets)
+            hist_vol_pct = round((sum((x - _m) ** 2 for x in _rets) / (len(_rets) - 1)) ** 0.5 * (252 ** 0.5) * 100, 1)
+    except Exception:
+        pass
 
     result = {
         "symbol": sym_upper, "spot_price": round(spot_price, 2),
@@ -6973,10 +6993,10 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
         "pcr": pcr, "max_pain": max_pain_strike,
         "total_call_oi": total_call_oi, "total_put_oi": total_put_oi,
         "data_source": data_source,
-        "note": "Live data via Groww API" if data_source == "groww" else "Theoretical pricing via Black-Scholes (set Groww token in Admin for live data)"
+        "note": {"groww": "Live data via Groww", "kite": "Live data via Kite; IV and Greeks worked out from the traded prices"}.get(data_source, "")
     }
 
-    ttl = 60 if data_source == "groww" else 180
+    ttl = 60
     if redis_client:
         await redis_client.setex(cache_key, ttl, json.dumps(result))
     return result
@@ -7193,7 +7213,7 @@ async def suggest_strategies(req: dict, user=Depends(get_current_user)):
 @app.get("/api/options/oi-analysis/{symbol}", tags=["Options Lab"], summary="OI Intelligence Analysis",
     description="Comprehensive Open Interest analysis — PCR, max pain, OI build-up/unwinding detection, support/resistance from OI clusters, and strategy recommendations based on OI data.")
 async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_user)):
-    """Full OI intelligence analysis — reuses the existing chain endpoint data (Groww/synthetic)."""
+    """Full OI intelligence analysis — reuses the live chain (Groww or Kite)."""
     sym_upper = symbol.upper()
     cache_key = f"oi_analysis:{sym_upper}:{expiry}"
     if redis_client:
@@ -7367,7 +7387,7 @@ async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_us
         "market_signal": {"signal": market_signal, "description": signal_desc},
         "oi_buildup": buildup_signals[:10],
         "oi_data": oi_data,
-        "data_source": chain_data.get("data_source", "synthetic"),
+        "data_source": chain_data.get("data_source", ""),
         "strategy_recommendations": oi_strategies,
     }
 
@@ -11144,7 +11164,7 @@ async def dividend_tracker(user=Depends(get_current_user)):
 
     top_div = ["COALINDIA","VEDL","IOC","HINDPETRO","BPCL","ONGC","NTPC","POWERGRID","GAIL","RECLTD",
                "PFC","NHPC","SAIL","NMDC","HDFCBANK","ICICIBANK","SBIN","ITC","TCS","INFY",
-               "WIPRO","BAJAJ-AUTO","HEROMOTOCO","MARUTI","TATAMOTORS","RELIANCE","LT","TITAN","HINDALCO","TATASTEEL"]
+               "WIPRO","BAJAJ-AUTO","HEROMOTOCO","MARUTI","TMPV","RELIANCE","LT","TITAN","HINDALCO","TATASTEEL"]
 
     # Parallel DS fundamentals fetch
     import httpx as _hx
@@ -13255,7 +13275,7 @@ def sb_get_near_expiry():
         month = ((month - 1) % 12) + 1
         last_day = calendar.monthrange(year, month)[1]
         ld = date(year, month, last_day)
-        while ld.weekday() != 3:
+        while ld.weekday() != 1:  # NSE monthly expiry: last Tuesday
             ld -= timedelta(days=1)
         if ld >= today:
             return ld
@@ -13268,7 +13288,7 @@ async def sb_build_futures_cache() -> dict:
     LOT_SIZES = {
         "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
         "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+        "ICICIBANK": 700, "SBIN": 750, "TMPV": 1750, "ITC": 1600,
         "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
         "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
         "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
@@ -13401,7 +13421,7 @@ async def sb_build_options_cache() -> dict:
     LOT_SIZES = {
         "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
         "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+        "ICICIBANK": 700, "SBIN": 750, "TMPV": 1750, "ITC": 1600,
         "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
         "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
         "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,

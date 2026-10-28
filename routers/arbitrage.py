@@ -22,8 +22,8 @@ logger = logging.getLogger("dyor.arbitrage")
 router = APIRouter(prefix="/api/arbitrage", tags=["Arbitrage"])
 
 # ── Kite Connect Config ───────────────────────────────────────────
-KITE_API_KEY = "wmwpq34kw5th0y2l"
-KITE_API_SECRET = "uj050ecoi2x11cpcfvvc58fextfyfaqb"
+KITE_API_KEY = "dr7ngktrvoiu1fms"
+KITE_API_SECRET = "qk753rhdzbpe0pnzkb1d5wp6075gu66w"
 KITE_REDIRECT_URL = "https://alphamarket.co.in/dyor/api/arbitrage/kite-callback"
 KITE_LOGIN_URL = f"https://kite.zerodha.com/connect/login?v=3&api_key={KITE_API_KEY}"
 
@@ -106,7 +106,7 @@ INDEX_FNO = {
 FNO_UNIVERSE = [
     "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","HINDUNILVR","ITC","SBIN",
     "BHARTIARTL","KOTAKBANK","LT","AXISBANK","BAJFINANCE","MARUTI","HCLTECH",
-    "ASIANPAINT","TITAN","SUNPHARMA","WIPRO","TATAMOTORS","POWERGRID","NTPC",
+    "ASIANPAINT","TITAN","SUNPHARMA","WIPRO","TMPV","POWERGRID","NTPC",
     "ULTRACEMCO","NESTLEIND","TATASTEEL","JSWSTEEL","INDUSINDBK","ADANIENT",
     "ADANIPORTS","BAJAJFINSV","TECHM","GRASIM","ONGC","COALINDIA","HEROMOTOCO",
     "DRREDDY","EICHERMOT","CIPLA","DIVISLAB","BPCL","APOLLOHOSP","TATACONSUM",

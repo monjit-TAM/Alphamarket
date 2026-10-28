@@ -206,7 +206,7 @@ async def _fetch_index_data_legacy(symbol: str) -> dict:
     import urllib.request, urllib.parse
     
     td_map = {"NIFTY": "NIFTY 50", "BANKNIFTY": "NIFTY BANK"}
-    ds_map = {"NIFTY": "%5ENSEI", "BANKNIFTY": "%5ENSEBANK", "FINNIFTY": "%5ENSEBANK"}
+    ds_map = {"NIFTY": "NIFTY", "BANKNIFTY": "BANKNIFTY", "FINNIFTY": "FINNIFTY"}
     kite_map = {"NIFTY": "NSE:NIFTY 50", "BANKNIFTY": "NSE:NIFTY BANK", "FINNIFTY": "NSE:NIFTY FIN SERVICE"}
     
     # Try TrueData first (in-memory, instant, no API call)
@@ -768,23 +768,7 @@ async def fetch_current_price_for_signal(sig):
                                   expiry_label=sig["expiry"], since=sig["created_at"].date())
         if _lp:
             return float(_lp)
-        # Fetch option premium price from data service
-        try:
-            import urllib.request as urlreq
-            strike = sig["strike"]
-            expiry = sig["expiry"]
-            opt_symbol = f"{symbol}{int(strike)}{instrument_type}{expiry}"
-            req = urlreq.Request(
-                f"http://127.0.0.1:5004/data/equity/quote/{opt_symbol}",
-                headers={"Content-Type": "application/json"}
-            )
-            with await asyncio.to_thread(urlreq.urlopen, req, timeout=5) as resp:
-                data = json.loads(resp.read())
-                price = data.get("ltp") or data.get("price")
-                if price and price > 0:
-                    return float(price)
-        except Exception as e:
-            logger.warning(f"Options price fetch failed for {symbol} {strike} {instrument_type}: {e}")
+        # (The data service has no option quotes by this name; Kite above is the source.)
         # Fallback: return entry price (no P&L change)
         return float(sig["entry_price"])
     elif instrument_type == "FUT":

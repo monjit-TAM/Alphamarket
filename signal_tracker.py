@@ -112,39 +112,24 @@ async def close_signal(pool, signal_id: int, close_data: dict):
         )
 
 def _get_live_price(symbol):
-    """Get current price from Yahoo."""
+    """Current price from the data service on this machine (Kite, TrueData, then the exchange close).
+    It used Yahoo, one blocking download per signal; with 143 open signals that held DYOR for minutes."""
+    import urllib.request, urllib.parse, json as _j
     try:
-        import yfinance as yf
-        sym = symbol.upper()
-        idx_map = {"NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK", "FINNIFTY": "^CNXFIN"}
-        yf_sym = idx_map.get(sym, f"{sym}.NS")
-        t = yf.Ticker(yf_sym)
-        h = t.history(period="2d")
-        if h.empty: return None
-        price = float(h["Close"].iloc[-1])
-        prev = float(h["Close"].iloc[-2]) if len(h) > 1 else price
-        chg_pct = round((price - prev) / prev * 100, 2) if prev else 0
-        return {"price": price, "change_pct": chg_pct}
-    except:
+        sym = urllib.parse.quote(symbol.upper())
+        d = _j.loads(urllib.request.urlopen(f"http://127.0.0.1:5004/data/equity/quote/{sym}", timeout=4).read().decode())
+        p = float(d.get("price") or 0)
+        return {"price": p, "change_pct": float(d.get("change_pct") or 0)} if p > 0 else None
+    except Exception:
         return None
 
 def _get_market_context():
-    """Get Nifty close, VIX, and sentiment for today."""
-    try:
-        import yfinance as yf
-        nifty = yf.Ticker("^NSEI").history(period="2d")
-        vix_h = yf.Ticker("^INDIAVIX").history(period="2d")
-        n_close = float(nifty["Close"].iloc[-1]) if not nifty.empty else 0
-        n_prev = float(nifty["Close"].iloc[-2]) if len(nifty) > 1 else n_close
-        n_chg = round((n_close - n_prev) / n_prev * 100, 2) if n_prev else 0
-        vix_val = float(vix_h["Close"].iloc[-1]) if not vix_h.empty else 15
-        if n_chg > 0.3: sentiment = "GREEN"
-        elif n_chg < -0.3: sentiment = "RED"
-        else: sentiment = "FLAT"
-        return {"nifty_close": round(n_close, 1), "nifty_change_pct": n_chg,
-                "vix": round(vix_val, 1), "market_sentiment": sentiment}
-    except:
-        return {"nifty_close": 0, "nifty_change_pct": 0, "vix": 15, "market_sentiment": "FLAT"}
+    """Nifty close, VIX and sentiment for today, from the data service."""
+    n = _get_live_price("NIFTY") or {}
+    v = _get_live_price("INDIAVIX") or {}
+    chg = round(n.get("change_pct", 0), 2)
+    return {"nifty_close": round(n.get("price", 0), 1), "nifty_change_pct": chg, "vix": round(v.get("price", 15), 1),
+            "market_sentiment": "GREEN" if chg > 0.3 else "RED" if chg < -0.3 else "FLAT"}
 
 def _estimate_current_pnl(signal_row, live_price):
     """Estimate current P&L for an open signal based on price move."""
@@ -320,73 +305,72 @@ async def auto_close_expired(pool):
     mkt = _get_market_context()
     closed_count = 0
 
+    errors = []
+    today = datetime.now(IST).date()
     for sig in open_sigs:
+      try:
         exp = sig.get("expiry_date")
         if not exp: continue
         if isinstance(exp, str): exp = date.fromisoformat(exp)
 
+        # Expired on an earlier day, while this job was failing (it answered 500 every day from July):
+        # close it without inventing an outcome from today's price.
+        if exp < today:
+            await close_signal(pool, sig["id"], {
+                "status": "EXPIRED_UNTRACKED", "close_price": 0, "pnl": 0, "pnl_pct": 0,
+                "close_reason": "Expired while the daily auto-close was failing; outcome not measured",
+                "market_sentiment": "FLAT", "evaluation": "", "days_held": (exp - sig["signal_date"]).days})
+            closed_count += 1
+            continue
+
         should_close = False
         close_reason = ""
-
-        # Past expiry
-        if datetime.now(IST).date() >= exp:
+        if today >= exp:
             should_close = True
             close_reason = "Expiry reached"
-        # Check stop loss (if price moved too much)
         live = _get_live_price(sig["symbol"])
         if live:
             pnl, pnl_pct = _estimate_current_pnl(sig, live["price"])
             max_loss = sig["max_loss"] or 0
-            # Auto-stop: if loss exceeds 1.5x max loss, close
             if max_loss and pnl < 0 and abs(pnl) > abs(max_loss) * 1.5:
                 should_close = True
                 close_reason = "Stop loss triggered (loss exceeded 1.5x max)"
-            # Auto-target: if profit hits 60% of max profit
             max_p = sig["max_profit"] or 0
             if max_p and pnl > 0 and pnl >= max_p * 0.6:
                 should_close = True
                 close_reason = "Target reached (60% of max profit)"
-
         if not should_close:
             continue
-
-        # Close it
         if not live:
-            live = {"price": 0, "change_pct": 0}
+            errors.append(f"#{sig['id']} {sig['symbol']}: no price, left open")
+            continue
         pnl, pnl_pct = _estimate_current_pnl(sig, live["price"])
-        days_held = (datetime.now(IST).date() - sig["signal_date"]).days
-
+        days_held = (today - sig["signal_date"]).days
         status = "CLOSED_PROFIT" if pnl > 0 else "CLOSED_LOSS"
         if "stop loss" in close_reason.lower(): status = "CLOSED_SL"
         elif "target" in close_reason.lower(): status = "CLOSED_TARGET"
         elif "expiry" in close_reason.lower(): status = "CLOSED_EXPIRY"
-
         evaluation = _generate_evaluation(sig, pnl, pnl_pct, mkt)
-
         await close_signal(pool, sig["id"], {
-            "status": status,
-            "close_price": live["price"],
-            "pnl": pnl,
-            "pnl_pct": pnl_pct,
-            "close_reason": close_reason,
-            "nifty_close": mkt.get("nifty_close", 0),
-            "nifty_change_pct": mkt.get("nifty_change_pct", 0),
-            "vix": mkt.get("vix", 0),
-            "market_sentiment": mkt.get("market_sentiment", "FLAT"),
-            "evaluation": evaluation,
-            "days_held": days_held,
-        })
+            "status": status, "close_price": live["price"], "pnl": pnl, "pnl_pct": pnl_pct,
+            "close_reason": close_reason, "nifty_close": mkt.get("nifty_close", 0),
+            "nifty_change_pct": mkt.get("nifty_change_pct", 0), "vix": mkt.get("vix", 0),
+            "market_sentiment": mkt.get("market_sentiment", "FLAT"), "evaluation": evaluation, "days_held": days_held})
         closed_count += 1
         logger.info(f"Closed signal #{sig['id']} {sig['symbol']} {sig['strategy']}: {status} PnL={pnl:+,.0f}")
+      except Exception as e:
+        # one bad row used to fail the whole run with a 500
+        errors.append(f"#{sig.get('id')} {sig.get('symbol')}: {type(e).__name__}: {str(e)[:120]}")
+        logger.error(f"auto-close failed for signal #{sig.get('id')}: {e}")
 
-    return {"closed": closed_count, "remaining_open": len(open_sigs) - closed_count}
+    return {"closed": closed_count, "remaining_open": len(open_sigs) - closed_count, "errors": errors}
 
 async def get_performance(pool, days: int = 30):
     """Get historical performance summary."""
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT * FROM alpha_options_signals
-            WHERE status != 'OPEN' AND close_date >= CURRENT_DATE - $1::int
+            WHERE status NOT IN ('OPEN', 'EXPIRED_UNTRACKED') AND close_date >= CURRENT_DATE - $1::int
             ORDER BY close_date DESC
         """, days)
 

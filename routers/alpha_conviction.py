@@ -278,7 +278,7 @@ async def get_intraday_batch(symbols: str = Query(None, description="Comma-separ
                     sym_list.append(s["symbol"])
                     if len(sym_list) >= 20: break
             else:
-                sym_list = ["RELIANCE","HDFCBANK","TCS","INFY","ICICIBANK","SBIN","LT","AXISBANK","ITC","MARUTI","TATAMOTORS","WIPRO","BHARTIARTL","SUNPHARMA","ADANIENT"]
+                sym_list = ["RELIANCE","HDFCBANK","TCS","INFY","ICICIBANK","SBIN","LT","AXISBANK","ITC","MARUTI","TMPV","WIPRO","BHARTIARTL","SUNPHARMA","ADANIENT"]
         except:
             sym_list = ["RELIANCE","HDFCBANK","TCS","INFY","ICICIBANK","SBIN","LT","AXISBANK","ITC","MARUTI"]
     results = []
