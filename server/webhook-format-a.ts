@@ -263,7 +263,7 @@ async function buildEquity(event: string, c: any, strategy: any, advisor: any, u
 
   if (isClosed) {
     let pnlPct = toNum(c.gain_percent);
-    if ((pnlPct === null || pnlPct === 0) && bp > 0 && toNum(c.sell_price) && toNum(c.sell_price) !== bp) {
+    if ((pnlPct === null || pnlPct === 0) && bp > 0 && toNum(c.sell_price)) {
       const sp = toNum(c.sell_price)!;
       const act = String(c.action || "BUY").toUpperCase();
       pnlPct = act === "SELL" ? Number(((bp - sp) / bp * 100).toFixed(2)) : Number(((sp - bp) / bp * 100).toFixed(2));
@@ -349,7 +349,31 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
       legId = String(await nextRecId());
     }
   } else {
-    legId = String(await nextRecId());
+    // Cache ensures same recId + legId for all brokers in one event cycle (mirrors buildEquity).
+    // Without this, each broker allocated fresh ids and only the first was stored.
+    const fnoKey = "fno_" + (posId || "") + "_" + event;
+    const cachedIds = posId ? eventRecIdCache.get(fnoKey) : undefined;
+    if (cachedIds) {
+      const [cr, cl] = String(cachedIds).split("|");
+      recId = cr;
+      legId = cl;
+    } else {
+      // Cache miss: reuse the rec_id an earlier broker in this cycle already stored (survives cache clears)
+      let storedRec: string | null = null;
+      if (posId) {
+        try {
+          const ex = await db.execute(sql`SELECT webhook_rec_id FROM positions WHERE id = ${posId}`);
+          storedRec = (ex.rows[0] as any)?.webhook_rec_id || null;
+        } catch {}
+      }
+      if (storedRec) {
+        recId = String(storedRec);
+        legId = String(Number(recId) + 1);
+      } else {
+        legId = String(await nextRecId());
+      }
+      if (posId) eventRecIdCache.set(fnoKey, recId + "|" + legId);
+    }
     // Store rec_id on CREATE for future CLOSE events
     if (posId && !isClosed) {
       try { await db.execute(sql`UPDATE positions SET webhook_rec_id = ${recId} WHERE id = ${posId} AND webhook_rec_id IS NULL`); } catch {}
@@ -400,10 +424,11 @@ async function buildFno(event: string, p: any, strategy: any, advisor: any, upst
     expiryDate: epochMs(p.expiry),
     lotSize: toNum(p.lots) || 1,
     strike: strike,
-    profitLossPercent: isClosed ? (toNum(p.gain_percent) || (() => {
+    profitLossPercent: isClosed ? (toNum(p.gain_percent) ?? (() => {
       const ep = toNum(p.entry_price) ?? 0;
-      const xp = toNum(p.exit_price) ?? 0;
-      if (ep > 0 && xp > 0 && ep !== xp) {
+      const xpRaw = toNum(p.exit_price);
+      const xp = xpRaw ?? 0;
+      if (ep > 0 && xpRaw !== null && xp >= 0) {
         const act = String(p.buy_sell || "Buy");
         return act === "Sell" ? Number(((ep - xp) / ep * 100).toFixed(2)) : Number(((xp - ep) / ep * 100).toFixed(2));
       }

@@ -24,4 +24,5 @@ export {
   sendUserWelcomeEmail,
   sendAdvisorAgreementEmail,
   sendEsignAgreementEmail,
+  sendNewsletterEmail,
 } from "./email";

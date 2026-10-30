@@ -52,6 +52,9 @@ export function registerAuthRoutes(
       if (role === "advisor" && !sebiRegNumber) {
         return res.status(400).send("SEBI Registration Number is required for advisors");
       }
+      if (role === "advisor" && !sebiCertUrl) {
+        return res.status(400).send("SEBI Registration Certificate upload is required for advisors");
+      }
 
       const hashedPassword = await hashPassword(password);
       const user = await storage.createUser({

@@ -1572,7 +1572,7 @@
     "name": "ATHERENERG",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "ATL",
@@ -3826,7 +3826,7 @@
     "name": "DALBHARAT",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "DALMIASUG",
@@ -5247,7 +5247,7 @@
     "name": "EXIDEIND",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "EXPLEOSOL",
@@ -10686,7 +10686,7 @@
     "name": "MAHABANK",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "MAHAPEXLTD",
@@ -13164,7 +13164,7 @@
     "name": "NUVAMA WEALTH MANAGE",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": true
+    "isFnO": false
   },
   {
     "symbol": "NUVOCO",
@@ -15271,7 +15271,7 @@
     "name": "SAGILITY",
     "exchange": "NSE",
     "segment": "Equity",
-    "isFnO": false
+    "isFnO": true
   },
   {
     "symbol": "SAHYADRI",

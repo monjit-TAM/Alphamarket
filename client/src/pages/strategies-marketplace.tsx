@@ -26,6 +26,7 @@ export default function StrategiesMarketplace() {
   const searchParams = useSearch();
   const urlParams = new URLSearchParams(searchParams);
   const initialHorizon = urlParams.get("horizon") || "";
+  const initialCategory = urlParams.get("category") || "";
   const initialSearch = urlParams.get("search") || "";
 
   const [search, setSearch] = useState(initialSearch);
@@ -33,6 +34,7 @@ export default function StrategiesMarketplace() {
   const [themeFilter, setThemeFilter] = useState("");
   const [volatilityFilter, setVolatilityFilter] = useState("");
   const [horizonFilter, setHorizonFilter] = useState(initialHorizon);
+  const [categoryFilter, setCategoryFilter] = useState(initialCategory);
   const [managementStyleFilter, setManagementStyleFilter] = useState("");
   const [sortBy, setSortBy] = useState("mostActive");
 
@@ -58,16 +60,35 @@ export default function StrategiesMarketplace() {
       if (!haystack.includes(q)) return false;
     }
     if (typeFilter && typeFilter !== "all" && s.type !== typeFilter) return false;
+    if (categoryFilter && categoryFilter !== "all") {
+      const cat = categoryFilter.toLowerCase();
+      const sType = (s.type || "").toLowerCase();
+      const sHorizon = (s.horizon || "").toLowerCase();
+      const sThemes = (s.theme || []).map((t: string) => t.toLowerCase());
+      let catMatch = false;
+      if (cat === "intraday") catMatch = sHorizon.includes("intraday");
+      else if (cat === "swing") catMatch = sHorizon.includes("swing");
+      else if (cat === "positional") catMatch = sHorizon.includes("positional") || sHorizon.includes("long term");
+      else if (cat === "f&o") catMatch = ["option", "future", "commodityfuture"].includes(sType) || sThemes.includes("f&o");
+      else if (cat === "commodities") catMatch = ["commodity", "commodityfuture"].includes(sType) || sThemes.includes("commodity");
+      else if (cat === "basket") catMatch = sType === "basket";
+      else if (cat === "multi leg") catMatch = ["option", "future", "commodityfuture"].includes(sType);
+      else catMatch = sType.includes(cat) || sHorizon.includes(cat) || sThemes.some((t: string) => t.includes(cat));
+      if (!catMatch) return false;
+    }
     if (themeFilter && themeFilter !== "all") {
       const themes = (s.theme || []).map((t: string) => t.toLowerCase());
       const ft = themeFilter.toLowerCase();
       // Match against theme array, strategy type, and horizon
-      const themeMatch = themes.some((t: string) => t.includes(ft) || ft.includes(t));
-      const typeMatch = (s.type || "").toLowerCase().includes(ft) || ft.includes((s.type || "").toLowerCase());
+      // Exact theme match (not bidirectional includes which caused false positives)
+      const themeMatch = themes.includes(ft);
+      const typeMatch = (s.type || "").toLowerCase() === ft;
       const horizonMatch = (s.horizon || "").toLowerCase().includes(ft);
-      // Special: "F&O" matches Option, Future, CommodityFuture
+      // Special: "F&O" matches Option, Future, CommodityFuture types
       const fnoMatch = ft === "f&o" && ["Option", "Future", "CommodityFuture"].includes(s.type);
-      if (!themeMatch && !typeMatch && !horizonMatch && !fnoMatch) return false;
+      // Special: "swingtrade" theme maps to Swing horizon
+      const swingMatch = (ft === "swingtrade" || ft === "swing") && (s.horizon || "").toLowerCase().includes("swing");
+      if (!themeMatch && !typeMatch && !horizonMatch && !fnoMatch && !swingMatch) return false;
     }
     if (volatilityFilter && volatilityFilter !== "all" && s.volatility?.toLowerCase() !== volatilityFilter.toLowerCase()) return false;
     if (horizonFilter && horizonFilter !== "all" && !(s.horizon || "").toLowerCase().includes(horizonFilter.toLowerCase())) return false;
@@ -92,7 +113,7 @@ export default function StrategiesMarketplace() {
   });
 
   const clearFilters = () => {
-    setSearch(""); setTypeFilter(""); setThemeFilter(""); setVolatilityFilter(""); setHorizonFilter(""); setManagementStyleFilter("");
+    setSearch(""); setTypeFilter(""); setThemeFilter(""); setVolatilityFilter(""); setHorizonFilter(""); setManagementStyleFilter(""); setCategoryFilter("");
   };
 
   return (
@@ -197,7 +218,7 @@ export default function StrategiesMarketplace() {
               </div>
             </div>
 
-            {(themeFilter || volatilityFilter || horizonFilter || typeFilter || managementStyleFilter) && (
+            {(themeFilter || volatilityFilter || horizonFilter || typeFilter || managementStyleFilter || categoryFilter) && (
               <Button variant="ghost" size="sm" className="w-full text-xs" onClick={clearFilters} data-testid="button-clear-filters">
                 Clear All Filters
               </Button>

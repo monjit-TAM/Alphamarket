@@ -23,13 +23,13 @@ THIS DOCUMENT IS AN ELECTRONIC RECORD IN TERMS OF THE INFORMATION TECHNOLOGY ACT
 
 THIS DOCUMENT IS PUBLISHED IN ACCORDANCE WITH THE PROVISIONS OF RULE 3 (1) OF THE INFORMATION TECHNOLOGY (INTERMEDIARIES GUIDELINES) RULES, 2011 THAT REQUIRE PUBLISHING THE RULES AND REGULATIONS, PRIVACY POLICY, AND TERMS OF USE FOR ACCESS OR USAGE OF THE "PLATFORM" (DEFINED BELOW).
 
-The online platform \u2013 www.thealphamarket.com ("Website"), and the iOS and Android mobile applications \u2013 "AlphaMarket" ("App") is owned and operated by Edhaz Financial Services Private Limited, a private limited company incorporated under the Companies Act, 2013 with its registered office at [Your Office Address] ("Edhaz"). The App and the Website, its sub-domains, and other sites/apps/other channels maintained by Edhaz to enable distribution of financial products and services shall be collectively referred to hereinafter as the ("Platform"). Edhaz is not a SEBI registered Investment Advisor and Research Analyst but provides a marketplace for SEBI Registered Investment Advisor and Research Analysts and Research Analysts to publish their strategies.
+The online platform \u2013 www.alphamarket.co.in ("Website"), and the iOS and Android mobile applications \u2013 "AlphaMarket" ("App") is owned and operated by Edhaz Markets Private Limited, a private limited company incorporated under the Companies Act, 2013 with its registered office at Bakersfield, Shastri Nagar, Andheri West, Mumbai 400053 ("Edhaz"). The App and the Website, its sub-domains, and other sites/apps/other channels maintained by Edhaz to enable distribution of financial products and services shall be collectively referred to hereinafter as the ("Platform"). Edhaz is not a SEBI registered Investment Advisor and Research Analyst but provides a marketplace for SEBI Registered Investment Advisor and Research Analysts and Research Analysts to publish their strategies.
 
 Edhaz requests you to carefully go through and accept this Investment Advisor and Research Analyst Services Agreement ("Agreement") to avail the advisory services provided by SEBI Registered Investment Advisor and Research Analysts or Research Analysts through the Platform. If you continue to browse and use this Platform, you irrevocably and unconditionally agree to comply with, abide by, and be bound by all the obligations as stipulated under this Agreement, which, together with our privacy policy and any other applicable policies which are incorporated herein by way of reference or available by hyperlink on the Website, shall govern Edhaz's relationship with you in relation to this Platform.
 
 Part A: Client Consent
 
-I/We ("Client") have read and understood the terms and conditions of the Investment Advisor and Research Analyst Services Agreement facilitated by Edhaz Financial Services Private Limited ("Edhaz") through its Marketplace Platform, The AlphaMarket. This agreement, including the fee structure and the mechanism for charging and payment of fees, is a standardized structure decided and agreed upon between the Client and the SEBI Registered Investment Advisor and Research Analyst ("RIA") or Research Analyst ("RA") connected via The AlphaMarket platform. Edhaz provides the platform to facilitate this connection, while all advisory services and fee arrangements are directly between the Client and the RIA or RA.
+I/We ("Client") have read and understood the terms and conditions of the Investment Advisor and Research Analyst Services Agreement facilitated by Edhaz Markets Private Limited ("Edhaz") through its Marketplace Platform, The AlphaMarket. This agreement, including the fee structure and the mechanism for charging and payment of fees, is a standardized structure decided and agreed upon between the Client and the SEBI Registered Investment Advisor and Research Analyst ("RIA") or Research Analyst ("RA") connected via The AlphaMarket platform. Edhaz provides the platform to facilitate this connection, while all advisory services and fee arrangements are directly between the Client and the RIA or RA.
 
 Part B: Declaration of Investment Advisor and Research Analyst
 
@@ -37,7 +37,7 @@ The Client, by agreeing to this electronic and digital agreement, signifies cons
 
 Part C: Fees Specified as per SEBI (Investment Advisor and Research Analysts) Regulations, 2013 and Relevant Circulars
 
-In the case of AlphaMarket, a Marketplace platform by Edhaz Financial Services Private Limited, the Client pays the subscription fees for the specific strategy offered by the SEBI Registered Investment Advisor and Research Analyst ("RIA") or Research Analyst ("RA") that they choose to subscribe to. The fees are determined by the Advisor and are based on the duration of the subscription.
+In the case of AlphaMarket, a Marketplace platform by Edhaz Markets Private Limited, the Client pays the subscription fees for the specific strategy offered by the SEBI Registered Investment Advisor and Research Analyst ("RIA") or Research Analyst ("RA") that they choose to subscribe to. The fees are determined by the Advisor and are based on the duration of the subscription.
 
 1. DEFINITIONS AND INTERPRETATION
 
@@ -51,7 +51,7 @@ Unless the context otherwise requires, the capitalized terms set out herein shal
 
 2. APPOINTMENT OF THE INVESTMENT ADVISOR AND RESEARCH ANALYST
 
-In accordance with applicable laws, the Client, at their own discretion and risk, engages with SEBI Registered Investment Advisors (RIAs) and Research Analysts (RAs) through The AlphaMarket, a marketplace product of Edhaz Financial Services Private Limited. The advice provided by the RIAs and RAs will be akin to a model portfolio or generic in nature, and the discretion to execute the advice lies solely with the Client.
+In accordance with applicable laws, the Client, at their own discretion and risk, engages with SEBI Registered Investment Advisors (RIAs) and Research Analysts (RAs) through The AlphaMarket, a marketplace product of Edhaz Markets Private Limited. The advice provided by the RIAs and RAs will be akin to a model portfolio or generic in nature, and the discretion to execute the advice lies solely with the Client.
 
 3. SCOPE OF INVESTMENT ADVISOR AND RESEARCH ANALYST SERVICES
 
@@ -131,11 +131,11 @@ Failure to enforce any provision shall not constitute a waiver of that provision
 
 19. GRIEVANCE AND DISPUTE SETTLEMENT
 
-Client grievances should be directed to hello@thealphamarket.com. Disputes will first be attempted to be resolved through mutual consultation, and if unresolved, referred to arbitration in accordance with the Arbitration and Conciliation Act, 1996 in Bangalore.
+Client grievances should be directed to hello@alphamarket.co.in. Disputes will first be attempted to be resolved through mutual consultation, and if unresolved, referred to arbitration in accordance with the Arbitration and Conciliation Act, 1996 in Mumbai.
 
 20. GOVERNING LAW
 
-This Agreement shall be governed by Indian laws, with exclusive jurisdiction in Bangalore, Karnataka.
+This Agreement shall be governed by Indian laws, with exclusive jurisdiction in Mumbai, Maharashtra.
 
 21. SEVERABILITY
 

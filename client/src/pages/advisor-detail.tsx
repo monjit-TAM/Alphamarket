@@ -171,51 +171,80 @@ export default function AdvisorDetail() {
               </CardContent>
             </Card>
 
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-base">Content Portfolio</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {(advisor.contents || []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-2">No content published</p>
-                ) : (
-                  (advisor.contents || []).slice(0, 5).map((c) => (
-                    <div key={c.id} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50" data-testid={`content-item-${c.id}`}>
-                      <BarChart3 className="w-3 h-3 text-primary flex-shrink-0" />
-                      <span className="truncate">{c.title}</span>
-                    </div>
-                  ))
-                )}
-              </CardContent>
-            </Card>
+            {/* Research & Market Content */}
+            {(() => {
+              const researchContent = (advisor.contents || []).filter((c) => ["MarketUpdate", "Learn", "Research"].includes(c.type));
+              return researchContent.length > 0 ? (
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base">Research & Market Insights</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2">
+                    {researchContent.slice(0, 5).map((c) => (
+                      <a key={c.id} href={`/content/${c.id}`} className="flex items-center gap-2 text-sm p-2 rounded-md bg-muted/50 hover:bg-muted cursor-pointer no-underline text-inherit">
+                        <BarChart3 className="w-3 h-3 text-primary flex-shrink-0" />
+                        <span className="truncate">{c.title}</span>
+                        <span className="text-xs text-muted-foreground ml-auto">{c.type === "MarketUpdate" ? "Market Update" : c.type === "Learn" ? "Education" : c.type}</span>
+                      </a>
+                    ))}
+                  </CardContent>
+                </Card>
+              ) : null;
+            })()}
 
-            {advisor.scores && advisor.scores.length > 0 && (
+            {(
               <Card>
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Customer Complaints as per SCORES</CardTitle>
+                  <CardTitle className="text-base">Customer Complaints as per <a href="https://scores.sebi.gov.in" target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">SCORES</a></CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="p-2 rounded-md bg-primary/10 text-center space-y-1">
                       <p className="text-muted-foreground">At beginning</p>
-                      <p className="font-semibold">{advisor.scores[0].beginningOfMonth || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.beginningOfMonth || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-primary/10 text-center space-y-1">
                       <p className="text-muted-foreground">Received</p>
-                      <p className="font-semibold">{advisor.scores[0].receivedDuring || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.receivedDuring || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-accent/10 text-center space-y-1">
                       <p className="text-muted-foreground">Resolved</p>
-                      <p className="font-semibold">{advisor.scores[0].resolvedDuring || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.resolvedDuring || 0}</p>
                     </div>
                     <div className="p-2 rounded-md bg-primary/10 text-center space-y-1">
                       <p className="text-muted-foreground">Pending</p>
-                      <p className="font-semibold">{advisor.scores[0].pendingAtEnd || 0}</p>
+                      <p className="font-semibold">{advisor.scores?.[0]?.pendingAtEnd || 0}</p>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             )}
+
+            {/* Compliance & Disclosures */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">Compliance & Disclosures</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                                {/* Compliance documents uploaded by advisor */}
+                {(() => {
+                  const compDocs = (advisor.contents || []).filter((c) => ["RiskAdvisory", "Disclaimer", "TermsConditions", "Terms"].includes(c.type));
+                  return compDocs.length > 0 ? (
+                    <div className="space-y-2">
+                      {compDocs.map((c) => (
+                        <a key={c.id} href={`/content/${c.id}`} className="flex items-center gap-2 text-sm p-3 rounded-md bg-blue-50 dark:bg-blue-950 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer no-underline">
+                          <BarChart3 className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                          <span className="font-semibold text-blue-700 dark:text-blue-300">{c.title}</span>
+                          <span className="text-xs text-muted-foreground ml-auto">{c.type === "RiskAdvisory" ? "Risk Advisory" : c.type === "Terms" ? "Terms & Conditions" : c.type}</span>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-2">No disclosures uploaded yet</p>
+                  );
+                })()}
+              </CardContent>
+            </Card>
           </div>
         </div>
 

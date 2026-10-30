@@ -8,11 +8,15 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { scrypt, randomBytes, timingSafeEqual, createHmac } from "crypto";
 import { promisify } from "util";
-import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail } from "./auth";
+import { setupSession, registerAuthRoutes, setupGoogleAuth, setupGithubAuth, sendEsignAgreementEmail, sendNewsletterEmail } from "./auth";
+import { registerResellerRoutes } from "./reseller/routes";
+import { registerResellerAdminRoutes } from "./reseller/admin-routes";
+import { registerResellerMeRoutes } from "./reseller/me-routes";
 import { getLiveQuote, getLivePrices, setGrowwAccessToken, getGrowwTokenStatus, getOptionChainExpiries, getOptionChain } from "./groww";
 import type { Plan, BasketRebalance } from "@shared/schema";
 import { esignAgreements, appSettings, calls, positions, strategies } from "@shared/schema";
 import { db } from "./db";
+import { sql } from "drizzle-orm";
 import { handleXTSEvent, buildCallEventData, buildPositionEventData, fireWebhookEvent } from "./webhook-dispatcher";
 import { handleXTSEvent as xtsHandleEvent } from "./xts-bridge";
 import { and, eq, desc, sql } from "drizzle-orm";
@@ -56,6 +60,8 @@ import { initXTSBridge } from "./xts-bridge";
 import { initBrokerAdapters, handleBrokerEvent } from "./broker-integrations";
 import { registerBasketAdminRoutes } from "./routes-basket-admin";
 import { registerBasketValidateRoutes } from "./routes-basket-validate";
+import { autoDispatchOnRebalance } from "./basket-auto-dispatch";
+import { unpricedSquareOffs } from "./scheduler";
 import { registerNextraSSO } from "./nextra-sso";
 import { registerNextraAdmin } from "./nextra-admin";
 import { registerNextraTrade } from "./nextra-trade";
@@ -84,6 +90,9 @@ export async function registerRoutes(
   }
   setupSession(app);
   registerAuthRoutes(app, storage);
+  registerResellerRoutes(app, storage);
+  registerResellerAdminRoutes(app, requireAdmin);
+  registerResellerMeRoutes(app);
   setupGoogleAuth(app, storage);
   setupGithubAuth(app, storage);
 
@@ -528,11 +537,17 @@ export async function registerRoutes(
         "Commodities": 0,
         "Basket": 0,
       };
+      const legGroups = new Set<string>();
       for (const s of strats) {
         const activeCalls = await storage.getCalls(s.id);
         const activePositions = await storage.getPositions(s.id);
         const activeCallCount = activeCalls.filter((c: any) => c.status === "Active").length;
         const activePosCount = activePositions.filter((p: any) => p.status === "Active").length;
+        for (const p of activePositions as any[]) {
+          if (p.status !== "Active") continue;
+          const g = p.legGroupId ?? p.leg_group_id;
+          if (g) legGroups.add(String(g));
+        }
         const activeCount = activeCallCount + activePosCount;
         const horizon = (s.horizon || "").toLowerCase();
         const type = s.type;
@@ -542,8 +557,9 @@ export async function registerRoutes(
         if (horizon.includes("swing")) counts["Swing"] += activeCount;
         if (horizon.includes("positional") || horizon.includes("long term") || horizon.includes("short term")) counts["Positional"] += activeCount;
         if (type === "Commodity" || type === "CommodityFuture") counts["Commodities"] += activeCount;
-        if (type === "Basket") counts["Basket"] += activeCount;
+        if (type === "Basket") counts["Basket"] += 1;
       }
+      counts["Multi Leg"] = legGroups.size;
       res.json(counts);
     } catch (err: any) {
       res.status(500).send(err.message);
@@ -578,8 +594,8 @@ export async function registerRoutes(
       const allCalls = await storage.getCalls(req.params.id);
       const allPositions = await storage.getPositions(req.params.id);
 
-      const closedCalls = allCalls.filter((c: any) => c.status === "Closed");
-      const closedPositions = allPositions.filter((p: any) => p.status === "Closed");
+      const closedCalls = allCalls.filter((c: any) => c.status === "Closed" && c.gainPercent !== null && c.gainPercent !== undefined && c.gainPercent !== "");
+      const closedPositions = allPositions.filter((p: any) => p.status === "Closed" && p.gainPercent !== null && p.gainPercent !== undefined && p.gainPercent !== "");
 
       interface ClosedEntry {
         type: "call" | "position";
@@ -1293,7 +1309,7 @@ export async function registerRoutes(
         const entryPx = Number(call.entryPrice || call.buyRangeStart || 0);
         const exitPx = Number(exitPrice || entryPx);
         const gainPercent = entryPx > 0 && exitPx > 0
-          ? (((exitPx - entryPx) / entryPx) * 100).toFixed(2) : null;
+          ? (() => { const _isSell = (call?.action || "Buy").toLowerCase() === "sell"; return (_isSell ? ((entryPx - exitPx) / entryPx) * 100 : ((exitPx - entryPx) / entryPx) * 100).toFixed(2); })() : null;
         await storage.updateCall(call.id, {
           status: "Closed", sellPrice: String(exitPx), exitDate: now, gainPercent: gainPercent || "0",
         });
@@ -1447,6 +1463,12 @@ export async function registerRoutes(
       }
 
       res.json({ rebalance, constituents: createdConstituents });
+
+      // Fire-and-forget: push the new version to any broker this basket is
+      // already live on. Deliberately NOT awaited — a broker being down must
+      // never fail an advisor's save. Outcome lands in
+      // broker_basket_publish_log and the admin panel.
+      autoDispatchOnRebalance(req.params.id, req.session.userId ?? null);
     } catch (err: any) {
       res.status(500).send(err.message);
     }
@@ -1600,7 +1622,7 @@ export async function registerRoutes(
         const strikePx = Number(body.strikePrice || 0);
 
         // Option premiums are almost always < strike price (except deep ITM)
-        if (segment === "Option" && strikePx > 0 && entryPx > strikePx) {
+        if (segment === "Option" && strikePx > 0 && entryPx >= strikePx) {
           return res.status(400).send(
             `Entry price (₹${entryPx}) is higher than strike price (₹${strikePx}). ` +
             `For options, entry price should be the premium amount (typically ₹1-₹2000), not the stock price. ` +
@@ -1799,12 +1821,35 @@ export async function registerRoutes(
               return res.status(400).send("Leg " + (v + 1) + ": Invalid expiry format '" + vExpiry + "'. Expected YYYY-MM-DD.");
             }
           }
+          // SL direction validation for each leg
+          const vSl = Number(vleg.stopLoss || 0);
+          if (vSl > 0 && vEntry > 0 && vSegment !== "Option" && vSegment !== "Index") {
+            const vAction = (vleg.buySell || vleg.buy_sell || "Buy").toLowerCase();
+            if (vAction === "buy" && vSl > vEntry) {
+              return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is above entry (" + vEntry + ") for a BUY position.");
+            }
+            if (vAction === "sell" && vSl < vEntry) {
+              return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is below entry (" + vEntry + ") for a SELL position.");
+            }
+          }
+          if (vSl > 0 && vEntry > 0) {
+            const vSlDist = Math.abs(vSl - vEntry) / vEntry;
+            if (vSlDist > 0.8) {
+              return res.status(400).send("Leg " + (v + 1) + ": Stop-loss (" + vSl + ") is " + Math.round(vSlDist * 100) + "% away from entry (" + vEntry + "). Likely a typo.");
+            }
+          }
           if ((vSegment === "Option" || vSegment === "Index") && !vleg.strikePrice && isPublished) {
             return res.status(400).send("Leg " + (v + 1) + ": Strike price is required for " + vSegment + " positions.");
           }
-          if (vSegment === "Option" && vStrike > 0 && vEntry > vStrike) {
+          if (vSegment === "Option" && vStrike > 0 && vEntry >= vStrike) {
             return res.status(400).send(
-              `Leg ${v + 1}: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
+              `Leg ${v + 1}
+          // Option premiums rarely exceed 5000
+          if ((vSegment === "Option" || vSegment === "Index") && vEntry > 5000 && vStrike > 0) {
+            return res.status(400).send(
+              "Leg " + (v + 1) + ": Entry price (" + vEntry + ") seems too high for an option premium. Did you enter the stock/index price instead of the option premium?"
+            );
+          }: Entry price (₹${vEntry}) is higher than strike price (₹${vStrike}). ` +
               `For options, entry price should be the premium, not the stock price.`
             );
           }
@@ -2070,6 +2115,66 @@ export async function registerRoutes(
       if (!call.rationale || !call.rationale.trim()) {
         return res.status(400).send("Rationale is required to publish a call");
       }
+
+      // ── SEBI Compliance Validations (Reg 18(7), 20(1)) ──
+
+      // 1. Rationale must be stock-specific, not generic/templated (min 50 chars)
+      if (call.rationale.trim().length < 50) {
+        return res.status(400).send("Rationale is too short. Please provide a detailed, stock-specific analysis (minimum 50 characters).");
+      }
+
+      // 2. Check for duplicate/generic rationale used across multiple stocks
+      try {
+        const dupCheck = await db.execute(
+          sql`SELECT COUNT(DISTINCT stock_name) as stock_count
+            FROM calls
+            WHERE strategy_id = ${call.strategyId}
+              AND rationale = ${call.rationale.trim()}
+              AND stock_name != ${call.stockName}
+              AND is_published = true
+              AND created_at >= NOW() - INTERVAL '30 days'`
+        );
+        const dupCount = Number((dupCheck.rows[0] as any)?.stock_count || 0);
+        if (dupCount >= 3) {
+          return res.status(400).send(
+            "This rationale has been used for " + (dupCount + 1) + " different stocks in the last 30 days. " +
+            "SEBI Regulation 18(7) requires stock-specific analysis. Please provide a unique rationale for " + call.stockName + "."
+          );
+        }
+      } catch (e) { /* fail open */ }
+
+      // 3. Validate target return % is realistic for the stated duration
+      if (call.buyRangeStart && call.targetPrice && call.duration) {
+        const _entryPx = Number(call.buyRangeStart);
+        const _targetPx = Number(call.targetPrice);
+        const _durationDays = Number(call.duration);
+        if (_entryPx > 0 && _targetPx > 0 && _durationDays > 0) {
+          const _targetReturnPct = Math.abs((_targetPx - _entryPx) / _entryPx * 100);
+          if (_durationDays <= 30 && _targetReturnPct > 50) {
+            return res.status(400).send(
+              "Target return of " + _targetReturnPct.toFixed(1) + "% in " + _durationDays + " days appears unrealistic. " +
+              "Per SEBI guidelines, recommendations should have a documented basis. Please review your target price."
+            );
+          }
+          if (_durationDays <= 90 && _targetReturnPct > 100) {
+            return res.status(400).send(
+              "Target return of " + _targetReturnPct.toFixed(1) + "% in " + _durationDays + " days appears unrealistic. " +
+              "Please review your target price or adjust the duration."
+            );
+          }
+        }
+      }
+
+      // 4. Duration vs strategy horizon mismatch
+      if (call.duration) {
+        const _durDays = Number(call.duration);
+        if (_durDays <= 1 && strategy.horizon !== "Intraday") {
+          return res.status(400).send(
+            "Duration of " + _durDays + " day(s) is an intraday call. Please publish under an Intraday strategy, not " + strategy.horizon + "."
+          );
+        }
+      }
+
       const updated = await storage.updateCall(call.id, {
         publishMode: "live",
         isPublished: true,
@@ -2190,12 +2295,18 @@ export async function registerRoutes(
         return res.json({ partial: true, closedLots: lotsToClose, remainingLots: totalLots - lotsToClose });
       }
 
+      console.log(`[GP-TRACE] close ${pos.symbol} seg=${pos.segment} entry=${entryPx} exit=${exitPx} computed=${gainPercent}`);
       const updated = await storage.updatePosition(pos.id, {
         status: "Closed",
         exitPrice: String(exitPx),
         exitDate: new Date(),
         gainPercent: gainPercent,
       });
+      console.log(`[GP-TRACE] returned ${pos.symbol} gainPercent=${(updated as any)?.gainPercent}`);
+      try {
+        const verify = await db.execute(sql`SELECT gain_percent FROM positions WHERE id = ${pos.id}`);
+        console.log(`[GP-TRACE] in-db ${pos.symbol} gain_percent=${(verify.rows[0] as any)?.gain_percent}`);
+      } catch (e: any) { console.warn("[GP-TRACE] verify failed:", e?.message); }
       if (pos.isPublished) {
         const subPayload = buildPositionClosedSubscriberNotification(pos, exitPx, gainPercent || "0", strategy.name);
         notifyStrategySubscribers(pos.strategyId, strategy.name, "position_closed", subPayload);
@@ -4904,6 +5015,296 @@ export async function registerRoutes(
         VALUES ('monetization_config', ${jsonStr}, NOW())
         ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
       clearConfigCache();
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Site Content (editable footer stats & marketing copy) ───
+  app.get("/api/site-content", async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'site_content'`);
+      const row = (result as any).rows?.[0];
+      const defaults = {
+        statsAdvisors: "60+",
+        statsStrategies: "100+",
+        statsCustomers: "3M+",
+        footerTagline: "India's marketplace connecting investors with SEBI-registered advisors.",
+        footerDisclaimer: "AlphaMarket connects investors with advisors to receive advice on investing or trading in stock market, commodity, and F&O segments. Investment in securities market is subject to market risk. Read all related documents carefully before investing.",
+        footerColumns: [
+          { heading: "Advisors", links: [
+            { label: "Browse Advisors", url: "/advisors" },
+            { label: "Become a Reseller", url: "/reseller" },
+            { label: "Data Partners", url: "" },
+          ]},
+          { heading: "Company", links: [
+            { label: "Careers", url: "" },
+            { label: "Press", url: "" },
+          ]},
+          { heading: "Disclosures", links: [
+            { label: "Privacy Policy", url: "/privacy-policy" },
+            { label: "Terms and Conditions", url: "/terms-and-conditions" },
+            { label: "Legal Disclosures", url: "/legal-agreement" },
+            { label: "Cancellation & Refund", url: "/cancellation-policy" },
+            { label: "Shipping & Delivery", url: "/shipping-and-delivery" },
+          ]},
+          { heading: "About us", links: [
+            { label: "Contact Us", url: "/contact-us" },
+            { label: "Site Map", url: "/sitemap.xml" },
+          ]},
+        ],
+      };
+      const value = row?.value ? { ...defaults, ...JSON.parse(row.value) } : defaults;
+      res.json(value);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/admin/site-content", requireAdmin, async (req: any, res: any) => {
+    try {
+      const config = req.body;
+      if (!config || typeof config !== "object") return res.status(400).json({ error: "Invalid content" });
+      const jsonStr = JSON.stringify(config);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('site_content', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Editable Page Content (footer pages) ───
+  const VALID_PAGE_SLUGS = ["privacy-policy", "terms-and-conditions", "legal-agreement", "cancellation-policy", "shipping-and-delivery", "contact-us"];
+
+  app.get("/api/page-content/:slug", async (req: any, res: any) => {
+    try {
+      const slug = req.params.slug;
+      if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(404).json({ error: "Unknown page" });
+      const result = await db.execute(sql`SELECT value, updated_at FROM app_settings WHERE key = ${'page:' + slug}`);
+      const row = (result as any).rows?.[0];
+      if (!row) return res.json({ slug, content: null, hasCustomContent: false });
+      res.json({ slug, content: row.value, hasCustomContent: true, updatedAt: row.updated_at });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put("/api/admin/page-content/:slug", requireAdmin, async (req: any, res: any) => {
+    try {
+      const slug = req.params.slug;
+      if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(400).json({ error: "Unknown page" });
+      const { content } = req.body;
+      if (typeof content !== "string") return res.status(400).json({ error: "content must be a string" });
+      const key = 'page:' + slug;
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES (${key}, ${content}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${content}, updated_at = NOW()`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/page-content/:slug", requireAdmin, async (req: any, res: any) => {
+    try {
+      const slug = req.params.slug;
+      if (!VALID_PAGE_SLUGS.includes(slug)) return res.status(400).json({ error: "Unknown page" });
+      await db.execute(sql`DELETE FROM app_settings WHERE key = ${'page:' + slug}`);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Newsletter Broadcast ───
+  // Segment SQL definitions — each returns a set of emails
+  const SEGMENT_QUERIES: Record<string, any> = {
+    all_advisors: sql`SELECT email FROM users WHERE role='advisor' AND email IS NOT NULL AND email <> ''`,
+    active_advisors: sql`SELECT DISTINCT u.email FROM users u JOIN strategies s ON s.advisor_id = u.id JOIN calls c ON c.strategy_id = s.id WHERE u.role='advisor' AND u.email IS NOT NULL AND u.email <> ''`,
+    inactive_advisors: sql`SELECT email FROM users WHERE role='advisor' AND email IS NOT NULL AND email <> '' AND id NOT IN (SELECT DISTINCT s.advisor_id FROM strategies s JOIN calls c ON c.strategy_id = s.id)`,
+    all_investors: sql`SELECT email FROM users WHERE role='investor' AND email IS NOT NULL AND email <> ''`,
+    subscribers: sql`SELECT DISTINCT u.email FROM users u JOIN subscriptions sub ON sub.user_id = u.id WHERE u.email IS NOT NULL AND u.email <> ''`,
+    non_subscriber_investors: sql`SELECT email FROM users WHERE role='investor' AND email IS NOT NULL AND email <> '' AND id NOT IN (SELECT DISTINCT user_id FROM subscriptions)`,
+  };
+
+  const SEGMENT_LABELS: Record<string, string> = {
+    all_advisors: "All Advisors",
+    active_advisors: "Active Advisors (published calls)",
+    inactive_advisors: "Inactive Advisors (no calls yet)",
+    all_investors: "All Investors",
+    subscribers: "Subscribers (active subscription)",
+    non_subscriber_investors: "Investors — not yet subscribed",
+  };
+
+  // Return counts for every segment (for the admin UI)
+  app.get("/api/admin/audience-segments", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const segments = [];
+      for (const key of Object.keys(SEGMENT_QUERIES)) {
+        const result = await db.execute(SEGMENT_QUERIES[key]);
+        const rows = (result as any).rows || [];
+        segments.push({ key, label: SEGMENT_LABELS[key], count: rows.length });
+      }
+      res.json(segments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Legacy endpoint kept for backward compatibility
+  app.get("/api/admin/advisor-emails", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(SEGMENT_QUERIES.all_advisors);
+      const rows = (result as any).rows || [];
+      res.json({ count: rows.length, advisors: rows.map((r: any) => ({ email: r.email, name: r.email })) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Send a newsletter to a provided recipient list (advisor emails + any extras)
+  app.post("/api/admin/send-newsletter", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { subject, html, recipients, includeAllAdvisors, extraEmails } = req.body;
+      if (!subject || !html) return res.status(400).json({ error: "subject and html are required" });
+
+      // Build recipient set
+      const emailSet = new Set<string>();
+      const { segments } = req.body;
+
+      if (Array.isArray(recipients)) {
+        for (const e of recipients) if (typeof e === "string" && e.includes("@")) emailSet.add(e.trim().toLowerCase());
+      }
+
+      // Resolve any selected audience segments
+      if (Array.isArray(segments)) {
+        for (const seg of segments) {
+          if (SEGMENT_QUERIES[seg]) {
+            const result = await db.execute(SEGMENT_QUERIES[seg]);
+            const rows = (result as any).rows || [];
+            for (const r of rows) if (r.email) emailSet.add(String(r.email).trim().toLowerCase());
+          }
+        }
+      }
+
+      // Backward-compat: includeAllAdvisors flag
+      if (includeAllAdvisors) {
+        const result = await db.execute(SEGMENT_QUERIES.all_advisors);
+        const rows = (result as any).rows || [];
+        for (const r of rows) if (r.email) emailSet.add(String(r.email).trim().toLowerCase());
+      }
+
+      if (Array.isArray(extraEmails)) {
+        for (const e of extraEmails) {
+          const trimmed = String(e || "").trim().toLowerCase();
+          if (trimmed.includes("@") && trimmed.length > 3) emailSet.add(trimmed);
+        }
+      }
+
+      const finalRecipients = Array.from(emailSet);
+      if (finalRecipients.length === 0) {
+        return res.status(400).json({ error: "No valid recipients" });
+      }
+
+      // Cap to protect against accidental massive sends; adjust as needed
+      if (finalRecipients.length > 50000) {
+        return res.status(400).json({ error: "Recipient list exceeds 50000 — please split into batches" });
+      }
+
+      const result = await sendNewsletterEmail(finalRecipients, subject, html);
+
+      // Log the send in app_settings for a simple audit trail
+      try {
+        const logKey = 'newsletter_log';
+        const existing = await db.execute(sql`SELECT value FROM app_settings WHERE key = ${logKey}`);
+        const prev = (existing as any).rows?.[0]?.value ? JSON.parse((existing as any).rows[0].value) : [];
+        prev.unshift({ subject, at: new Date().toISOString(), sent: result.sent, failed: result.failed, total: finalRecipients.length });
+        const trimmed = prev.slice(0, 50);
+        const jsonStr = JSON.stringify(trimmed);
+        await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+          VALUES (${logKey}, ${jsonStr}, NOW())
+          ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      } catch (logErr) { /* non-fatal */ }
+
+      res.json({ success: true, sent: result.sent, failed: result.failed, total: finalRecipients.length, errors: result.errors });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Recent newsletter send history
+  app.get("/api/admin/newsletter-log", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_log'`);
+      const row = (result as any).rows?.[0];
+      res.json(row?.value ? JSON.parse(row.value) : []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── Newsletter Library (saved templates) ───
+  app.get("/api/admin/newsletter-library", requireAdmin, async (_req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      // Return metadata only (not full HTML) for the list
+      const list = lib.map((n: any, i: number) => ({ id: i, name: n.name, subject: n.subject, savedAt: n.savedAt, size: (n.html || "").length }));
+      res.json(list);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/newsletter-library/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id) || id < 0 || id >= lib.length) return res.status(404).json({ error: "Not found" });
+      res.json(lib[id]);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/newsletter-library", requireAdmin, async (req: any, res: any) => {
+    try {
+      const { name, subject, html } = req.body;
+      if (!name || !html) return res.status(400).json({ error: "name and html are required" });
+      if (html.length > 500000) return res.status(400).json({ error: "HTML too large (max 500KB)" });
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      lib.unshift({ name, subject: subject || name, html, savedAt: new Date().toISOString() });
+      const trimmed = lib.slice(0, 30); // keep last 30 templates
+      const jsonStr = JSON.stringify(trimmed);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('newsletter_library', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
+      res.json({ success: true, count: trimmed.length });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/newsletter-library/:id", requireAdmin, async (req: any, res: any) => {
+    try {
+      const result = await db.execute(sql`SELECT value FROM app_settings WHERE key = 'newsletter_library'`);
+      const row = (result as any).rows?.[0];
+      const lib = row?.value ? JSON.parse(row.value) : [];
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id) || id < 0 || id >= lib.length) return res.status(404).json({ error: "Not found" });
+      lib.splice(id, 1);
+      const jsonStr = JSON.stringify(lib);
+      await db.execute(sql`INSERT INTO app_settings (key, value, updated_at)
+        VALUES ('newsletter_library', ${jsonStr}, NOW())
+        ON CONFLICT (key) DO UPDATE SET value = ${jsonStr}, updated_at = NOW()`);
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -7944,11 +8345,23 @@ export async function registerRoutes(
   app.post("/api/admin/calls/:id/close", requireAdmin, async (req, res) => {
     try {
       const cid = req.params.id;
-      const { sellPrice, gainPercent, exitDate } = req.body;
+      const { sellPrice, exitPrice, gainPercent, exitDate } = req.body;
+      const finalSellPrice = sellPrice || exitPrice || null;
+      // Auto-calculate gainPercent if not provided
+      let finalGainPercent = gainPercent || null;
+      if (!finalGainPercent && finalSellPrice) {
+        const callForCalc = await storage.getCall(cid);
+        if (callForCalc && callForCalc.buyRangeStart && Number(callForCalc.buyRangeStart) > 0) {
+          const ep = Number(callForCalc.buyRangeStart);
+          const xp = Number(finalSellPrice);
+          const isSell = (callForCalc.action || "Buy").toLowerCase() === "sell";
+          finalGainPercent = (isSell ? ((ep - xp) / ep * 100) : ((xp - ep) / ep * 100)).toFixed(2);
+        }
+      }
       await db.update(calls).set({
         status: "Closed",
-        sellPrice: sellPrice || null,
-        gainPercent: gainPercent || null,
+        sellPrice: finalSellPrice,
+        gainPercent: finalGainPercent,
         exitDate: exitDate ? new Date(exitDate) : new Date(),
       }).where(eq(calls.id, cid));
 
@@ -8048,36 +8461,69 @@ export async function registerRoutes(
 
   // ── Close a broker call from admin ──
   app.post("/api/admin/broker-calls/:id/close", requireAdmin, async (req, res) => {
+    // Phase A (22 Sep 2026): P&L is computed from the NEW exit price (the old SQL read the old, empty
+    // column), an already-closed row is never closed or re-sent twice, and a close that hit the
+    // stop-loss or target is reported to brokers as STOPLOSS_TRIGGERED / TARGET_ACHIEVED.
     try {
       const { id } = req.params;
-      const { source, exitPrice } = req.body; // source: 'calls' or 'positions'
+      const { source, exitPrice, trigger } = req.body || {}; // source: 'calls' or 'positions'; trigger: 'SL' | 'TARGET' (optional)
+      const pct = (entry: number, exit: number, isSell: boolean) =>
+        entry > 0 && exit > 0 ? (isSell ? ((entry - exit) / entry) * 100 : ((exit - entry) / entry) * 100).toFixed(2) : null;
+      const inferTrigger = (isSell: boolean, exit: number, sl: number, tgt: number): "SL" | "TARGET" | null => {
+        if (trigger === "SL" || trigger === "TARGET") return trigger;
+        if (trigger === "EXPIRED") return null;
+        if (!(exit > 0)) return null;
+        if (isSell) { if (sl > 0 && exit >= sl) return "SL"; if (tgt > 0 && exit <= tgt) return "TARGET"; }
+        else { if (sl > 0 && exit <= sl) return "SL"; if (tgt > 0 && exit >= tgt) return "TARGET"; }
+        return null;
+      };
 
       if (source === 'positions') {
         const pos = await db.execute(sql`SELECT * FROM positions WHERE id = ${id}`);
         const p = (pos.rows[0] as any);
         if (!p) return res.status(404).send("Position not found");
-        await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${exitPrice || p.entry_price}, exit_date = NOW() WHERE id = ${id}`);
-        // Fire webhook
+        const entry = Number(p.entry_price || 0);
+        const isExpiry = trigger === "EXPIRED" && exitPrice !== undefined && exitPrice !== null && exitPrice !== "" && Number(exitPrice) >= 0;
+        const exit = isExpiry ? Number(exitPrice) : Number(exitPrice || p.entry_price || 0);
+        const isSell = String(p.buy_sell || "Buy").toLowerCase() === "sell";
+        const gainPercent = isExpiry && exit === 0 && entry > 0 ? (isSell ? "100.00" : "-100.00") : pct(entry, exit, isSell);
+        const upd = await db.execute(sql`UPDATE positions SET status = 'Closed', exit_price = ${String(exit)}, exit_date = NOW(), gain_percent = ${gainPercent}
+                                         WHERE id = ${id} AND status = 'Active' RETURNING id`);
+        if (upd.rows.length === 0) return res.status(409).json({ success: false, error: "Position is not active (already closed)", symbol: p.symbol });
         const strategy = await storage.getStrategy(p.strategy_id);
         if (strategy && p.webhook_rec_id) {
-          fireWebhookEvent("POSITION_CLOSED", buildPositionEventData({ ...p, status: 'Closed', exitPrice: exitPrice || p.entry_price, exit_date: new Date() }, strategy), strategy.advisorId)
+          const t = inferTrigger(isSell, exit, Number(p.stop_loss || 0), Number(p.target || 0));
+          const evt = t === "SL" ? "STOPLOSS_TRIGGERED" : t === "TARGET" ? "TARGET_ACHIEVED" : "POSITION_CLOSED";
+          fireWebhookEvent(evt, buildPositionEventData({ ...p, status: 'Closed', exitPrice: String(exit), gainPercent, exit_date: new Date() }, strategy), strategy.advisorId)
             .catch((err: any) => console.error("[admin broker-calls close position]", err));
         }
-        return res.json({ success: true, type: 'position', symbol: p.symbol });
+        return res.json({ success: true, type: 'position', symbol: p.symbol, gainPercent });
       } else {
         const call = await db.execute(sql`SELECT * FROM calls WHERE id = ${id}`);
         const c = (call.rows[0] as any);
         if (!c) return res.status(404).send("Call not found");
-        await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${exitPrice || c.buy_range_start}, exit_date = NOW() WHERE id = ${id}`);
-        // Fire webhook
+        const entry = Number(c.entry_price || c.buy_range_start || 0);
+        const exit = Number(exitPrice || c.buy_range_start || 0);
+        const isSell = String(c.action || "Buy").toLowerCase() === "sell";
+        const gainPercent = pct(entry, exit, isSell);
+        const upd = await db.execute(sql`UPDATE calls SET status = 'Closed', sell_price = ${String(exit)}, exit_date = NOW(), gain_percent = ${gainPercent}
+                                         WHERE id = ${id} AND status = 'Active' RETURNING id`);
+        if (upd.rows.length === 0) return res.status(409).json({ success: false, error: "Call is not active (already closed)", symbol: c.stock_name });
         const strategy = await storage.getStrategy(c.strategy_id);
         if (strategy && c.webhook_rec_id) {
-          fireWebhookEvent("CALL_CLOSED", buildCallEventData({ ...c, status: 'Closed', sellPrice: exitPrice || c.buy_range_start, exit_date: new Date() }, strategy), strategy.advisorId)
+          const t = inferTrigger(isSell, exit, Number(c.stop_loss || 0), Number(c.target_price || 0));
+          const evt = t === "SL" ? "STOPLOSS_TRIGGERED" : t === "TARGET" ? "TARGET_ACHIEVED" : "CALL_CLOSED";
+          fireWebhookEvent(evt, buildCallEventData({ ...c, status: 'Closed', sellPrice: String(exit), gainPercent, exit_date: new Date() }, strategy), strategy.advisorId)
             .catch((err: any) => console.error("[admin broker-calls close call]", err));
         }
-        return res.json({ success: true, type: 'call', symbol: c.stock_name });
+        return res.json({ success: true, type: 'call', symbol: c.stock_name, gainPercent });
       }
     } catch (err: any) { res.status(500).send(err.message); }
+  });
+
+  // ── Intraday items the square-off could not price (left open on purpose) ──
+  app.get("/api/admin/unpriced-squareoffs", requireAdmin, async (_req, res) => {
+    res.json({ items: Array.from(unpricedSquareOffs.values()) });
   });
 
   // ── Modify a broker call (target/SL) from admin ──
@@ -8668,6 +9114,114 @@ export async function registerRoutes(
   });
 
   // ── Download Broker Report (XLSX / PDF) ──
+  // ── All Advisors Performance (not broker-filtered) ──
+  app.get("/api/admin/broker-reports/all-advisors", requireAdmin, async (req, res) => {
+    try {
+      const from = req.query.from as string || new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+      const to = req.query.to as string || new Date().toISOString().split('T')[0];
+
+      const advisors = await db.execute(sql.raw(
+        "WITH eq AS (" +
+        "  SELECT u.company_name, u.sebi_reg_number," +
+        "    COUNT(*) as equity_total," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Active') as eq_open," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed') as eq_closed," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price > c.buy_range_start AND c.action = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price < c.buy_range_start AND c.action = 'Sell') as eq_wins," +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price <= c.buy_range_start AND c.action = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE c.status = 'Closed' AND c.sell_price >= c.buy_range_start AND c.action = 'Sell') as eq_losses," +
+        "    ROUND(AVG(CASE WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Buy'" +
+        "      THEN ((c.sell_price - c.buy_range_start) / c.buy_range_start) * 100" +
+        "      WHEN c.status = 'Closed' AND c.buy_range_start > 0 AND c.action = 'Sell'" +
+        "      THEN ((c.buy_range_start - c.sell_price) / c.buy_range_start) * 100 END)::numeric, 2) as eq_avg_return," +
+        "    ROUND(SUM(CASE WHEN c.status = 'Closed' AND c.action = 'Buy' THEN c.sell_price - c.buy_range_start" +
+        "      WHEN c.status = 'Closed' AND c.action = 'Sell' THEN c.buy_range_start - c.sell_price ELSE 0 END)::numeric, 2) as eq_abs_pnl," +
+        "    string_agg(DISTINCT s.horizon, ', ') as eq_horizons" +
+        "  FROM calls c JOIN strategies s ON s.id = c.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE c.is_published = true AND c.created_at >= '" + from + "T00:00:00Z' AND c.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY u.company_name, u.sebi_reg_number" +
+        "), fno AS (" +
+        "  SELECT u.company_name, u.sebi_reg_number," +
+        "    COUNT(*) as fno_total," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Active') as fno_open," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed') as fno_closed," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric > p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric < p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Sell') as fno_wins," +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric <= p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Buy') +" +
+        "    COUNT(*) FILTER (WHERE p.status = 'Closed' AND p.exit_price::numeric >= p.entry_price::numeric AND COALESCE(p.buy_sell,'Buy') = 'Sell') as fno_losses," +
+        "    ROUND(AVG(CASE WHEN p.status = 'Closed' AND p.entry_price::numeric > 0 AND COALESCE(p.buy_sell,'Buy') = 'Buy'" +
+        "      THEN ((p.exit_price::numeric - p.entry_price::numeric) / p.entry_price::numeric) * 100" +
+        "      WHEN p.status = 'Closed' AND p.entry_price::numeric > 0 AND COALESCE(p.buy_sell,'Buy') = 'Sell'" +
+        "      THEN ((p.entry_price::numeric - p.exit_price::numeric) / p.entry_price::numeric) * 100 END)::numeric, 2) as fno_avg_return," +
+        "    string_agg(DISTINCT p.segment, ', ') as fno_segments," +
+        "    string_agg(DISTINCT s.horizon, ', ') as fno_horizons" +
+        "  FROM positions p JOIN strategies s ON s.id = p.strategy_id JOIN users u ON u.id = s.advisor_id" +
+        "  WHERE p.is_published = true AND p.created_at >= '" + from + "T00:00:00Z' AND p.created_at <= '" + to + "T23:59:59Z'" +
+        "  GROUP BY u.company_name, u.sebi_reg_number" +
+        ") SELECT COALESCE(e.company_name, f.company_name) as advisor," +
+        "  COALESCE(e.sebi_reg_number, f.sebi_reg_number) as sebi," +
+        "  COALESCE(e.equity_total, 0) as equity_calls," +
+        "  COALESCE(e.eq_open, 0) as eq_open," +
+        "  COALESCE(e.eq_closed, 0) as eq_closed," +
+        "  COALESCE(e.eq_wins, 0) as eq_wins," +
+        "  COALESCE(e.eq_losses, 0) as eq_losses," +
+        "  e.eq_avg_return," +
+        "  COALESCE(e.eq_abs_pnl, 0) as eq_abs_pnl," +
+        "  e.eq_horizons," +
+        "  COALESCE(f.fno_total, 0) as fno_positions," +
+        "  COALESCE(f.fno_open, 0) as fno_open," +
+        "  COALESCE(f.fno_closed, 0) as fno_closed," +
+        "  COALESCE(f.fno_wins, 0) as fno_wins," +
+        "  COALESCE(f.fno_losses, 0) as fno_losses," +
+        "  f.fno_avg_return," +
+        "  f.fno_segments," +
+        "  f.fno_horizons," +
+        "  COALESCE(e.equity_total, 0) + COALESCE(f.fno_total, 0) as grand_total," +
+        "  COALESCE(e.eq_wins, 0) + COALESCE(f.fno_wins, 0) as total_wins," +
+        "  COALESCE(e.eq_losses, 0) + COALESCE(f.fno_losses, 0) as total_losses" +
+        " FROM eq e FULL OUTER JOIN fno f ON e.company_name = f.company_name" +
+        " ORDER BY grand_total DESC"
+      ));
+
+      res.json({ period: { from, to }, advisors: advisors.rows });
+    } catch (err) { res.status(500).send((err as any).message); }
+  });
+
+  // ==================== License Management ====================
+  app.get("/api/admin/licenses", requireAdmin, async (_req, res) => {
+    try {
+      const r: any = await db.execute(sql`
+        SELECT DISTINCT ON (broker_slug) broker_slug, license_key, valid_from, valid_until, status,
+               GREATEST(0, EXTRACT(DAY FROM (valid_until - now())))::int AS days_left
+        FROM license_keys ORDER BY broker_slug, valid_until DESC`);
+      res.json(r.rows || r);
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/licenses/grant", requireAdmin, async (req, res) => {
+    try {
+      const { broker_slug, days } = req.body;
+      if (!broker_slug) return res.status(400).json({ error: "broker_slug required" });
+      const validDays = Number(days) > 0 ? Number(days) : 90;
+      const r: any = await db.execute(sql`
+        INSERT INTO license_keys (broker_slug, license_key, valid_until, status, created_by)
+        VALUES (${broker_slug}, encode(gen_random_bytes(24),'hex'),
+                now() + (${validDays} || ' days')::interval, 'active', 'admin-ui')
+        RETURNING broker_slug, LEFT(license_key,12)||'...' AS key, valid_until`);
+      res.json({ success: true, issued: (r.rows || r)[0] });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.post("/api/admin/licenses/revoke", requireAdmin, async (req, res) => {
+    try {
+      const { broker_slug } = req.body;
+      if (!broker_slug) return res.status(400).json({ error: "broker_slug required" });
+      await db.execute(sql`UPDATE license_keys SET status='revoked'
+        WHERE broker_slug=${broker_slug} AND status='active'`);
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   app.get("/api/admin/broker-reports/download", requireAdmin, async (req, res) => {
     try {
       const from = req.query.from as string || new Date(Date.now() - 86400000).toISOString().split('T')[0];

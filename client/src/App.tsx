@@ -37,6 +37,11 @@ import DyorPage from "@/pages/dyor/index";
 import ToolPricingPage from "@/pages/tool-pricing";
 import { TermsAndConditions, CancellationPolicy, PrivacyPolicy, LegalAgreement, ShippingAndReturns, ContactUs } from "@/pages/legal";
 import BrokerAdmin from "@/pages/admin/BrokerAdmin";
+import Licenses from "@/pages/admin/Licenses";
+import ResellerRegister from "@/pages/reseller-register";
+import ResellerProgram from "@/pages/reseller-program";
+import ResellerAgreement from "@/pages/reseller-agreement";
+import ResellerDashboard from "@/pages/reseller-dashboard";
 
 function Router() {
   return (
@@ -44,6 +49,10 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/login" component={LoginPage} />
       <Route path="/register" component={RegisterPage} />
+      <Route path="/reseller/dashboard" component={ResellerDashboard} />
+      <Route path="/reseller/register" component={ResellerRegister} />
+      <Route path="/reseller" component={ResellerProgram} />
+      <Route path="/reseller-agreement" component={ResellerAgreement} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/strategies" component={StrategiesMarketplace} />
@@ -78,6 +87,7 @@ function Router() {
       <Route path="/admin" component={AdminDashboard} />
       <Route path="/admin/:rest*" component={AdminDashboard} />
           <Route path="/admin/brokers" component={BrokerAdmin} />
+          <Route path="/admin/licenses" component={Licenses} />
       <Route path="/pricing" component={ToolPricingPage} />
       <Route path="/dyor" component={DyorPage} />
       <Route path="/dyor/:rest*" component={DyorPage} />

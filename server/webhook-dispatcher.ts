@@ -117,6 +117,31 @@ export async function fireWebhookEvent(
         }
       }
 
+      // ── Never send a close/modify to a broker that never received this recommendation (Phase A) ──
+      if (event !== "CALL_CREATED" && event !== "POSITION_CREATED") {
+        const itemId = (data as any).id || (data as any).uid;
+        if (itemId) {
+          try {
+            const r = await db.execute(sql`SELECT COALESCE(
+                (SELECT webhook_rec_id::text FROM positions WHERE id = ${String(itemId)} LIMIT 1),
+                (SELECT webhook_rec_id::text FROM calls WHERE id = ${String(itemId)} LIMIT 1)) AS rec`);
+            const rec = (r.rows[0] as any)?.rec;
+            if (rec) {
+              const seen = await db.execute(sql`SELECT 1 FROM broker_webhook_logs
+                WHERE api_key_id = ${target.api_key_id} AND status_code BETWEEN 200 AND 299
+                  AND event IN ('CALL_CREATED', 'POSITION_CREATED')
+                  AND payload->'data'->>'recommendationId' = ${rec} LIMIT 1`);
+              if (seen.rows.length === 0) {
+                console.log(`[Webhook] SKIPPED ${event} to ${target.broker_name}: rec ${rec} was never created there`);
+                continue;
+              }
+            }
+          } catch (phErr: any) {
+            console.warn("[Webhook] Create-exists check failed (sending anyway):", phErr?.message);
+          }
+        }
+      }
+
       // ── Duplicate check: prevent same symbol (equity) or symbol+strike (F&O) going to same broker twice ──
       if (event === "CALL_CREATED" || event === "POSITION_CREATED") {
         try {
@@ -124,11 +149,40 @@ export async function fireWebhookEvent(
           const strike = (data as any).strike_price || (data as any).strikePrice || "";
           const segment = (data as any).segment || (data as any).type || "";
           const isFnO = segment === "Option" || segment === "Future" || segment === "Index" || segment === "Commodity" || segment === "CommodityFuture";
+          // Phase A: F&O dedup also matches series (CE/PE/XX) and expiry, and ignores contracts that have expired
+          const cpRaw = String((data as any).callPut || (data as any).call_put || "").toUpperCase();
+          const dedupSeries = segment === "Future" ? "XX" : cpRaw.startsWith("P") ? "PE" : cpRaw.startsWith("C") ? "CE" : "";
+          const dedupExpiry = (() => {
+            const raw = (data as any).expiry;
+            if (!raw) return "";
+            const s = String(raw).trim();
+            let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+            m = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/); if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+            if (/^\d{10,13}$/.test(s)) return new Date(Number(s.length === 10 ? Number(s) * 1000 : s)).toISOString().slice(0, 10);
+            return "";
+          })();
+
+          // Resolve advisor name once so dedup can be scoped per advisor.
+          // If lookup fails, advisorCond stays empty and we fall back to broker-wide dedup.
+          let advisorCond = "";
+          if (advisorId) {
+            try {
+              const aRes = await db.execute(
+                sql`SELECT company_name FROM users WHERE id = ${String(advisorId)} LIMIT 1`
+              );
+              const advisorName = (aRes.rows[0] as any)?.company_name || "";
+              if (advisorName) {
+                advisorCond = `AND bwl.payload->'data'->>'advisorName' = '${advisorName.replace(/'/g, "''")}'`;
+              }
+            } catch (aErr: any) {
+              console.warn("[Webhook] Advisor lookup for dedup failed (broker-wide dedup):", aErr?.message);
+            }
+          }
 
           if (sym) {
             // Check if this symbol (+strike for F&O) already has an active CREATE without a CLOSE on this broker
             let dupQuery;
-            if (isFnO && strike) {
+            if (isFnO) {
               dupQuery = await db.execute(sql.raw(
                 `SELECT bwl.payload->'data'->>'recommendationId' as rec_id
                  FROM broker_webhook_logs bwl
@@ -136,9 +190,13 @@ export async function fireWebhookEvent(
                    AND bwl.event = 'POSITION_CREATED'
                    AND (COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol') = '${sym.replace(/'/g, "''")}'
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
-                   AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${String(strike).replace(/'/g, "''")}'
+                   AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'strike', '') = '${strike ? String(strike).replace(/'/g, "''") : ""}'
+                   ${dedupSeries ? `AND COALESCE(bwl.payload->'data'->'fnoCall'->0->>'series', '') = '${dedupSeries}'` : ""}
+                   ${dedupExpiry ? `AND to_timestamp(COALESCE(NULLIF(bwl.payload->'data'->'fnoCall'->0->>'expiryDate', ''), '0')::bigint / 1000)::date = '${dedupExpiry}'::date` : ""}
+                   AND to_timestamp(COALESCE(NULLIF(bwl.payload->'data'->'fnoCall'->0->>'expiryDate', ''), '0')::bigint / 1000)::date >= CURRENT_DATE
                    AND bwl.status_code BETWEEN 200 AND 299
                    AND bwl.created_at > '2026-06-12'
+                   ${advisorCond}
                    AND NOT EXISTS (
                      SELECT 1 FROM broker_webhook_logs cl
                      WHERE cl.api_key_id = bwl.api_key_id
@@ -158,6 +216,7 @@ export async function fireWebhookEvent(
                         OR LOWER(COALESCE(bwl.payload->'data'->'equityCall'->>'symbol', bwl.payload->'data'->'fnoCall'->0->>'symbol')) = '${sym.toLowerCase().replace(/'/g, "''")}')
                    AND bwl.status_code BETWEEN 200 AND 299
                    AND bwl.created_at > '2026-06-12'
+                   ${advisorCond}
                    AND NOT EXISTS (
                      SELECT 1 FROM broker_webhook_logs cl
                      WHERE cl.api_key_id = bwl.api_key_id
@@ -171,7 +230,13 @@ export async function fireWebhookEvent(
 
             if (dupQuery.rows.length > 0) {
               const existingRecId = (dupQuery.rows[0] as any).rec_id;
-              console.log(`[Webhook] DUPLICATE BLOCKED: ${sym}${strike ? ' ' + strike : ''} already active on ${target.broker_name} (existing rec_id: ${existingRecId}). Skipping.`);
+              console.log(`[Webhook] DUPLICATE BLOCKED: ${sym}${strike ? ' ' + strike : ''} [seg=${segment || 'n/a'}] already active on ${target.broker_name} (existing rec_id: ${existingRecId}, advisor: ${advisorId}). Skipping ${event}.`);
+              try {
+                await db.execute(sql`INSERT INTO broker_webhook_logs
+                  (api_key_id, event, payload, status_code, response_body, created_at)
+                  VALUES (${target.api_key_id}, ${event}, ${JSON.stringify({ symbol: sym, strike, segment, advisorId })}::jsonb, -1,
+                    ${"BLOCKED: duplicate of rec_id " + existingRecId}, NOW())`);
+              } catch {}
               continue;
             }
           }
@@ -208,18 +273,33 @@ export async function fireWebhookEvent(
         const fno = payloadBody?.data?.fnoCall?.[0];
         const callData = eq || fno;
         if (callData && (event === "CALL_CREATED" || event === "POSITION_CREATED")) {
-          const bp = Number(callData.buyPrice || 0);
+          // Record a blocked dispatch so silent drops are queryable
+          const logBlock = async (reason: string) => {
+            try {
+              await db.execute(sql`INSERT INTO broker_webhook_logs
+                (api_key_id, event, payload, status_code, response_body, created_at)
+                VALUES (${target.api_key_id}, ${event}, ${JSON.stringify(payloadBody)}::jsonb, -1, ${"BLOCKED: " + reason}, NOW())`);
+            } catch (e: any) {
+              console.warn("[Webhook] Failed to log block:", e?.message);
+            }
+          };
+
+          // SELL creates carry entry in sellPrice (buyPrice is intentionally null)
+          const isSell = callData.action === "Sell" || callData.buySell === "Sell"
+            || String(callData.callType || "").toUpperCase() === "SELL";
+          const bp = Number(isSell ? (callData.sellPrice || callData.buyPrice || 0) : (callData.buyPrice || 0));
           const tp = Number(callData.targetPriceRange || callData.target || 0);
           const sl = Number(callData.stopLossRange || callData.stopLoss || 0);
           if (bp <= 0) {
             console.error(`[Webhook] BLOCKED: ${callData.symbol || "?"} has zero entry price. Not sending to ${target.broker_name}.`);
+            await logBlock("zero entry price");
             continue;
           }
           // Warn on suspicious SL/TP (BUY: target should be > entry, SL < entry)
-          const isSell = callData.action === "Sell" || callData.buySell === "Sell";
           if (!isSell && tp > 0 && sl > 0) {
             if (tp < bp && sl > bp) {
               console.error(`[Webhook] BLOCKED: ${callData.symbol} BUY has target(${tp}) < entry(${bp}) AND SL(${sl}) > entry. Likely swapped. Not sending to ${target.broker_name}.`);
+              await logBlock(`swapped values: target=${tp} sl=${sl} entry=${bp}`);
               continue;
             }
           }
@@ -229,6 +309,69 @@ export async function fireWebhookEvent(
       }
 
       // Sign
+      // Dreamstreet: adjust buyPrice to LTP when within buy zone
+      if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
+        const eqCallLtp = payloadBody?.data?.equityCall;
+        if (eqCallLtp && eqCallLtp.callType === "Buy" && eqCallLtp.symbol) {
+          try {
+            const ltpRes = await fetch(
+              "http://localhost:8001/api/shared/kite-quotes?symbols=" + encodeURIComponent(eqCallLtp.symbol),
+              { headers: { "x-shared-secret": "alphamarket-shared-2026" }, signal: AbortSignal.timeout(3000) }
+            );
+            if (ltpRes.ok) {
+              const ltpData = await ltpRes.json();
+              const ltp = ltpData.quotes?.[eqCallLtp.symbol]?.price || 0;
+              if (ltp > 0) {
+                const rangeStart = Number(eqCallLtp.buyPriceRangeStart || eqCallLtp.buyPrice || 0);
+                const rangeEnd = Number(eqCallLtp.buyPriceRangeEnd || eqCallLtp.buyPrice || 0);
+                if (ltp >= rangeStart && ltp <= rangeEnd) {
+                  // LTP within buy zone — use LTP as entry
+                  console.log("[webhook] Dreamstreet: adjusting buyPrice from " + eqCallLtp.buyPrice + " to LTP " + ltp + " for " + eqCallLtp.symbol);
+                  eqCallLtp.buyPrice = String(ltp);
+                } else if (ltp > rangeEnd) {
+                  // LTP above buy zone — use actual market price
+                  console.log("[webhook] Dreamstreet: LTP " + ltp + " above buy zone " + rangeStart + "-" + rangeEnd + " for " + eqCallLtp.symbol + ", using LTP");
+                  eqCallLtp.buyPrice = String(ltp);
+                }
+                // If LTP below zone, keep buyPrice as-is (rangeStart)
+              }
+            }
+          } catch (e) {
+            console.error("[webhook] Dreamstreet LTP fetch failed:", e);
+            // Fail silently — keep original buyPrice
+          }
+        }
+      }
+
+      // Append SEBI disclosure + inline disclaimer for Dreamstreet payloads
+      if (target.broker_name && target.broker_name.toLowerCase().includes("dream")) {
+        const eqCall = payloadBody?.data?.equityCall;
+        if (eqCall && eqCall.rational && data.advisorId) {
+          // Truncate rationale to 1500 chars to leave room for ~440 char disclaimer (total < 2000)
+          if (eqCall.rational.length > 1500) {
+            eqCall.rational = eqCall.rational.substring(0, 1497) + "...";
+            console.log("[webhook] Dreamstreet: truncated rationale from " + eqCall.rational.length + " to 1500 chars for " + (eqCall.symbol || ""));
+          }
+          try {
+            const sebiLookup = await db.execute(
+              sql`SELECT sebi_reg_number, company_name FROM users WHERE id = ${data.advisorId} LIMIT 1`
+            );
+            const sebiReg = (sebiLookup.rows[0] as any)?.sebi_reg_number || "";
+            const firmName = (sebiLookup.rows[0] as any)?.company_name || "";
+            const profileUrl = "https://alphamarket.co.in/advisors/" + data.advisorId;
+            const inlineDisclaimer = "\n\n---\nDisclosure & Disclaimer: " +
+              "Investment in securities market is subject to market risks. This report is for informational purposes only and should not be construed as investment advice. " +
+              (firmName ? firmName : "The advisor") + (sebiReg ? " (SEBI Reg: " + sebiReg + ")" : "") +
+              " and its associates are not responsible for any losses incurred. Past performance is not indicative of future results. " +
+              "Full disclosure: " + profileUrl +
+              " | SCORES: https://scores.sebi.gov.in";
+            eqCall.rational = eqCall.rational + inlineDisclaimer;
+          } catch (e) {
+            console.error("[webhook] Failed to append disclosure:", e);
+          }
+        }
+      }
+
       const payloadStr = JSON.stringify(payloadBody);
       const signature = createHmac("sha256", target.api_secret)
         .update(payloadStr)

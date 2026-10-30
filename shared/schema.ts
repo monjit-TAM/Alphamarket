@@ -447,3 +447,53 @@ export const appSettings = pgTable("app_settings", {
   value: text("value"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+// ============================================================================
+// STAGE B1 — Drizzle definitions for the reseller tables
+// APPEND to the END of shared/schema.ts (after the last table, before/among the
+// insert-schema exports is fine). These MATCH the tables already created in DB.
+//
+// The imports (pgTable, varchar, text, numeric, timestamp, sql, boolean,
+// createInsertSchema) are ALREADY imported at the top of shared/schema.ts —
+// do not re-import. If your file references `users` and `payments` above,
+// they're in scope here too.
+// ============================================================================
+
+export const resellers = pgTable("resellers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id),
+  firmName: text("firm_name"),
+  referralCode: text("referral_code").notNull().unique(),
+  commissionRate: numeric("commission_rate").notNull().default("50"),
+  status: text("status").notNull().default("pending"),
+  payoutDetails: text("payout_details"),
+  approvedBy: varchar("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const resellerCustomers = pgTable("reseller_customers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  resellerId: varchar("reseller_id").notNull().references(() => resellers.id),
+  customerId: varchar("customer_id").notNull().references(() => users.id),
+  status: text("status").notNull().default("active"),
+  enrolledAt: timestamp("enrolled_at").defaultNow(),
+});
+
+export const resellerLedger = pgTable("reseller_ledger", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  resellerId: varchar("reseller_id").notNull().references(() => resellers.id),
+  customerId: varchar("customer_id").notNull().references(() => users.id),
+  paymentId: varchar("payment_id").references(() => payments.id),
+  grossAmount: numeric("gross_amount").notNull(),
+  commissionRate: numeric("commission_rate").notNull(),
+  shareAmount: numeric("share_amount").notNull(),
+  status: text("status").notNull().default("accrued"),
+  payoutRef: text("payout_ref"),
+  createdAt: timestamp("created_at").defaultNow(),
+  paidAt: timestamp("paid_at"),
+});
+
+export const insertResellerSchema = createInsertSchema(resellers).omit({ id: true, createdAt: true });
+export const insertResellerCustomerSchema = createInsertSchema(resellerCustomers).omit({ id: true, enrolledAt: true });
+export const insertResellerLedgerSchema = createInsertSchema(resellerLedger).omit({ id: true, createdAt: true });

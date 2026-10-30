@@ -28,6 +28,10 @@ export async function sendPasswordResetEmail(
       to: email,
       from: fromEmail,
       subject: "AlphaMarket - Password Reset",
+      trackingSettings: {
+        clickTracking: { enable: false, enableText: false },
+        openTracking: { enable: false },
+      },
       html: `
         <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
           <h2 style="color: #333;">Password Reset Request</h2>
@@ -169,7 +173,7 @@ export async function sendAdvisorAgreementEmail(userData: {
           <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Email</td><td style="padding: 8px; border: 1px solid #ddd;">${userData.email}</td></tr>
           <tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">Consent Date</td><td style="padding: 8px; border: 1px solid #ddd;">${consentDate}</td></tr>
         </table>
-        <p style="color: #666; font-size: 12px;">This is an automated confirmation from AlphaMarket by Edhaz Financial Services Private Limited.</p>
+        <p style="color: #666; font-size: 12px;">This is an automated confirmation from AlphaMarket by Edhaz Markets Private Limited.</p>
       </div>
     `;
 
@@ -222,7 +226,7 @@ export async function sendEsignAgreementEmail(data: {
         <div style="margin: 20px 0; padding: 16px; background-color: #fff3cd; border-left: 4px solid #ffc107; border-radius: 4px;">
           <p style="margin: 0; font-size: 13px; color: #856404;">This agreement was electronically signed using Aadhaar OTP verification in compliance with the Information Technology Act, 2000.</p>
         </div>
-        <p style="color: #666; font-size: 12px;">This is an automated notification from AlphaMarket by Edhaz Financial Services Private Limited.</p>
+        <p style="color: #666; font-size: 12px;">This is an automated notification from AlphaMarket by Edhaz Markets Private Limited.</p>
       </div>
     `;
 
@@ -263,7 +267,7 @@ export async function sendStrategyAlertEmail(
         <a href="${appUrl}/strategies/${strategyId}" style="background-color: #c53030; color: white; padding: 10px 20px; text-decoration: none; border-radius: 6px; font-weight: bold;">View Strategy</a>
       </p>
       <p style="color: #999; font-size: 11px; margin-top: 20px;">Disclaimer: Investment in securities market are subject to market risks. Read all the related documents carefully before investing.</p>
-      <p style="color: #999; font-size: 11px;">AlphaMarket by Edhaz Financial Services Private Limited</p>
+      <p style="color: #999; font-size: 11px;">AlphaMarket by Edhaz Markets Private Limited</p>
     </div>
   `;
 
@@ -280,4 +284,46 @@ export async function sendStrategyAlertEmail(
   if (sent > 0 || failed > 0) {
     console.log(`[Email] Strategy alert: ${sent} sent, ${failed} failed — "${subject}"`);
   }
+}
+
+// ─── Newsletter Broadcast to Advisors ───
+export async function sendNewsletterEmail(
+  recipients: string[],
+  subject: string,
+  htmlContent: string
+): Promise<{ sent: number; failed: number; errors: string[] }> {
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) {
+    return { sent: 0, failed: recipients.length, errors: ["SENDGRID_API_KEY not set"] };
+  }
+  const sgMailLib = require("@sendgrid/mail");
+  sgMailLib.setApiKey(apiKey);
+  const fromEmail = process.env.SENDGRID_FROM_EMAIL || "hello@alphamarket.co.in";
+
+  let sent = 0, failed = 0;
+  const errors: string[] = [];
+  for (const email of recipients) {
+    try {
+      // Replace unsubscribe placeholder with a simple mailto (SendGrid also supports its own)
+      const personalizedHtml = htmlContent.replace(
+        /\{\{unsubscribe\}\}/g,
+        '<a href="mailto:hello@alphamarket.co.in?subject=Unsubscribe" style="color:#64748b;">Unsubscribe</a>'
+      );
+      await sgMailLib.send({
+        to: email,
+        from: { email: fromEmail, name: "AlphaMarket" },
+        subject,
+        html: personalizedHtml,
+      });
+      sent++;
+      // Gentle pacing to stay within SendGrid rate limits on large sends
+      await new Promise((r) => setTimeout(r, 60));
+    } catch (err: any) {
+      failed++;
+      const msg = err?.response?.body?.errors?.[0]?.message || err.message;
+      if (errors.length < 10) errors.push(`${email}: ${msg}`);
+    }
+  }
+  console.log(`[Newsletter] Broadcast: ${sent} sent, ${failed} failed — "${subject}"`);
+  return { sent, failed, errors };
 }
