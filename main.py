@@ -148,8 +148,19 @@ async def ds_fundamentals(symbol: str) -> dict:
     except: pass
     return {}
 
+# Renamed NSE symbols still in DYOR lists (checked against the data service on deploy), and index names the
+# data service has no daily bars for: asking for those only produced an error line per call.
+_DS_RENAMED = {'ZOMATO': 'ETERNAL', 'PVR': 'PVRINOX', 'KALPATPOWR': 'KPIL', 'LEMERETREE': 'LEMONTREE', 'TATAMOTORS': 'TMPV'}
+_DS_NO_BARS = {"NIFTY", "NIFTY50", "NIFTY 50", "^NSEI", "%5ENSEI", "BANKNIFTY", "^NSEBANK", "FINNIFTY", "MIDCPNIFTY",
+               "SENSEX", "^BSESN", "ISEC"}
+
+
 async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
     """Get OHLCV history from data service with error logging"""
+    _s = str(symbol).upper().replace(".NS", "")
+    if _s in _DS_NO_BARS:
+        return []
+    symbol = _DS_RENAMED.get(_s, _s)
     try:
         async with _httpx.AsyncClient(timeout=30) as c:
             r = await c.get(f"{DATA_SERVICE_URL}/data/equity/ohlcv/{symbol}?period={period}")
