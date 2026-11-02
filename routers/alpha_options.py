@@ -195,21 +195,21 @@ async def _prefetch_chains(universe, max_stocks=12):
         E._EXPIRY_DAYS = {r["e"].isoformat() for r in ex}
     except Exception:
         pass
-    for s, spot in spots.items():
+    async def _one(s, spot):
         hit = E._CHAINS.get(s)
         if hit and _t.time() - hit[0] < 120:
-            continue
+            return
         try:
             ex = await _fno_rows("SELECT DISTINCT expiry::date AS e FROM instrument_master WHERE exchange='NFO' AND name=$1 "
                                  "AND instrument_type IN ('CE','PE') AND expiry::date >= $2 ORDER BY 1 LIMIT 1", s, _expiry_cutoff())
             if not ex:
-                continue
+                return
             exp = ex[0]["e"]
             rows = await _fno_rows("SELECT tradingsymbol, strike, instrument_type, lot_size FROM instrument_master WHERE exchange='NFO' "
                                    "AND name=$1 AND instrument_type IN ('CE','PE') AND expiry::date=$2 ORDER BY strike", s, exp)
             strikes = sorted({float(r["strike"]) for r in rows})
             if len(strikes) < 3:
-                continue
+                return
             ai = min(range(len(strikes)), key=lambda j: abs(strikes[j] - spot))
             near_strikes = strikes[max(0, ai - 15): ai + 16]
             keep = set(near_strikes)
@@ -223,7 +223,7 @@ async def _prefetch_chains(universe, max_stocks=12):
                 k = float(r["strike"]); k = int(k) if k.is_integer() else k
                 (calls if r["instrument_type"] == "CE" else puts)[k] = p
             if not (calls and puts):
-                continue
+                return
             step = min(b - a for a, b in zip(near_strikes, near_strikes[1:]) if b > a)
             E.STRIKE_INTERVALS[s] = int(step) if float(step).is_integer() else step
             if rows[0]["lot_size"]:
@@ -231,6 +231,7 @@ async def _prefetch_chains(universe, max_stocks=12):
             E._CHAINS[s] = (_t.time(), {"spot": spot, "expiry": exp.isoformat(), "calls": calls, "puts": puts, "ivs": {}})
         except Exception as e:
             logger.warning(f"chain prefetch failed for {s}: {e}")
+    await asyncio.gather(*(_one(s, p) for s, p in spots.items()))
     return spots
 
 
@@ -281,6 +282,33 @@ async def get_regime():
 
 @router.get("/signals", summary="Generate trade signals")
 async def get_signals(
+    capital: float = Query(500000, description="Total capital to deploy (INR)"),
+    max_positions: int = Query(5, description="Max simultaneous positions (1-10)", ge=1, le=10),
+    risk_level: str = Query("MEDIUM", description="Risk appetite: LOW, MEDIUM, HIGH"),
+):
+    """F&O signals. In market hours they are built from live chains (7-28 s), so the answer is kept for
+    6 minutes and rebuilt in the background by the cache warmer every 5."""
+    from refresh_ctx import force_refresh
+    key = f"oa_signals:v1:{int(capital)}:{max_positions}:{risk_level}"
+    rc = None
+    try:
+        rc = _get_redis()
+        if not force_refresh.get():
+            hit = await asyncio.to_thread(rc.get, key)
+            if hit:
+                return json.loads(hit)
+    except Exception:
+        rc = None
+    res = await _get_signals_fresh(capital, max_positions, risk_level)
+    if rc is not None and isinstance(res, dict) and not res.get("market_closed"):
+        try:
+            await asyncio.to_thread(rc.setex, key, 360, json.dumps(res, default=str))
+        except Exception:
+            pass
+    return res
+
+
+async def _get_signals_fresh(
     capital: float = Query(500000, description="Total capital to deploy (INR)"),
     max_positions: int = Query(5, description="Max simultaneous positions (1-10)", ge=1, le=10),
     risk_level: str = Query("MEDIUM", description="Risk appetite: LOW, MEDIUM, HIGH"),

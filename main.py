@@ -175,6 +175,41 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
         logger.error(f"ds_ohlcv: {symbol} connection failed: {type(e).__name__}: {e}")
     return []
 
+async def _with_today_bar(symbol, rows):
+    """Daily rows plus today's bar, while the exchange's daily file does not have today yet: built from the
+    data service's TrueData 5-minute bars for today, else from its live quote. The classic chart and
+    Patterns showed the previous close as the price all session (RELIANCE 1164.9 vs 1254 live, 2 Nov)."""
+    from datetime import datetime as _dtw, timedelta as _tdw
+    if not rows:
+        return rows
+    ist = _dtw.utcnow() + _tdw(hours=5, minutes=30)
+    today = ist.date().isoformat()
+    if ist.weekday() >= 5 or (ist.hour, ist.minute) < (9, 15) or str(rows[-1].get("date") or "")[:10] >= today:
+        return rows
+    sym = str(symbol).upper()
+    bar = None
+    try:
+        async with _httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(f"{DATA_SERVICE_URL}/data/equity/ohlcv/{sym}", params={"period": "1d", "interval": "5m"})
+            b5 = [x for x in ((r.json().get("data") or []) if r.status_code == 200 else []) if str(x.get("date", ""))[:10] == today]
+            if b5:
+                bar = {"date": today, "open": float(b5[0]["open"]), "high": max(float(x["high"]) for x in b5),
+                       "low": min(float(x["low"]) for x in b5), "close": float(b5[-1]["close"]),
+                       "volume": sum(float(x.get("volume") or 0) for x in b5)}
+            else:
+                q = await c.get(f"{DATA_SERVICE_URL}/data/equity/quote/{sym}")
+                d = q.json() if q.status_code == 200 else {}
+                p = float(d.get("price") or 0)
+                if p > 0 and d.get("is_live"):
+                    o = float(d.get("open") or 0) or p
+                    bar = {"date": today, "open": o, "high": max(float(d.get("high") or 0), p, o),
+                           "low": min([x for x in (float(d.get("low") or 0), p, o) if x > 0]), "close": p,
+                           "volume": float(d.get("volume") or 0)}
+    except Exception:
+        pass
+    return list(rows) + [bar] if bar else rows
+
+
 from routers.arbitrage import router as arbitrage_router
 from routers.alpha_options import router as alpha_options_router
 from routers.algo_strategies import router as algo_strategies_router
@@ -1199,6 +1234,24 @@ app.include_router(alpha_conviction_router)
 # DYOR Auth Bridge — validate AlphaMarket session cookies
 from middleware.alphamarket_auth import AlphaMarketAuthMiddleware
 app.add_middleware(AlphaMarketAuthMiddleware, dyor_db_url=DATABASE_URL)
+
+
+from refresh_ctx import force_refresh as _force_refresh
+
+
+@app.middleware("http")
+async def _refresh_ahead(request, call_next):
+    """The cache warmer (x-refresh: 1 with the internal key) rebuilds cached pages before they expire,
+    so a user never waits for the rebuild. Anyone else's x-refresh header is ignored."""
+    from middleware.alphamarket_auth import _INTERNAL_KEY as _ik
+    tok = None
+    if request.headers.get("x-refresh") == "1" and _ik and request.headers.get("x-internal-key") == _ik:
+        tok = _force_refresh.set(True)
+    try:
+        return await call_next(request)
+    finally:
+        if tok is not None:
+            _force_refresh.reset(tok)
 security = HTTPBearer(auto_error=False)
 
 db_pool = None
@@ -1242,12 +1295,20 @@ async def startup():
 @app.get("/api/shared/structure-screener", include_in_schema=False)
 async def shared_structure_screener(mode: str = "untested_poc", within_pct: float = 1.0, min_streak: int = 3, limit: int = 50):
     import httpx as _hx
+    _ck = f"structure_screener:{mode}:{within_pct}:{min_streak}:{limit}"
+    if redis_client and not _force_refresh.get():
+        _hit = await redis_client.get(_ck)
+        if _hit:
+            return json.loads(_hit)
     try:
         async with _hx.AsyncClient(timeout=25) as c:
             r = await c.get("https://data.alphamarket.co.in/data/equity/structure-screener",
                             params={"mode": mode, "within_pct": within_pct, "min_streak": min_streak, "limit": limit},
                             headers={"X-API-Key": "alpha_data_internal_2026"})
-            return r.json()
+            _d = r.json()
+            if redis_client and r.status_code == 200 and (_d.get("results") or _d.get("stocks") or _d.get("rows")):
+                await redis_client.setex(_ck, 600, json.dumps(_d))
+            return _d
     except Exception as e:
         return {"results": [], "detail": f"structure screener unavailable: {e}"}
 
@@ -8890,7 +8951,7 @@ async def sector_rotation(user=Depends(get_current_user)):
 
     cache_key = "sector_rotation_v2"
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached:
             return json.loads(cached)
 
@@ -8969,7 +9030,7 @@ async def sector_rrg(weeks: int = 12, user=Depends(get_current_user)):
     weeks = min(max(weeks, 4), 26)  # Clamp 4-26 weeks
     cache_key = f"sector_rrg_v1:{weeks}"
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached:
             return json.loads(cached)
 
@@ -9535,7 +9596,7 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
     end = date.today().isoformat()
     # Map period to DS-compatible: use "1y" minimum for indicator computation
     ds_period = period if period in ("1y","2y","3y","5y","max") else "1y"
-    _ds_rows = await ds_ohlcv(symbol, ds_period)
+    _ds_rows = await _with_today_bar(symbol, await ds_ohlcv(symbol, ds_period))
     if _ds_rows:
         df = pd.DataFrame(_ds_rows)
         df.columns = [col.lower() for col in df.columns]
@@ -9548,27 +9609,6 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
         keep = [col for col in ["open","high","low","close","volume"] if col in df.columns]
         df = df[keep].astype({col: float for col in keep}).dropna().sort_index()
 
-        # Append today's forming candle from Kite quote if missing
-        from datetime import date as _dt_date
-        today_str = _dt_date.today().isoformat()
-        last_date = df.index[-1].strftime("%Y-%m-%d") if len(df) > 0 else ""
-        if last_date < today_str:
-            try:
-                _today_ds = await ds_ohlcv(symbol, "5d")
-                if _today_ds:
-                    for row in _today_ds:
-                        rd = row.get("date","")
-                        if rd > last_date:
-                            new_row = pd.DataFrame([{
-                                "open": float(row["open"]), "high": float(row["high"]),
-                                "low": float(row["low"]), "close": float(row["close"]),
-                                "volume": float(row.get("volume",0))
-                            }], index=[pd.Timestamp(rd)])
-                            new_row.index.name = "date"
-                            df = pd.concat([df, new_row])
-                    df = df.sort_index()
-            except Exception as _kq_err:
-                pass  # Today's candle unavailable, continue with historical
     else:
         raise HTTPException(status_code=404, detail=f"No chart data available for {symbol}")
     if df.empty:
@@ -10750,7 +10790,7 @@ async def morning_brief(user=Depends(get_current_user)):
     from datetime import date as _date
     cache_key = "morning_brief:" + _date.today().isoformat()
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached: return json.loads(cached)
     loop = asyncio.get_event_loop()
     global_tickers = {
@@ -10975,7 +11015,7 @@ async def sector_heatmap(user=Depends(get_current_user)):
     from datetime import date as _date
     cache_key = "sector_heatmap:" + _date.today().isoformat()
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached: return json.loads(cached)
     loop = asyncio.get_event_loop()
     sector_data = {}
@@ -10984,12 +11024,23 @@ async def sector_heatmap(user=Depends(get_current_user)):
         if sec and sec != "Others":
             sample.setdefault(sec, []).append(sym)
     heatmap = []
+    _want = [s for sec, syms in list(sample.items())[:20] for s in syms[:5]]
+    _bulk = {}
+    async def _bq(chunk):
+        try:
+            async with _httpx.AsyncClient(timeout=20) as _c:
+                _r = await _c.post(f"{DATA_SERVICE_URL}/data/equity/quotes", json={"symbols": chunk})
+                if _r.status_code == 200:
+                    _bulk.update({k.upper(): v for k, v in (_r.json().get("quotes") or {}).items()})
+        except Exception:
+            pass
+    await asyncio.gather(*(_bq(_want[i:i + 50]) for i in range(0, len(_want), 50)))
     for sec, syms in list(sample.items())[:20]:
         changes = []
         stocks_detail = []
         for s in syms[:5]:
             try:
-                _sq = await ds_quote(s)
+                _sq = _bulk.get(s.upper())
                 if _sq and _sq.get("price"):
                     cur = float(_sq["price"])
                     prev = cur - float(_sq.get("change", 0))
@@ -11170,7 +11221,7 @@ async def dividend_tracker(user=Depends(get_current_user)):
     from datetime import date as _date
     cache_key = "dividends:" + _date.today().isoformat()
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached: return json.loads(cached)
 
     top_div = ["COALINDIA","VEDL","IOC","HINDPETRO","BPCL","ONGC","NTPC","POWERGRID","GAIL","RECLTD",
@@ -11274,7 +11325,7 @@ async def dividend_tracker(user=Depends(get_current_user)):
         "count": len(dividends),
     }
     if redis_client:
-        await redis_client.setex(cache_key, 3600, json.dumps(result))
+        await redis_client.setex(cache_key, 900, json.dumps(result))  # prices in it; warmer rebuilds every 5 min
     return result
 
 
@@ -11292,7 +11343,7 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
         if cached: return json.loads(cached)
     try:
         info = await ds_fundamentals(sym) or {}
-        _rows = await ds_ohlcv(sym, "1y")
+        _rows = await _with_today_bar(sym, await ds_ohlcv(sym, "1y"))
         if _rows:
             hist = pd.DataFrame(_rows)
             hist.columns = [c.lower() for c in hist.columns]

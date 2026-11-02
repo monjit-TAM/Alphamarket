@@ -240,9 +240,9 @@ async def kite_status():
 
 # ── Kite rate limiter: 3 requests/sec (token bucket) ──
 import time as _rl_time
-_kite_rate_tokens = 3.0
-_kite_rate_max = 3.0
-_kite_rate_per_sec = 3.0
+_kite_rate_tokens = 1.0
+_kite_rate_max = 1.0
+_kite_rate_per_sec = 1.0   # Kite's quote APIs allow 1 request a second; 3/s drew 429s
 _kite_rate_last = _rl_time.monotonic()
 _kite_rate_lock = __import__('threading').Lock()
 
@@ -259,7 +259,73 @@ def _kite_rate_acquire():
             return True
         return False
 
+_KQ = {}   # (event loop, endpoint) -> {"pending": [(symbols, future)], "task": flusher}
+
+
 async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> dict:
+    """Kite quotes. Requests that arrive together are merged into one Kite call (up to 450 instruments),
+    sent at Kite's 1-request-a-second limit. Each caller gets back only what it asked for. It used to drop
+    any request over the limit (8,349 dropped on 30 Oct, so arbitrage and others came back empty)."""
+    import asyncio as _aio
+    import urllib.parse as _up
+    if not _is_kite_connected():
+        raise HTTPException(401, "Kite not connected. Please login via Settings.")
+    syms = list(dict.fromkeys(symbols or []))
+    if not syms:
+        return {}
+    if len(syms) > 400:
+        out = {}
+        for i in range(0, len(syms), 400):
+            out.update(await _fetch_kite_quotes(syms[i:i + 400], mode=mode) or {})
+        return out
+    ep = "ltp" if mode == "ltp" else "quote"
+    loop = _aio.get_running_loop()
+    st = _KQ.setdefault((id(loop), ep), {"pending": [], "task": None})
+    fut = loop.create_future()
+    st["pending"].append((syms, fut))
+    if st["task"] is None or st["task"].done():
+        st["task"] = loop.create_task(_kq_flush(st, ep))
+    try:
+        res = await _aio.wait_for(_aio.shield(fut), 15)
+    except _aio.TimeoutError:
+        logger.warning(f"Kite quote wait timed out for {len(syms)} symbols")
+        return {}
+    want = set(syms) | {_up.unquote(s) for s in syms}
+    return {k: v for k, v in (res or {}).items() if k in want}
+
+
+async def _kq_flush(st, ep):
+    import asyncio as _aio
+    while st["pending"]:
+        await _aio.sleep(0.15)          # let requests arriving together join one call
+        batch, n = [], 0
+        while st["pending"] and (not batch or n + len(st["pending"][0][0]) <= 450):
+            item = st["pending"].pop(0); batch.append(item); n += len(item[0])
+        union = list(dict.fromkeys(s for syms, _ in batch for s in syms))
+        deadline = _rl_time.monotonic() + 6
+        while not _kite_rate_acquire():
+            if _rl_time.monotonic() > deadline:
+                break
+            await _aio.sleep(0.1)
+        else:
+            deadline = None
+        if deadline is not None:
+            logger.warning(f"Kite rate limit — no slot in 6 s, {len(union)} symbols fall back")
+            res, exc = {}, None
+        else:
+            try:
+                res, exc = await _fetch_kite_quotes_now(union, mode=ep, _have_token=True), None
+            except HTTPException as e:
+                res, exc = {}, e
+            except Exception as e:
+                logger.error(f"Kite batch error: {e}")
+                res, exc = {}, None
+        for _, f in batch:
+            if not f.done():
+                f.set_exception(exc) if exc is not None else f.set_result(res)
+
+
+async def _fetch_kite_quotes_now(symbols: list, _retry=False, mode: str = "ltp", _have_token=False) -> dict:
     """Fetch LTP from Kite API for multiple instruments.
     On 403/401: invalidates in-memory token, reloads from DB, retries once.
     This is the PERMANENT fix for multi-worker stale token issues.
@@ -267,7 +333,7 @@ async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> 
     import urllib.request, urllib.error
     if not _is_kite_connected():
         raise HTTPException(401, "Kite not connected. Please login via Settings.")
-    if not _kite_rate_acquire():
+    if not _have_token and not _kite_rate_acquire():
         logger.warning(f"Kite rate limit — dropping request for {len(symbols)} symbols, use TrueData fallback")
         return {}  # Caller falls back to TrueData
     headers = _get_kite_headers()
@@ -300,7 +366,7 @@ async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp") -> 
             _load_kite_token()  # Reload from DB (another worker may have refreshed it)
             if _kite_store["access_token"]:
                 logger.info("Kite token reloaded from DB, retrying...")
-                return await _fetch_kite_quotes(symbols, _retry=True, mode=mode)
+                return await _fetch_kite_quotes_now(symbols, _retry=True, mode=mode, _have_token=True)
             else:
                 logger.error("Kite token reload failed — needs fresh login")
                 return {}
@@ -321,7 +387,7 @@ def _get_current_month_expiry():
 
     last_day = calendar.monthrange(year, month)[1]
     last_date = datetime(year, month, last_day)
-    while last_date.weekday() != 3:  # Thursday = 3
+    while last_date.weekday() != 1:  # NSE monthly expiry: last Tuesday
         last_date -= timedelta(days=1)
 
     days_left = (last_date.date() - now.date()).days
@@ -335,7 +401,7 @@ def _get_current_month_expiry():
             month += 1
         last_day = calendar.monthrange(year, month)[1]
         last_date = datetime(year, month, last_day)
-        while last_date.weekday() != 3:
+        while last_date.weekday() != 1:
             last_date -= timedelta(days=1)
 
     return last_date
@@ -344,6 +410,9 @@ def _get_current_month_expiry():
 def _format_kite_expiry(expiry_date):
     """Format expiry for Kite instrument: 26MAR (YYMM format)"""
     return expiry_date.strftime("%y%b").upper()
+
+
+_SPREADS_LAST = None   # (time, limit, result)
 
 
 @router.get("/spreads")
@@ -367,6 +436,10 @@ async def get_spreads(limit: int = 50):
     # Fetch quotes in batches (Kite allows ~500 instruments per call)
     all_symbols = cash_symbols + fut_symbols
     quotes = await _fetch_kite_quotes(all_symbols)
+    global _SPREADS_LAST
+    if not quotes and _SPREADS_LAST and _rl_time.time() - _SPREADS_LAST[0] < 300 and _SPREADS_LAST[1] == limit:
+        # Kite had no slot: the last good scan (under 5 minutes old) rather than an empty page
+        return dict(_SPREADS_LAST[2], stale_seconds=int(_rl_time.time() - _SPREADS_LAST[0]))
 
     spreads = []
     all_syms = list(FNO_UNIVERSE[:limit]) + list(INDEX_FNO.keys())
@@ -457,13 +530,16 @@ async def get_spreads(limit: int = 50):
     # Sort by annualized return descending
     spreads.sort(key=lambda x: x["annualized"], reverse=True)
 
-    return {
+    _out = {
         "spreads": spreads,
         "expiry": expiry.strftime("%d-%b-%Y"),
         "days_to_expiry": days_to_expiry,
         "count": len(spreads),
         "timestamp": datetime.now().isoformat(),
     }
+    if _out.get("spreads"):
+        _SPREADS_LAST = (_rl_time.time(), limit, _out)
+    return _out
 
 
 @router.get("/opportunities")
