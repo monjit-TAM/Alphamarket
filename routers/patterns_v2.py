@@ -661,6 +661,13 @@ async def deep_analysis(symbol: str):
     except Exception:
         rc = None
     candles, source = await fetch_daily_1y(sym)
+    try:
+        # today's bar (TrueData 5-minute bars or the live quote) until the exchange's daily file has the day;
+        # without it Patterns showed the previous close all session (RELIANCE 1164.9 vs 1254, 2 Nov)
+        import main as _m
+        candles = await _m._with_today_bar(sym, candles)
+    except Exception:
+        pass
     if not candles or len(candles) < 50:
         raise HTTPException(404, f"Insufficient data for {sym}")
     loop = asyncio.get_event_loop()
@@ -672,7 +679,7 @@ async def deep_analysis(symbol: str):
     try:
         if rc is None:
             rc = _redis.Redis(db=0)
-        rc.setex(ck, 6 * 3600, json.dumps(result))
+        rc.setex(ck, 900, json.dumps(result))   # was 6 h: the price in it is live during the session
         rc.close()
     except Exception:
         pass
