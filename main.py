@@ -747,7 +747,7 @@ async def shared_quotes(request: Request, items: str = "", order: str = "truedat
                 try:
                     from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
                     if _is_kite_connected():
-                        got = await _fetch_kite_quotes(keys)
+                        got = await _fetch_kite_quotes(keys, max_wait=1.0)
                 except Exception:
                     got = {}
             for td, kk in todo:
@@ -1382,7 +1382,7 @@ async def shared_kite_quotes(request: Request, symbols: str = ""):
     if _is_kite_connected():
         try:
             sym_list = [f"NSE:{s}" for s in raw_syms if " " not in s and "&" not in s]  # Skip symbols with special chars (handled by TrueData fallback)
-            data = await _fetch_kite_quotes(sym_list)
+            data = await _fetch_kite_quotes(sym_list, max_wait=1.0)
             for key, val in data.items():
                 sym = key.replace("NSE:", "")
                 ltp = val.get("last_price", 0)
@@ -1419,7 +1419,7 @@ async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
     if not _is_kite_connected():
         return {"quotes": {}, "connected": False}
     try:
-        data = await _fetch_kite_quotes(raw_syms, mode="full")
+        data = await _fetch_kite_quotes(raw_syms, mode="full", max_wait=1.0)
         quotes = {}
         for key, val in data.items():
             ltp = val.get("last_price", 0)
