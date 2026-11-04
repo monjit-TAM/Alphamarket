@@ -13,7 +13,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   ChevronDown, User, LogOut, LayoutDashboard, ShieldCheck,
   Search, Menu, X, Activity, TrendingUp, BarChart3, BookOpen,
-  Users, LineChart, Briefcase, FlaskConical, Target, Compass
+  Users, LineChart, Briefcase, FlaskConical, Target, Compass, Handshake
 } from "lucide-react";
 import logoImg from "@assets/AlphaMarket_Logo_Dark.png";
 import { NotificationBell } from "./notification-bell";
@@ -136,6 +136,8 @@ export function Navbar() {
                     <DropdownMenuContent align="end" className="w-48">
                       <DropdownMenuItem className="text-xs text-muted-foreground">{user.email}</DropdownMenuItem>
                       <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={() => navigate("/reseller")}><Handshake className="w-4 h-4 mr-2" /> Partner Programme</DropdownMenuItem>
+                      <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={logout}><LogOut className="w-4 h-4 mr-2" /> Sign Out</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -146,6 +148,11 @@ export function Navbar() {
                     <button className="hidden md:flex flex-col items-start px-2 py-1 hover:bg-slate-100 rounded text-left">
                       <span className="text-xs text-slate-500">Hello, Sign in</span>
                       <span className="text-sm font-semibold flex items-center gap-1">Account <ChevronDown className="h-3 w-3" /></span>
+                    </button>
+                  </Link>
+                  <Link href="/reseller">
+                    <button className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium text-emerald-700 hover:bg-emerald-50 transition-colors whitespace-nowrap">
+                      <Handshake className="h-4 w-4" /> Partner
                     </button>
                   </Link>
                   <Link href="/register">
@@ -188,6 +195,20 @@ export function Navbar() {
                   </button>
                 </Link>
               ))}
+
+              {/* Partner Programme */}
+              <Link href="/reseller">
+                <button
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded border transition-colors whitespace-nowrap font-medium ${
+                    isActive("/reseller")
+                      ? "bg-emerald-600 text-white border-emerald-600"
+                      : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                  }`}
+                >
+                  <Handshake className="h-3.5 w-3.5" />
+                  Partner Programme
+                </button>
+              </Link>
 
               <div className="w-px h-5 bg-slate-600 mx-1" />
 
@@ -244,6 +265,7 @@ export function Navbar() {
               { label: "Market Outlook", href: "/market-outlook", icon: TrendingUp },
               { label: "Learn", href: "/learn", icon: BookOpen },
               { label: "DYOR Research", href: "/dyor/app", icon: Activity, external: true },
+              { label: "Partner Programme", href: "/reseller", icon: Handshake },
             ].concat(
               user ? [
                 { label: "My Dashboard", href: "/investor-dashboard", icon: LayoutDashboard },
