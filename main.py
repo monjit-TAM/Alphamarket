@@ -1,3 +1,4 @@
+import yf_guard  # noqa: F401  maps index tickers for Yahoo and skips delisted symbols (4 Nov 2026)
 from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials

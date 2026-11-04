@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 import json, redis.asyncio as aioredis
 from datetime import datetime, date
+from services.ideas_cache import af_bulk_cached, swr as _swr
 from services.data_service import af_bulk, ds_ohlcv
 
 router = APIRouter(tags=["Alpha Conviction & Intraday"])
@@ -13,15 +14,20 @@ async def _enrich_live_prices(ideas):
     import httpx
     syms = list(set(i["symbol"] for i in ideas))
     live = {}
-    async with httpx.AsyncClient(timeout=8) as client:
-        for sym in syms:
-            try:
-                r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
-                if r.status_code == 200:
-                    d = r.json()
-                    if d.get("price") and d["price"] > 0:
-                        live[sym] = float(d["price"])
-            except: pass
+    import asyncio as _aio
+    _sem = _aio.Semaphore(12)
+    async with httpx.AsyncClient(timeout=6) as client:
+        async def _one(sym):
+            # all quotes at once (12 in flight) instead of one after another: 30 ideas took ~50 s
+            async with _sem:
+                try:
+                    r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
+                    if r.status_code == 200:
+                        d = r.json()
+                        if d.get("price") and d["price"] > 0:
+                            live[sym] = float(d["price"])
+                except Exception: pass
+        await _aio.gather(*[_one(s) for s in syms])
     for idea in ideas:
         sym = idea["symbol"]
         if sym in live and idea.get("entry", 0) > 0:
@@ -122,8 +128,7 @@ def _score_volume(s):
     if s.get("pct_from_52l", 0) > 30 and s.get("above_200dma"): score += 15
     return min(score, 100)
 
-@router.get("/api/alpha-conviction", summary="Multi-signal conviction picks")
-async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), sector: Optional[str] = None, cap: Optional[str] = None, sort: str = Query("composite"), limit: int = Query(30, ge=1, le=100)):
+async def _conviction_core(min_dimensions: int = Query(4, ge=2, le=5), sector: Optional[str] = None, cap: Optional[str] = None, sort: str = Query("composite"), limit: int = Query(30, ge=1, le=100)):
     try:
         redis = await aioredis.from_url("redis://localhost:6379/1", decode_responses=True)
         cached = await redis.get("sb_universe") or await redis.get("sb_universe_enriched")
@@ -141,7 +146,7 @@ async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), secto
     for i in range(0, len(syms), 50):
         batch = syms[i:i+50]
         try:
-            bulk = await af_bulk(batch)
+            bulk = await af_bulk_cached(batch)
             if bulk and bulk.get("success"):
                 for item in bulk.get("data", []): fund_map[item.get("symbol", "")] = item
         except: pass
@@ -177,6 +182,12 @@ async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), secto
     results = results[:limit]
     sectors = {}
     for r in results: sectors[r["sector"]] = sectors.get(r["sector"], 0) + 1
+    return results, sectors
+
+@router.get("/api/alpha-conviction", summary="Multi-signal conviction picks")
+async def get_conviction_picks(min_dimensions: int = Query(4, ge=2, le=5), sector: Optional[str] = None, cap: Optional[str] = None, sort: str = Query("composite"), limit: int = Query(30, ge=1, le=100)):
+    # Scoring is built at most every 2 minutes and served from memory; live prices are applied on every request.
+    results, sectors = await _swr(("conv", min_dimensions, sector, cap, sort, limit), lambda: _conviction_core(min_dimensions=min_dimensions, sector=sector, cap=cap, sort=sort, limit=limit))
     results = await _enrich_live_prices(results)
     
     # ── Safety: remove penny stocks and ASM/GSM ──

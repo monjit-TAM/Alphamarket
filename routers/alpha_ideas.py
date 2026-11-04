@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 import json, asyncio
 from datetime import datetime, date
+from services.ideas_cache import af_bulk_cached, swr as _swr
 from services.idea_reasoning import breakout_reason, reversion_reason, momentum_reason, squeeze_reason, quality_reason, value_reason, garp_reason
 
 async def _enrich_live_prices(ideas):
@@ -15,15 +16,20 @@ async def _enrich_live_prices(ideas):
     import httpx
     syms = list(set(i["symbol"] for i in ideas))
     live = {}
-    async with httpx.AsyncClient(timeout=8) as client:
-        for sym in syms:
-            try:
-                r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
-                if r.status_code == 200:
-                    d = r.json()
-                    if d.get("price") and d["price"] > 0:
-                        live[sym] = float(d["price"])
-            except: pass
+    import asyncio as _aio
+    _sem = _aio.Semaphore(12)
+    async with httpx.AsyncClient(timeout=6) as client:
+        async def _one(sym):
+            # all quotes at once (12 in flight) instead of one after another: 30 ideas took ~50 s
+            async with _sem:
+                try:
+                    r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
+                    if r.status_code == 200:
+                        d = r.json()
+                        if d.get("price") and d["price"] > 0:
+                            live[sym] = float(d["price"])
+                except Exception: pass
+        await _aio.gather(*[_one(s) for s in syms])
     for idea in ideas:
         sym = idea["symbol"]
         if sym in live:
@@ -193,9 +199,7 @@ async def _overlay_ideas_prices(ideas):
     except: pass
     return ideas
 
-@router.get("", summary="Daily Alpha Ideas")
-@router.get("/", summary="Daily Alpha Ideas", include_in_schema=False)
-async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWING, SHORT, MEDIUM, LONG or ALL"), strategy: Optional[str] = None, sector: Optional[str] = None, min_confidence: int = Query(5, ge=1, le=10), limit: int = Query(30, ge=1, le=100)):
+async def _alpha_ideas_core(horizon: Optional[str] = Query(None, description="SWING, SHORT, MEDIUM, LONG or ALL"), strategy: Optional[str] = None, sector: Optional[str] = None, min_confidence: int = Query(5, ge=1, le=10), limit: int = Query(30, ge=1, le=100)):
     from services.data_service import af_bulk
     import redis.asyncio as aioredis
     try:
@@ -226,7 +230,7 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
         for i in range(0, len(candidate_syms), 50):
             batch = candidate_syms[i:i+50]
             try:
-                bulk = await af_bulk(batch)
+                bulk = await af_bulk_cached(batch)
                 if bulk and bulk.get("success"):
                     for item in bulk.get("data", []):
                         fund_map[item.get("symbol", "")] = item
@@ -240,7 +244,7 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
             for i in range(0, len(all_syms), 50):
                 batch = all_syms[i:i+50]
                 try:
-                    bulk = await af_bulk(batch)
+                    bulk = await af_bulk_cached(batch)
                     if bulk and bulk.get("success"):
                         for item in bulk.get("data", []):
                             if item.get("symbol") not in fund_map:
@@ -287,6 +291,18 @@ async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWIN
         h = idea["horizon"]
         if h not in by_horizon: by_horizon[h] = []
         by_horizon[h].append(idea)
+    return deduped
+
+@router.get("", summary="Daily Alpha Ideas")
+@router.get("/", summary="Daily Alpha Ideas", include_in_schema=False)
+async def get_alpha_ideas(horizon: Optional[str] = Query(None, description="SWING, SHORT, MEDIUM, LONG or ALL"), strategy: Optional[str] = None, sector: Optional[str] = None, min_confidence: int = Query(5, ge=1, le=10), limit: int = Query(30, ge=1, le=100)):
+    # The slow part (scoring the universe, fundamentals) is built at most every 2 minutes and served from
+    # memory; live prices are applied below on every request.
+    deduped = await _swr(("ideas", horizon, strategy, sector, min_confidence, limit), lambda: _alpha_ideas_core(horizon=horizon, strategy=strategy, sector=sector, min_confidence=min_confidence, limit=limit))
+    now = datetime.now()
+    by_horizon = {}
+    for idea in deduped:
+        by_horizon.setdefault(idea["horizon"], []).append(idea)
     deduped = await _enrich_live_prices(deduped)
     deduped = await _overlay_ideas_prices(deduped)
     return {"ideas": deduped, "count": len(deduped), "timestamp": now.isoformat(), "date": now.strftime("%d-%b-%Y"), "market_date": now.strftime("%A, %d %B %Y"), "summary": {h: {"count": len(ideas), "top": ideas[0]["symbol"] if ideas else None} for h, ideas in by_horizon.items()}, "filters": {"horizon": horizon, "strategy": strategy, "sector": sector, "min_confidence": min_confidence}}
