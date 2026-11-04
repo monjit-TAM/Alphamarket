@@ -26,10 +26,15 @@ async def _enrich_live_prices(ideas):
                     r = await client.get(f"http://127.0.0.1:5004/data/equity/quote/{sym}")
                     if r.status_code == 200:
                         d = r.json()
-                        if d.get("price") and d["price"] > 0:
+                        # the data service falls back to yesterday's close when it has no live price; that is not live
+                        if d.get("price") and d["price"] > 0 and d.get("is_live", True) is not False:
                             live[sym] = float(d["price"])
                 except Exception: pass
         await _aio.gather(*[_one(s) for s in syms])
+        miss = [s for s in syms if s not in live]
+        if miss:
+            await _aio.sleep(1.0)
+            await _aio.gather(*[_one(s) for s in miss])
     for idea in ideas:
         sym = idea["symbol"]
         if sym in live:
