@@ -262,7 +262,7 @@ def _kite_rate_acquire():
 _KQ = {}   # (event loop, endpoint) -> {"pending": [(symbols, future)], "task": flusher}
 
 
-async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp", max_wait: float = 2.5) -> dict:
+async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp", max_wait: float = 2.5, urgent: bool = False) -> dict:
     """Kite quotes. Requests that arrive together are merged into one Kite call (up to 450 instruments),
     sent at Kite's 1-request-a-second limit. Each caller gets back only what it asked for. It used to drop
     any request over the limit (8,349 dropped on 30 Oct, so arbitrage and others came back empty)."""
@@ -276,13 +276,14 @@ async def _fetch_kite_quotes(symbols: list, _retry=False, mode: str = "ltp", max
     if len(syms) > 400:
         out = {}
         for i in range(0, len(syms), 400):
-            out.update(await _fetch_kite_quotes(syms[i:i + 400], mode=mode, max_wait=max_wait) or {})
+            out.update(await _fetch_kite_quotes(syms[i:i + 400], mode=mode, max_wait=max_wait, urgent=urgent) or {})
         return out
     ep = "ltp" if mode == "ltp" else "quote"
     loop = _aio.get_running_loop()
     st = _KQ.setdefault((id(loop), ep), {"pending": [], "task": None})
     fut = loop.create_future()
-    st["pending"].append((syms, fut))
+    # AlphaBot watches stop-losses and targets on live signals: its requests go first
+    st["pending"].insert(0, (syms, fut)) if urgent else st["pending"].append((syms, fut))
     if st["task"] is None or st["task"].done():
         st["task"] = loop.create_task(_kq_flush(st, ep))
     try:
@@ -299,7 +300,7 @@ async def _kq_flush(st, ep):
     while st["pending"]:
         await _aio.sleep(0.15)          # let requests arriving together join one call
         batch, n = [], 0
-        while st["pending"] and (not batch or n + len(st["pending"][0][0]) <= 450):
+        while st["pending"] and (not batch or n + len(st["pending"][0][0]) <= (900 if ep == "ltp" else 450)):
             item = st["pending"].pop(0); batch.append(item); n += len(item[0])
         union = list(dict.fromkeys(s for syms, _ in batch for s in syms))
         deadline = _rl_time.monotonic() + 2.5

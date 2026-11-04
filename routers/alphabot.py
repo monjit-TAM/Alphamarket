@@ -131,7 +131,7 @@ async def _kite_ltp(key):
     try:
         from routers.arbitrage import _fetch_kite_quotes
         for _try in range(3):
-            p = float(((await _fetch_kite_quotes([key])).get(key) or {}).get("last_price") or 0)
+            p = float(((await _fetch_kite_quotes([key], urgent=True, max_wait=4)).get(key) or {}).get("last_price") or 0)
             if p > 0:
                 return p
             await asyncio.sleep(0.7)
@@ -185,7 +185,7 @@ async def fetch_index_data(symbol: str) -> dict:
     if ks:
         try:
             from routers.arbitrage import _fetch_kite_quotes
-            q = (await _fetch_kite_quotes([ks], mode="quote")).get(ks) or {}
+            q = (await _fetch_kite_quotes([ks], mode="quote", urgent=True, max_wait=4)).get(ks) or {}
             lp = float(q.get("last_price") or 0)
             pc = float((q.get("ohlc") or {}).get("close") or 0)
             if lp > 0:
@@ -261,7 +261,7 @@ async def fetch_kite_ltp(instruments: list) -> dict:
     # Fallback to Kite for remaining
     try:
         from routers.arbitrage import _fetch_kite_quotes
-        kite_data = await _fetch_kite_quotes(instruments)
+        kite_data = await _fetch_kite_quotes(instruments, urgent=True, max_wait=4)
         result.update(kite_data)
     except:
         pass
