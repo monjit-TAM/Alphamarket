@@ -144,6 +144,8 @@ export const subscriptions = pgTable("subscriptions", {
   ekycDone: boolean("ekyc_done").default(false),
   riskProfiling: boolean("risk_profiling").default(false),
   pmlaDone: boolean("pmla_done").default(false),
+  startsAt: timestamp("starts_at"),
+  expiresAt: timestamp("expires_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -1042,6 +1042,9 @@ export async function registerRoutes(
           paidAt: new Date(),
         });
 
+        const subPlan = await storage.getPlan(payment.planId!);
+        const now = new Date();
+        const durationDays = subPlan?.durationDays || null;
         const sub = await storage.createSubscription({
           planId: payment.planId!,
           strategyId: payment.strategyId!,
@@ -1050,6 +1053,8 @@ export async function registerRoutes(
           status: "active",
           ekycDone: false,
           riskProfiling: false,
+          startsAt: now,
+          expiresAt: durationDays ? new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000) : null,
         });
 
         await storage.updatePayment(payment.id, { subscriptionId: sub.id });
@@ -1112,6 +1117,9 @@ export async function registerRoutes(
 
             const freshPayment = await storage.getPaymentByOrderId(orderId);
             if (freshPayment && !freshPayment.subscriptionId) {
+              const whPlan = await storage.getPlan(payment.planId!);
+              const whNow = new Date();
+              const whDurationDays = whPlan?.durationDays || null;
               const sub = await storage.createSubscription({
                 planId: payment.planId!,
                 strategyId: payment.strategyId!,
@@ -1120,6 +1128,8 @@ export async function registerRoutes(
                 status: "active",
                 ekycDone: false,
                 riskProfiling: false,
+                startsAt: whNow,
+                expiresAt: whDurationDays ? new Date(whNow.getTime() + whDurationDays * 24 * 60 * 60 * 1000) : null,
               });
 
               await storage.updatePayment(payment.id, { subscriptionId: sub.id });
@@ -1350,7 +1360,7 @@ export async function registerRoutes(
       const isAdvisorOrAdmin = requestUser && (requestUser.role === "advisor" || requestUser.role === "admin");
       if (!isAdvisorOrAdmin) {
         const subscriptions = await storage.getSubscriptionsByUser(userId);
-        const isSubscribed = subscriptions.some(s => s.strategyId === req.params.id && s.status === "active");
+        const isSubscribed = subscriptions.some(s => s.strategyId === req.params.id && s.status === "active" && (!s.expiresAt || new Date(s.expiresAt) > new Date()));
         if (!isSubscribed) return res.status(403).send("Subscription required to view current basket composition");
       }
 
@@ -2733,7 +2743,7 @@ export async function registerRoutes(
   app.get("/api/investor/recommendations", requireAuth, async (req, res) => {
     try {
       const subs = await storage.getSubscriptionsByUserId(req.session.userId!);
-      const activeSubs = subs.filter(s => s.status === "active");
+      const activeSubs = subs.filter(s => s.status === "active" && (!s.expiresAt || new Date(s.expiresAt) > new Date()));
       const allCalls: any[] = [];
       const allPositions: any[] = [];
       for (const sub of activeSubs) {
@@ -6456,7 +6466,7 @@ export async function registerRoutes(
     try {
       const allNotifications = await storage.getRecentNotifications(100);
       const userSubs = await storage.getSubscriptionsByUserId(req.session.userId!);
-      const subscribedStrategyIds = new Set(userSubs.filter(s => s.status === "active" && s.strategyId).map(s => s.strategyId));
+      const subscribedStrategyIds = new Set(userSubs.filter(s => s.status === "active" && s.strategyId && (!s.expiresAt || new Date(s.expiresAt) > new Date())).map(s => s.strategyId));
       const userWatchlist = await storage.getWatchlistByUser(req.session.userId!);
       const watchlistedStrategyIds = new Set(userWatchlist.filter(w => w.itemType === "strategy").map(w => w.itemId));
 
