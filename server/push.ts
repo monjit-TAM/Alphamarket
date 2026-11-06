@@ -88,8 +88,8 @@ export async function notifyStrategySubscribers(
       strategyId,
     });
 
-    const activeSubs = await storage.getActiveSubscriptionsByStrategy(strategyId);
-    const userIds = Array.from(new Set(activeSubs.map((s) => s.userId)));
+    const { getEntitledUserIds } = await import("./entitlement");
+    const userIds = await getEntitledUserIds(strategyId);
     const pushSubs = await storage.getPushSubscriptionsForUserIds(userIds);
     if (pushSubs.length > 0) {
       await sendToSubscriptions(pushSubs, payload);
@@ -143,8 +143,8 @@ export async function notifyWatchlistUsers(
       strategyId,
     });
 
-    const activeSubs = await storage.getActiveSubscriptionsByStrategy(strategyId);
-    const subscriberIds = Array.from(new Set(activeSubs.map((s) => s.userId)));
+    const { getEntitledUserIds } = await import("./entitlement");
+    const subscriberIds = await getEntitledUserIds(strategyId);
     const watchlistUserIds = await storage.getWatchlistUserIdsForStrategy(strategyId, subscriberIds);
     if (watchlistUserIds.length > 0) {
       const pushSubs = await storage.getPushSubscriptionsForUserIds(watchlistUserIds);

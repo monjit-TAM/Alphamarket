@@ -3,7 +3,7 @@ import { fireWebhookEvent, buildCallEventData, buildPositionEventData } from "./
 import { handleXTSEvent } from "./xts-bridge";
 import { db } from "./db";
 import { calls, positions, strategies } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getLiveQuote, getOptionPremiumLTP, getBulkLTP, getLastKnownPrice } from "./groww";
 import {
   notifyStrategySubscribers,
@@ -519,7 +519,24 @@ export function startScheduler() {
     staleIntradayMorningCheck();
   }, 60 * 1000);
 
-  console.log("[Scheduler] Started: SL/Target monitoring (every 15s) + Intraday auto-square-off (every 60s)");
+  // Subscription expiry check every 5 minutes
+  setInterval(async () => {
+    try {
+      const result = await db.execute(sql`
+        UPDATE subscriptions SET status = 'expired'
+        WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at <= NOW()
+        RETURNING id, user_id, strategy_id
+      `);
+      const expired = (result as any).rows || (result as any);
+      if (Array.isArray(expired) && expired.length > 0) {
+        console.log(`[Scheduler] Expired ${expired.length} subscription(s):`, expired.map((r: any) => r.id));
+      }
+    } catch (err) {
+      console.error("[Scheduler] Error expiring subscriptions:", err);
+    }
+  }, 5 * 60 * 1000);
+
+  console.log("[Scheduler] Started: SL/Target monitoring (every 15s) + Intraday auto-square-off (every 60s) + Subscription expiry (every 5m)");
 }
 
 export function stopScheduler() {

@@ -1,3 +1,4 @@
+import yf_guard  # noqa: F401  maps index tickers for Yahoo and skips delisted symbols (4 Nov 2026)
 from fastapi import FastAPI, HTTPException, Depends, status, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -148,8 +149,19 @@ async def ds_fundamentals(symbol: str) -> dict:
     except: pass
     return {}
 
+# Renamed NSE symbols still in DYOR lists (checked against the data service on deploy), and index names the
+# data service has no daily bars for: asking for those only produced an error line per call.
+_DS_RENAMED = {'ZOMATO': 'ETERNAL', 'PVR': 'PVRINOX', 'KALPATPOWR': 'KPIL', 'LEMERETREE': 'LEMONTREE', 'TATAMOTORS': 'TMPV'}
+_DS_NO_BARS = {"NIFTY", "NIFTY50", "NIFTY 50", "^NSEI", "%5ENSEI", "BANKNIFTY", "^NSEBANK", "FINNIFTY", "MIDCPNIFTY",
+               "SENSEX", "^BSESN", "ISEC"}
+
+
 async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
     """Get OHLCV history from data service with error logging"""
+    _s = str(symbol).upper().replace(".NS", "")
+    if _s in _DS_NO_BARS:
+        return []
+    symbol = _DS_RENAMED.get(_s, _s)
     try:
         async with _httpx.AsyncClient(timeout=30) as c:
             r = await c.get(f"{DATA_SERVICE_URL}/data/equity/ohlcv/{symbol}?period={period}")
@@ -163,6 +175,41 @@ async def ds_ohlcv(symbol: str, period: str = "1y") -> list:
     except Exception as e:
         logger.error(f"ds_ohlcv: {symbol} connection failed: {type(e).__name__}: {e}")
     return []
+
+async def _with_today_bar(symbol, rows):
+    """Daily rows plus today's bar, while the exchange's daily file does not have today yet: built from the
+    data service's TrueData 5-minute bars for today, else from its live quote. The classic chart and
+    Patterns showed the previous close as the price all session (RELIANCE 1164.9 vs 1254 live, 2 Nov)."""
+    from datetime import datetime as _dtw, timedelta as _tdw
+    if not rows:
+        return rows
+    ist = _dtw.utcnow() + _tdw(hours=5, minutes=30)
+    today = ist.date().isoformat()
+    if ist.weekday() >= 5 or (ist.hour, ist.minute) < (9, 15) or str(rows[-1].get("date") or "")[:10] >= today:
+        return rows
+    sym = str(symbol).upper()
+    bar = None
+    try:
+        async with _httpx.AsyncClient(timeout=8) as c:
+            r = await c.get(f"{DATA_SERVICE_URL}/data/equity/ohlcv/{sym}", params={"period": "1d", "interval": "5m"})
+            b5 = [x for x in ((r.json().get("data") or []) if r.status_code == 200 else []) if str(x.get("date", ""))[:10] == today]
+            if b5:
+                bar = {"date": today, "open": float(b5[0]["open"]), "high": max(float(x["high"]) for x in b5),
+                       "low": min(float(x["low"]) for x in b5), "close": float(b5[-1]["close"]),
+                       "volume": sum(float(x.get("volume") or 0) for x in b5)}
+            else:
+                q = await c.get(f"{DATA_SERVICE_URL}/data/equity/quote/{sym}")
+                d = q.json() if q.status_code == 200 else {}
+                p = float(d.get("price") or 0)
+                if p > 0 and d.get("is_live"):
+                    o = float(d.get("open") or 0) or p
+                    bar = {"date": today, "open": o, "high": max(float(d.get("high") or 0), p, o),
+                           "low": min([x for x in (float(d.get("low") or 0), p, o) if x > 0]), "close": p,
+                           "volume": float(d.get("volume") or 0)}
+    except Exception:
+        pass
+    return list(rows) + [bar] if bar else rows
+
 
 from routers.arbitrage import router as arbitrage_router
 from routers.alpha_options import router as alpha_options_router
@@ -187,6 +234,8 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
     openapi_tags=[
+        {"name": "AlphaLab in DYOR", "description": "AlphaLab pages shown inside DYOR: Proof, Stock 360, Charts, Bases, Pattern Gallery, Screens, Alpha Signal, Options Lab, CAS Check, Planning, Portfolio Guide, Telegram alerts and advisor reports. DYOR signs each user in to their own AlphaLab account."},
+        {"name": "Research", "description": "AlphaLab research served to DYOR users from the same data service: selection models, base rates, company research and risk, mutual funds, ETFs, bonds and insurance protection."},
         {"name": "Health & Status", "description": "System health checks and API status"},
         {"name": "Authentication", "description": "User registration, login, and session management"},
         {"name": "Stock Screener", "description": "Screen 843 NSE stocks across 34+ strategies with buy zones and signal status"},
@@ -229,7 +278,8 @@ async def _ds_get(path: str):
 @app.get("/api/emerging-leaders/live", tags=["Emerging Leaders"],
          summary="The live Emerging Leaders list with entry, return and next target")
 async def dyor_el_live():
-    return await _ds_get("/data/conviction/live")
+    from live_overlay import emerging as _el_live  # current prices on the list
+    return await _el_live(await _ds_get("/data/conviction/live"))
 
 
 @app.get("/api/emerging-leaders/past", tags=["Emerging Leaders"],
@@ -445,11 +495,43 @@ def _td_subscribe_new(symbols):
         return False
 
 def _td_get_quotes(symbols):
+    """Prices from the AlphaFeed store first, falling back to this process's own socket.
+    Store-first lets the socket move to the feed worker without changing anything for
+    callers; the fallback keeps this working while this process still holds the socket,
+    and if the feed worker ever stops. Any store failure falls through silently."""
     result = {}
+    now = __import__('time').time()
+    try:
+        import json as _afj, redis as _afr
+        _cl = getattr(_td_get_quotes, "_redis", None)
+        if _cl is None:
+            _cl = _afr.from_url("redis://localhost:6379/3", decode_responses=True,
+                                socket_timeout=0.25, socket_connect_timeout=0.25)
+            _td_get_quotes._redis = _cl
+        # calls.stock_name is instrument_master.name; the feed writes the
+        # vendor tradingsymbol. Translate on the way in. Mirrors
+        # registry.RENAMED in /opt/alphafeed/registry.py -- an entry added
+        # there needs the same entry here until stock_name is resolved
+        # through instrument_master properly.
+        _db2v = {"MANKIND PHARMA": "MANKIND", "TATAMOTORS": "TMPV"}
+        keys = ["q:" + _db2v.get(s.upper(), s.upper()) for s in symbols]
+        for sym, raw in zip(symbols, _cl.mget(keys)):
+            _td_last_access[sym] = now
+            if not raw:
+                continue
+            d = _afj.loads(raw)
+            if float(d.get("p", 0)) > 0:
+                result[sym] = {"ltp": float(d["p"]), "timestamp": float(d.get("t", now)),
+                               "source": "truedata", "high": 0, "low": 0, "open": 0,
+                               "close": 0, "volume": 0, "oi": 0}
+    except Exception:
+        pass
     with _td_lock:
         for sym in symbols:
+            if sym in result:
+                continue
             data = _td_prices.get(sym) or _td_prices.get(sym.upper())
-            _td_last_access[sym] = __import__('time').time()
+            _td_last_access[sym] = now
             if data and data.get('ltp', 0) > 0:
                 result[sym] = data
     return result
@@ -626,12 +708,35 @@ async def shared_quotes(request: Request, items: str = "", order: str = "truedat
         if not todo:
             break
         left = []
-        if src == "truedata" and _td_connected:
-            for td, kk in todo:
-                name = _TD_INDEX_NAMES.get(td.upper(), td)
-                d = _td_get_quotes([name]).get(name)
+        # No _td_connected gate: after the AlphaFeed cutover this process owns no
+        # socket, and prices come from the store. _td_get_quotes returns {} when the
+        # store is empty and the loop falls through to the next rung.
+        if src == "truedata":
+            # one mget for every symbol, off the event loop.
+            # Was: one store call per symbol, so N blocking Redis round trips
+            # inside async def on a single-worker service — a stall there
+            # blocked /api/health and the watchdog restarted us. The store
+            # helper already batches whatever list it is handed; the caller
+            # just never used that. Per-symbol behaviour below is unchanged.
+            import asyncio as _asyncio
+            _names = [_TD_INDEX_NAMES.get(_t0.upper(), _t0) for _t0, _ in todo]
+            try:
+                _batch = await _asyncio.get_running_loop().run_in_executor(
+                    None, _td_get_quotes, _names)
+            except Exception:
+                _batch = {}
+            for (td, kk), name in zip(todo, _names):
+                d = _batch.get(name)
                 if d and d.get("ltp", 0) > 0 and (not open_now or now - d.get("timestamp", 0) <= _TD_STALE_S):
-                    quotes[td] = {"price": d["ltp"], "source": "truedata", "age_s": round(now - d.get("timestamp", now), 1)}
+                    # widened 29 Sep: pass through the fields we already hold, so a caller
+                    # does not have to show a live price against a zero change and zero volume.
+                    _q = {"price": d["ltp"], "source": "truedata",
+                          "age_s": round(now - d.get("timestamp", now), 1)}
+                    for _k in ("open", "high", "low", "close", "volume", "prev_close"):
+                        _v = d.get(_k)
+                        if _v:
+                            _q["close" if _k == "prev_close" else _k] = _v
+                    quotes[td] = _q
                 else:
                     left.append((td, kk))
                     if not d:
@@ -643,13 +748,22 @@ async def shared_quotes(request: Request, items: str = "", order: str = "truedat
                 try:
                     from routers.arbitrage import _fetch_kite_quotes, _is_kite_connected
                     if _is_kite_connected():
-                        got = await _fetch_kite_quotes(keys)
+                        got = await _fetch_kite_quotes(keys, max_wait=1.0)
                 except Exception:
                     got = {}
             for td, kk in todo:
                 v = got.get(kk) if kk else None
                 if v and v.get("last_price", 0) > 0:
-                    quotes[td] = {"price": v["last_price"], "source": "kite"}
+                    _q = {"price": v["last_price"], "source": "kite"}
+                    _o = v.get("ohlc") or {}
+                    for _k in ("open", "high", "low", "close"):
+                        if _o.get(_k):
+                            _q[_k] = _o[_k]
+                    for _vk in ("volume", "volume_traded", "last_quantity"):
+                        if v.get(_vk):
+                            _q.setdefault("volume", v[_vk])
+                            break
+                    quotes[td] = _q
                 else:
                     left.append((td, kk))
         else:
@@ -665,12 +779,70 @@ async def shared_quotes(request: Request, items: str = "", order: str = "truedat
 _td_hist_obj = None
 _exp_flagged = set()
 
+_KITE_UNDERLYING_KEY = {
+    "NIFTY": "NSE:NIFTY 50", "BANKNIFTY": "NSE:NIFTY BANK",
+    "FINNIFTY": "NSE:NIFTY FIN SERVICE", "MIDCPNIFTY": "NSE:NIFTY MID SELECT",
+    "SENSEX": "BSE:SENSEX", "BANKEX": "BSE:BANKEX",
+}
+
+def _kite_underlying_ltp(underlying):
+    """Last traded price of an underlying from Kite, for expiry-day settlement only.
+    Once the session has closed, last_price IS the closing price. Returns None on any
+    failure so the caller falls through to the history lookup."""
+    import json as _j, urllib.request as _r, urllib.parse as _up, psycopg2 as _p
+    s = str(underlying or "").strip().upper()
+    if not s:
+        return None
+    key = _KITE_UNDERLYING_KEY.get(s, "NSE:" + s)
+    try:
+        cn = _p.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost:5432/dyor_db")
+        cr = cn.cursor()
+        cr.execute("SELECT value FROM api_settings WHERE key='kite_token'")
+        row = cr.fetchone()
+        cr.close()
+        cn.close()
+        if not row:
+            return None
+        tok = _j.loads(row[0]).get("access_token")
+        if not tok:
+            return None
+        url = "https://api.kite.trade/quote?i=" + _up.quote(key, safe=":")
+        rq = _r.Request(url, headers={"Authorization": "token dr7ngktrvoiu1fms:" + tok})
+        d = _j.loads(_r.urlopen(rq, timeout=8).read().decode())
+        if d.get("status") != "success":
+            return None
+        q = (d.get("data") or {}).get(key) or {}
+        lp = q.get("last_price") or 0
+        return float(lp) if float(lp) > 0 else None
+    except Exception as _e:
+        print("[SL Engine] Kite underlying lookup failed for %s: %s" % (underlying, _e))
+        return None
+
 def _underlying_close_on(u, expiry_date):
     """Official closing price of the underlying on expiry day, which is what NSE settles on.
-    1) TrueData daily (EOD) bar, 2) last 1-minute bar of the day, 3) live tick seen on expiry day after 15:25."""
+    Same-day expiry: 1) live TrueData tick at/after 15:25, 2) Kite last_price.
+    Any expiry date: 3) TrueData EOD bar, 4) last 1-minute bar of the day."""
     import datetime as _d
     name = _TD_INDEX_NAMES.get(u.upper(), u.upper())
     global _td_hist_obj
+    # On the expiry day itself the live feed is the only authoritative source we
+    # actually have, and reading it is free. Check it before the history API, which
+    # is slow, blocking, and currently broken. Past dates fall through as before.
+    if expiry_date == (_d.datetime.utcnow() + _d.timedelta(hours=5, minutes=30)).date():
+        with _td_lock:
+            _live_now = dict(_td_prices.get(name) or {})
+        if _live_now.get("ltp", 0) > 0 and _live_now.get("timestamp"):
+            _ist_now = _d.datetime.utcfromtimestamp(_live_now["timestamp"]) + _d.timedelta(hours=5, minutes=30)
+            if _ist_now.date() == expiry_date and _ist_now.time() >= _d.time(15, 25):
+                return float(_live_now["ltp"]), "live tick " + _ist_now.strftime("%H:%M:%S")
+        # TrueData carries no BSE index -- SENSEX returns nothing even after an explicit
+        # auto-subscribe -- and the plan sits at its 590-symbol cap, so there is no slot
+        # to add one. Ask Kite instead. Deliberately inside the same-day branch: Kite's
+        # last_price is TODAY's price, and using it for a past expiry would settle at a
+        # confidently wrong number.
+        _kq = _kite_underlying_ltp(u)
+        if _kq and _kq > 0:
+            return float(_kq), "kite quote (expiry-day close)"
     try:
         if _td_hist_obj is None:
             from truedata import TD_hist
@@ -830,7 +1002,9 @@ def _sl_refresh_watchlist():
                 FROM positions p
                 WHERE p.status = 'Active' AND p.is_published = true
                   AND p.expiry IS NOT NULL AND p.expiry != ''
-                  AND p.expiry::date < CURRENT_DATE
+                  AND (p.expiry::date < CURRENT_DATE
+                       OR (p.expiry::date = CURRENT_DATE
+                           AND (now() AT TIME ZONE 'Asia/Kolkata')::time >= '15:31'))
             """)
             expired = _exp_cur.fetchall()
             _exp_conn.close()
@@ -964,6 +1138,57 @@ def _sl_watchlist_refresh_loop():
             _sl_refresh_watchlist()
         except Exception:
             pass
+        # Post-cutover this process owns no socket, so trade_callback never fires and
+        # _check_sl_tp_on_tick (main.py:369) is never reached. Sweep the AlphaFeed store
+        # instead and evaluate exactly what a tick would have. One batched read; this
+        # thread is not the event loop, so a slow Redis cannot block the service.
+        try:
+            with _sl_watchlist_lock:
+                _sw_syms = list(_sl_watchlist.keys())
+            _sw_now = _sl_time.time()
+            _sw_priced = 0
+            _sw_fresh = 0
+            _sw_suppressed = 0
+            # Gate the trigger, not the sweep: the heartbeat must keep
+            # reporting so a gated engine never looks like a dead one.
+            # Fail OPEN -- an inert engine is the worse failure (01 Oct).
+            # LIMITATION: _td_market_open() has no holiday calendar, so
+            # this closes weekends and off-hours only, not holidays.
+            try:
+                import os as _sl_os
+                _sw_open = (_td_market_open()
+                            or _sl_os.getenv("SL_FORCE_EVAL") == "1")
+            except Exception as _sw_gate_err:
+                print("[SL Engine] market-hours check failed, "
+                      "evaluating anyway: %s" % (_sw_gate_err,))
+                _sw_open = True
+            if _sw_syms:
+                _sw_q = _td_get_quotes(_sw_syms + [_s + "-I" for _s in _sw_syms])
+                for _sk, _sd in _sw_q.items():
+                    try:
+                        _sp = float(_sd.get("ltp") or 0)
+                    except (TypeError, ValueError):
+                        continue
+                    if _sp <= 0:
+                        continue
+                    _sw_priced += 1
+                    # Never trigger on a stale price: the store keeps 300s, we accept 30s.
+                    if _sw_now - float(_sd.get("timestamp") or 0) > 30:
+                        continue
+                    _sw_fresh += 1
+                    if _sw_open:
+                        _check_sl_tp_on_tick(_sk[:-2] if _sk.endswith("-I") else _sk, _sp)
+                    else:
+                        _sw_suppressed += 1
+            # Heartbeat. Without it, an inert engine looks exactly like a working one.
+            if _sw_now - getattr(_sl_watchlist_refresh_loop, "_last_hb", 0) >= 60:
+                _sl_watchlist_refresh_loop._last_hb = _sw_now
+                print(f"[SL Engine] store sweep: {len(_sw_syms)} watched, "
+                      f"{_sw_priced} priced, {_sw_fresh} fresh"
+                      + (f", {_sw_suppressed} suppressed (market closed)"
+                         if _sw_suppressed else ""))
+        except Exception as _sw_err:
+            print(f"[SL Engine] store sweep error: {_sw_err}")
         try:
             _td_background_tick()
         except Exception as _bt:
@@ -991,6 +1216,10 @@ app.include_router(alpha_options_router)
 app.include_router(algo_strategies_router)
 app.include_router(trading_router)
 app.include_router(alphabot_router)
+from research_proxy import router as research_router  # Models, Base Rates, Stock Research (dyorport1)
+app.include_router(research_router)
+from alphalab_embed import router as alphalab_router  # AlphaLab pages in DYOR (alembed)
+app.include_router(alphalab_router)
 app.include_router(patterns_v2_router)
 app.include_router(upstox_router)
 app.include_router(basket_router)
@@ -1006,6 +1235,24 @@ app.include_router(alpha_conviction_router)
 # DYOR Auth Bridge — validate AlphaMarket session cookies
 from middleware.alphamarket_auth import AlphaMarketAuthMiddleware
 app.add_middleware(AlphaMarketAuthMiddleware, dyor_db_url=DATABASE_URL)
+
+
+from refresh_ctx import force_refresh as _force_refresh
+
+
+@app.middleware("http")
+async def _refresh_ahead(request, call_next):
+    """The cache warmer (x-refresh: 1 with the internal key) rebuilds cached pages before they expire,
+    so a user never waits for the rebuild. Anyone else's x-refresh header is ignored."""
+    from middleware.alphamarket_auth import _INTERNAL_KEY as _ik
+    tok = None
+    if request.headers.get("x-refresh") == "1" and _ik and request.headers.get("x-internal-key") == _ik:
+        tok = _force_refresh.set(True)
+    try:
+        return await call_next(request)
+    finally:
+        if tok is not None:
+            _force_refresh.reset(tok)
 security = HTTPBearer(auto_error=False)
 
 db_pool = None
@@ -1016,6 +1263,9 @@ async def startup():
     global db_pool, redis_client
     try:
         db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=2, max_size=10)
+        # Self-healing Groww token. See _groww_token_keeper.
+        import asyncio as _aio_groww
+        _aio_groww.create_task(_groww_token_keeper())
         redis_client = await aioredis.from_url(REDIS_URL, decode_responses=True)
         await init_db()
         await ensure_admin()
@@ -1024,9 +1274,13 @@ async def startup():
         asyncio.create_task(_precompute_loop())
         # Start TrueData WebSocket feed in background thread
         try:
-            _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
-            _td_thread.start()
-            print("[TrueData] Background thread started")
+            import os as _tdos
+            if _tdos.getenv("DYOR_TRUEDATA_SOCKET", "1") != "1":
+                print("[TrueData] socket disabled by DYOR_TRUEDATA_SOCKET=0; prices come from the AlphaFeed store")
+            else:
+                _td_thread = _td_threading.Thread(target=_start_truedata_feed, daemon=True)
+                _td_thread.start()
+                print("[TrueData] Background thread started")
             # Start SL/TP watchlist refresh loop
             _sl_thread = _td_threading.Thread(target=_sl_watchlist_refresh_loop, daemon=True)
             _sl_thread.start()
@@ -1042,12 +1296,20 @@ async def startup():
 @app.get("/api/shared/structure-screener", include_in_schema=False)
 async def shared_structure_screener(mode: str = "untested_poc", within_pct: float = 1.0, min_streak: int = 3, limit: int = 50):
     import httpx as _hx
+    _ck = f"structure_screener:{mode}:{within_pct}:{min_streak}:{limit}"
+    if redis_client and not _force_refresh.get():
+        _hit = await redis_client.get(_ck)
+        if _hit:
+            return json.loads(_hit)
     try:
         async with _hx.AsyncClient(timeout=25) as c:
             r = await c.get("https://data.alphamarket.co.in/data/equity/structure-screener",
                             params={"mode": mode, "within_pct": within_pct, "min_streak": min_streak, "limit": limit},
                             headers={"X-API-Key": "alpha_data_internal_2026"})
-            return r.json()
+            _d = r.json()
+            if redis_client and r.status_code == 200 and (_d.get("results") or _d.get("stocks") or _d.get("rows")):
+                await redis_client.setex(_ck, 600, json.dumps(_d))
+            return _d
     except Exception as e:
         return {"results": [], "detail": f"structure screener unavailable: {e}"}
 
@@ -1121,7 +1383,7 @@ async def shared_kite_quotes(request: Request, symbols: str = ""):
     if _is_kite_connected():
         try:
             sym_list = [f"NSE:{s}" for s in raw_syms if " " not in s and "&" not in s]  # Skip symbols with special chars (handled by TrueData fallback)
-            data = await _fetch_kite_quotes(sym_list)
+            data = await _fetch_kite_quotes(sym_list, max_wait=1.0)
             for key, val in data.items():
                 sym = key.replace("NSE:", "")
                 ltp = val.get("last_price", 0)
@@ -1158,7 +1420,7 @@ async def shared_kite_quotes_raw(request: Request, symbols: str = ""):
     if not _is_kite_connected():
         return {"quotes": {}, "connected": False}
     try:
-        data = await _fetch_kite_quotes(raw_syms, mode="full")
+        data = await _fetch_kite_quotes(raw_syms, mode="full", max_wait=1.0)
         quotes = {}
         for key, val in data.items():
             ltp = val.get("last_price", 0)
@@ -1253,7 +1515,7 @@ async def sl_engine_status(request: Request):
         "watchlist_entries": total_entries,
         "triggered_count": len(_sl_triggered_ids),
         "triggered_ids": list(_sl_triggered_ids)[:20],
-        "symbols": symbols[:50],
+        "symbols": symbols,  # never cap: the standby poller prices exactly this list
         "refresh_interval": _SL_REFRESH_INTERVAL,
         "td_connected": _td_connected,
         "td_cached_prices": len(_td_prices)
@@ -1351,15 +1613,31 @@ async def _overlay_live_prices(stocks: list) -> list:
                                 live[k] = v
             except:
                 pass
+        # Symbols Kite did not answer (rate limit, cut-out): the data service's own quote ladder
+        missing = [x for x in clean_syms if x not in live]
+        if missing:
+            try:
+                async with _hx.AsyncClient(timeout=8) as cl:
+                    for i in range(0, len(missing), 100):
+                        r = await cl.post(f"{DATA_SERVICE_URL}/data/equity/quotes", json={"symbols": missing[i:i + 100]})
+                        if r.status_code == 200:
+                            for k, v in (r.json().get("quotes") or {}).items():
+                                if v.get("is_live") and (v.get("price") or 0) > 0:
+                                    live[k.upper()] = {"price": v["price"]}
+            except Exception:
+                pass
         # Overlay
         for s in stocks:
             sym = s.get("symbol", "")
             q = live.get(sym)
+            s["live"] = False
             if q:
                 ltp = q.get("price") or q.get("ltp") or 0
                 if ltp and ltp > 0:
                     s["price"] = round(ltp, 2)
                     s["live"] = True
+                    if q.get("change_pct") not in (None, 0, 0.0):
+                        s["change_pct"] = round(float(q["change_pct"]), 2)
     except Exception as e:
         pass  # Fail silently, keep cached prices
     return stocks
@@ -1981,33 +2259,125 @@ async def get_admin_user(user=Depends(get_current_user)):
     return user
 
 # ── Groww Token Management ────────────────────────────────────────────────────
-async def get_groww_token():
-    # 1. Check DYOR's own database first
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT value FROM api_settings WHERE key='groww_token'")
-        if row and row["value"]:
-            return row["value"]
-    # 2. Auto-sync from testalpha's alphaforge database
+GROWW_ENV_FILE = "/root/groww_totp.env"
+
+
+def _groww_env():
+    """api_key + totp_secret from one root-owned file. One copy, one place."""
+    env = {}
+    with open(GROWW_ENV_FILE) as fh:
+        for line in fh:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                env[k.strip()] = v.strip()
+    return env
+
+
+def _groww_token_exp(tok):
+    """Epoch expiry from a Groww JWT, or 0 if unreadable."""
+    import base64 as _b64, json as _j
     try:
-        import asyncpg as _apg
-        _af_conn = await _apg.connect("postgresql://dyor_user:DyorSecure2026Mar@localhost:5432/alphaforge")
+        part = tok.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        return int(_j.loads(_b64.urlsafe_b64decode(part)).get("exp") or 0)
+    except Exception:
+        return 0
+
+
+def _groww_token_roles(tok):
+    """Roles from the nested sub claim. Groww buries them in a JSON string."""
+    import base64 as _b64, json as _j
+    try:
+        part = tok.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        claims = _j.loads(_b64.urlsafe_b64decode(part))
+        return _j.loads(claims.get("sub") or "{}").get("role", "")
+    except Exception:
+        return ""
+
+
+def _groww_mint_sync():
+    """Mint via TOTP. Blocking -- callers must use an executor. Raises on error."""
+    import pyotp
+    from growwapi import GrowwAPI
+    env = _groww_env()
+    return GrowwAPI.get_access_token(
+        api_key=env["GROWW_API_KEY"],
+        totp=pyotp.TOTP(env["GROWW_TOTP_SECRET"]).now(),
+    )
+
+
+_groww_mint_lock = None
+
+
+async def _groww_mint_and_store():
+    """Mint a fresh token, store it, return it. None on failure."""
+    import asyncio as _aio, time as _t
+    global _groww_mint_lock
+    if _groww_mint_lock is None:
+        _groww_mint_lock = _aio.Lock()
+    async with _groww_mint_lock:
+        # Someone may have minted while we waited for the lock.
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM api_settings WHERE key='groww_token'")
+        if row and row["value"] and _groww_token_exp(row["value"]) - 120 > _t.time():
+            return row["value"]
         try:
-            _af_row = await _af_conn.fetchrow("SELECT value FROM api_settings WHERE key='groww_token'")
-            if _af_row and _af_row["value"]:
-                # Cache it in DYOR's own DB for future use
-                async with db_pool.acquire() as conn:
-                    await conn.execute(
-                        "INSERT INTO api_settings (key, value, updated_at) VALUES ('groww_token', $1, NOW()) "
-                        "ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()",
-                        _af_row["value"]
-                    )
-                return _af_row["value"]
-        finally:
-            await _af_conn.close()
-    except Exception as _e:
-        print(f"Auto-sync groww token from alphaforge failed: {_e}")
-    # 3. Fallback to env var
-    return os.getenv("GROWW_API_KEY", "")
+            tok = await _aio.get_running_loop().run_in_executor(
+                None, _groww_mint_sync)
+        except ImportError as err:
+            print("[Groww] MINT FAILED: growwapi/pyotp not importable in this "
+                  "venv (%s)" % (err,), flush=True)
+            return None
+        except Exception as err:
+            print("[Groww] MINT FAILED: %s" % (err,), flush=True)
+            return None
+        if not tok:
+            print("[Groww] MINT FAILED: empty token returned", flush=True)
+            return None
+        await set_groww_token(tok)
+        print("[Groww] token minted via TOTP; exp=%s roles=%s"
+              % (_groww_token_exp(tok), _groww_token_roles(tok) or "NONE"),
+              flush=True)
+        if "live_data-basic" not in (_groww_token_roles(tok) or ""):
+            print("[Groww] WARNING: minted token lacks live_data-basic -- "
+                  "market data will fail. Check the key is TOTP type.",
+                  flush=True)
+        return tok
+
+
+async def get_groww_token():
+    """A valid Groww token, or None. Never an expired one, never an api_key."""
+    import time as _t
+    async with db_pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT value FROM api_settings WHERE key='groww_token'")
+    tok = row["value"] if row else None
+    if tok:
+        if _groww_token_exp(tok) - 120 > _t.time():
+            return tok
+        print("[Groww] stored token expired (exp=%s); re-minting"
+              % (_groww_token_exp(tok),), flush=True)
+    else:
+        print("[Groww] no stored token; minting", flush=True)
+    return await _groww_mint_and_store()
+
+
+async def _groww_token_keeper():
+    """Keep the stored token fresh. It expires 06:00 IST daily and nothing
+    used to re-mint it, so every consumer ran on a dead credential from 06:00
+    until a human noticed."""
+    import asyncio as _aio
+    await _aio.sleep(10)
+    while True:
+        try:
+            if not await get_groww_token():
+                print("[Groww] keeper: no usable token", flush=True)
+        except Exception as err:
+            print("[Groww] keeper error: %s" % (err,), flush=True)
+        await _aio.sleep(300)
 
 async def set_groww_token(token: str):
     async with db_pool.acquire() as conn:
@@ -3976,7 +4346,7 @@ async def delete_forward_test(fwd_id: int, user=Depends(get_current_user)):
 NIFTY_UNIVERSE = [
     # Nifty 50
     "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","WIPRO","BAJFINANCE","SUNPHARMA",
-    "TATAMOTORS","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
+    "TMPV","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
     "POWERGRID","NTPC","COALINDIA","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","CIPLA",
     "DRREDDY","DIVISLAB","APOLLOHOSP","BAJAJFINSV","BRITANNIA","EICHERMOT","SBILIFE",
     "HDFCLIFE","INDUSINDBK","ULTRACEMCO","GRASIM","TECHM","ASIANPAINT","HEROMOTOCO",
@@ -4060,7 +4430,7 @@ NIFTY_UNIVERSE = _clean
 # Cap segment classification by index membership
 NIFTY50_SYMBOLS = {
     "RELIANCE","TCS","HDFCBANK","INFY","ICICIBANK","WIPRO","BAJFINANCE","SUNPHARMA",
-    "TATAMOTORS","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
+    "TMPV","ADANIENT","MARUTI","AXISBANK","LTIM","TITAN","HCLTECH","NESTLEIND",
     "POWERGRID","NTPC","COALINDIA","ONGC","JSWSTEEL","TATASTEEL","HINDALCO","CIPLA",
     "DRREDDY","DIVISLAB","APOLLOHOSP","BAJAJFINSV","BRITANNIA","EICHERMOT","SBILIFE",
     "HDFCLIFE","INDUSINDBK","ULTRACEMCO","GRASIM","TECHM","ASIANPAINT","HEROMOTOCO",
@@ -4199,7 +4569,7 @@ SECTOR_MAP = {
     "LALPATHLAB":"Healthcare","PGHH":"FMCG","MOREPENLAB":"Pharma","SUVENPHAR":"Pharma",
     "SOLARA":"Pharma","TARSONS":"Pharma",
     # Auto
-    "TATAMOTORS":"Auto","MARUTI":"Auto","EICHERMOT":"Auto","HEROMOTOCO":"Auto","M&M":"Auto",
+    "TMPV":"Auto","MARUTI":"Auto","EICHERMOT":"Auto","HEROMOTOCO":"Auto","M&M":"Auto",
     "BOSCHLTD":"Auto","MOTHERSON":"Auto","SONACOMS":"Auto","TVSMOTOR":"Auto",
     "ASHOKLEY":"Auto","BHARATFORG":"Auto","EXIDEIND":"Auto","BALKRISIND":"Auto",
     "CEATLTD":"Auto","ENDURANCE":"Auto","ESCORTS":"Auto","SUNDRMFAST":"Auto",
@@ -4432,7 +4802,7 @@ INDUSTRY_MAP = {
     "ASTERDM":"Healthcare Services",
     "LALPATHLAB":"Healthcare Services",
     "METROPOLIS":"Healthcare Services",
-    "TATAMOTORS":"Automobiles",
+    "TMPV":"Automobiles",
     "MARUTI":"Automobiles",
     "M&M":"Automobiles",
     "EICHERMOT":"Automobiles",
@@ -4892,7 +5262,7 @@ BASIC_INDUSTRY_MAP = {
     "ASTERDM":"Multi-Specialty Hospitals",
     "LALPATHLAB":"Pathology Diagnostics",
     "METROPOLIS":"Pathology Diagnostics",
-    "TATAMOTORS":"Passenger & Commercial Vehicles",
+    "TMPV":"Passenger & Commercial Vehicles",
     "MARUTI":"Passenger Cars",
     "M&M":"UV, Tractors & Farm Equipment",
     "EICHERMOT":"Premium Motorcycles",
@@ -6425,8 +6795,78 @@ STRATEGY_CATEGORIES = {
 }
 
 
+def _implied_vol(price, S, K, T, is_call, r=0.065):
+    """Volatility that reproduces this option price under Black-Scholes (bisection); 0 if none does."""
+    if price <= 0 or S <= 0 or K <= 0 or T <= 0:
+        return 0.0
+    intrinsic = max(0.0, S - K) if is_call else max(0.0, K - S)
+    if price <= intrinsic + 0.01:
+        return 0.0
+    lo, hi = 0.01, 3.0
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        p = black_scholes(S, K, T, r, mid, "call" if is_call else "put")["price"]
+        if p > price: hi = mid
+        else: lo = mid
+    return round((lo + hi) / 2, 4)
+
+
+async def _kite_option_chain(sym, expiries, spot=0):
+    """Option chain from Kite full quotes for the listed contracts (+/-20 strikes around the money):
+    real last price, OI, volume and best bid/ask; IV and Greeks worked out from the traded price."""
+    from routers.alphabot import _fno_rows, _KITE_INDEX
+    from routers.arbitrage import _fetch_kite_quotes
+    from datetime import date as _d, datetime as _dt, timedelta as _td
+    if not spot:
+        key = _KITE_INDEX.get(sym, f"NSE:{sym}")
+        q = await _fetch_kite_quotes([key])
+        spot = float((q.get(key) or {}).get("last_price") or 0)
+    if not spot:
+        return [], 0
+    chains = []
+    for exp in expiries:
+        rows = await _fno_rows(
+            "SELECT tradingsymbol, strike, instrument_type FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+            "AND instrument_type IN ('CE','PE') AND expiry::date=$2 ORDER BY strike", sym, _d.fromisoformat(exp))
+        strikes = sorted({float(r["strike"]) for r in rows})
+        if not strikes:
+            continue
+        ai = min(range(len(strikes)), key=lambda i: abs(strikes[i] - spot))
+        keep = set(strikes[max(0, ai - 20): ai + 21])
+        rows = [r for r in rows if float(r["strike"]) in keep]
+        keys = [f"NFO:{r['tradingsymbol']}" for r in rows]
+        quotes = {}
+        for i in range(0, len(keys), 200):
+            quotes.update(await _fetch_kite_quotes(keys[i:i + 200], mode="quote") or {})
+        if not quotes:
+            continue
+        # time to expiry in years, counting to 15:30 IST on the expiry day
+        now = _dt.utcnow() + _td(hours=5, minutes=30)
+        T = max((_dt.fromisoformat(exp + "T15:30:00") - now).total_seconds(), 1800) / (365 * 86400)
+        ed = {"expiry": exp, "calls": [], "puts": []}
+        for r in rows:
+            q = quotes.get(f"NFO:{r['tradingsymbol']}") or {}
+            ltp = float(q.get("last_price") or 0)
+            k = float(r["strike"]); call = r["instrument_type"] == "CE"
+            iv = _implied_vol(ltp, spot, k, T, call) if ltp > 0 else 0
+            g = black_scholes(spot, k, T, 0.065, iv, "call" if call else "put") if iv > 0 else {}
+            depth = q.get("depth") or {}
+            bid = float(((depth.get("buy") or [{}])[0] or {}).get("price") or 0)
+            ask = float(((depth.get("sell") or [{}])[0] or {}).get("price") or 0)
+            (ed["calls"] if call else ed["puts"]).append({
+                "strike": k, "ltp": round(ltp, 2), "bid": bid, "ask": ask, "iv": round(iv * 100, 1),
+                "oi": int(q.get("oi") or 0), "volume": int(q.get("volume") or 0),
+                "itm": (k < spot) if call else (k > spot),
+                "delta": round(float(g.get("delta", 0)), 4), "gamma": round(float(g.get("gamma", 0)), 6),
+                "theta": round(float(g.get("theta", 0)), 2), "vega": round(float(g.get("vega", 0)), 2),
+                "trading_symbol": r["tradingsymbol"]})
+        if ed["calls"] or ed["puts"]:
+            chains.append(ed)
+    return chains, spot
+
+
 @app.get("/api/options/chain/{symbol}", tags=["Options Lab"], summary="Get options chain",
-    description="Fetch the options chain for a stock or index. Returns all available strikes with call/put prices, OI, volume, IV, and Greeks (Delta, Gamma, Theta, Vega). Supports NIFTY, BANKNIFTY, FINNIFTY, and all F&O stocks. Falls back to Black-Scholes synthetic pricing when live data is unavailable.")
+    description="Fetch the options chain for a stock or index. Returns all available strikes with call/put prices, OI, volume, IV, and Greeks (Delta, Gamma, Theta, Vega). Supports NIFTY, BANKNIFTY, FINNIFTY, and all F&O stocks. Live only: Groww, then Kite for the listed contracts; 503 when neither answers (no theoretical chain is shown).")
 async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_user)):
     """Fetch options chain — tries Groww API first, falls back to Black-Scholes synthetic."""
     import yfinance as yf  # kept: Black-Scholes fallback needs index hist vol
@@ -6444,7 +6884,7 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
                  "MIDCPNIFTY": "^NSEI", "SENSEX": "^BSESN"}
     LOT_SIZES = {"NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25, "RELIANCE": 250,
                  "TCS": 150, "INFY": 300, "HDFCBANK": 550, "ICICIBANK": 700,
-                 "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600, "BAJFINANCE": 125,
+                 "SBIN": 750, "TMPV": 1750, "ITC": 1600, "BAJFINANCE": 125,
                  "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700, "TATASTEEL": 550,
                  "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475, "M&M": 350,
                  "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400, "TITAN": 375,
@@ -6454,31 +6894,18 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
     lot_size = LOT_SIZES.get(sym_upper, 50)
     today = date.today()
 
-    # ── Generate expiry dates ────────────────────────────────────────────────
-    def get_expiry_dates():
-        expiries = []
-        days_to_thu = (3 - today.weekday()) % 7
-        if days_to_thu == 0:
-            days_to_thu = 7
-        nxt = today + timedelta(days=days_to_thu)
-        if is_index:
-            for _ in range(6):
-                expiries.append(nxt.isoformat())
-                nxt += timedelta(days=7)
-        else:
-            for i in range(5):
-                month = today.month + i
-                year = today.year + (month - 1) // 12
-                month = ((month - 1) % 12) + 1
-                last_day = calendar.monthrange(year, month)[1]
-                ld = date(year, month, last_day)
-                while ld.weekday() != 3:
-                    ld -= timedelta(days=1)
-                if ld > today:
-                    expiries.append(ld.isoformat())
-        return expiries or [(today + timedelta(days=7*i+7)).isoformat() for i in range(4)]
-
-    expiry_dates = get_expiry_dates()
+    # Expiries and lot size from the exchange contract list (instrument_master). NSE options expire on
+    # Tuesdays now (holidays move them); the old Thursday arithmetic asked Groww for dates that do not
+    # exist, so every chain fell back to made-up prices.
+    from routers.alphabot import _fno_rows
+    _im = await _fno_rows(
+        "SELECT expiry::date AS expiry, max(lot_size) AS lot FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+        "AND instrument_type IN ('CE','PE') AND expiry::date >= $2 GROUP BY 1 ORDER BY 1 LIMIT 6", sym_upper, today)
+    expiry_dates = [r["expiry"].isoformat() for r in _im]
+    if _im and _im[0]["lot"]:
+        lot_size = int(_im[0]["lot"])
+    if not expiry_dates:
+        raise HTTPException(status_code=404, detail=f"{sym_upper} has no listed options")
 
     # ── Try Groww API first ──────────────────────────────────────────────────
     groww_token = await get_groww_token()
@@ -6592,66 +7019,17 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
             print(f"Groww API error: {groww_err}")
             groww_success = False
 
-    # ── Fallback: Synthetic Black-Scholes chain ──────────────────────────────
+    # ── Fallback: Kite quotes for the listed contracts. No made-up chain any more. ──
     if not groww_success:
         try:
-            loop = asyncio.get_event_loop()
-            yf_sym = INDEX_MAP.get(sym_upper, f"{sym_upper}.NS")
-            ticker = await loop.run_in_executor(None, lambda: yf.Ticker(yf_sym))
-            hist = await loop.run_in_executor(None, lambda: ticker.history(period="60d"))
-            if hist.empty:
-                raise HTTPException(status_code=404, detail=f"No data for {symbol}")
-
-            spot_price = round(float(hist["Close"].iloc[-1]), 2)
-            returns = hist["Close"].pct_change().dropna()
-            hist_vol = float(returns.std() * (252 ** 0.5)) if len(returns) > 10 else 0.20
-
-            # Strike step
-            if spot_price > 10000: step = 100
-            elif spot_price > 1000: step = 50 if is_index else 20
-            elif spot_price > 500: step = 10
-            else: step = 5
-
-            atm = round(spot_price / step) * step
-            num_strikes = 20
-            strikes = [atm + (i - num_strikes) * step for i in range(num_strikes * 2 + 1)]
-            strikes = [s for s in strikes if s > 0]
-            r = 0.07
-
-            target_expiries = [expiry] if expiry else expiry_dates[:4]
-            for exp_str in target_expiries:
-                days_to_exp = max(1, (datetime.strptime(exp_str, "%Y-%m-%d").date() - today).days)
-                T = days_to_exp / 365
-                exp_data = {"expiry": exp_str, "calls": [], "puts": []}
-
-                for strike in strikes:
-                    moneyness = abs(strike - spot_price) / spot_price
-                    iv_adj = hist_vol * (1 + 0.3 * moneyness + 0.1 * moneyness ** 2)
-                    iv_adj = max(0.08, min(iv_adj, 1.0))
-                    dist = abs(strike - atm) / step
-                    base_oi = max(100, int(50000 * math.exp(-0.08 * dist ** 1.3)))
-                    noise = random.uniform(0.7, 1.3)
-
-                    c_g = black_scholes(spot_price, strike, T, r, iv_adj, "call")
-                    exp_data["calls"].append({
-                        "strike": strike, "ltp": c_g["price"], "bid": round(c_g["price"]*0.99,2), "ask": round(c_g["price"]*1.01,2),
-                        "iv": round(iv_adj*100,1), "oi": int(base_oi*noise*(1.2 if strike>atm else 0.8)),
-                        "volume": int(base_oi*noise*random.uniform(0.05,0.25)), "itm": strike<spot_price,
-                        "delta": c_g["delta"], "gamma": c_g["gamma"], "theta": c_g["theta"], "vega": c_g["vega"],
-                    })
-                    p_g = black_scholes(spot_price, strike, T, r, iv_adj, "put")
-                    exp_data["puts"].append({
-                        "strike": strike, "ltp": p_g["price"], "bid": round(p_g["price"]*0.99,2), "ask": round(p_g["price"]*1.01,2),
-                        "iv": round(iv_adj*100,1), "oi": int(base_oi*noise*(0.8 if strike>atm else 1.2)),
-                        "volume": int(base_oi*noise*random.uniform(0.05,0.25)), "itm": strike>spot_price,
-                        "delta": p_g["delta"], "gamma": p_g["gamma"], "theta": p_g["theta"], "vega": p_g["vega"],
-                    })
-                chains.append(exp_data)
-            data_source = "synthetic"
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Options chain error: {str(e)}")
+            chains, spot_price = await _kite_option_chain(sym_upper, [expiry] if expiry else expiry_dates[:2], spot_price)
+        except Exception as _ke:
+            print(f"Kite chain error for {sym_upper}: {_ke}")
+            chains = []
+        if not chains:
+            raise HTTPException(status_code=503, detail=(f"The live option chain for {sym_upper} is unavailable right now "
+                                "(Groww and Kite did not answer). Please retry in a minute."))
+        data_source = "kite"
 
     # ── PCR & Max Pain ───────────────────────────────────────────────────────
     total_call_oi = sum(c["oi"] for ch in chains for c in ch["calls"])
@@ -6669,21 +7047,17 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
                 min_pain = pain
                 max_pain_strike = s
 
-    # Historical vol (for display)
+    # Historical vol (for display): 20-session realised volatility from the exchange daily file
     hist_vol_pct = 0
-    if data_source == "groww":
-        try:
-            loop = asyncio.get_event_loop()
-            yf_sym = INDEX_MAP.get(sym_upper, f"{sym_upper}.NS")
-            ticker = await loop.run_in_executor(None, lambda: yf.Ticker(yf_sym))
-            hist = await loop.run_in_executor(None, lambda: ticker.history(period="60d"))
-            if not hist.empty:
-                rets = hist["Close"].pct_change().dropna()
-                hist_vol_pct = round(float(rets.std() * (252**0.5)) * 100, 1)
-        except:
-            pass
-    elif data_source == "synthetic":
-        hist_vol_pct = round(hist_vol * 100, 1) if 'hist_vol' in locals() else 0
+    try:
+        _hv_sym = {"NIFTY": "NIFTYBEES", "BANKNIFTY": "BANKBEES"}.get(sym_upper, sym_upper)
+        _cl = [float(b["close"]) for b in (await ds_ohlcv(_hv_sym, "3mo")) if b.get("close")]
+        if len(_cl) >= 21:
+            _rets = [math.log(_cl[i] / _cl[i - 1]) for i in range(len(_cl) - 20, len(_cl))]
+            _m = sum(_rets) / len(_rets)
+            hist_vol_pct = round((sum((x - _m) ** 2 for x in _rets) / (len(_rets) - 1)) ** 0.5 * (252 ** 0.5) * 100, 1)
+    except Exception:
+        pass
 
     result = {
         "symbol": sym_upper, "spot_price": round(spot_price, 2),
@@ -6692,10 +7066,10 @@ async def options_chain(symbol: str, expiry: str = "", user=Depends(get_current_
         "pcr": pcr, "max_pain": max_pain_strike,
         "total_call_oi": total_call_oi, "total_put_oi": total_put_oi,
         "data_source": data_source,
-        "note": "Live data via Groww API" if data_source == "groww" else "Theoretical pricing via Black-Scholes (set Groww token in Admin for live data)"
+        "note": {"groww": "Live data via Groww", "kite": "Live data via Kite; IV and Greeks worked out from the traded prices"}.get(data_source, "")
     }
 
-    ttl = 60 if data_source == "groww" else 180
+    ttl = 60
     if redis_client:
         await redis_client.setex(cache_key, ttl, json.dumps(result))
     return result
@@ -6912,7 +7286,7 @@ async def suggest_strategies(req: dict, user=Depends(get_current_user)):
 @app.get("/api/options/oi-analysis/{symbol}", tags=["Options Lab"], summary="OI Intelligence Analysis",
     description="Comprehensive Open Interest analysis — PCR, max pain, OI build-up/unwinding detection, support/resistance from OI clusters, and strategy recommendations based on OI data.")
 async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_user)):
-    """Full OI intelligence analysis — reuses the existing chain endpoint data (Groww/synthetic)."""
+    """Full OI intelligence analysis — reuses the live chain (Groww or Kite)."""
     sym_upper = symbol.upper()
     cache_key = f"oi_analysis:{sym_upper}:{expiry}"
     if redis_client:
@@ -7086,7 +7460,7 @@ async def oi_analysis(symbol: str, expiry: str = "", user=Depends(get_current_us
         "market_signal": {"signal": market_signal, "description": signal_desc},
         "oi_buildup": buildup_signals[:10],
         "oi_data": oi_data,
-        "data_source": chain_data.get("data_source", "synthetic"),
+        "data_source": chain_data.get("data_source", ""),
         "strategy_recommendations": oi_strategies,
     }
 
@@ -8578,7 +8952,7 @@ async def sector_rotation(user=Depends(get_current_user)):
 
     cache_key = "sector_rotation_v2"
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached:
             return json.loads(cached)
 
@@ -8657,7 +9031,7 @@ async def sector_rrg(weeks: int = 12, user=Depends(get_current_user)):
     weeks = min(max(weeks, 4), 26)  # Clamp 4-26 weeks
     cache_key = f"sector_rrg_v1:{weeks}"
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached:
             return json.loads(cached)
 
@@ -8864,8 +9238,9 @@ async def _load_mcx_instruments():
     import urllib.request, csv, io
     try:
         url = "https://api.kite.trade/instruments"
-        resp = urllib.request.urlopen(url, timeout=30)
-        data = resp.read().decode()
+        import asyncio as _aio
+        data = await _aio.get_running_loop().run_in_executor(
+            None, lambda: urllib.request.urlopen(url, timeout=30).read().decode())
         reader = csv.DictReader(io.StringIO(data))
         _mcx_instruments = [r for r in reader if r.get("exchange") == "MCX"]
         _mcx_cache_time = _t.time()
@@ -8928,9 +9303,10 @@ async def bse_quote(symbol: str):
         if not row: raise HTTPException(503, "Kite token not available")
         tk = _json.loads(row[0]).get("access_token")
         url = f"https://api.kite.trade/quote?i=BSE:{sym}"
-        rq = _req.Request(url, headers={"Authorization": f"token wmwpq34kw5th0y2l:{tk}"})
-        rsp = _req.urlopen(rq, timeout=10)
-        data = _json.loads(rsp.read().decode())
+        rq = _req.Request(url, headers={"Authorization": f"token dr7ngktrvoiu1fms:{tk}"})
+        import asyncio as _aio
+        data = _json.loads(await _aio.get_running_loop().run_in_executor(
+            None, lambda: _req.urlopen(rq, timeout=10).read().decode()))
         if data.get("status") == "success":
             q = data["data"].get(f"BSE:{sym}", {})
             return {"symbol": sym, "exchange": "BSE", "ltp": q.get("last_price", 0),
@@ -8960,9 +9336,10 @@ async def bse_ltp(symbols: str = ""):
         tk = _json.loads(row[0]).get("access_token")
         params = "&".join([f"i=BSE:{s}" for s in symbol_list])
         url = f"https://api.kite.trade/quote/ltp?{params}"
-        rq = _req.Request(url, headers={"Authorization": f"token wmwpq34kw5th0y2l:{tk}"})
-        rsp = _req.urlopen(rq, timeout=10)
-        data = _json.loads(rsp.read().decode())
+        rq = _req.Request(url, headers={"Authorization": f"token dr7ngktrvoiu1fms:{tk}"})
+        import asyncio as _aio
+        data = _json.loads(await _aio.get_running_loop().run_in_executor(
+            None, lambda: _req.urlopen(rq, timeout=10).read().decode()))
         result = {}
         if data.get("status") == "success":
             for k, v in data["data"].items():
@@ -9220,7 +9597,7 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
     end = date.today().isoformat()
     # Map period to DS-compatible: use "1y" minimum for indicator computation
     ds_period = period if period in ("1y","2y","3y","5y","max") else "1y"
-    _ds_rows = await ds_ohlcv(symbol, ds_period)
+    _ds_rows = await _with_today_bar(symbol, await ds_ohlcv(symbol, ds_period))
     if _ds_rows:
         df = pd.DataFrame(_ds_rows)
         df.columns = [col.lower() for col in df.columns]
@@ -9233,27 +9610,6 @@ async def chart_data(symbol: str, period: str = "1y", interval: str = "1d", user
         keep = [col for col in ["open","high","low","close","volume"] if col in df.columns]
         df = df[keep].astype({col: float for col in keep}).dropna().sort_index()
 
-        # Append today's forming candle from Kite quote if missing
-        from datetime import date as _dt_date
-        today_str = _dt_date.today().isoformat()
-        last_date = df.index[-1].strftime("%Y-%m-%d") if len(df) > 0 else ""
-        if last_date < today_str:
-            try:
-                _today_ds = await ds_ohlcv(symbol, "5d")
-                if _today_ds:
-                    for row in _today_ds:
-                        rd = row.get("date","")
-                        if rd > last_date:
-                            new_row = pd.DataFrame([{
-                                "open": float(row["open"]), "high": float(row["high"]),
-                                "low": float(row["low"]), "close": float(row["close"]),
-                                "volume": float(row.get("volume",0))
-                            }], index=[pd.Timestamp(rd)])
-                            new_row.index.name = "date"
-                            df = pd.concat([df, new_row])
-                    df = df.sort_index()
-            except Exception as _kq_err:
-                pass  # Today's candle unavailable, continue with historical
     else:
         raise HTTPException(status_code=404, detail=f"No chart data available for {symbol}")
     if df.empty:
@@ -10435,7 +10791,7 @@ async def morning_brief(user=Depends(get_current_user)):
     from datetime import date as _date
     cache_key = "morning_brief:" + _date.today().isoformat()
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached: return json.loads(cached)
     loop = asyncio.get_event_loop()
     global_tickers = {
@@ -10660,7 +11016,7 @@ async def sector_heatmap(user=Depends(get_current_user)):
     from datetime import date as _date
     cache_key = "sector_heatmap:" + _date.today().isoformat()
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached: return json.loads(cached)
     loop = asyncio.get_event_loop()
     sector_data = {}
@@ -10669,12 +11025,23 @@ async def sector_heatmap(user=Depends(get_current_user)):
         if sec and sec != "Others":
             sample.setdefault(sec, []).append(sym)
     heatmap = []
+    _want = [s for sec, syms in list(sample.items())[:20] for s in syms[:5]]
+    _bulk = {}
+    async def _bq(chunk):
+        try:
+            async with _httpx.AsyncClient(timeout=20) as _c:
+                _r = await _c.post(f"{DATA_SERVICE_URL}/data/equity/quotes", json={"symbols": chunk})
+                if _r.status_code == 200:
+                    _bulk.update({k.upper(): v for k, v in (_r.json().get("quotes") or {}).items()})
+        except Exception:
+            pass
+    await asyncio.gather(*(_bq(_want[i:i + 50]) for i in range(0, len(_want), 50)))
     for sec, syms in list(sample.items())[:20]:
         changes = []
         stocks_detail = []
         for s in syms[:5]:
             try:
-                _sq = await ds_quote(s)
+                _sq = _bulk.get(s.upper())
                 if _sq and _sq.get("price"):
                     cur = float(_sq["price"])
                     prev = cur - float(_sq.get("change", 0))
@@ -10855,12 +11222,12 @@ async def dividend_tracker(user=Depends(get_current_user)):
     from datetime import date as _date
     cache_key = "dividends:" + _date.today().isoformat()
     if redis_client:
-        cached = await redis_client.get(cache_key)
+        cached = (None if _force_refresh.get() else await redis_client.get(cache_key))
         if cached: return json.loads(cached)
 
     top_div = ["COALINDIA","VEDL","IOC","HINDPETRO","BPCL","ONGC","NTPC","POWERGRID","GAIL","RECLTD",
                "PFC","NHPC","SAIL","NMDC","HDFCBANK","ICICIBANK","SBIN","ITC","TCS","INFY",
-               "WIPRO","BAJAJ-AUTO","HEROMOTOCO","MARUTI","TATAMOTORS","RELIANCE","LT","TITAN","HINDALCO","TATASTEEL"]
+               "WIPRO","BAJAJ-AUTO","HEROMOTOCO","MARUTI","TMPV","RELIANCE","LT","TITAN","HINDALCO","TATASTEEL"]
 
     # Parallel DS fundamentals fetch
     import httpx as _hx
@@ -10959,7 +11326,7 @@ async def dividend_tracker(user=Depends(get_current_user)):
         "count": len(dividends),
     }
     if redis_client:
-        await redis_client.setex(cache_key, 3600, json.dumps(result))
+        await redis_client.setex(cache_key, 900, json.dumps(result))  # prices in it; warmer rebuilds every 5 min
     return result
 
 
@@ -10977,7 +11344,7 @@ async def detect_patterns(symbol: str, user=Depends(get_current_user)):
         if cached: return json.loads(cached)
     try:
         info = await ds_fundamentals(sym) or {}
-        _rows = await ds_ohlcv(sym, "1y")
+        _rows = await _with_today_bar(sym, await ds_ohlcv(sym, "1y"))
         if _rows:
             hist = pd.DataFrame(_rows)
             hist.columns = [c.lower() for c in hist.columns]
@@ -12971,7 +13338,7 @@ def sb_get_near_expiry():
         month = ((month - 1) % 12) + 1
         last_day = calendar.monthrange(year, month)[1]
         ld = date(year, month, last_day)
-        while ld.weekday() != 3:
+        while ld.weekday() != 1:  # NSE monthly expiry: last Tuesday
             ld -= timedelta(days=1)
         if ld >= today:
             return ld
@@ -12984,7 +13351,7 @@ async def sb_build_futures_cache() -> dict:
     LOT_SIZES = {
         "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
         "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+        "ICICIBANK": 700, "SBIN": 750, "TMPV": 1750, "ITC": 1600,
         "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
         "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
         "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
@@ -13117,7 +13484,7 @@ async def sb_build_options_cache() -> dict:
     LOT_SIZES = {
         "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25,
         "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-        "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+        "ICICIBANK": 700, "SBIN": 750, "TMPV": 1750, "ITC": 1600,
         "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
         "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
         "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,

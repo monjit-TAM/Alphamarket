@@ -181,8 +181,7 @@ export function Navbar() {
               {[
                 { label: "Strategies", href: "/strategies", icon: BarChart3 },
                 { label: "Advisors", href: "/advisors", icon: Users },
-                { label: "Market Outlook", href: "/market-outlook", icon: TrendingUp },
-                { label: "Learn", href: "/learn", icon: BookOpen },
+                { label: "Insights", href: "/insights", icon: TrendingUp },
               ].map((item) => (
                 <Link key={item.href} href={item.href}>
                   <button
@@ -262,8 +261,7 @@ export function Navbar() {
             {[
               { label: "Strategies", href: "/strategies", icon: BarChart3 },
               { label: "Advisors", href: "/advisors", icon: Users },
-              { label: "Market Outlook", href: "/market-outlook", icon: TrendingUp },
-              { label: "Learn", href: "/learn", icon: BookOpen },
+              { label: "Insights", href: "/insights", icon: TrendingUp },
               { label: "DYOR Research", href: "/dyor/app", icon: Activity, external: true },
               { label: "Partner Programme", href: "/reseller", icon: Handshake },
             ].concat(

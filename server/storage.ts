@@ -336,7 +336,7 @@ export class DatabaseStorage implements IStorage {
 
   async getUserSubscriptionForStrategy(userId: string, strategyId: string): Promise<Subscription | undefined> {
     const [sub] = await db.select().from(subscriptions).where(
-      and(eq(subscriptions.userId, userId), eq(subscriptions.strategyId, strategyId), eq(subscriptions.status, "active"))
+      and(eq(subscriptions.userId, userId), eq(subscriptions.strategyId, strategyId), eq(subscriptions.status, "active"), sql`${subscriptions.expiresAt} IS NULL OR ${subscriptions.expiresAt} > NOW()`)
     );
     return sub;
   }
@@ -644,7 +644,7 @@ export class DatabaseStorage implements IStorage {
 
   async getActiveSubscriptionsByStrategy(strategyId: string): Promise<Subscription[]> {
     return db.select().from(subscriptions).where(
-      and(eq(subscriptions.strategyId, strategyId), eq(subscriptions.status, "active"))
+      and(eq(subscriptions.strategyId, strategyId), eq(subscriptions.status, "active"), sql`${subscriptions.expiresAt} IS NULL OR ${subscriptions.expiresAt} > NOW()`)
     );
   }
 

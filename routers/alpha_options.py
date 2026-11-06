@@ -3,7 +3,7 @@ Alpha Options Engine API Router
 Endpoints for volatility regime, signal generation, and trade ideas.
 """
 from fastapi import APIRouter, Request, HTTPException, Query
-import json, logging, redis as sync_redis
+import asyncio, json, logging, redis as sync_redis
 from datetime import date, datetime
 import pytz
 _IST = pytz.timezone('Asia/Kolkata')
@@ -25,6 +25,33 @@ def _is_market_open():
 def _get_redis():
     return sync_redis.Redis(host="127.0.0.1", port=6379, db=3, decode_responses=True)
 
+def _own_regime_inputs():
+    """Regime inputs measured by us rather than fetched from Yahoo.
+
+    ATM implied volatility from our own option chain is a better volatility
+    input than a scraped VIX: it is current, it is ours, and it is the number
+    the rest of the platform already displays. PCR comes from the same archive
+    and was previously a hardcoded literal.
+    """
+    import httpx
+    out = {}
+    try:
+        with httpx.Client(timeout=8) as c:
+            d = c.get("http://127.0.0.1:5004/data/options/stats/NIFTY",
+                      headers={"X-API-Key": "alpha_data_internal_2026"}).json()
+            if d.get("available") and d.get("expiries"):
+                e = d["expiries"][0]
+                out["atm_iv"] = e.get("atm_iv"); out["pcr"] = e.get("pcr_oi"); out["spot"] = e.get("spot")
+            g = c.get("http://127.0.0.1:5004/data/options/regime/NIFTY",
+                      headers={"X-API-Key": "alpha_data_internal_2026"}).json()
+            for drv in (g.get("drivers") or []):
+                if drv["driver"] == "Volatility":
+                    out["realised_vol"] = drv.get("realised_vol")
+    except Exception as e:
+        out["error"] = str(e)[:120]
+    return out
+
+
 def _get_vix_data():
     """Fetch India VIX from Yahoo."""
     try:
@@ -32,13 +59,13 @@ def _get_vix_data():
         vix = yf.Ticker("^INDIAVIX")
         h = vix.history(period="1mo")
         if h.empty:
-            return {"vix": 15, "vix_sma20": 15}
+            return {"vix": None, "vix_sma20": None, "unavailable": True, "reason": "empty history"}
         current = float(h["Close"].iloc[-1])
         sma20 = float(h["Close"].rolling(20).mean().iloc[-1]) if len(h) >= 20 else current
         return {"vix": round(current, 2), "vix_sma20": round(sma20, 2)}
     except Exception as e:
         logger.error(f"VIX fetch failed: {e}")
-        return {"vix": 15, "vix_sma20": 15}
+        return {"vix": None, "vix_sma20": None, "unavailable": True, "reason": str(e)[:120]}
 
 def _get_nifty_technicals():
     """Fetch Nifty technicals for regime classification."""
@@ -48,7 +75,7 @@ def _get_nifty_technicals():
         nifty = yf.Ticker("^NSEI")
         h = nifty.history(period="3mo")
         if h.empty:
-            return {"price": 24000, "bb_width": 5, "atr_pct": 1, "trend": "NEUTRAL", "pcr": 1}
+            return {"price": None, "bb_width": None, "atr_pct": None, "trend": None, "pcr": None, "unavailable": True}
         c = h["Close"]
         price = float(c.iloc[-1])
         bb = ta.volatility.BollingerBands(c)
@@ -62,17 +89,17 @@ def _get_nifty_technicals():
         if price > sma20 and sma20 > sma50: trend = "BULLISH"
         elif price < sma20 and sma20 < sma50: trend = "BEARISH"
         else: trend = "NEUTRAL"
-        return {"price": round(price, 1), "bb_width": bb_width, "atr_pct": atr_pct, "trend": trend, "pcr": 1.0}
+        return {"price": round(price, 1), "bb_width": bb_width, "atr_pct": atr_pct, "trend": trend, "pcr": None, "pcr_measured": False}
     except Exception as e:
         logger.error(f"Nifty technicals failed: {e}")
-        return {"price": 24000, "bb_width": 5, "atr_pct": 1, "trend": "NEUTRAL", "pcr": 1}
+        return {"price": None, "bb_width": None, "atr_pct": None, "trend": None, "pcr": None, "unavailable": True}
 
 def _get_banknifty_price():
     try:
         import yfinance as yf
         h = yf.Ticker("^NSEBANK").history(period="5d")
-        return round(float(h["Close"].iloc[-1]), 1) if not h.empty else 51000
-    except: return 51000
+        return round(float(h["Close"].iloc[-1]), 1) if not h.empty else None
+    except: return None
 
 def _load_alpha_universe():
     """Load F&O stocks from DYOR screener caches with enrichment."""
@@ -145,18 +172,112 @@ def _load_alpha_universe():
 # ENDPOINTS
 # ═══════════════════════════════════════════════════════════════
 
+async def _prefetch_chains(universe, max_stocks=12):
+    """Live chains for NIFTY, BANKNIFTY and the top stocks, into the engine's cache (2 minutes).
+    Also sets each symbol's strike step and lot size from instrument_master. Returns spot prices."""
+    import time as _t
+    import alpha_options_engine as E
+    from routers.alphabot import _fno_rows, _KITE_INDEX, _expiry_cutoff
+    from routers.arbitrage import _fetch_kite_quotes
+    ranked = sorted([u for u in (universe or []) if isinstance(u, dict) and u.get("symbol")],
+                    key=lambda u: -(u.get("alphascore") or 0))
+    syms = list(dict.fromkeys(["NIFTY", "BANKNIFTY"] + [u["symbol"] for u in ranked[:max_stocks]]))
+    keys = {s: _KITE_INDEX.get(s, f"NSE:{s}") for s in syms}
+    try:
+        q = await _fetch_kite_quotes(list(keys.values()))
+    except Exception:
+        q = {}
+    spots = {s: float((q.get(k) or {}).get("last_price") or 0) for s, k in keys.items()}
+    spots = {s: p for s, p in spots.items() if p > 0}
+    try:
+        ex = await _fno_rows("SELECT DISTINCT expiry::date AS e FROM instrument_master WHERE exchange='NFO' AND name='NIFTY' "
+                             "AND instrument_type IN ('CE','PE') AND expiry::date >= CURRENT_DATE ORDER BY 1 LIMIT 8")
+        E._EXPIRY_DAYS = {r["e"].isoformat() for r in ex}
+    except Exception:
+        pass
+    async def _one(s, spot):
+        hit = E._CHAINS.get(s)
+        if hit and _t.time() - hit[0] < 120:
+            return
+        try:
+            ex = await _fno_rows("SELECT DISTINCT expiry::date AS e FROM instrument_master WHERE exchange='NFO' AND name=$1 "
+                                 "AND instrument_type IN ('CE','PE') AND expiry::date >= $2 ORDER BY 1 LIMIT 1", s, _expiry_cutoff())
+            if not ex:
+                return
+            exp = ex[0]["e"]
+            rows = await _fno_rows("SELECT tradingsymbol, strike, instrument_type, lot_size FROM instrument_master WHERE exchange='NFO' "
+                                   "AND name=$1 AND instrument_type IN ('CE','PE') AND expiry::date=$2 ORDER BY strike", s, exp)
+            strikes = sorted({float(r["strike"]) for r in rows})
+            if len(strikes) < 3:
+                return
+            ai = min(range(len(strikes)), key=lambda j: abs(strikes[j] - spot))
+            near_strikes = strikes[max(0, ai - 15): ai + 16]
+            keep = set(near_strikes)
+            near = [r for r in rows if float(r["strike"]) in keep]
+            lq = await _fetch_kite_quotes([f"NFO:{r['tradingsymbol']}" for r in near])
+            calls, puts = {}, {}
+            for r in near:
+                p = float((lq.get(f"NFO:{r['tradingsymbol']}") or {}).get("last_price") or 0)
+                if p <= 0:
+                    continue
+                k = float(r["strike"]); k = int(k) if k.is_integer() else k
+                (calls if r["instrument_type"] == "CE" else puts)[k] = p
+            if not (calls and puts):
+                return
+            step = min(b - a for a, b in zip(near_strikes, near_strikes[1:]) if b > a)
+            E.STRIKE_INTERVALS[s] = int(step) if float(step).is_integer() else step
+            if rows[0]["lot_size"]:
+                E.LOT_SIZES[s] = int(rows[0]["lot_size"])
+            E._CHAINS[s] = (_t.time(), {"spot": spot, "expiry": exp.isoformat(), "calls": calls, "puts": puts, "ivs": {}})
+        except Exception as e:
+            logger.warning(f"chain prefetch failed for {s}: {e}")
+    await asyncio.gather(*(_one(s, p) for s, p in spots.items()))
+    return spots
+
+
+def _live_only(signals):
+    """Keep only signals whose every leg is priced from the live chain for the same expiry."""
+    import alpha_options_engine as E
+    keep, dropped = [], []
+    for s in signals or []:
+        ch = (E._CHAINS.get(s.get("symbol")) or (0, None))[1]
+        legs = s.get("legs") or []
+        ok = bool(ch and legs) and s.get("expiry") == ch.get("expiry") and all(
+            (ch["calls"] if l.get("type") == "CE" else ch["puts"]).get(l.get("strike")) for l in legs)
+        (keep if ok else dropped).append(s)
+    if dropped:
+        logger.warning("Options Alpha: dropped %d signal(s) without live prices: %s", len(dropped),
+                       ", ".join(f"{d.get('symbol')} {d.get('strategy')}" for d in dropped))
+    return keep, dropped
+
+
 @router.get("/regime", summary="Current volatility regime")
 async def get_regime():
     """Classify current market into one of 4 volatility regimes with recommended strategies."""
     from alpha_options_engine import classify_regime
-    vix_data = _get_vix_data()
-    nifty = _get_nifty_technicals()
+    vix_data = await asyncio.to_thread(_get_vix_data)
+    nifty = await asyncio.to_thread(_get_nifty_technicals)
+    own = _own_regime_inputs()
+    if own.get("atm_iv"):
+        vix_data = {"vix": own["atm_iv"], "vix_sma20": own.get("realised_vol") or own["atm_iv"]}
+    if own.get("pcr") is not None and isinstance(nifty, dict):
+        nifty["pcr"] = own["pcr"]; nifty["pcr_measured"] = True
+    if own.get("spot") and isinstance(nifty, dict) and not nifty.get("price"):
+        nifty["price"] = own["spot"]
+    if vix_data.get("unavailable") or nifty.get("unavailable"):
+        return {"data_available": False, "label": "Regime unavailable",
+                "description": ("Inputs behind this classification could not be retrieved. A label built "
+                                "from placeholder values would be worse than none."),
+                "recommended_strategies": [], "metrics": {}}
     regime = classify_regime(
         vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
         bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+        trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
     regime["nifty_price"] = nifty["price"]
+    regime["inputs"] = {"volatility": "our own chain ATM IV" if own.get("atm_iv") else "external",
+                        "atm_iv": own.get("atm_iv"), "realised_vol": own.get("realised_vol"),
+                        "pcr": own.get("pcr"), "pcr_source": "our own OI archive" if own.get("pcr") is not None else "not measured"}
     return regime
 
 @router.get("/signals", summary="Generate trade signals")
@@ -165,15 +286,42 @@ async def get_signals(
     max_positions: int = Query(5, description="Max simultaneous positions (1-10)", ge=1, le=10),
     risk_level: str = Query("MEDIUM", description="Risk appetite: LOW, MEDIUM, HIGH"),
 ):
+    """F&O signals. In market hours they are built from live chains (7-28 s), so the answer is kept for
+    6 minutes and rebuilt in the background by the cache warmer every 5."""
+    from refresh_ctx import force_refresh
+    key = f"oa_signals:v1:{int(capital)}:{max_positions}:{risk_level}"
+    rc = None
+    try:
+        rc = _get_redis()
+        if not force_refresh.get():
+            hit = await asyncio.to_thread(rc.get, key)
+            if hit:
+                return json.loads(hit)
+    except Exception:
+        rc = None
+    res = await _get_signals_fresh(capital, max_positions, risk_level)
+    if rc is not None and isinstance(res, dict) and not res.get("market_closed"):
+        try:
+            await asyncio.to_thread(rc.setex, key, 360, json.dumps(res, default=str))
+        except Exception:
+            pass
+    return res
+
+
+async def _get_signals_fresh(
+    capital: float = Query(500000, description="Total capital to deploy (INR)"),
+    max_positions: int = Query(5, description="Max simultaneous positions (1-10)", ge=1, le=10),
+    risk_level: str = Query("MEDIUM", description="Risk appetite: LOW, MEDIUM, HIGH"),
+):
     """Get F&O signals — generates fresh during market hours, shows today's DB signals when closed."""
     from alpha_options_engine import classify_regime, generate_signals, format_signal
 
-    vix_data = _get_vix_data()
-    nifty = _get_nifty_technicals()
+    vix_data = await asyncio.to_thread(_get_vix_data)
+    nifty = await asyncio.to_thread(_get_nifty_technicals)
     regime = classify_regime(
         vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
         bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+        trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
 
     if not _is_market_open():
@@ -218,13 +366,17 @@ async def get_signals(
     elif risk_level == "HIGH": max_positions = min(max_positions, 7)
     
     universe = _load_alpha_universe()
-    bnf_price = _get_banknifty_price()
+    bnf_price = await asyncio.to_thread(_get_banknifty_price)
+    _spots = await _prefetch_chains(universe)
+    nifty = dict(nifty); nifty["price"] = _spots.get("NIFTY") or nifty.get("price")
+    bnf_price = _spots.get("BANKNIFTY") or bnf_price
     
     signals = generate_signals(
         universe=universe, regime=regime, capital=capital,
         max_positions=max_positions, vix=vix_data["vix"],
         index_prices={"NIFTY": nifty["price"], "BANKNIFTY": bnf_price}
     )
+    signals, _dropped = _live_only(signals)
     
     # Format each signal for trader
     formatted = [format_signal(s) for s in signals]
@@ -270,7 +422,7 @@ async def get_stock_signal(
     from flow_signals import compute_smart_money_score
     
     sym = symbol.upper()
-    vix_data = _get_vix_data()
+    vix_data = await asyncio.to_thread(_get_vix_data)
     vix = vix_data["vix"]
     
     # Get stock data
@@ -337,6 +489,15 @@ async def get_stock_signal(
     else:
         sig = iron_condor(sym, price, capital, vix)
     
+    await _prefetch_chains([{"symbol": sym, "alphascore": 100}], max_stocks=1)
+    if sig.get("symbol") != sym or not _live_only([sig])[0]:
+        import alpha_options_engine as _E
+        if _E._CHAINS.get(sym):
+            # priced before the prefetch: price it again from the live chain
+            sig = (bull_call_spread if direction == "BULLISH" else bear_put_spread if direction == "BEARISH" else iron_condor)(sym, price, capital, vix)
+        if not _live_only([sig])[0]:
+            return {"date": datetime.now(_IST).date().isoformat(), "signal": None,
+                    "message": f"No live option prices for {sym} right now, so no signal was made. Please retry in a minute."}
     sig["alpha_data"] = {
         "alphascore": round(asc["alphascore"], 1), "grade": asc["grade"],
         "signal": asc["signal"], "dimensions": asc.get("dimensions", {}),
@@ -391,25 +552,29 @@ async def generate_and_save(
         return {"message": f"Already have {existing} open signals for today.",
                 "existing": existing}
 
-    vix_data = _get_vix_data()
-    nifty = _get_nifty_technicals()
+    vix_data = await asyncio.to_thread(_get_vix_data)
+    nifty = await asyncio.to_thread(_get_nifty_technicals)
     regime = classify_regime(
         vix=vix_data["vix"], vix_sma20=vix_data["vix_sma20"],
         bb_width=nifty["bb_width"], atr_pct=nifty["atr_pct"],
-        trend=nifty["trend"], pcr=nifty.get("pcr", 1)
+        trend=nifty["trend"], pcr=(nifty.get("pcr") if nifty.get("pcr") is not None else 1.0)
     )
 
     if risk_level == "LOW": max_positions = min(max_positions, 3)
     elif risk_level == "HIGH": max_positions = min(max_positions, 7)
 
     universe = _load_alpha_universe()
-    bnf_price = _get_banknifty_price()
+    bnf_price = await asyncio.to_thread(_get_banknifty_price)
+    _spots = await _prefetch_chains(universe)
+    nifty = dict(nifty); nifty["price"] = _spots.get("NIFTY") or nifty.get("price")
+    bnf_price = _spots.get("BANKNIFTY") or bnf_price
 
     signals = generate_signals(
         universe=universe, regime=regime, capital=capital,
         max_positions=max_positions, vix=vix_data["vix"],
         index_prices={"NIFTY": nifty["price"], "BANKNIFTY": bnf_price}
     )
+    signals, _dropped = _live_only(signals)
 
     saved_ids = []
     skipped = []

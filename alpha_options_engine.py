@@ -2,7 +2,7 @@
 Alpha Options Engine — Automated F&O Signal Generator
 AlphaMarket | Patent Pending
 """
-import math, logging
+import math, logging, time
 from datetime import datetime, date, timedelta
 from typing import List, Dict
 import pytz
@@ -13,7 +13,7 @@ IST = pytz.timezone("Asia/Kolkata")
 LOT_SIZES = {
     "NIFTY": 25, "BANKNIFTY": 15, "FINNIFTY": 25, "MIDCPNIFTY": 50,
     "RELIANCE": 250, "TCS": 150, "INFY": 300, "HDFCBANK": 550,
-    "ICICIBANK": 700, "SBIN": 750, "TATAMOTORS": 575, "ITC": 1600,
+    "ICICIBANK": 700, "SBIN": 750, "TMPV": 1750, "ITC": 1600,
     "BAJFINANCE": 125, "MARUTI": 100, "WIPRO": 1500, "SUNPHARMA": 700,
     "TATASTEEL": 550, "LT": 150, "AXISBANK": 600, "BHARTIARTL": 475,
     "M&M": 350, "ADANIENT": 400, "HCLTECH": 350, "KOTAKBANK": 400,
@@ -21,6 +21,10 @@ LOT_SIZES = {
     "DRREDDY": 125, "ONGC": 3250, "NTPC": 2250, "POWERGRID": 2700,
 }
 STRIKE_INTERVALS = {"NIFTY": 50, "BANKNIFTY": 100, "FINNIFTY": 50, "MIDCPNIFTY": 25}
+# Live chains, strike steps, lot sizes and expiry days are filled per request by
+# routers/alpha_options._prefetch_chains from instrument_master and Kite.
+_CHAINS = {}        # symbol -> (time, {spot, expiry, calls{strike: ltp}, puts{strike: ltp}})
+_EXPIRY_DAYS = set()
 DEFAULT_STRIKE_INTERVAL = 50
 
 def _round_strike(price, symbol, direction="nearest"):
@@ -31,7 +35,7 @@ def _round_strike(price, symbol, direction="nearest"):
 
 def _next_expiry():
     today = datetime.now(IST).date()
-    days = (3 - today.weekday()) % 7
+    days = (1 - today.weekday()) % 7  # Tuesday; the live chain's own expiry replaces this
     if days == 0: days = 7
     return (today + timedelta(days=days)).isoformat()
 
@@ -130,7 +134,7 @@ def ce_buy(symbol, spot, capital, iv=20, expiry=""):
     dte = _dte(expiry); lot = LOT_SIZES.get(symbol, 50)
     strike = _round_strike(spot * 1.005, symbol, "up")
     chain = _fetch_live_chain(symbol)
-    if chain and chain.get("expiry"): expiry = chain["expiry"]
+    if chain and chain.get("expiry"): expiry = chain["expiry"]; dte = _dte(expiry)
     if chain and chain.get("spot"): spot = chain["spot"]
     est = round(_estimate_premium(spot, iv, dte, (strike - spot)/spot if strike > spot else 0), 1)
     prem = _pick_premium(chain, strike, "CE", est) if chain else est
@@ -162,7 +166,7 @@ def pe_buy(symbol, spot, capital, iv=20, expiry=""):
     dte = _dte(expiry); lot = LOT_SIZES.get(symbol, 50)
     strike = _round_strike(spot * 0.995, symbol, "down")
     chain = _fetch_live_chain(symbol)
-    if chain and chain.get("expiry"): expiry = chain["expiry"]
+    if chain and chain.get("expiry"): expiry = chain["expiry"]; dte = _dte(expiry)
     if chain and chain.get("spot"): spot = chain["spot"]
     est = round(_estimate_premium(spot, iv, dte, (spot - strike)/spot if strike < spot else 0), 1)
     prem = _pick_premium(chain, strike, "PE", est) if chain else est
@@ -189,53 +193,21 @@ def pe_buy(symbol, spot, capital, iv=20, expiry=""):
     }
 
 def _fetch_live_chain(symbol):
-    """Fetch live options chain from Kite via internal API. Returns {spot, expiry, calls:{strike:ltp}, puts:{strike:ltp}}."""
-    try:
-        import urllib.request, json as _json
-        url = f"http://127.0.0.1:8001/api/nfo/option-chain/{symbol}"
-        req = urllib.request.Request(url, headers={"X-Internal-Key": "3f9dd0ce942c74fb9988518041b50c94fa2da6aa2778da8c"})
-        resp = urllib.request.urlopen(req, timeout=3).read().decode()
-        data = _json.loads(resp)
-        chain = data.get("chain", [])
-        if not chain:
-            return None
-        # Get spot from Data Service
-        spot = 0
-        try:
-            spot_sym = "%5ENSEI" if symbol == "NIFTY" else "%5ENSEBANK" if symbol == "BANKNIFTY" else symbol
-            spot_req = urllib.request.Request(f"http://127.0.0.1:5004/data/equity/quote/{spot_sym}")
-            spot_resp = urllib.request.urlopen(spot_req, timeout=3).read().decode()
-            spot = _json.loads(spot_resp).get("price", 0)
-        except:
-            pass
-        exp = data.get("expiry", data.get("expiries", [""])[0] if data.get("expiries") else "")
-        calls = {}
-        puts = {}
-        for s in chain:
-            strike = int(s.get("strike", 0))
-            ce_ltp = s.get("ce_ltp", 0)
-            pe_ltp = s.get("pe_ltp", 0)
-            if ce_ltp and ce_ltp > 0:
-                calls[strike] = ce_ltp
-            if pe_ltp and pe_ltp > 0:
-                puts[strike] = pe_ltp
-        if spot and (calls or puts):
-            return {"spot": spot, "expiry": exp, "calls": calls, "puts": puts, "ivs": {}}
-    except Exception as e:
-        logger.warning(f"Live chain failed for {symbol}: {e}")
+    """The live chain prefetched for this request (routers/alpha_options._prefetch_chains), or None.
+    It used to call this same server over HTTP from inside a request; DYOR runs one process, so the
+    call was never answered in time and every premium fell back to an estimate."""
+    hit = _CHAINS.get(symbol)
+    if hit and time.time() - hit[0] < 300:
+        return hit[1]
     return None
 
 def _pick_premium(chain, strike, opt_type, fallback):
-    """Get live premium or fallback to estimate."""
+    """Live premium for exactly this strike, else the estimate. A signal with any estimated leg is
+    dropped by the router (_live_only) before anyone sees or saves it."""
     if not chain: return fallback
-    book = chain.get("calls" if opt_type=="CE" else "puts", {})
-    if strike in book and book[strike] > 0:
-        return round(book[strike], 1)
-    # Try nearest strike
-    strikes = sorted(book.keys())
-    for s in strikes:
-        if abs(s - strike) <= 100 and book[s] > 0:
-            return round(book[s], 1)
+    p = chain.get("calls" if opt_type == "CE" else "puts", {}).get(strike)
+    if p and p > 0:
+        return round(p, 1)
     return fallback
 
 def bull_call_spread(symbol, spot, capital, iv=20, expiry=""):
@@ -246,7 +218,7 @@ def bull_call_spread(symbol, spot, capital, iv=20, expiry=""):
     buy_k = _round_strike(spot, symbol)
     sell_k = buy_k + intv
     chain = _fetch_live_chain(symbol)
-    if chain and chain.get("expiry"): expiry = chain["expiry"]
+    if chain and chain.get("expiry"): expiry = chain["expiry"]; dte = _dte(expiry)
     if chain and chain.get("spot"): spot = chain["spot"]
     est_buy = round(_estimate_premium(spot, iv, dte), 1)
     est_sell = round(_estimate_premium(spot, iv, dte, (sell_k - spot) / spot), 1)
@@ -289,7 +261,7 @@ def bear_put_spread(symbol, spot, capital, iv=20, expiry=""):
     buy_k = _round_strike(spot, symbol)
     sell_k = buy_k - intv
     chain = _fetch_live_chain(symbol)
-    if chain and chain.get("expiry"): expiry = chain["expiry"]
+    if chain and chain.get("expiry"): expiry = chain["expiry"]; dte = _dte(expiry)
     if chain and chain.get("spot"): spot = chain["spot"]
     est_buy = round(_estimate_premium(spot, iv, dte), 1)
     est_sell = round(_estimate_premium(spot, iv, dte, (spot - sell_k) / spot), 1)
@@ -334,7 +306,7 @@ def iron_condor(symbol, spot, capital, iv=20, expiry=""):
     sell_pe = _round_strike(spot * 0.98, symbol, "down")
     buy_pe = sell_pe - intv
     chain = _fetch_live_chain(symbol)
-    if chain and chain.get("expiry"): expiry = chain["expiry"]
+    if chain and chain.get("expiry"): expiry = chain["expiry"]; dte = _dte(expiry)
     if chain and chain.get("spot"): spot = chain["spot"]
     tf = math.sqrt(dte / 365)
     base = spot * (iv / 100) * tf * 0.15
@@ -480,7 +452,7 @@ def earnings_iv_crush(sym, spot, capital, iv=25, earn_date="", expiry=""):
 
 # Phase 3: Expiry Day Theta
 def _is_expiry_day():
-    return datetime.now(IST).date().weekday() == 3
+    return datetime.now(IST).date().isoformat() in _EXPIRY_DAYS
 
 def expiry_theta_scalp(sym, spot, capital, vix=15):
     today = datetime.now(IST).date()
