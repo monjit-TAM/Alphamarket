@@ -61,9 +61,9 @@ export default function ContentDetail() {
     <div className="min-h-screen bg-background">
       <Navbar />
       <div className="max-w-4xl mx-auto px-4 md:px-6 py-8">
-        <Link href={item.type === "MarketUpdate" ? "/market-outlook" : item.type === "Learn" ? "/learn" : "/"}>
+        <Link href="/insights">
           <Button variant="ghost" size="sm" className="mb-4" data-testid="button-back">
-            <ArrowLeft className="w-4 h-4 mr-1" /> Back
+            <ArrowLeft className="w-4 h-4 mr-1" /> Back to Insights
           </Button>
         </Link>
 

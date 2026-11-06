@@ -62,8 +62,7 @@ export default function ContentPage() {
   const contentTypes = [
     { label: "Add Terms & Conditions", type: "Terms" },
     { label: "Add Risk Advisory", type: "RiskAdvisory" },
-    { label: "Add Learn", type: "Learn" },
-    { label: "Add Market Update", type: "MarketUpdate" },
+    { label: "Add Insight", type: "MarketUpdate" },
   ];
 
   return (
@@ -226,7 +225,7 @@ function NewContentDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>Add {type === "MarketUpdate" ? "Market Update" : type === "RiskAdvisory" ? "Risk Advisory" : type}</DialogTitle>
+          <DialogTitle>Add {type === "MarketUpdate" ? "Insight" : type === "RiskAdvisory" ? "Risk Advisory" : type}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
