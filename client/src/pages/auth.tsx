@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/lib/auth";
-import { TrendingUp, Loader2, Shield, Upload, FileCheck, X, ChevronDown, ChevronUp, FileText } from "lucide-react";
+import { TrendingUp, Loader2, Shield, Upload, FileCheck, X, ChevronDown, ChevronUp, FileText, Phone, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Link } from "wouter";
 import { useUpload } from "@/hooks/use-upload";
@@ -171,6 +171,12 @@ export function RegisterPage() {
     agreementConsent: false,
   });
   const [loading, setLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
+  const [otpValue, setOtpValue] = useState("");
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpTimer, setOtpTimer] = useState(0);
+  const [otpEnabled, setOtpEnabled] = useState(true);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; path: string } | null>(null);
   const [agreement1Open, setAgreement1Open] = useState(false);
   const [agreement2Open, setAgreement2Open] = useState(false);
@@ -190,6 +196,114 @@ export function RegisterPage() {
       toast({ title: "Upload failed", description: err.message, variant: "destructive" });
     },
   });
+
+  // Check if OTP is configured on server
+  useEffect(() => {
+    fetch("/api/auth/otp-config").then(r => r.json()).then(d => {
+      setOtpEnabled(d.otpEnabled !== false);
+    }).catch(() => {});
+  }, []);
+
+  // Countdown timer for resend
+  useEffect(() => {
+    if (otpTimer <= 0) return;
+    const t = setTimeout(() => setOtpTimer(otpTimer - 1), 1000);
+    return () => clearTimeout(t);
+  }, [otpTimer]);
+
+  // Reset OTP state when phone changes
+  const handlePhoneChange = (val: string) => {
+    setForm({ ...form, phone: val });
+    if (otpSent || otpVerified) {
+      setOtpSent(false);
+      setOtpVerified(false);
+      setOtpValue("");
+    }
+  };
+
+  const handleSendOtp = async () => {
+    const phone = form.phone.replace(/[\s\-\(\)\+]/g, "");
+    const digits = phone.startsWith("91") && phone.length === 12 ? phone.slice(2) : phone;
+    if (!/^[6-9][0-9]{9}$/.test(digits)) {
+      toast({ title: "Invalid phone number", description: "Please enter a valid 10-digit Indian mobile number", variant: "destructive" });
+      return;
+    }
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ phone: form.phone }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpSent(true);
+        setOtpTimer(30);
+        if (data.type === "bypass") {
+          // OTP not configured — auto-verify
+          setOtpVerified(true);
+        }
+        toast({ title: data.type === "bypass" ? "OTP verification bypassed" : "OTP sent!", description: data.type === "bypass" ? "MSG91 not configured yet" : "Check your phone for the OTP" });
+      } else {
+        toast({ title: "Failed to send OTP", description: data.message, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Could not send OTP. Please try again.", variant: "destructive" });
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (!otpValue || otpValue.length < 4) {
+      toast({ title: "Enter OTP", description: "Please enter the OTP sent to your phone", variant: "destructive" });
+      return;
+    }
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ phone: form.phone, otp: otpValue }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpVerified(true);
+        toast({ title: "Phone verified!", description: "Your mobile number has been verified" });
+      } else {
+        toast({ title: "Invalid OTP", description: data.message, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Could not verify OTP. Please try again.", variant: "destructive" });
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setOtpLoading(true);
+    try {
+      const res = await fetch("/api/auth/resend-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ phone: form.phone }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setOtpTimer(30);
+        toast({ title: "OTP resent!", description: "Check your phone for the new OTP" });
+      } else {
+        toast({ title: "Resend failed", description: data.message, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Could not resend OTP", variant: "destructive" });
+    } finally {
+      setOtpLoading(false);
+    }
+  };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -232,6 +346,10 @@ export function RegisterPage() {
     }
     if (form.password !== form.confirmPassword) {
       toast({ title: "Passwords do not match", variant: "destructive" });
+      return;
+    }
+    if (otpEnabled && !otpVerified) {
+      toast({ title: "Phone verification required", description: "Please verify your mobile number with OTP before registering", variant: "destructive" });
       return;
     }
     if (form.role === "advisor" && !form.sebiRegNumber) {
@@ -320,14 +438,82 @@ export function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="reg-phone">Mobile Number</Label>
-              <Input
-                id="reg-phone"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                placeholder="+91 XXXXX-XXXXX"
-                data-testid="input-reg-phone"
-              />
+              <Label htmlFor="reg-phone">
+                <span className="flex items-center gap-1">
+                  <Phone className="w-3 h-3" />
+                  Mobile Number *
+                </span>
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="reg-phone"
+                  value={form.phone}
+                  onChange={(e) => handlePhoneChange(e.target.value)}
+                  placeholder="10-digit mobile number"
+                  data-testid="input-reg-phone"
+                  className="flex-1"
+                  disabled={otpVerified}
+                  required
+                />
+                {!otpVerified ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleSendOtp}
+                    disabled={otpLoading || !form.phone || form.phone.replace(/\D/g, "").length < 10}
+                    className="whitespace-nowrap"
+                    data-testid="button-send-otp"
+                  >
+                    {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : otpSent ? "Resend" : "Send OTP"}
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1 text-green-600 text-sm font-medium px-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Verified
+                  </div>
+                )}
+              </div>
+              {otpSent && !otpVerified && (
+                <div className="space-y-2 mt-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={otpValue}
+                      onChange={(e) => setOtpValue(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="Enter OTP"
+                      maxLength={6}
+                      className="flex-1"
+                      data-testid="input-otp"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleVerifyOtp}
+                      disabled={otpLoading || otpValue.length < 4}
+                      data-testid="button-verify-otp"
+                    >
+                      {otpLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Verify"}
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">
+                      OTP sent to your mobile number
+                    </p>
+                    {otpTimer > 0 ? (
+                      <p className="text-xs text-muted-foreground">Resend in {otpTimer}s</p>
+                    ) : (
+                      <button
+                        type="button"
+                        className="text-xs text-primary font-medium"
+                        onClick={handleResendOtp}
+                        disabled={otpLoading}
+                      >
+                        Resend OTP
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
             {form.role === "advisor" && (
               <>
@@ -611,7 +797,7 @@ export function RegisterPage() {
               <Link href="/agreements/ia-ra-services" className="text-primary underline">Privacy Policy</Link> and{" "}
               <Link href="/agreements/ia-ra-services" className="text-primary underline">Disclaimer</Link> and agree to receive calls, SMS, Whatsapp and email communication from Alphamarket.
             </p>
-            <Button type="submit" className="w-full" disabled={loading || isUploading} data-testid="button-register">
+            <Button type="submit" className="w-full" disabled={loading || isUploading || (otpEnabled && !otpVerified)} data-testid="button-register">
               {loading && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Create Account
             </Button>
