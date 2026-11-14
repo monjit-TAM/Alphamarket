@@ -95,6 +95,30 @@ setInterval(() => {
   });
 }, 10 * 60 * 1000).unref();
 
+/**
+ * Registration gate shared by every sign-up endpoint.
+ * Returns an error message if the phone is missing/invalid or not OTP-verified
+ * in this session, otherwise null. Bypassed when OTP is not configured.
+ */
+export function phoneVerificationError(session: any, rawPhone: unknown): string | null {
+  if (!rawPhone) return "Mobile number is required";
+  const phone = normalizePhone(String(rawPhone));
+  if (!isValidIndianMobile(phone)) return "Please enter a valid 10-digit Indian mobile number";
+  if (!isOtpConfigured()) return null;
+  if (!session?.otpVerified || session?.otpPhone !== phone) {
+    return "Please verify your mobile number with OTP before registering";
+  }
+  return null;
+}
+
+/** Call once an account is created so one verification can't be reused. */
+export function clearPhoneVerification(session: any): void {
+  if (!session) return;
+  session.otpVerified = false;
+  session.otpPhone = null;
+  session.otpHash = null;
+}
+
 /** Send the OTP SMS through MSG91 Flow. */
 export async function sendOtpSms(phone: string, otp: string): Promise<{ success: boolean; message: string }> {
   const varName = process.env.MSG91_OTP_VAR || "otp";
