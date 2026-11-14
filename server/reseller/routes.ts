@@ -12,6 +12,7 @@ import { db } from "../db";
 import { resellers, resellerCustomers } from "../../shared/schema";
 import { eq, sql } from "drizzle-orm";
 import { hashPassword } from "../auth/passwords";
+import { phoneVerificationError, clearPhoneVerification } from "../otp";
 import {
   sendRegistrationNotification,
   sendUserWelcomeEmail,
@@ -62,6 +63,8 @@ export function registerResellerRoutes(
       if (!agreementConsent) {
         return res.status(400).send("You must accept the Reseller Partner Agreement");
       }
+      const phoneError = phoneVerificationError(req.session, phone);
+      if (phoneError) return res.status(400).send(phoneError);
 
       const existing = await storage.getUserByUsername(username);
       if (existing) return res.status(400).send("Username already taken");
@@ -99,6 +102,7 @@ export function registerResellerRoutes(
       }).returning();
 
       req.session.userId = user.id;
+      clearPhoneVerification(req.session);
       req.session.save((err) => {
         if (err) {
           console.error("Session save error:", err);

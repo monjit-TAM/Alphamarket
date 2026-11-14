@@ -7,6 +7,7 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
+import { usePhoneOtp } from "@/hooks/use-phone-otp";
 
 const C = {
   brand: "#e14a14", dark: "#141414", bg: "#f7f7f8", panel: "#ffffff",
@@ -17,8 +18,9 @@ const C = {
 export default function ResellerRegister() {
   const [, navigate] = useLocation();
   const [form, setForm] = useState({
-    firmName: "", username: "", email: "", phone: "", password: "", confirm: "",
+    firmName: "", username: "", email: "", password: "", confirm: "",
   });
+  const otp = usePhoneOtp();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [agree, setAgree] = useState(false);
@@ -34,6 +36,8 @@ export default function ResellerRegister() {
     }
     if (form.password.length < 6) { setError("Password must be at least 6 characters."); return; }
     if (form.password !== form.confirm) { setError("Passwords do not match."); return; }
+    if (!otp.phoneValid) { setError("Please enter a valid 10-digit mobile number."); return; }
+    if (!otp.ok) { setError("Please verify your mobile number with OTP before registering."); return; }
     if (!agree) { setError("Please accept the Reseller Partner Agreement to continue."); return; }
     setLoading(true);
     try {
@@ -42,7 +46,7 @@ export default function ResellerRegister() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: form.username, email: form.email, password: form.password,
-          phone: form.phone || undefined, firmName: form.firmName || undefined,
+          phone: otp.digits, firmName: form.firmName || undefined,
           agreementConsent: true,
         }),
       });
@@ -117,8 +121,51 @@ export default function ResellerRegister() {
               <input style={input} type="email" value={form.email} onChange={(e) => set("email", e.target.value)} />
             </div>
             <div style={{ marginBottom: 14 }}>
-              <span style={label}>Phone</span>
-              <input style={input} value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="+91" />
+              <span style={label}>Mobile number *</span>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  style={{ ...input, flex: 1, background: otp.verified ? C.bg : "#fff" }}
+                  value={otp.phone}
+                  onChange={(e) => otp.setPhone(e.target.value)}
+                  placeholder="10-digit mobile number"
+                  disabled={otp.verified}
+                  inputMode="tel"
+                />
+                {otp.verified ? (
+                  <span style={{ marginTop: 6, color: C.green, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>✓ Verified</span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={otp.send}
+                    disabled={otp.busy || !otp.phoneValid || otp.timer > 0}
+                    style={{ marginTop: 6, padding: "11px 14px", borderRadius: 8, border: `1px solid ${C.brand}`, background: "#fff", color: C.brand, fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", cursor: "pointer", opacity: otp.busy || !otp.phoneValid || otp.timer > 0 ? 0.5 : 1 }}
+                  >
+                    {otp.sent ? (otp.timer > 0 ? `Resend ${otp.timer}s` : "Resend") : "Send OTP"}
+                  </button>
+                )}
+              </div>
+              {otp.sent && !otp.verified && (
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <input
+                    style={{ ...input, flex: 1, letterSpacing: 4 }}
+                    value={otp.code}
+                    onChange={(e) => otp.setCode(e.target.value)}
+                    placeholder="Enter OTP"
+                    inputMode="numeric"
+                    maxLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={otp.verify}
+                    disabled={otp.busy || otp.code.length < 4}
+                    style={{ marginTop: 6, padding: "11px 18px", borderRadius: 8, border: "none", background: C.brand, color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: otp.busy || otp.code.length < 4 ? 0.5 : 1 }}
+                  >
+                    Verify
+                  </button>
+                </div>
+              )}
+              {otp.error && <div style={{ color: C.red, fontSize: 12, marginTop: 6 }}>{otp.error}</div>}
+              {otp.info && !otp.error && <div style={{ color: C.muted, fontSize: 12, marginTop: 6 }}>{otp.info}</div>}
             </div>
             <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
               <div style={{ flex: 1 }}>
@@ -136,7 +183,7 @@ export default function ResellerRegister() {
                 I have read and agree to the <a href="/reseller-agreement" target="_blank" rel="noopener noreferrer" style={{ color: C.brand, fontWeight: 600, textDecoration: "none" }}>Reseller Partner Agreement</a> and confirm the information I have provided is accurate.
               </span>
             </label>
-            <button type="submit" disabled={loading} style={{ width: "100%", background: C.brand, color: "#fff", border: "none", borderRadius: 8, padding: "13px", fontSize: 15, fontWeight: 700, cursor: loading ? "default" : "pointer", opacity: loading ? 0.6 : 1 }}>
+            <button type="submit" disabled={loading || !otp.ok} style={{ width: "100%", background: C.brand, color: "#fff", border: "none", borderRadius: 8, padding: "13px", fontSize: 15, fontWeight: 700, cursor: loading || !otp.ok ? "default" : "pointer", opacity: loading || !otp.ok ? 0.6 : 1 }}>
               {loading ? "Creating account…" : "Create reseller account"}
             </button>
           </form>

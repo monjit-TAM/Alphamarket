@@ -10,6 +10,7 @@ import {
 import {
   isOtpConfigured, normalizePhone, isValidIndianMobile, generateOtp, hashOtp, otpMatches,
   sendOtpSms, checkSendLimits, recordSend, OTP_TTL_MS, OTP_MAX_ATTEMPTS,
+  phoneVerificationError, clearPhoneVerification,
 } from "../otp";
 
 /**
@@ -131,20 +132,8 @@ export function registerAuthRoutes(
       }
 
       // Phone + OTP verification gate
-      if (!phone) {
-        return res.status(400).send("Mobile number is required");
-      }
-      const normalizedPhone = normalizePhone(phone);
-      if (!isValidIndianMobile(normalizedPhone)) {
-        return res.status(400).send("Please enter a valid 10-digit Indian mobile number");
-      }
-      if (isOtpConfigured()) {
-        const sessionPhone = (req.session as any).otpPhone;
-        const otpVerified = (req.session as any).otpVerified;
-        if (!otpVerified || sessionPhone !== normalizedPhone) {
-          return res.status(400).send("Please verify your mobile number with OTP before registering");
-        }
-      }
+      const phoneError = phoneVerificationError(req.session, phone);
+      if (phoneError) return res.status(400).send(phoneError);
 
       const existing = await storage.getUserByUsername(username);
       if (existing) return res.status(400).send("Username already taken");
@@ -183,8 +172,7 @@ export function registerAuthRoutes(
       });
 
       req.session.userId = user.id;
-      (req.session as any).otpVerified = false;
-      (req.session as any).otpPhone = null;
+      clearPhoneVerification(req.session);
       req.session.save((err) => {
         if (err) {
           console.error("Session save error:", err);
