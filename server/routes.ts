@@ -3657,7 +3657,7 @@ export async function registerRoutes(
       });
     } catch (err: any) {
       console.error("[eKYC] PAN verify error:", err.message);
-      res.status(500).json({ error: err.message });
+      res.status(err.status || 500).json({ error: err.message });
     }
   });
 

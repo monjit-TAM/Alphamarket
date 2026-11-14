@@ -123,23 +123,41 @@ export async function verifyPan(pan: string, nameAsPan: string, dob: string): Pr
   transactionId: string;
 }> {
   const token = await authenticate();
-  const res = await fetch(`${SANDBOX_BASE_URL}/kyc/pan/verify`, {
-    method: "POST",
-    headers: getHeaders(token),
-    body: JSON.stringify({
-      "@entity": "in.co.sandbox.kyc.pan_verification.request",
-      pan: pan.toUpperCase(),
-      name_as_per_pan: nameAsPan.toUpperCase(),
-      date_of_birth: dob,
-      consent: "Y",
-      reason: "KYC verification for investment advisory subscription",
-    }),
+  const body = JSON.stringify({
+    "@entity": "in.co.sandbox.kyc.pan_verification.request",
+    pan: pan.toUpperCase(),
+    name_as_per_pan: nameAsPan.toUpperCase(),
+    date_of_birth: dob,
+    consent: "Y",
+    reason: "KYC verification for investment advisory subscription",
   });
 
-  const data = await res.json();
+  // The Income Tax source behind Sandbox drops out intermittently ("Source Unavailable").
+  // Retry a couple of times before giving up.
+  let data: any = {};
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await fetch(`${SANDBOX_BASE_URL}/kyc/pan/verify`, {
+      method: "POST",
+      headers: getHeaders(token),
+      body,
+    });
+    data = await res.json().catch(() => ({}));
+    if (data.code === 200) break;
+    const msg = String(data.data?.message || data.message || "");
+    const transient = res.status >= 500 || /source unavailable|timeout|temporar/i.test(msg);
+    console.error(`[Sandbox KYC] PAN verify failed (attempt ${attempt}):`, data);
+    if (!transient || attempt === 3) break;
+    await new Promise((r) => setTimeout(r, attempt * 1500));
+  }
+
   if (data.code !== 200) {
-    console.error("[Sandbox KYC] PAN verify failed:", data);
-    throw new Error(data.data?.message || data.message || "Failed to verify PAN");
+    const msg = String(data.data?.message || data.message || "");
+    if (/source unavailable/i.test(msg)) {
+      const err: any = new Error("The Income Tax PAN service is temporarily unavailable. Please try again in a few minutes.");
+      err.status = 503;
+      throw err;
+    }
+    throw new Error(msg || "Failed to verify PAN");
   }
 
   return {
