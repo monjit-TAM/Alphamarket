@@ -7,6 +7,7 @@ import {
   sendUserWelcomeEmail,
   sendAdvisorAgreementEmail,
 } from "./email";
+import { sendOtp, verifyOtp, resendOtp, isOtpConfigured, normalizePhone } from "../otp";
 
 /**
  * Register all authentication API routes on the Express app.
@@ -25,6 +26,70 @@ export function registerAuthRoutes(
     updateUserPassword: (userId: string, hashedPassword: string) => Promise<void>;
   }
 ): void {
+  // ── OTP: Send ──
+  app.post("/api/auth/send-otp", async (req, res) => {
+    try {
+      const { phone } = req.body;
+      if (!phone) return res.status(400).json({ success: false, message: "Phone number is required" });
+
+      const normalized = normalizePhone(phone);
+      if (!/^[6-9][0-9]{9}$/.test(normalized)) {
+        return res.status(400).json({ success: false, message: "Please enter a valid 10-digit Indian mobile number" });
+      }
+
+      const result = await sendOtp(normalized);
+      if (result.success) {
+        // Store verified state in session for this phone
+        (req.session as any).otpPhone = normalized;
+        (req.session as any).otpVerified = false;
+        req.session.save(() => {});
+      }
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[OTP] send-otp error:", err.message);
+      return res.status(500).json({ success: false, message: "Something went wrong" });
+    }
+  });
+
+  // ── OTP: Verify ──
+  app.post("/api/auth/verify-otp", async (req, res) => {
+    try {
+      const { phone, otp } = req.body;
+      if (!phone || !otp) return res.status(400).json({ success: false, message: "Phone and OTP are required" });
+
+      const normalized = normalizePhone(phone);
+      const result = await verifyOtp(normalized, otp);
+
+      if (result.success) {
+        (req.session as any).otpPhone = normalized;
+        (req.session as any).otpVerified = true;
+        req.session.save(() => {});
+      }
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[OTP] verify-otp error:", err.message);
+      return res.status(500).json({ success: false, message: "Something went wrong" });
+    }
+  });
+
+  // ── OTP: Resend ──
+  app.post("/api/auth/resend-otp", async (req, res) => {
+    try {
+      const { phone } = req.body;
+      if (!phone) return res.status(400).json({ success: false, message: "Phone number is required" });
+      const result = await resendOtp(normalizePhone(phone));
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[OTP] resend-otp error:", err.message);
+      return res.status(500).json({ success: false, message: "Something went wrong" });
+    }
+  });
+
+  // ── OTP: Check config ──
+  app.get("/api/auth/otp-config", (_req, res) => {
+    res.json({ otpEnabled: isOtpConfigured() });
+  });
+
   // ── Register ──
   app.post("/api/auth/register", async (req, res) => {
     try {
@@ -38,6 +103,22 @@ export function registerAuthRoutes(
       }
       if (password.length < 6) {
         return res.status(400).send("Password must be at least 6 characters");
+      }
+
+      // Phone + OTP verification gate
+      if (!phone) {
+        return res.status(400).send("Mobile number is required");
+      }
+      const normalizedPhone = normalizePhone(phone);
+      if (!/^[6-9][0-9]{9}$/.test(normalizedPhone)) {
+        return res.status(400).send("Please enter a valid 10-digit Indian mobile number");
+      }
+      if (isOtpConfigured()) {
+        const sessionPhone = (req.session as any).otpPhone;
+        const otpVerified = (req.session as any).otpVerified;
+        if (!otpVerified || sessionPhone !== normalizedPhone) {
+          return res.status(400).send("Please verify your mobile number with OTP before registering");
+        }
       }
 
       const existing = await storage.getUserByUsername(username);
