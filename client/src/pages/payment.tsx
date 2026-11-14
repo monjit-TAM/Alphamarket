@@ -16,22 +16,26 @@ import { useState, useEffect, useCallback } from "react";
 declare global {
   interface Window {
     Cashfree: any;
+    Razorpay: any;
   }
 }
 
-function loadCashfreeScript(): Promise<void> {
+function loadScript(src: string, globalName: "Cashfree" | "Razorpay"): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (window.Cashfree) {
+    if (window[globalName]) {
       resolve();
       return;
     }
     const script = document.createElement("script");
-    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
+    script.src = src;
     script.onload = () => resolve();
-    script.onerror = () => reject(new Error("Failed to load Cashfree SDK"));
+    script.onerror = () => reject(new Error(`Failed to load ${globalName} checkout`));
     document.head.appendChild(script);
   });
 }
+
+const loadCashfreeScript = () => loadScript("https://sdk.cashfree.com/js/v3/cashfree.js", "Cashfree");
+const loadRazorpayScript = () => loadScript("https://checkout.razorpay.com/v1/checkout.js", "Razorpay");
 
 export default function PaymentPage() {
   const { id } = useParams<{ id: string }>();
@@ -42,7 +46,6 @@ export default function PaymentPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [processing, setProcessing] = useState(false);
-  const [sdkReady, setSdkReady] = useState(false);
 
   const { data: strategy, isLoading: strategyLoading } = useQuery<Strategy & { advisor?: User }>({
     queryKey: ["/api/strategies", id],
@@ -52,14 +55,6 @@ export default function PaymentPage() {
     queryKey: ["/api/strategies", id, "plans"],
     enabled: !!id,
   });
-
-  useEffect(() => {
-    loadCashfreeScript()
-      .then(() => setSdkReady(true))
-      .catch(() => {
-        console.error("Failed to load Cashfree SDK");
-      });
-  }, []);
 
   const isLoading = strategyLoading || plansLoading;
 
@@ -78,11 +73,6 @@ export default function PaymentPage() {
       navigate("/login");
       return;
     }
-    if (!sdkReady) {
-      toast({ title: "Payment system is loading, please wait...", variant: "destructive" });
-      return;
-    }
-
     setProcessing(true);
     try {
       const res = await apiRequest("POST", "/api/payments/create-order", {
@@ -91,10 +81,43 @@ export default function PaymentPage() {
       });
       const data = await res.json();
 
+      if (data.gateway === "razorpay" && data.razorpay) {
+        await loadRazorpayScript();
+        const callbackUrl = `/payment-callback?order_id=${encodeURIComponent(data.orderId)}&vt=${encodeURIComponent(data.verifyToken)}`;
+        const rz = new window.Razorpay({
+          key: data.razorpay.keyId,
+          order_id: data.razorpay.orderId,
+          amount: data.razorpay.amount,
+          currency: data.razorpay.currency,
+          name: data.razorpay.name,
+          description: data.razorpay.description,
+          prefill: data.razorpay.prefill,
+          theme: { color: "#e14a14" },
+          // Server re-checks the order with Razorpay before activating anything
+          handler: () => navigate(callbackUrl),
+          modal: {
+            ondismiss: () => {
+              setProcessing(false);
+              toast({ title: "Payment cancelled", description: "You can try again whenever you're ready." });
+            },
+          },
+        });
+        rz.on("payment.failed", (resp: any) => {
+          toast({
+            title: "Payment failed",
+            description: resp?.error?.description || "Please try again",
+            variant: "destructive",
+          });
+        });
+        rz.open();
+        return;
+      }
+
       if (!data.paymentSessionId) {
         throw new Error("Failed to create payment order");
       }
 
+      await loadCashfreeScript();
       const cashfree = window.Cashfree({ mode: "production" });
 
       const result = await cashfree.checkout({
@@ -203,10 +226,10 @@ export default function PaymentPage() {
             <div className="text-center py-6 space-y-3">
               <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                <span>Secure payment powered by Cashfree</span>
+                <span>Secure payment via our payment partner</span>
               </div>
               <p className="text-xs text-muted-foreground max-w-sm mx-auto">
-                You'll be redirected to Cashfree's secure payment page to complete the transaction. All major UPI apps, cards, net banking, and wallets are supported.
+                You'll complete the payment on a secure checkout. All major UPI apps, cards, net banking, and wallets are supported.
               </p>
             </div>
           </CardContent>
@@ -220,7 +243,7 @@ export default function PaymentPage() {
           </Link>
           <Button
             onClick={handlePayment}
-            disabled={processing || !sdkReady}
+            disabled={processing}
             data-testid="button-confirm-payment"
           >
             {processing ? (

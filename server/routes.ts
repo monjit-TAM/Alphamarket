@@ -22,6 +22,7 @@ import { handleXTSEvent as xtsHandleEvent } from "./xts-bridge";
 import { and, eq, desc, sql } from "drizzle-orm";
 import nseSymbols from "./data/nse-symbols.json";
 import { createCashfreeOrder, fetchCashfreeOrder, fetchCashfreePayments, verifyCashfreeWebhook } from "./cashfree";
+import { activeGateway, createRazorpayOrder, getRazorpayOrderStatus, isRazorpayOrderId } from "./razorpay";
 import {
   notifyStrategySubscribers, notifyWatchlistUsers, notifyAllUsers, notifyAllVisitors,
   vapidPublicKey, pushEnabled,
@@ -946,6 +947,51 @@ export async function registerRoutes(
       const baseUrl = `${req.protocol}://${req.get("host")}`;
       const returnUrl = `${baseUrl}/payment-callback?order_id=${orderId}&vt=${verifyToken}`;
 
+      if (activeGateway() === "razorpay") {
+        const rzOrder = await createRazorpayOrder({
+          receipt: orderId,
+          amountRupees: amount,
+          notes: { orderId, userId: user.id, strategyId: strategy.id, planId: plan.id },
+        });
+
+        const payment = await storage.createPayment({
+          orderId,
+          userId: user.id,
+          strategyId: strategy.id,
+          planId: plan.id,
+          advisorId: strategy.advisorId,
+          amount: amount.toString(),
+          currency: "INR",
+          status: "PENDING",
+          cfOrderId: rzOrder.id,          // gateway order ID (Razorpay "order_...")
+          paymentSessionId: null,
+          paymentMethod: null,
+          cfPaymentId: null,
+          subscriptionId: null,
+          paidAt: null,
+        });
+
+        return res.json({
+          gateway: "razorpay",
+          orderId,
+          paymentId: payment.id,
+          verifyToken,
+          razorpay: {
+            keyId: process.env.RAZORPAY_KEY_ID,
+            orderId: rzOrder.id,
+            amount: rzOrder.amount,
+            currency: rzOrder.currency,
+            name: "AlphaMarket",
+            description: `${strategy.name} – ${plan.name}`,
+            prefill: {
+              name: user.companyName || user.username,
+              email: user.email,
+              contact: user.phone || "",
+            },
+          },
+        });
+      }
+
       const cfOrder = await createCashfreeOrder({
         orderId,
         amount,
@@ -1009,25 +1055,40 @@ export async function registerRoutes(
         return res.json({ success: true, orderStatus: "PAID", subscriptionId: payment.subscriptionId });
       }
 
-      console.log(`Payment verify: checking Cashfree for order ${orderId}, current status: ${payment.status}`);
-      const cfOrder = await fetchCashfreeOrder(orderId);
-      const orderStatus = cfOrder.order_status;
-      console.log(`Payment verify: Cashfree order status for ${orderId}: ${orderStatus}`);
+      const viaRazorpay = isRazorpayOrderId(payment.cfOrderId);
+      let orderStatus: string;
+      let paymentMethod: string | null = null;
+      let cfPaymentId: string | null = null;
+
+      if (viaRazorpay) {
+        console.log(`Payment verify: checking Razorpay for order ${orderId} (${payment.cfOrderId}), current status: ${payment.status}`);
+        const rz = await getRazorpayOrderStatus(payment.cfOrderId!);
+        // Razorpay reports CREATED/ATTEMPTED until capture; the callback page retries on ACTIVE
+        orderStatus = rz.status === "PAID" ? "PAID" : "ACTIVE";
+        paymentMethod = rz.paymentMethod;
+        cfPaymentId = rz.paymentId;
+        console.log(`Payment verify: Razorpay order status for ${orderId}: ${orderStatus}`);
+      } else {
+        console.log(`Payment verify: checking Cashfree for order ${orderId}, current status: ${payment.status}`);
+        const cfOrder = await fetchCashfreeOrder(orderId);
+        orderStatus = cfOrder.order_status;
+        console.log(`Payment verify: Cashfree order status for ${orderId}: ${orderStatus}`);
+      }
 
       if (orderStatus === "PAID" && payment.status !== "PAID") {
-        let paymentMethod: string | null = null;
-        let cfPaymentId: string | null = null;
-        try {
-          const cfPayments = await fetchCashfreePayments(orderId);
-          if (cfPayments && cfPayments.length > 0) {
-            const successPayment = cfPayments.find((p: any) => p.payment_status === "SUCCESS");
-            if (successPayment) {
-              paymentMethod = successPayment.payment_group || null;
-              cfPaymentId = successPayment.cf_payment_id?.toString() || null;
+        if (!viaRazorpay) {
+          try {
+            const cfPayments = await fetchCashfreePayments(orderId);
+            if (cfPayments && cfPayments.length > 0) {
+              const successPayment = cfPayments.find((p: any) => p.payment_status === "SUCCESS");
+              if (successPayment) {
+                paymentMethod = successPayment.payment_group || null;
+                cfPaymentId = successPayment.cf_payment_id?.toString() || null;
+              }
             }
+          } catch (payErr: any) {
+            console.error("Payment verify: error fetching CF payments:", payErr?.message);
           }
-        } catch (payErr: any) {
-          console.error("Payment verify: error fetching CF payments:", payErr?.message);
         }
 
         const freshPayment = await storage.getPaymentByOrderId(orderId);
