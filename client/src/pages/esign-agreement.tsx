@@ -174,11 +174,10 @@ export default function EsignAgreementPage() {
   const [step, setStep] = useState<"read" | "sign" | "done">("read");
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [agreedToTerms, setAgreedToTerms] = useState(false);
-  const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [otp, setOtp] = useState("");
-  const [referenceId, setReferenceId] = useState<number | null>(null);
-  const [otpSent, setOtpSent] = useState(false);
   const [signedName, setSignedName] = useState<string | null>(null);
+  const returnedFromDigilocker = params.get("dl") === "1";
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -217,44 +216,61 @@ export default function EsignAgreementPage() {
     }
   };
 
-  const sendOtpMutation = useMutation({
+  const startDigilockerMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/esign/otp", {
-        strategyId: id,
-        planId,
-        aadhaarNumber,
-      });
+      const res = await apiRequest("POST", "/api/esign/digilocker/start", { strategyId: id, planId });
       return res.json();
     },
     onSuccess: (data) => {
-      setReferenceId(data.referenceId);
-      setOtpSent(true);
-      toast({ title: "OTP Sent", description: "Please check your Aadhaar-linked mobile for the OTP." });
+      if (data.authorizationUrl) window.location.href = data.authorizationUrl;
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Could not open DigiLocker", description: err.message, variant: "destructive" });
     },
   });
 
-  const verifyOtpMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/esign/verify", {
-        strategyId: id,
-        planId,
-        referenceId,
-        otp,
-      });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setStep("done");
-      setSignedName(data.name);
-      toast({ title: "Agreement Signed", description: "Your agreement has been successfully e-signed." });
-    },
-    onError: (err: Error) => {
-      toast({ title: "Verification Failed", description: err.message, variant: "destructive" });
-    },
-  });
+  // Back from DigiLocker: confirm consent and fetch Aadhaar details (retry while DigiLocker finishes)
+  useEffect(() => {
+    if (!returnedFromDigilocker || !id || !planId || !user || esignStatus?.signed) return;
+    let cancelled = false;
+    setStep("sign");
+    setCompleting(true);
+    setCompleteError(null);
+    (async () => {
+      for (let attempt = 0; attempt < 10 && !cancelled; attempt++) {
+        try {
+          const res = await fetch("/api/esign/digilocker/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ strategyId: id, planId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (data.success) {
+            if (cancelled) return;
+            setSignedName(data.name || null);
+            setStep("done");
+            setCompleting(false);
+            navigate(`/strategies/${id}/esign-agreement?plan=${planId}`, { replace: true });
+            toast({ title: "Agreement Signed", description: "Your agreement has been e-signed using DigiLocker." });
+            return;
+          }
+          if (!data.pending) {
+            if (!cancelled) { setCompleteError(data.error || "Verification failed. Please try again."); setCompleting(false); }
+            return;
+          }
+        } catch {
+          // network blip: retry
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      if (!cancelled) {
+        setCompleteError("DigiLocker hasn't confirmed your consent yet. Please try again.");
+        setCompleting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [returnedFromDigilocker, id, planId, user, esignStatus?.signed]);
 
   const selectedPlan = plans?.find(p => p.id === planId);
   const advisorName = strategy?.advisor?.companyName || strategy?.advisor?.username || "Advisor";
@@ -365,71 +381,36 @@ export default function EsignAgreementPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Fingerprint className="w-4 h-4" />
-                eSign Agreement with Aadhaar OTP
+                eSign Agreement with Aadhaar via DigiLocker
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Verify your identity using Aadhaar OTP to electronically sign this agreement
+                Verify your identity by sharing your Aadhaar from DigiLocker to electronically sign this agreement
               </p>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!otpSent ? (
-                <div className="space-y-3 max-w-md">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="aadhaar">Aadhaar Number</Label>
-                    <Input
-                      id="aadhaar"
-                      placeholder="Enter 12-digit Aadhaar number"
-                      value={aadhaarNumber}
-                      onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, "").slice(0, 12))}
-                      maxLength={12}
-                      data-testid="input-aadhaar-esign"
-                    />
-                    <p className="text-xs text-muted-foreground">An OTP will be sent to your Aadhaar-linked mobile number</p>
-                  </div>
-                  <Button
-                    onClick={() => sendOtpMutation.mutate()}
-                    disabled={aadhaarNumber.length !== 12 || sendOtpMutation.isPending}
-                    data-testid="button-send-otp-esign"
-                  >
-                    {sendOtpMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Fingerprint className="w-4 h-4 mr-1" />}
-                    Send OTP
-                  </Button>
+              {completing ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="text-digilocker-completing">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Confirming your Aadhaar with DigiLocker…
                 </div>
               ) : (
                 <div className="space-y-3 max-w-md">
-                  <Badge variant="outline">OTP sent to Aadhaar-linked mobile</Badge>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="otp">Enter OTP</Label>
-                    <Input
-                      id="otp"
-                      placeholder="Enter 6-digit OTP"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      maxLength={6}
-                      data-testid="input-otp-esign"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={() => verifyOtpMutation.mutate()}
-                      disabled={otp.length !== 6 || verifyOtpMutation.isPending}
-                      data-testid="button-verify-otp-esign"
-                    >
-                      {verifyOtpMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <CheckCircle2 className="w-4 h-4 mr-1" />}
-                      Verify & Sign
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setOtpSent(false);
-                        setOtp("");
-                        setReferenceId(null);
-                      }}
-                      data-testid="button-resend-otp-esign"
-                    >
-                      Resend OTP
-                    </Button>
-                  </div>
+                  {completeError && (
+                    <p className="text-sm text-destructive" data-testid="text-digilocker-error">{completeError}</p>
+                  )}
+                  <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                    <li>You'll be taken to DigiLocker, the Government of India's document wallet.</li>
+                    <li>Log in with your Aadhaar-linked mobile number and OTP.</li>
+                    <li>Allow access to your Aadhaar. You'll be brought back here automatically.</li>
+                  </ul>
+                  <Button
+                    onClick={() => startDigilockerMutation.mutate()}
+                    disabled={startDigilockerMutation.isPending}
+                    data-testid="button-esign-digilocker"
+                  >
+                    {startDigilockerMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Fingerprint className="w-4 h-4 mr-1" />}
+                    {completeError ? "Try again with DigiLocker" : "Continue with DigiLocker"}
+                  </Button>
                 </div>
               )}
             </CardContent>

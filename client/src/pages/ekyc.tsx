@@ -130,10 +130,9 @@ export default function EkycPage() {
   const subscriptionId = params.get("subscriptionId");
 
   const [step, setStep] = useState<"aadhaar" | "pan" | "complete">("aadhaar");
-  const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [otp, setOtp] = useState("");
-  const [referenceId, setReferenceId] = useState<number | null>(null);
-  const [otpSent, setOtpSent] = useState(false);
+  const returnedFromDigilocker = params.get("dl") === "1";
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
   const [aadhaarVerified, setAadhaarVerified] = useState(false);
   const [aadhaarResult, setAadhaarResult] = useState<{ name: string; dob: string; gender: string } | null>(null);
 
@@ -169,43 +168,61 @@ export default function EkycPage() {
     }
   }, [ekycStatus]);
 
-  const sendOtpMutation = useMutation({
+  const startDigilockerMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/ekyc/aadhaar/otp", {
-        subscriptionId,
-        aadhaarNumber,
-      });
+      const res = await apiRequest("POST", "/api/ekyc/aadhaar/digilocker/start", { subscriptionId });
       return res.json();
     },
     onSuccess: (data) => {
-      setReferenceId(data.referenceId);
-      setOtpSent(true);
-      toast({ title: "OTP Sent", description: "An OTP has been sent to your Aadhaar-registered mobile number." });
+      if (data.authorizationUrl) window.location.href = data.authorizationUrl;
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message || "Failed to send OTP", variant: "destructive" });
+      toast({ title: "Could not open DigiLocker", description: err.message || "Please try again", variant: "destructive" });
     },
   });
 
-  const verifyOtpMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/ekyc/aadhaar/verify", {
-        subscriptionId,
-        referenceId,
-        otp,
-      });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      setAadhaarVerified(true);
-      setAadhaarResult({ name: data.name, dob: data.dob, gender: data.gender });
-      setStep("pan");
-      toast({ title: "Aadhaar Verified", description: `Verified successfully as ${data.name}` });
-    },
-    onError: (err: any) => {
-      toast({ title: "Verification Failed", description: err.message || "Invalid OTP", variant: "destructive" });
-    },
-  });
+  // Back from DigiLocker: confirm consent and fetch Aadhaar details (retry while DigiLocker finishes)
+  useEffect(() => {
+    if (!returnedFromDigilocker || !subscriptionId || !user || aadhaarVerified) return;
+    let cancelled = false;
+    setCompleting(true);
+    setCompleteError(null);
+    (async () => {
+      for (let attempt = 0; attempt < 10 && !cancelled; attempt++) {
+        try {
+          const res = await fetch("/api/ekyc/aadhaar/digilocker/complete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ subscriptionId }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (data.success) {
+            if (cancelled) return;
+            setAadhaarVerified(true);
+            setAadhaarResult({ name: data.name, dob: data.dob, gender: data.gender });
+            setStep("pan");
+            setCompleting(false);
+            navigate(`/ekyc?subscriptionId=${subscriptionId}`, { replace: true });
+            toast({ title: "Aadhaar Verified", description: `Verified successfully as ${data.name}` });
+            return;
+          }
+          if (!data.pending) {
+            if (!cancelled) { setCompleteError(data.error || "Verification failed. Please try again."); setCompleting(false); }
+            return;
+          }
+        } catch {
+          // network blip: retry
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+      if (!cancelled) {
+        setCompleteError("DigiLocker hasn't confirmed your consent yet. Please try again.");
+        setCompleting(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [returnedFromDigilocker, subscriptionId, user]);
 
   const verifyPanMutation = useMutation({
     mutationFn: async () => {
@@ -316,68 +333,30 @@ export default function EkycPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {!otpSent ? (
-                <>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="aadhaar">Aadhaar Number</Label>
-                    <Input
-                      id="aadhaar"
-                      placeholder="Enter 12-digit Aadhaar number"
-                      value={aadhaarNumber}
-                      onChange={(e) => setAadhaarNumber(e.target.value.replace(/\D/g, "").slice(0, 12))}
-                      maxLength={12}
-                      data-testid="input-aadhaar-number"
-                    />
-                    <p className="text-xs text-muted-foreground">An OTP will be sent to your Aadhaar-registered mobile number</p>
-                  </div>
-                  <Button
-                    onClick={() => sendOtpMutation.mutate()}
-                    disabled={aadhaarNumber.length !== 12 || sendOtpMutation.isPending}
-                    className="w-full"
-                    data-testid="button-send-otp"
-                  >
-                    {sendOtpMutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                    Send OTP
-                  </Button>
-                </>
+              {completing ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground" data-testid="text-digilocker-completing">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Confirming your Aadhaar with DigiLocker…
+                </div>
               ) : (
                 <>
-                  <div className="p-3 rounded-md bg-muted/50 text-sm">
-                    OTP sent to mobile number linked with Aadhaar ending ****{aadhaarNumber.slice(-4)}
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="otp">Enter OTP</Label>
-                    <Input
-                      id="otp"
-                      placeholder="Enter 6-digit OTP"
-                      value={otp}
-                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                      maxLength={6}
-                      data-testid="input-aadhaar-otp"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setOtpSent(false);
-                        setOtp("");
-                        setReferenceId(null);
-                      }}
-                      data-testid="button-resend-otp"
-                    >
-                      Resend OTP
-                    </Button>
-                    <Button
-                      onClick={() => verifyOtpMutation.mutate()}
-                      disabled={otp.length !== 6 || verifyOtpMutation.isPending}
-                      className="flex-1"
-                      data-testid="button-verify-otp"
-                    >
-                      {verifyOtpMutation.isPending && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
-                      Verify OTP
-                    </Button>
-                  </div>
+                  {completeError && (
+                    <p className="text-sm text-destructive" data-testid="text-digilocker-error">{completeError}</p>
+                  )}
+                  <ul className="text-xs text-muted-foreground space-y-1 list-disc pl-4">
+                    <li>You'll be taken to DigiLocker, the Government of India's document wallet.</li>
+                    <li>Log in with your Aadhaar-linked mobile number and OTP.</li>
+                    <li>Allow access to your Aadhaar. You'll be brought back here automatically.</li>
+                  </ul>
+                  <Button
+                    onClick={() => startDigilockerMutation.mutate()}
+                    disabled={startDigilockerMutation.isPending}
+                    className="w-full"
+                    data-testid="button-aadhaar-digilocker"
+                  >
+                    {startDigilockerMutation.isPending ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Fingerprint className="w-4 h-4 mr-1" />}
+                    {completeError ? "Try again with DigiLocker" : "Verify Aadhaar with DigiLocker"}
+                  </Button>
                 </>
               )}
             </CardContent>

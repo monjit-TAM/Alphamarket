@@ -153,6 +153,127 @@ export async function verifyPan(pan: string, nameAsPan: string, dob: string): Pr
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DigiLocker (replaces Aadhaar OKYC, which UIDAI has discontinued)
+//   1. startDigilockerSession  → user is redirected to DigiLocker to consent
+//   2. getDigilockerStatus     → "succeeded" once consent is given
+//   3. fetchDigilockerAadhaar  → downloads and parses the UIDAI Aadhaar XML
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function startDigilockerSession(redirectUrl: string): Promise<{
+  sessionId: string;
+  authorizationUrl: string;
+}> {
+  const token = await authenticate();
+  const res = await fetch(`${SANDBOX_BASE_URL}/kyc/digilocker/sessions/init`, {
+    method: "POST",
+    headers: getHeaders(token),
+    body: JSON.stringify({
+      "@entity": "in.co.sandbox.kyc.digilocker.session.request",
+      flow: "signin",
+      doc_types: ["aadhaar"],
+      redirect_url: redirectUrl,
+      purpose: "KYC for investment advisory subscription",
+      options: { pinless: true },
+    }),
+  });
+  const data: any = await res.json().catch(() => ({}));
+  if (data.code !== 200 || !data.data?.authorization_url || !data.data?.session_id) {
+    console.error("[Sandbox KYC] DigiLocker init failed:", data);
+    throw new Error(data.data?.message || data.message || "Could not start DigiLocker verification");
+  }
+  return { sessionId: data.data.session_id, authorizationUrl: data.data.authorization_url };
+}
+
+/** Returns "succeeded", "failed", or "pending" (anything still in progress). */
+export async function getDigilockerStatus(sessionId: string): Promise<{ status: "succeeded" | "failed" | "pending"; raw: string }> {
+  const token = await authenticate();
+  const res = await fetch(`${SANDBOX_BASE_URL}/kyc/digilocker/sessions/${encodeURIComponent(sessionId)}/status`, {
+    method: "GET",
+    headers: getHeaders(token),
+  });
+  const data: any = await res.json().catch(() => ({}));
+  if (data.code !== 200) {
+    console.error("[Sandbox KYC] DigiLocker status failed:", data);
+    throw new Error(data.data?.message || data.message || "Could not check DigiLocker status");
+  }
+  const raw = String(data.data?.status || "").toLowerCase();
+  if (raw === "succeeded" || raw === "success" || raw === "completed") return { status: "succeeded", raw };
+  if (["failed", "expired", "cancelled", "canceled", "denied", "rejected", "consent_denied"].includes(raw)) {
+    return { status: "failed", raw };
+  }
+  return { status: "pending", raw };
+}
+
+function xmlAttr(xml: string, tag: string, attr: string): string {
+  const tagMatch = xml.match(new RegExp(`<${tag}\\b[^>]*>`, "i"));
+  if (!tagMatch) return "";
+  const a = tagMatch[0].match(new RegExp(`\\b${attr}\\s*=\\s*"([^"]*)"`, "i"));
+  return a ? decodeXml(a[1]).trim() : "";
+}
+
+function xmlText(xml: string, tag: string): string {
+  const m = xml.match(new RegExp(`<${tag}\\b[^>]*>([\\s\\S]*?)</${tag}>`, "i"));
+  return m ? m[1].replace(/\s+/g, "") : "";
+}
+
+function decodeXml(s: string): string {
+  return s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
+}
+
+/** Parse the UIDAI Aadhaar XML that DigiLocker returns. Exported for tests. */
+export function parseAadhaarXml(xml: string): { name: string; dob: string; gender: string; address: string; photo: string; last4: string } {
+  const pick = (pairs: Array<[string, string]>) => {
+    for (const [tag, attr] of pairs) {
+      const v = xmlAttr(xml, tag, attr);
+      if (v) return v;
+    }
+    return "";
+  };
+
+  const name = pick([["Poi", "name"], ["Person", "name"]]);
+  const dob = pick([["Poi", "dob"], ["Person", "dob"]]);
+  const genderRaw = pick([["Poi", "gender"], ["Person", "gender"]]);
+  const gender = ({ M: "Male", F: "Female", T: "Transgender" } as Record<string, string>)[genderRaw.toUpperCase()] || genderRaw;
+
+  const addrTag = /<Poa\b/i.test(xml) ? "Poa" : "Address";
+  const addrParts = addrTag === "Poa"
+    ? ["house", "street", "lm", "loc", "vtc", "subdist", "dist", "state", "pc"]
+    : ["house", "street", "landmark", "locality", "vtc", "district", "state", "pin"];
+  const address = addrParts.map((k) => xmlAttr(xml, addrTag, k)).filter(Boolean).join(", ");
+
+  const uid = pick([["UidData", "uid"], ["Person", "uid"], ["Certificate", "number"]]);
+  const last4 = (uid.match(/(\d{4})\s*$/) || [])[1] || "";
+  const photo = xmlText(xml, "Pht") || xmlText(xml, "Photo");
+
+  return { name, dob, gender, address, photo, last4 };
+}
+
+export async function fetchDigilockerAadhaar(sessionId: string): Promise<{
+  name: string; dob: string; gender: string; address: string; photo: string; last4: string; transactionId: string;
+}> {
+  const token = await authenticate();
+  const res = await fetch(`${SANDBOX_BASE_URL}/kyc/digilocker/sessions/${encodeURIComponent(sessionId)}/documents/aadhaar`, {
+    method: "GET",
+    headers: getHeaders(token),
+  });
+  const data: any = await res.json().catch(() => ({}));
+  const fileUrl = data.data?.files?.[0]?.url;
+  if (data.code !== 200 || !fileUrl) {
+    console.error("[Sandbox KYC] DigiLocker Aadhaar fetch failed:", data);
+    throw new Error(data.data?.message || data.message || "Could not fetch Aadhaar from DigiLocker");
+  }
+
+  const xmlRes = await fetch(fileUrl);
+  if (!xmlRes.ok) throw new Error(`Could not download Aadhaar document (${xmlRes.status})`);
+  const parsed = parseAadhaarXml(await xmlRes.text());
+  if (!parsed.name) {
+    console.error("[Sandbox KYC] Aadhaar XML parsed without a name");
+    throw new Error("Could not read the name from the Aadhaar document");
+  }
+  return { ...parsed, transactionId: data.transaction_id || "" };
+}
+
 export function isSandboxConfigured(): boolean {
   return !!(API_KEY && API_SECRET);
 }
