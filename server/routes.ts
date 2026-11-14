@@ -34,7 +34,7 @@ import {
 } from "./push";
 import { parseCASPdf } from "./cas-parser";
 import { getLiveQuote } from "./groww";
-import { sendAadhaarOtp, verifyAadhaarOtp, verifyPan, isSandboxConfigured, verifyBankAccount, fuzzyNameMatch } from "./sandbox-kyc";
+import { sendAadhaarOtp, verifyAadhaarOtp, verifyPan, isSandboxConfigured, verifyBankAccount, fuzzyNameMatch, startDigilockerSession, getDigilockerStatus, fetchDigilockerAadhaar } from "./sandbox-kyc";
 
 const scryptAsync = promisify(scrypt);
 
@@ -3181,6 +3181,111 @@ export async function registerRoutes(
     }
   });
 
+  // ── eSign via DigiLocker (Aadhaar OKYC was discontinued by UIDAI) ──
+  const publicBaseUrl = (req: any) =>
+    process.env.APP_URL ||
+    `https://${String(req.get("x-forwarded-host") || req.get("host") || "alphamarket.co.in").split(",")[0].trim()}`;
+
+  app.post("/api/esign/digilocker/start", requireAuth, async (req, res) => {
+    try {
+      const { strategyId, planId } = req.body;
+      if (!strategyId || !planId) return res.status(400).send("strategyId and planId required");
+
+      const strategy = await storage.getStrategy(strategyId);
+      if (!strategy) return res.status(404).send("Strategy not found");
+
+      const redirectUrl = `${publicBaseUrl(req)}/strategies/${encodeURIComponent(strategyId)}/esign-agreement?plan=${encodeURIComponent(planId)}&dl=1`;
+      const session = await startDigilockerSession(redirectUrl);
+
+      const existing = await storage.getEsignAgreementByUserAndStrategy(req.session.userId!, strategyId, planId);
+      if (existing) {
+        await storage.updateEsignAgreement(existing.id, { status: "digilocker_pending", aadhaarRefId: session.sessionId });
+      } else {
+        await storage.createEsignAgreement({
+          userId: req.session.userId!,
+          advisorId: strategy.advisorId,
+          strategyId,
+          planId,
+          status: "digilocker_pending",
+          aadhaarRefId: session.sessionId,
+          agreementVersion: "1.0",
+        });
+      }
+
+      res.json({ success: true, authorizationUrl: session.authorizationUrl });
+    } catch (err: any) {
+      console.error("[eSign] DigiLocker start error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/esign/digilocker/complete", requireAuth, async (req, res) => {
+    try {
+      const { strategyId, planId } = req.body;
+      if (!strategyId || !planId) return res.status(400).send("strategyId and planId required");
+
+      const agreements = await db.select().from(esignAgreements)
+        .where(and(
+          eq(esignAgreements.userId, req.session.userId!),
+          eq(esignAgreements.strategyId, strategyId),
+          eq(esignAgreements.planId, planId),
+        ))
+        .orderBy(desc(esignAgreements.createdAt))
+        .limit(1);
+      const agreement = agreements[0];
+      if (!agreement) return res.status(404).json({ error: "No agreement found. Please start the eSign again." });
+      if (agreement.status === "signed") return res.json({ success: true, agreementId: agreement.id, name: agreement.aadhaarName });
+      if (agreement.status !== "digilocker_pending" || !agreement.aadhaarRefId) {
+        return res.status(400).json({ error: "No DigiLocker verification in progress. Please start the eSign again." });
+      }
+
+      const { status, raw } = await getDigilockerStatus(agreement.aadhaarRefId);
+      if (status === "pending") return res.json({ pending: true, status: raw });
+      if (status === "failed") {
+        await storage.updateEsignAgreement(agreement.id, { status: "failed" });
+        return res.status(400).json({ error: "DigiLocker consent was not completed. Please try again." });
+      }
+
+      const aadhaar = await fetchDigilockerAadhaar(agreement.aadhaarRefId);
+      await storage.updateEsignAgreement(agreement.id, {
+        status: "signed",
+        aadhaarName: aadhaar.name,
+        aadhaarLast4: aadhaar.last4 || agreement.aadhaarLast4,
+        aadhaarTransactionId: aadhaar.transactionId,
+        signedAt: new Date(),
+        rawResponse: {
+          method: "digilocker",
+          sessionId: agreement.aadhaarRefId,
+          name: aadhaar.name,
+          dob: aadhaar.dob,
+          gender: aadhaar.gender,
+          transactionId: aadhaar.transactionId,
+        },
+      });
+
+      const strategy = await storage.getStrategy(strategyId);
+      const user = await storage.getUser(req.session.userId!);
+      const advisor = await storage.getUser(agreement.advisorId);
+      if (user && advisor && strategy) {
+        sendEsignAgreementEmail({
+          investorName: user.companyName || user.username,
+          investorEmail: user.email,
+          advisorName: advisor.companyName || advisor.username,
+          advisorEmail: advisor.email,
+          strategyName: strategy.name,
+          signedAt: new Date(),
+          aadhaarName: aadhaar.name,
+          aadhaarLast4: aadhaar.last4 || "",
+        }).catch(err => console.error("[eSign] Email error:", err));
+      }
+
+      res.json({ success: true, agreementId: agreement.id, name: aadhaar.name });
+    } catch (err: any) {
+      console.error("[eSign] DigiLocker complete error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/esign/status", requireAuth, async (req, res) => {
     try {
       const { strategyId, planId } = req.query;
@@ -3348,6 +3453,90 @@ export async function registerRoutes(
       });
     } catch (err: any) {
       console.error("[eKYC] Aadhaar verify error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ── eKYC Aadhaar via DigiLocker ──
+  app.post("/api/ekyc/aadhaar/digilocker/start", requireAuth, async (req, res) => {
+    try {
+      const { subscriptionId } = req.body;
+      if (!subscriptionId) return res.status(400).send("subscriptionId required");
+
+      const sub = await storage.getSubscription(subscriptionId);
+      if (!sub) return res.status(404).send("Subscription not found");
+      if (sub.userId !== req.session.userId) return res.status(403).send("Not authorized");
+
+      const redirectUrl = `${publicBaseUrl(req)}/ekyc?subscriptionId=${encodeURIComponent(subscriptionId)}&dl=1`;
+      const session = await startDigilockerSession(redirectUrl);
+
+      const existing = await storage.getEkycBySubscriptionAndType(subscriptionId, "aadhaar");
+      if (existing) {
+        await storage.updateEkycVerification(existing.id, { status: "digilocker_pending", aadhaarRefId: session.sessionId });
+      } else {
+        await storage.createEkycVerification({
+          subscriptionId,
+          userId: sub.userId,
+          advisorId: sub.advisorId,
+          verificationType: "aadhaar",
+          status: "digilocker_pending",
+          aadhaarRefId: session.sessionId,
+        });
+      }
+
+      res.json({ success: true, authorizationUrl: session.authorizationUrl });
+    } catch (err: any) {
+      console.error("[eKYC] DigiLocker start error:", err.message);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/ekyc/aadhaar/digilocker/complete", requireAuth, async (req, res) => {
+    try {
+      const { subscriptionId } = req.body;
+      if (!subscriptionId) return res.status(400).send("subscriptionId required");
+
+      const sub = await storage.getSubscription(subscriptionId);
+      if (!sub) return res.status(404).send("Subscription not found");
+      if (sub.userId !== req.session.userId) return res.status(403).send("Not authorized");
+
+      const existing = await storage.getEkycBySubscriptionAndType(subscriptionId, "aadhaar");
+      if (!existing) return res.status(404).json({ error: "No Aadhaar verification found. Please start again." });
+      if (existing.status === "verified") {
+        return res.json({ success: true, name: existing.aadhaarName, dob: existing.aadhaarDob, gender: existing.aadhaarGender });
+      }
+      if (existing.status !== "digilocker_pending" || !existing.aadhaarRefId) {
+        return res.status(400).json({ error: "No DigiLocker verification in progress. Please start again." });
+      }
+
+      const { status, raw } = await getDigilockerStatus(existing.aadhaarRefId);
+      if (status === "pending") return res.json({ pending: true, status: raw });
+      if (status === "failed") {
+        await storage.updateEkycVerification(existing.id, { status: "failed" });
+        return res.status(400).json({ error: "DigiLocker consent was not completed. Please try again." });
+      }
+
+      const aadhaar = await fetchDigilockerAadhaar(existing.aadhaarRefId);
+      await storage.updateEkycVerification(existing.id, {
+        status: "verified",
+        aadhaarName: aadhaar.name,
+        aadhaarDob: aadhaar.dob,
+        aadhaarGender: aadhaar.gender,
+        aadhaarAddress: aadhaar.address,
+        aadhaarPhoto: aadhaar.photo,
+        aadhaarLast4: aadhaar.last4,
+        aadhaarTransactionId: aadhaar.transactionId,
+        verifiedAt: new Date(),
+      });
+
+      const panVerification = await storage.getEkycBySubscriptionAndType(subscriptionId, "pan");
+      if (panVerification?.status === "verified") {
+        await storage.updateSubscription(sub.id, { ekycDone: true });
+      }
+
+      res.json({ success: true, name: aadhaar.name, dob: aadhaar.dob, gender: aadhaar.gender });
+    } catch (err: any) {
+      console.error("[eKYC] DigiLocker complete error:", err.message);
       res.status(500).json({ error: err.message });
     }
   });
