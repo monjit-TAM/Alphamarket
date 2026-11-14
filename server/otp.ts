@@ -1,144 +1,126 @@
 /**
- * MSG91 OTP Service for AlphaMarket
+ * Phone OTP for AlphaMarket registration, sent through MSG91's Flow API.
  *
- * Uses MSG91's OTP API to send and verify OTPs for phone number verification
- * during registration.
+ * We generate the OTP ourselves, send it with a DLT-approved SMS template
+ * (created under MSG91 → SMS → Templates, variable ##otp##), and verify it
+ * on our side. Same approach as AlphaLens MF.
  *
- * Required env vars:
- *   MSG91_AUTH_KEY   - MSG91 auth key from dashboard
- *   MSG91_TEMPLATE_ID - DLT-approved SMS template ID
+ * Env:
+ *   MSG91_AUTH_KEY     MSG91 auth key
+ *   MSG91_TEMPLATE_ID  MSG91 template ID of alphamarket_verify_otp
+ *   MSG91_OTP_VAR      template variable name (default "otp")
  *
- * If MSG91 is not configured (env vars missing), OTP verification is bypassed
- * so the app still works during development or before DLT approval.
+ * If the key or template ID is blank, OTP is treated as switched off.
  */
+import crypto from "crypto";
 
-const MSG91_AUTH_KEY = process.env.MSG91_AUTH_KEY || "";
-const MSG91_TEMPLATE_ID = process.env.MSG91_TEMPLATE_ID || "";
-const MSG91_BASE_URL = "https://control.msg91.com/api/v5";
+const FLOW_URL = "https://control.msg91.com/api/v5/flow";
 
-/** Normalize a phone number to 10 digits (strip +91, 91 prefix, spaces, dashes) */
+export const OTP_TTL_MS = 5 * 60 * 1000;   // OTP valid for 5 minutes
+export const OTP_MAX_ATTEMPTS = 5;          // wrong tries before a new OTP is needed
+export const OTP_RESEND_MS = 30 * 1000;     // gap between sends to one number
+const PHONE_HOURLY_CAP = 5;                 // sends per number per hour
+const IP_HOURLY_CAP = 15;                   // sends per IP per hour
+
+export function isOtpConfigured(): boolean {
+  return !!(process.env.MSG91_AUTH_KEY && process.env.MSG91_TEMPLATE_ID);
+}
+
+/** Strip +91 / 91 / spaces / dashes down to a 10-digit number. */
 export function normalizePhone(raw: string): string {
-  const digits = raw.replace(/[\s\-\(\)\+]/g, "");
-  if (digits.startsWith("91") && digits.length === 12) return digits.slice(2);
-  if (digits.length === 10 && /^[6-9]/.test(digits)) return digits;
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) return digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) return digits.slice(1);
   return digits;
 }
 
-/** Check if MSG91 is configured */
-export function isOtpConfigured(): boolean {
-  return !!(MSG91_AUTH_KEY && MSG91_TEMPLATE_ID);
+export function isValidIndianMobile(phone: string): boolean {
+  return /^[6-9][0-9]{9}$/.test(phone);
 }
 
-/**
- * Send OTP to a mobile number via MSG91
- * Returns { success, message, type }
- */
-export async function sendOtp(mobile: string): Promise<{ success: boolean; message: string; type: string }> {
-  const phone = normalizePhone(mobile);
+export function generateOtp(): string {
+  return crypto.randomInt(100000, 1000000).toString();
+}
 
-  if (!/^[6-9][0-9]{9}$/.test(phone)) {
-    return { success: false, message: "Invalid Indian mobile number", type: "error" };
+export function hashOtp(phone: string, otp: string): string {
+  const secret = process.env.SESSION_SECRET || "";
+  return crypto.createHash("sha256").update(`${phone}:${otp}:${secret}`).digest("hex");
+}
+
+export function otpMatches(phone: string, otp: string, storedHash: string): boolean {
+  const a = Buffer.from(hashOtp(phone, String(otp || "").trim()), "hex");
+  const b = Buffer.from(String(storedHash || ""), "hex");
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// ── Simple in-memory send limits (single PM2 process) ──
+const sendLog = new Map<string, number[]>();
+
+function recent(key: string, windowMs: number): number[] {
+  const now = Date.now();
+  const list = (sendLog.get(key) || []).filter((t) => now - t < windowMs);
+  sendLog.set(key, list);
+  return list;
+}
+
+/** Returns an error message if this send should be blocked, else null. */
+export function checkSendLimits(phone: string, ip: string): string | null {
+  const hour = 60 * 60 * 1000;
+  const phoneSends = recent(`p:${phone}`, hour);
+  const last = phoneSends[phoneSends.length - 1];
+  if (last && Date.now() - last < OTP_RESEND_MS) {
+    const wait = Math.ceil((OTP_RESEND_MS - (Date.now() - last)) / 1000);
+    return `Please wait ${wait}s before requesting another OTP`;
   }
-
-  if (!isOtpConfigured()) {
-    console.warn("[OTP] MSG91 not configured — skipping OTP send for", phone);
-    return { success: true, message: "OTP service not configured — verification bypassed", type: "bypass" };
+  if (phoneSends.length >= PHONE_HOURLY_CAP) {
+    return "Too many OTP requests for this number. Please try again in an hour.";
   }
+  if (recent(`i:${ip}`, hour).length >= IP_HOURLY_CAP) {
+    return "Too many OTP requests. Please try again later.";
+  }
+  return null;
+}
 
+export function recordSend(phone: string, ip: string): void {
+  const now = Date.now();
+  sendLog.set(`p:${phone}`, [...(sendLog.get(`p:${phone}`) || []), now]);
+  sendLog.set(`i:${ip}`, [...(sendLog.get(`i:${ip}`) || []), now]);
+}
+
+// Clear stale entries every 10 minutes so the map doesn't grow forever
+setInterval(() => {
+  const hour = 60 * 60 * 1000;
+  sendLog.forEach((_v, key) => {
+    if (recent(key, hour).length === 0) sendLog.delete(key);
+  });
+}, 10 * 60 * 1000).unref();
+
+/** Send the OTP SMS through MSG91 Flow. */
+export async function sendOtpSms(phone: string, otp: string): Promise<{ success: boolean; message: string }> {
+  const varName = process.env.MSG91_OTP_VAR || "otp";
   try {
-    const url = `${MSG91_BASE_URL}/otp?template_id=${MSG91_TEMPLATE_ID}&mobile=91${phone}&authkey=${MSG91_AUTH_KEY}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch(FLOW_URL, {
+      method: "POST",
+      headers: {
+        authkey: process.env.MSG91_AUTH_KEY || "",
+        "Content-Type": "application/json",
+        accept: "application/json",
+      },
+      body: JSON.stringify({
+        template_id: process.env.MSG91_TEMPLATE_ID,
+        short_url: "0",
+        recipients: [{ mobiles: `91${phone}`, [varName]: otp }],
+      }),
     });
-
-    const data = await response.json();
-
-    if (data.type === "success" || data.type === "error" && data.message?.includes("already")) {
-      console.log(`[OTP] Sent to 91${phone}:`, data.type);
-      return { success: true, message: "OTP sent successfully", type: "success" };
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || data?.type === "error") {
+      console.error(`[OTP] MSG91 refused send to 91${phone} (${res.status}):`, data);
+      return { success: false, message: "Could not send OTP right now. Please try again." };
     }
-
-    console.error("[OTP] Send failed:", data);
-    return { success: false, message: data.message || "Failed to send OTP", type: "error" };
+    console.log(`[OTP] Sent to 91${phone}: ${data?.type || "ok"} ${data?.message || ""}`);
+    return { success: true, message: "OTP sent successfully" };
   } catch (err: any) {
     console.error("[OTP] Send error:", err.message);
-    return { success: false, message: "OTP service error — please try again", type: "error" };
-  }
-}
-
-/**
- * Verify OTP entered by user via MSG91
- */
-export async function verifyOtp(mobile: string, otp: string): Promise<{ success: boolean; message: string; type: string }> {
-  const phone = normalizePhone(mobile);
-
-  if (!/^[6-9][0-9]{9}$/.test(phone)) {
-    return { success: false, message: "Invalid mobile number", type: "error" };
-  }
-
-  if (!otp || otp.length < 4) {
-    return { success: false, message: "Invalid OTP", type: "error" };
-  }
-
-  if (!isOtpConfigured()) {
-    console.warn("[OTP] MSG91 not configured — bypassing verification for", phone);
-    return { success: true, message: "OTP verification bypassed", type: "bypass" };
-  }
-
-  try {
-    const url = `${MSG91_BASE_URL}/otp/verify?authkey=${MSG91_AUTH_KEY}&mobile=91${phone}&otp=${otp}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    const data = await response.json();
-
-    if (data.type === "success") {
-      console.log(`[OTP] Verified for 91${phone}`);
-      return { success: true, message: "OTP verified successfully", type: "success" };
-    }
-
-    console.error("[OTP] Verify failed:", data);
-    return { success: false, message: data.message || "Invalid OTP", type: "error" };
-  } catch (err: any) {
-    console.error("[OTP] Verify error:", err.message);
-    return { success: false, message: "Verification error — please try again", type: "error" };
-  }
-}
-
-/**
- * Resend OTP via MSG91 (uses retry endpoint)
- */
-export async function resendOtp(mobile: string, retryType?: string): Promise<{ success: boolean; message: string; type: string }> {
-  const phone = normalizePhone(mobile);
-
-  if (!isOtpConfigured()) {
-    return { success: true, message: "OTP service not configured — verification bypassed", type: "bypass" };
-  }
-
-  try {
-    const url = `${MSG91_BASE_URL}/otp/retry?authkey=${MSG91_AUTH_KEY}&mobile=91${phone}&retrytype=${retryType || "text"}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { "Content-Type": "application/json" },
-    });
-
-    const data = await response.json();
-
-    if (data.type === "success") {
-      console.log(`[OTP] Resent to 91${phone}`);
-      return { success: true, message: "OTP resent successfully", type: "success" };
-    }
-
-    console.error("[OTP] Resend failed:", data);
-    return { success: false, message: data.message || "Failed to resend OTP", type: "error" };
-  } catch (err: any) {
-    console.error("[OTP] Resend error:", err.message);
-    return { success: false, message: "OTP service error — please try again", type: "error" };
+    return { success: false, message: "OTP service error. Please try again." };
   }
 }

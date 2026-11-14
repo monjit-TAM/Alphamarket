@@ -7,7 +7,10 @@ import {
   sendUserWelcomeEmail,
   sendAdvisorAgreementEmail,
 } from "./email";
-import { sendOtp, verifyOtp, resendOtp, isOtpConfigured, normalizePhone } from "../otp";
+import {
+  isOtpConfigured, normalizePhone, isValidIndianMobile, generateOtp, hashOtp, otpMatches,
+  sendOtpSms, checkSendLimits, recordSend, OTP_TTL_MS, OTP_MAX_ATTEMPTS,
+} from "../otp";
 
 /**
  * Register all authentication API routes on the Express app.
@@ -26,61 +29,83 @@ export function registerAuthRoutes(
     updateUserPassword: (userId: string, hashedPassword: string) => Promise<void>;
   }
 ): void {
-  // ── OTP: Send ──
-  app.post("/api/auth/send-otp", async (req, res) => {
+  // ── OTP: Send (also used for resend) ──
+  const handleSendOtp = async (req: any, res: any) => {
     try {
-      const { phone } = req.body;
-      if (!phone) return res.status(400).json({ success: false, message: "Phone number is required" });
-
-      const normalized = normalizePhone(phone);
-      if (!/^[6-9][0-9]{9}$/.test(normalized)) {
+      const phone = normalizePhone(req.body?.phone);
+      if (!isValidIndianMobile(phone)) {
         return res.status(400).json({ success: false, message: "Please enter a valid 10-digit Indian mobile number" });
       }
 
-      const result = await sendOtp(normalized);
-      if (result.success) {
-        // Store verified state in session for this phone
-        (req.session as any).otpPhone = normalized;
-        (req.session as any).otpVerified = false;
-        req.session.save(() => {});
+      if (!isOtpConfigured()) {
+        console.warn("[OTP] MSG91 not configured — skipping OTP send for", phone);
+        return res.json({ success: true, type: "bypass", message: "OTP verification bypassed" });
       }
-      return res.json(result);
+
+      const ip = String(req.headers["x-forwarded-for"] || req.ip || "").split(",")[0].trim();
+      const blocked = checkSendLimits(phone, ip);
+      if (blocked) return res.status(429).json({ success: false, message: blocked });
+
+      const otp = generateOtp();
+      const result = await sendOtpSms(phone, otp);
+      if (!result.success) return res.status(502).json({ success: false, message: result.message });
+
+      recordSend(phone, ip);
+      const s = req.session as any;
+      s.otpPhone = phone;
+      s.otpHash = hashOtp(phone, otp);
+      s.otpExpiresAt = Date.now() + OTP_TTL_MS;
+      s.otpAttempts = 0;
+      s.otpVerified = false;
+      req.session.save(() => res.json({ success: true, type: "success", message: "OTP sent successfully" }));
     } catch (err: any) {
       console.error("[OTP] send-otp error:", err.message);
       return res.status(500).json({ success: false, message: "Something went wrong" });
     }
-  });
+  };
+  app.post("/api/auth/send-otp", handleSendOtp);
+  app.post("/api/auth/resend-otp", handleSendOtp);
 
   // ── OTP: Verify ──
   app.post("/api/auth/verify-otp", async (req, res) => {
     try {
-      const { phone, otp } = req.body;
+      const phone = normalizePhone(req.body?.phone);
+      const otp = String(req.body?.otp || "").trim();
       if (!phone || !otp) return res.status(400).json({ success: false, message: "Phone and OTP are required" });
 
-      const normalized = normalizePhone(phone);
-      const result = await verifyOtp(normalized, otp);
-
-      if (result.success) {
-        (req.session as any).otpPhone = normalized;
-        (req.session as any).otpVerified = true;
-        req.session.save(() => {});
+      const s = req.session as any;
+      if (!isOtpConfigured()) {
+        s.otpPhone = phone;
+        s.otpVerified = true;
+        return req.session.save(() => res.json({ success: true, type: "bypass", message: "OTP verification bypassed" }));
       }
-      return res.json(result);
+
+      if (!s.otpHash || s.otpPhone !== phone) {
+        return res.status(400).json({ success: false, message: "Please request an OTP for this number first" });
+      }
+      if (Date.now() > Number(s.otpExpiresAt || 0)) {
+        s.otpHash = null;
+        return req.session.save(() => res.status(400).json({ success: false, message: "OTP has expired. Please request a new one." }));
+      }
+      if (Number(s.otpAttempts || 0) >= OTP_MAX_ATTEMPTS) {
+        s.otpHash = null;
+        return req.session.save(() => res.status(400).json({ success: false, message: "Too many wrong attempts. Please request a new OTP." }));
+      }
+
+      s.otpAttempts = Number(s.otpAttempts || 0) + 1;
+      if (!otpMatches(phone, otp, s.otpHash)) {
+        const left = OTP_MAX_ATTEMPTS - s.otpAttempts;
+        return req.session.save(() =>
+          res.status(400).json({ success: false, message: left > 0 ? `Incorrect OTP. ${left} attempt${left === 1 ? "" : "s"} left.` : "Too many wrong attempts. Please request a new OTP." })
+        );
+      }
+
+      s.otpVerified = true;
+      s.otpHash = null;
+      console.log(`[OTP] Verified 91${phone}`);
+      req.session.save(() => res.json({ success: true, type: "success", message: "OTP verified successfully" }));
     } catch (err: any) {
       console.error("[OTP] verify-otp error:", err.message);
-      return res.status(500).json({ success: false, message: "Something went wrong" });
-    }
-  });
-
-  // ── OTP: Resend ──
-  app.post("/api/auth/resend-otp", async (req, res) => {
-    try {
-      const { phone } = req.body;
-      if (!phone) return res.status(400).json({ success: false, message: "Phone number is required" });
-      const result = await resendOtp(normalizePhone(phone));
-      return res.json(result);
-    } catch (err: any) {
-      console.error("[OTP] resend-otp error:", err.message);
       return res.status(500).json({ success: false, message: "Something went wrong" });
     }
   });
@@ -110,7 +135,7 @@ export function registerAuthRoutes(
         return res.status(400).send("Mobile number is required");
       }
       const normalizedPhone = normalizePhone(phone);
-      if (!/^[6-9][0-9]{9}$/.test(normalizedPhone)) {
+      if (!isValidIndianMobile(normalizedPhone)) {
         return res.status(400).send("Please enter a valid 10-digit Indian mobile number");
       }
       if (isOtpConfigured()) {
@@ -158,6 +183,8 @@ export function registerAuthRoutes(
       });
 
       req.session.userId = user.id;
+      (req.session as any).otpVerified = false;
+      (req.session as any).otpPhone = null;
       req.session.save((err) => {
         if (err) {
           console.error("Session save error:", err);
